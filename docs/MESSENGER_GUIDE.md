@@ -50,6 +50,8 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
     DISCORD_BOT_TOKEN=OTk5...
     ```
 
+   봇이 요청을 처리하는 동안 Discord에 입력 중 표시가 나타납니다. 응답이 길면 Discord 메시지 길이 제한을 넘지 않도록 여러 메시지로 나누어 전송합니다.
+
 ---
 
 ## 🚀 실행
