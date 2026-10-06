@@ -18,6 +18,71 @@ from .helpers import (
 
 logger = logging.getLogger(__name__)
 
+_AUTONOMOUS_EXCLUDED_SKILLS = frozenset(
+    {
+        "autonomous_act",
+        "stop_autonomous",
+        "autonomous_cooperate",
+        "stop_autonomous_cooperate",
+        "reactive_navigate",
+        "condition_reactive",
+        "explore",
+        "patrol",
+        "stop_patrol",
+    }
+)
+_LOCAL_OBSERVATION_SKILLS = frozenset(
+    {
+        "analyze_scene",
+        "capture_camera_image",
+        "describe_surroundings",
+        "get_distance",
+        "get_status",
+        "identify_location",
+        "list_topics",
+        "log_observation",
+        "say",
+        "send_message",
+    }
+)
+
+
+def _available_autonomous_skills(node: Any, *, local_only: bool = False) -> list[dict[str, Any]]:
+    skills = getattr(node, "_skills", None)
+    if skills is None or not hasattr(skills, "list_skills"):
+        return []
+
+    available = []
+    for skill_info in skills.list_skills():
+        name = str(skill_info.get("name", ""))
+        if not name or name in _AUTONOMOUS_EXCLUDED_SKILLS:
+            continue
+        if local_only and name not in _LOCAL_OBSERVATION_SKILLS:
+            continue
+        get_skill = getattr(skills, "get_skill", None)
+        skill_obj = get_skill(name) if callable(get_skill) else None
+        if getattr(skill_obj, "terminal_behavior", None) == "background":
+            continue
+        available.append(skill_info)
+    return available
+
+
+def _matches_remembered_coordinate(memory: Any, x: Any, y: Any, tolerance: float = 0.15) -> bool:
+    try:
+        target_x, target_y = float(x), float(y)
+        objects = memory.get_all_objects()
+        semantic_places, map_generated_places = _split_semantic_places(objects)
+        remembered = semantic_places + map_generated_places
+        remembered += _extract_rag_location_candidates(memory, limit=20)
+        return any(
+            abs(float(place["position"]["x"]) - target_x) <= tolerance
+            and abs(float(place["position"]["y"]) - target_y) <= tolerance
+            for place in remembered
+        )
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return False
+
+
 _LOCATION_PARAM_KEYS = ("target_name", "target_location")
 
 
@@ -125,13 +190,12 @@ class LLMDecideAction(BTNode):
         except Exception as exc:  # noqa: BLE001
             logger.debug("[BT] Peer conversation context unavailable (ignored): %s", exc)
 
-        available_skills = (
-            node._skills.list_skills() if hasattr(node._skills, "list_skills") else []
+        local_only = bool(self._blackboard.get("stationary_observation_only")) or (
+            self._blackboard.get("patrol_has_destination") is False
         )
+        available_skills = _available_autonomous_skills(node, local_only=local_only)
         skill_list = "\n".join(
-            f"  - {s['name']}: {s['description']}"
-            for s in available_skills
-            if s["name"] not in ("autonomous_act", "stop_autonomous")
+            f"  - {s['name']}: {s.get('description', '')}" for s in available_skills
         )
 
         rag_context = ""
@@ -220,11 +284,12 @@ class LLMDecideAction(BTNode):
 ], "reason": "<판단 근거>"}}
 
 [규칙]
-- 이 판단은 순찰 중 발견한 특이사항에 대한 대응입니다. 정상적인 이동/순찰 자체는 이미
-  자동으로 처리되고 있으니, 여기서는 방금 발견한 특이사항(쓰레기, 어질러진 물건, 사람 등)에
-  대한 행동만 결정하세요. 별다른 특이사항이 없다면 {{"skill": "get_status", "params": {{}}, "reason": "특이사항 없음, 순찰 계속"}}을 반환하세요.
+- 이 판단은 순찰 중 발견한 새로운 특이사항에 대한 대응입니다. 정상적인 순찰은 자동으로 처리됩니다.
+  별도의 대응이 필요하지 않으면 스킬을 실행하지 않도록
+  {{"skill": "none", "params": {{}}, "reason": "추가 행동 없음"}}을 반환하세요.
+- 기억된 순찰 장소가 없어 제자리 관찰 중이면 [사용 가능한 스킬]에 표시된 관찰·보고 스킬만 선택하세요. 이동, 탐험, 팔·그리퍼 동작을 계획하지 마세요.
 - 등록된 스킬만 사용하세요.
-- 이동이 필요하면 반드시 시맨틱 맵 등록 장소를 먼저 고르고, 없으면 RAG 위치 후보를 사용하며, 둘 다 없을 때만 '이동가능지점1' 같은 맵 자동 발굴 지점으로 이동하세요. 각 장소 옆의 "[N분/시간/일 전 방문]" 표기를 참고해 최근에 이미 다녀온 곳은 피하세요.
+- 이동이 필요하면 시맨틱 맵/RAG 및 과거에 저장된 맵 장소만 사용하세요. 새 좌표나 탐험 지점을 만들지 말고, 각 장소 옆의 "[N분/시간/일 전 방문]" 표기를 참고해 최근에 방문한 곳은 피하세요.
 - 과거 이력을 적극 활용하세요. 특히 [경고]로 표시된 반복 실패나 무효 결정이 있다면 동일한 장소/행동을 다시 선택하지 마세요.
 - 다음 경우 [주변의 다른 로봇 에이전트 목록]을 참고해 `delegate_task`(같은 ROS 네트워크) 또는 `call_peer_robot`(gRPC 원격)로 위임을 우선 고려하세요: (1) 자신의 역할/스킬 목록에 없는 작업(예: 자신에게 매니퓰레이션 스킬이 없는데 물건을 집어야 하는 경우)을 동료의 역할(role)이나 능력(capabilities)이 커버하는 경우, (2) 동료의 상태(캐시된 배터리/위치)가 확인되고 자신보다 목적지에 훨씬 가깝거나 배터리가 더 충분한 경우. 상태가 "상태 불명"인 동료에게는 위임 전에 `query_peer_status`로 먼저 확인하세요.
 - [동료와의 최근 대화]에 동료가 보낸 메시지가 있다면, 그 요청/지시/도움 요청에 대응하는 행동을 우선 고려하세요. 동료가 도움을 요청했고 자신이 처리할 수 있으면 해당 행동을, 처리할 수 없으면 `call_peer_robot`으로 다른 동료에게 재요청하거나 처리 불가를 알리세요.
@@ -292,7 +357,7 @@ class ValidateDecidedAction(BTNode):
         node = self._skill.node
         skill_name, params, from_queue = _peek_next_action(self._blackboard)
 
-        if not skill_name:
+        if not skill_name or skill_name == "none":
             return NodeStatus.SUCCESS
 
         reason = self._validate(node, skill_name, params)
@@ -311,19 +376,24 @@ class ValidateDecidedAction(BTNode):
             self._blackboard["decided_params"] = {}
         return NodeStatus.FAILURE
 
-    _DISALLOWED_AUTONOMOUS_SKILLS = frozenset({
-        "autonomous_act",
-        "reactive_navigate",
-        "autonomous_cooperate",
-        "stop_autonomous",
-        "emergency_stop",
-        "ros_command",
-        "run_script",
-    })
+    _DISALLOWED_AUTONOMOUS_SKILLS = frozenset(
+        set(_AUTONOMOUS_EXCLUDED_SKILLS)
+        | {"emergency_stop", "ros_command", "run_script"}
+    )
 
     def _validate(self, node: Any, skill_name: str, params: dict[str, Any]) -> str | None:
         if skill_name in self._DISALLOWED_AUTONOMOUS_SKILLS:
-            return f"자율 행동 내 재귀 실행 및 위험 스킬 차단 ({skill_name})"
+            return f"자율 행동 내 재귀·탐험·백그라운드 스킬 차단 ({skill_name})"
+
+        local_only = bool(self._blackboard.get("stationary_observation_only")) or (
+            self._blackboard.get("patrol_has_destination") is False
+        )
+        if local_only and skill_name not in _LOCAL_OBSERVATION_SKILLS:
+            return f"기억된 이동 목적지가 없어 제자리 관찰 스킬만 허용됩니다 ({skill_name})"
+        if local_only and skill_name == "describe_surroundings" and bool(
+            params.get("capture_4way", False)
+        ):
+            return "제자리 관찰 중에는 베이스 회전을 수반하는 capture_4way를 사용할 수 없습니다."
 
         skills = getattr(node, "_skills", None) if node else None
         if skills is None or not skills.has_skill(skill_name):
@@ -344,6 +414,24 @@ class ValidateDecidedAction(BTNode):
             if callable(validate_fn) and not validate_fn(params):
                 return f"파라미터 유효성 검증 실패 ({skill_name}: {params})"
 
+        side_effects = set(getattr(skill_obj, "side_effects", ()) or ())
+        if "base_motion" in side_effects:
+            if skill_name != "navigate_to":
+                return "자율 행동의 베이스 이동은 기억된 장소를 향한 navigate_to만 허용됩니다."
+            memory = getattr(node, "_memory", None)
+            if memory is None:
+                return "기억된 목적지를 확인할 메모리가 없습니다."
+            has_location_name = any(params.get(key) for key in _LOCATION_PARAM_KEYS)
+            has_x, has_y = params.get("x") is not None, params.get("y") is not None
+            if not has_location_name:
+                if not (has_x and has_y):
+                    return "navigate_to 목적지는 기억된 장소 이름 또는 기억 좌표여야 합니다."
+                if not _matches_remembered_coordinate(memory, params["x"], params["y"]):
+                    return "요청한 좌표가 기억된 순찰 장소와 일치하지 않습니다."
+                return None
+            if has_x != has_y or (has_x and not _matches_remembered_coordinate(memory, params["x"], params["y"])):
+                return "navigate_to 좌표가 기억된 장소 이름과 일치하지 않습니다."
+
         location_value = None
         for key in _LOCATION_PARAM_KEYS:
             value = params.get(key)
@@ -362,8 +450,13 @@ class ValidateDecidedAction(BTNode):
             _resolve_target_coordinates,
         )
 
-        if _resolve_target_coordinates(memory, location_value) is None:
+        resolved = _resolve_target_coordinates(memory, location_value)
+        if resolved is None:
             return f"목적지 '{location_value}'를 후보 목록에서 찾을 수 없음"
+        if "base_motion" in side_effects:
+            position = resolved.get("position", {}) if isinstance(resolved, dict) else {}
+            if not _matches_remembered_coordinate(memory, position.get("x"), position.get("y")):
+                return f"목적지 '{location_value}'가 기억된 순찰 장소가 아닙니다."
         return None
 
 
@@ -414,13 +507,9 @@ class GoalPlannerNode(BTNode):
             agent_lines.append(f"  - {name} (역할: {role}{caps_str})")
         agents_list_str = "\n".join(agent_lines) if agent_lines else "  - 없음"
 
-        available_skills = (
-            node._skills.list_skills() if hasattr(node._skills, "list_skills") else []
-        )
+        available_skills = _available_autonomous_skills(node)
         skill_list = "\n".join(
-            f"  - {s['name']}: {s['description']}"
-            for s in available_skills
-            if s["name"] not in ("autonomous_act", "stop_autonomous")
+            f"  - {s['name']}: {s.get('description', '')}" for s in available_skills
         )
 
         robot_soul = getattr(node, "_robot_soul", "")
@@ -452,7 +541,8 @@ class GoalPlannerNode(BTNode):
 
 [규칙]
 - 목표를 달성하기 위해 필요한 스킬을 순서대로 배치하세요.
-- 이동이 필요하면 시맨틱 맵 등록 장소를 먼저 사용하고, 없으면 RAG 위치 후보를 사용하세요.
+- autonomous_act는 탐험하지 않습니다. 미기억 목적지를 새로 탐색하거나 `explore`를 선택하지 마세요.
+- 이동이 필요하면 시맨틱 맵/RAG 및 과거에 저장된 장소 좌표만 사용하세요. 새 좌표를 만들거나 탐험하지 마세요.
 - 자신에게 없는 능력(예: 매니퓰레이션)이 필요한 단계는 동료에게 위임하세요.
   같은 ROS 네트워크면 `delegate_task`(agent_id, instruction), gRPC 원격이면
   `call_peer_robot`(peer_name, instruction)을 plan 단계로 배치하세요.

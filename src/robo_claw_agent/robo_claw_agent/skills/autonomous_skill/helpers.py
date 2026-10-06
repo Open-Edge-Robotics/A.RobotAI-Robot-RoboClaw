@@ -18,7 +18,13 @@ def _is_map_generated_place(obj: dict[str, Any]) -> bool:
 
 def _is_object_kind(obj: dict[str, Any]) -> bool:
     meta = obj.get("metadata", {}) if isinstance(obj, dict) else {}
-    return isinstance(meta, dict) and meta.get("kind") == "object"
+    if not isinstance(meta, dict):
+        return False
+    return (
+        meta.get("kind") in {"object", "blocked"}
+        or meta.get("type") in {"blocked_coordinate", "virtual_obstacle"}
+        or meta.get("source") in {"vlm", "scan_room", "mark_virtual_obstacle"}
+    )
 
 
 def _has_xy_position(obj: dict[str, Any]) -> bool:
@@ -106,7 +112,11 @@ def _extract_rag_location_candidates(memory: Any, limit: int = 5) -> list[dict[s
             continue
         if "x" not in meta or "y" not in meta:
             continue
-        if meta.get("type") == "blocked_coordinate" or meta.get("kind") == "blocked":
+        if (
+            meta.get("type") in {"blocked_coordinate", "virtual_obstacle"}
+            or meta.get("kind") in {"blocked", "object"}
+            or meta.get("source") in {"vlm", "scan_room", "mark_virtual_obstacle"}
+        ):
             continue
         try:
             x = float(meta["x"])

@@ -74,7 +74,7 @@
 | Map | `capture_map` | Public | action | 공통 | 현재 지도 이미지 캡처 |
 | Map | `find_reachable_places` | Public | action | 공통 | 도달 가능한 개방 공간 후보 계산 |
 | Map | `get_map_visual` | Public | action | 공통 | 현재 지도 시각화 및 전송 |
-| Autonomous | `autonomous_act` | Public | action | 공통 | BT 기반 자율 탐험·판단·행동 루프 |
+| Autonomous | `autonomous_act` | Public | action | 공통 | 기억된 좌표 순찰·제자리 관찰·판단 루프(프론티어 탐험 미수행) |
 | Autonomous | `condition_reactive` | Public | action | 공통 | 조건 감지 시 foreground 중단 및 후속 체인 실행 |
 | Autonomous | `explore` | Public | action | 공통 | 미탐사 영역 자율 탐험 |
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |

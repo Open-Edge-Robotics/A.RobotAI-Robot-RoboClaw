@@ -28,6 +28,7 @@ EXPECTED_INFORMATIONAL = frozenset(
         "list_topics",
         "get_location",
         "identify_location",
+        "list_cloid_motions",
         "rag_search",
         "rag_list",
         "rag_status",

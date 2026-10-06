@@ -1,5 +1,6 @@
 import logging
 import math
+import threading
 import time
 from typing import Any
 
@@ -38,6 +39,10 @@ class ScanRoomSkill(BaseSkill):
         "파라미터: step_deg(45), min_score(0.4), settle_sec(1.5). "
         "use_vision:=true 로 시스템이 기동된 경우에만 동작합니다."
     )
+
+    def __init__(self, cancel_event: threading.Event | None = None) -> None:
+        super().__init__()
+        self._cancel_event = cancel_event
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         if not globals._VISION_MSGS_AVAILABLE:
@@ -84,8 +89,13 @@ class ScanRoomSkill(BaseSkill):
 
         # 각 스텝 회전 시간 한도를 각도에 비례해 산출한다.
         step_allowance = _spin_time_allowance_sec(step_rad)
+        cancelled = False
 
         for step in range(steps):
+            if self._cancel_event is not None and not self._cancel_event.is_set():
+                cancelled = True
+                break
+
             ok, msg, goal_handle = _send_spin_goal(
                 self.node, step_rad, time_allowance_sec=step_allowance
             )
@@ -101,7 +111,14 @@ class ScanRoomSkill(BaseSkill):
                 logger.warning("[scan_room] step %d rotation failed: %s", step + 1, msg)
                 rotation_failures.append({"step": step + 1, "message": msg})
 
+            if self._cancel_event is not None and not self._cancel_event.is_set():
+                cancelled = True
+                break
+
             time.sleep(settle_sec)
+            if self._cancel_event is not None and not self._cancel_event.is_set():
+                cancelled = True
+                break
 
             det_msg = self.wait_for_message(
                 Detection2DArray,
@@ -109,6 +126,9 @@ class ScanRoomSkill(BaseSkill):
                 timeout_sec=2.0,
                 max_age_sec=2.0,
             )
+            if self._cancel_event is not None and not self._cancel_event.is_set():
+                cancelled = True
+                break
             if not det_msg:
                 logger.debug("[scan_room] step %d: no detection results", step + 1)
                 continue
@@ -180,8 +200,11 @@ class ScanRoomSkill(BaseSkill):
                                     "[scan_room] Map registration failed (%s): %s", class_name, exc
                                 )
 
-        success = not rotation_failures
-        result_msg = f"스캔 {'완료' if success else '부분 실패'}: {len(found)}개 객체 발견 — {', '.join(found.keys()) or '없음'}"
+        success = not rotation_failures and not cancelled
+        if cancelled:
+            result_msg = f"스캔 취소됨: {len(found)}개 객체를 확인했습니다."
+        else:
+            result_msg = f"스캔 {'완료' if success else '부분 실패'}: {len(found)}개 객체 발견 — {', '.join(found.keys()) or '없음'}"
         self.send_user_message(result_msg)
         logger.info("[scan_room] %s", result_msg)
 

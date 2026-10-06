@@ -12,16 +12,15 @@ from .actions import (
     EnsurePlacesRegistered,
     ExecuteDecidedAction,
     GoalPlannerNode,
-    InitializeMapStatus,
     LLMDecideAction,
+    LocalObservationNode,
     LogObservationNode,
     RefreshPeerStatusCache,
-    RunExploreOnce,
     SleepBetweenCycles,
     ValidateDecidedAction,
 )
 from .bt_runner import run_reactive_tick_loop, start_bt_thread, wire_blackboard
-from .conditions import CheckAutonomousActive, CheckBatterySufficient, CheckHasMap, CheckMapCoverage
+from .conditions import CheckAutonomousActive, CheckBatterySufficient
 from .core import BTNode, FallbackNode, NodeStatus, ParallelNode, SequenceNode
 from .globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
 from .navigation_nodes import ApproachObjectNode, ExploreNode, NavigateNode
@@ -328,10 +327,10 @@ class AutonomousActSkill(BaseSkill):
     terminal_behavior = "background"
     description = (
         "로봇이 스스로 상황을 판단하고 자율적으로 행동합니다. "
-        "mode='patrol'(기본): 지도가 부족하면 탐험하고, 등록된 장소를 순찰하며 장면을 분석해 "
-        "LLM이 다음 행동을 결정합니다. 팔 없는 로봇이 정리 필요 물체를 발견하면 동료 로봇에게 "
-        "위임을 유도합니다. "
-        "mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행합니다. "
+        "mode='patrol'(기본): 기억된 시맨틱 맵/RAG 장소만 순찰하고, 장소가 없으면 제자리에서 "
+        "주변을 관찰합니다. 자율 행동 중 프론티어 탐험은 하지 않습니다. 특이 장면에는 LLM이 대응하며, "
+        "필요한 능력이 없으면 동료 로봇에게 위임할 수 있습니다. "
+        "mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행하며, "
         "자신이 수행할 수 없는 단계는 동료에게 위임합니다. "
         "배터리 신호가 없거나 부족해도 기본적으로 체크만 수행하며 루프를 종료하지 않습니다. "
         "파라미터: mode(str, 'patrol'|'goal', 기본 'patrol'), "
@@ -339,11 +338,10 @@ class AutonomousActSkill(BaseSkill):
         "min_battery_pct(float, 기본 20.0), "
         "allow_unknown_battery(bool, 기본 True), "
         "check_only_battery(bool, 기본 True), "
-        "min_coverage_pct(float, 기본 40.0), "
-        "exploration_radius(float, 기본 3.0), "
         "cycle_interval_sec(float, 기본 3.0), "
-        "max_cycles(int, 기본 0=무제한), "
-        "has_map(bool, 기본 None=자동 판별). "
+        "max_cycles(int, 기본 0=무제한). "
+        "min_coverage_pct, exploration_radius, has_map은 호환성을 위해 수용하지만 사용하지 않습니다. "
+        "탐험은 별도 explore 스킬을 명시적으로 요청하세요. "
         "중단: stop_autonomous 스킬을 사용하세요."
     )
     input_schema = {
@@ -354,11 +352,26 @@ class AutonomousActSkill(BaseSkill):
             "min_battery_pct": {"type": "number", "default": 20.0},
             "allow_unknown_battery": {"type": "boolean", "default": True},
             "check_only_battery": {"type": "boolean", "default": True},
-            "min_coverage_pct": {"type": "number", "default": 40.0},
-            "exploration_radius": {"type": "number", "default": 3.0},
+            "min_coverage_pct": {
+                "type": "number",
+                "default": 40.0,
+                "deprecated": True,
+                "description": "호환성 전용이며 자율 순찰에서 사용하지 않습니다.",
+            },
+            "exploration_radius": {
+                "type": "number",
+                "default": 3.0,
+                "deprecated": True,
+                "description": "호환성 전용이며 자율 순찰에서 사용하지 않습니다.",
+            },
             "cycle_interval_sec": {"type": "number", "default": 3.0},
             "max_cycles": {"type": "integer", "default": 0},
-            "has_map": {"type": ["boolean", "null"], "default": None},
+            "has_map": {
+                "type": ["boolean", "null"],
+                "default": None,
+                "deprecated": True,
+                "description": "호환성 전용이며 자율 순찰에서 사용하지 않습니다.",
+            },
         },
         "additionalProperties": False,
     }
@@ -368,22 +381,17 @@ class AutonomousActSkill(BaseSkill):
         if self.node is None:
             return {"success": False, "message": "ROS 노드에 접근할 수 없습니다."}
 
-        if not claim_autonomous(_AUTONOMOUS_ACTIVE):
-            return {
-                "success": False,
-                "message": "이미 자율 행동이 실행 중입니다. stop_autonomous로 먼저 중단하세요.",
-            }
+        try:
+            min_battery = float(params.get("min_battery_pct", 20.0))
+            allow_unknown_bat = bool(params.get("allow_unknown_battery", True))
+            check_only_bat = bool(params.get("check_only_battery", True))
+            cycle_interval = float(params.get("cycle_interval_sec", 3.0))
+            max_cycles = int(params.get("max_cycles", 0))
+        except (TypeError, ValueError) as exc:
+            return {"success": False, "message": f"자율 행동 파라미터가 잘못되었습니다: {exc}"}
 
-        min_battery = float(params.get("min_battery_pct", 20.0))
-        allow_unknown_bat = bool(params.get("allow_unknown_battery", True))
-        check_only_bat = bool(params.get("check_only_battery", True))
-        min_coverage = float(params.get("min_coverage_pct", 40.0))
-        explore_radius = float(params.get("exploration_radius", 3.0))
-        cycle_interval = float(params.get("cycle_interval_sec", 3.0))
-        max_cycles = int(params.get("max_cycles", 0))
         mode = str(params.get("mode", "patrol")).lower().strip()
         goal = str(params.get("goal", "")).strip()
-
         if mode not in ("patrol", "goal"):
             return {
                 "success": False,
@@ -394,32 +402,32 @@ class AutonomousActSkill(BaseSkill):
                 "success": False,
                 "message": "mode='goal'일 때 goal 파라미터가 필요합니다.",
             }
+        if not 0.0 <= min_battery <= 100.0 or cycle_interval < 0.1 or max_cycles < 0:
+            return {
+                "success": False,
+                "message": "min_battery_pct는 0~100, cycle_interval_sec는 0.1 이상, max_cycles는 0 이상이어야 합니다.",
+            }
 
-        # has_map 파라미터 조회 (bool 또는 None)
-        has_map_param = params.get("has_map", None)
-        if has_map_param is not None:
-            if isinstance(has_map_param, str):
-                has_map_param = has_map_param.lower() in ("true", "1", "yes")
+        if not claim_autonomous(_AUTONOMOUS_ACTIVE):
+            return {
+                "success": False,
+                "message": "이미 자율 행동이 실행 중입니다. stop_autonomous로 먼저 중단하세요.",
+            }
+
+        try:
+            if mode == "goal":
+                _run_loop = self._build_goal_loop(
+                    goal, min_battery, cycle_interval, max_cycles, allow_unknown_bat, check_only_bat
+                )
             else:
-                has_map_param = bool(has_map_param)
-
-        if mode == "goal":
-            _run_goal_bt_loop = self._build_goal_loop(
-                goal, min_battery, cycle_interval, max_cycles, allow_unknown_bat, check_only_bat
-            )
-            start_bt_thread(_run_goal_bt_loop)
-        else:
-            _run_patrol_bt_loop = self._build_patrol_loop(
-                min_battery,
-                min_coverage,
-                explore_radius,
-                cycle_interval,
-                max_cycles,
-                has_map_param,
-                allow_unknown_bat,
-                check_only_bat,
-            )
-            start_bt_thread(_run_patrol_bt_loop)
+                _run_loop = self._build_patrol_loop(
+                    min_battery, cycle_interval, max_cycles, allow_unknown_bat, check_only_bat
+                )
+            start_bt_thread(_run_loop)
+        except Exception as exc:
+            release_autonomous()
+            logger.exception("[AutonomousAct] Failed to start background loop")
+            return {"success": False, "message": f"자율 행동을 시작하지 못했습니다: {exc}"}
 
         mode_desc = f"목표 지시형 모드 (목표: {goal})" if mode == "goal" else "순찰 관찰 모드"
         return {
@@ -436,21 +444,20 @@ class AutonomousActSkill(BaseSkill):
     def _build_patrol_loop(
         self,
         min_battery: float,
-        min_coverage: float,
-        explore_radius: float,
         cycle_interval: float,
         max_cycles: int,
-        has_map_param: Any,
         allow_unknown_battery: bool = True,
         check_only_battery: bool = True,
     ) -> Any:
-        """patrol 모드 BT 루프를 생성한다. 기존 자율 순찰 루프와 동일."""
+        """기억된 좌표 순찰과 장소 부재 시 제자리 관찰 루프를 생성한다."""
 
-        def _run_bt_loop() -> None:
+        def _run_bt_loop_impl() -> None:
             blackboard: dict[str, Any] = {
                 "cycle_count": 0,
                 "task_queue": [],
                 "task_history": [],
+                "patrol_has_destination": False,
+                "stationary_observation_only": True,
             }
 
             check_active = CheckAutonomousActive()
@@ -462,15 +469,10 @@ class AutonomousActSkill(BaseSkill):
             )
             emergency_bat = EmergencyLowBattery(self, check_only=check_only_battery)
 
-            init_map_status = InitializeMapStatus(self, has_map_param)
-            check_has_map = CheckHasMap()
-            check_coverage = CheckMapCoverage(self, min_coverage)
-            explore_once = RunExploreOnce(self, explore_radius)
-            ensure_map = FallbackNode("EnsureMapReady", [check_coverage, explore_once])
-            map_ready_gate = FallbackNode("MapReadyGate", [check_has_map, ensure_map])
             ensure_places = EnsurePlacesRegistered(self)
-
             patrol_next_place = PatrolNextPlaceNode(self)
+            local_observation = LocalObservationNode(self)
+            active_after_local_scan = CheckAutonomousActive()
             refresh_peer_status = RefreshPeerStatusCache(self)
             analyze_scene = AnalyzeCurrentScene(self)
             log_obs_node = LogObservationNode(self)
@@ -505,10 +507,10 @@ class AutonomousActSkill(BaseSkill):
             per_cycle_work = SequenceNode(
                 "PerCycleWork",
                 [
-                    init_map_status,
-                    map_ready_gate,
                     ensure_places,
                     patrol_next_place,
+                    local_observation,
+                    active_after_local_scan,
                     refresh_peer_status,
                     process_peer_messages,
                     analyze_scene,
@@ -522,14 +524,10 @@ class AutonomousActSkill(BaseSkill):
                 check_active,
                 check_battery,
                 emergency_bat,
-                init_map_status,
-                check_has_map,
-                check_coverage,
-                explore_once,
-                ensure_map,
-                map_ready_gate,
                 ensure_places,
                 patrol_next_place,
+                local_observation,
+                active_after_local_scan,
                 refresh_peer_status,
                 process_peer_messages,
                 analyze_scene,
@@ -555,7 +553,7 @@ class AutonomousActSkill(BaseSkill):
 
             logger.info("[AutonomousAct] BT loop started")
             self.send_user_message(
-                "자율 행동 모드를 시작합니다. 주변 환경을 탐색하고 스스로 행동합니다."
+                "자율 행동을 시작합니다. 기억된 장소를 순찰하고, 장소가 없으면 제자리에서 주변을 관찰합니다."
             )
 
             while _AUTONOMOUS_ACTIVE.is_set():
@@ -581,6 +579,12 @@ class AutonomousActSkill(BaseSkill):
             logger.info("[AutonomousAct] BT loop ended")
             self.send_user_message("자율 행동을 종료했습니다.")
 
+        def _run_bt_loop() -> None:
+            try:
+                _run_bt_loop_impl()
+            finally:
+                release_autonomous()
+
         return _run_bt_loop
 
     def _build_goal_loop(
@@ -594,7 +598,7 @@ class AutonomousActSkill(BaseSkill):
     ) -> Any:
         """goal 모드 BT 루프를 생성한다. 목표를 다단계 plan으로 분해 후 순차 실행."""
 
-        def _run_goal_loop() -> None:
+        def _run_goal_loop_impl() -> None:
             blackboard: dict[str, Any] = {
                 "cycle_count": 0,
                 "task_queue": [],
@@ -694,6 +698,12 @@ class AutonomousActSkill(BaseSkill):
             _AUTONOMOUS_ACTIVE.clear()
             logger.info("[AutonomousAct] goal-mode BT loop ended")
             self.send_user_message("자율 행동을 종료했습니다.")
+
+        def _run_goal_loop() -> None:
+            try:
+                _run_goal_loop_impl()
+            finally:
+                release_autonomous()
 
         return _run_goal_loop
 

@@ -102,6 +102,67 @@ class RunExploreOnce(BTNode):
         return NodeStatus.SUCCESS if success else NodeStatus.FAILURE
 
 
+class LocalObservationNode(BTNode):
+    """기억된 순찰 장소가 없을 때 제자리에서 4방향 관찰을 한 번 수행한다."""
+
+    def __init__(self, skill: BaseSkill, scan_factory: Any = None) -> None:
+        super().__init__("LocalObservationNode")
+        self._skill = skill
+        self._scan_factory = scan_factory
+
+    def tick(self) -> NodeStatus:
+        if self._blackboard.get("patrol_has_destination", False):
+            self._blackboard["stationary_observation_only"] = False
+            self._blackboard["stationary_scan_done"] = False
+            return NodeStatus.SUCCESS
+
+        self._blackboard["stationary_observation_only"] = True
+        if self._blackboard.get("stationary_scan_done", False):
+            return NodeStatus.SUCCESS
+
+        self._blackboard["stationary_scan_done"] = True
+        node = self._skill.node
+        if node is None:
+            return NodeStatus.SUCCESS
+
+        self._skill.send_user_message(
+            "기억된 순찰 장소가 없어 제자리에서 주변을 관찰합니다."
+        )
+        try:
+            from robo_claw_agent.agent_node.nav_safety import prepare_stretch_navigation
+
+            ready, reason = prepare_stretch_navigation(node)
+            if not ready:
+                self._blackboard["stationary_scan_result"] = {
+                    "success": False,
+                    "message": reason,
+                }
+                logger.warning("[BT] Stationary scan blocked by navigation safety: %s", reason)
+                return NodeStatus.SUCCESS
+
+            from robo_claw_agent.skills.perception_skill.scan import ScanRoomSkill
+
+            scanner = (
+                self._scan_factory(_AUTONOMOUS_ACTIVE)
+                if self._scan_factory is not None
+                else ScanRoomSkill(cancel_event=_AUTONOMOUS_ACTIVE)
+            )
+            scanner.set_node(node)
+            result = scanner.execute({"step_deg": 90.0, "settle_sec": 0.5})
+            self._blackboard["stationary_scan_result"] = result
+            if not result.get("success"):
+                logger.warning(
+                    "[BT] Stationary scan incomplete: %s", result.get("message", "unknown error")
+                )
+        except Exception as exc:
+            self._blackboard["stationary_scan_result"] = {
+                "success": False,
+                "message": str(exc),
+            }
+            logger.exception("[BT] Stationary scan failed")
+        return NodeStatus.SUCCESS
+
+
 class ExecuteDecidedAction(BTNode):
     """task_queue에서 꺼내거나 단일 decided_skill을 실행한다."""
 
@@ -127,6 +188,11 @@ class ExecuteDecidedAction(BTNode):
             params = self._blackboard.get("decided_params", {})
             reason = self._blackboard.get("decided_reason", "")
 
+        if skill_name == "none":
+            self._blackboard["last_action_result"] = {"noop": True}
+            self._blackboard["last_action_success"] = True
+            logger.info("[BT] No actionable response required: %s", reason)
+            return NodeStatus.SUCCESS
         if not skill_name:
             return NodeStatus.FAILURE
 
