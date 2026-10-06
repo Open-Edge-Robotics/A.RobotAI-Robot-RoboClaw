@@ -1,0 +1,29 @@
+robo_claw_core_node:
+  ros__parameters:
+    loop_rate_hz: 50.0
+    agent_id: "sim_agent"
+
+    # Jazzy (Gazebo Harmonic / TurtleBot 4) 설정
+
+    # 센서 목록
+    sensor_names:
+      - "lidar"
+      - "imu"
+      - "oakd_camera"
+
+    # 센서 토픽 매핑 (sensor_topics.<sensor_name>)
+    sensor_topics:
+      lidar: "/scan"
+      imu: "/imu"
+      oakd_camera: "/oakd/rgb/preview/image_raw"
+
+    # 제어 명령 매핑
+    # Jazzy TB4는 /cmd_vel 토픽을 TwistStamped로 받을 수 있음 (nav2_params_gz.yaml 참고)
+    cmd_vel_topic: "/cmd_vel"
+    odom_topic: "/odom"
+
+robo_claw_agent_node:
+  ros__parameters:
+    # 자가진단용 센서 토픽 (core_node sensor_topics와 일치)
+    lidar_topic: "/scan"
+    imu_topic: "/imu"

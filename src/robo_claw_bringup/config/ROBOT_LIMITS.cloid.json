@@ -1,0 +1,222 @@
+{
+  "navigation": {
+    "max_relative_distance_m": 5.0,
+    "max_rotation_deg": 180.0,
+    "note": "CLOiD 휴머노이드 모바일 베이스. 전역 프레임은 map, 로봇 베이스 프레임은 base_link, 오도메트리는 /odom 이다. Tofu 컨테이너의 diff_drive_controller 가 /cmd_vel 을 geometry_msgs/TwistStamped 로 구독하므로, robo_claw 의 직접 cmd_vel 제어(geometry_msgs/Twist)는 이 로봇에 적용되지 않는다. 베이스 이동·회전은 Nav2 action(navigate_to_pose, spin)을 사용한다. 2D LaserScan(/scan)을 발행하지 않으므로 라이다 기반 장애물 스킬은 사용할 수 없다."
+  },
+  "manipulation": {
+    "enabled": false,
+    "backend": "moveit",
+    "note": "CLOiD 는 7-DOF 양팔(left_arm_joint_1..7, right_arm_joint_1..7), 4-DOF waist, 2-DOF neck, 5지 omnihand 를 갖는다. RoboClaw 조작 백엔드는 아직 없으므로 manipulation_enabled=false 로 조작 계열 스킬을 차단한다. 아래 joint_limits 는 URDF(hmc_v2_hand) limit 값을 그대로 옮긴 raw(rad) 하드 한계이며, 조작 백엔드 구현 시 스킬 실행 직전 검증에 사용한다.",
+    "joint_limits": {
+      "waist_joint_1": [
+        -1.3963,
+        0.0524
+      ],
+      "waist_joint_2": [
+        -0.0524,
+        2.4435
+      ],
+      "waist_joint_3": [
+        -1.1519,
+        0.0087
+      ],
+      "waist_joint_4": [
+        -1.6581,
+        1.6581
+      ],
+      "neck_joint_1": [
+        -1.7453,
+        1.7453
+      ],
+      "neck_joint_2": [
+        -0.192,
+        0.28
+      ],
+      "left_arm_joint_1": [
+        -1.8326,
+        3.7525
+      ],
+      "left_arm_joint_2": [
+        -0.0436,
+        2.4435
+      ],
+      "left_arm_joint_3": [
+        -2.9671,
+        2.9671
+      ],
+      "left_arm_joint_4": [
+        -0.0873,
+        2.2689
+      ],
+      "left_arm_joint_5": [
+        -2.618,
+        2.618
+      ],
+      "left_arm_joint_6": [
+        -1.7453,
+        1.7453
+      ],
+      "left_arm_joint_7": [
+        -2.1293,
+        2.0246
+      ],
+      "right_arm_joint_1": [
+        -1.8326,
+        3.7525
+      ],
+      "right_arm_joint_2": [
+        -0.0436,
+        2.4435
+      ],
+      "right_arm_joint_3": [
+        -2.9671,
+        2.9671
+      ],
+      "right_arm_joint_4": [
+        -0.0873,
+        2.2689
+      ],
+      "right_arm_joint_5": [
+        -2.618,
+        2.618
+      ],
+      "right_arm_joint_6": [
+        -1.7453,
+        1.7453
+      ],
+      "right_arm_joint_7": [
+        -2.0246,
+        2.1293
+      ],
+      "left_index_abad_joint": [
+        0.0,
+        0.1641
+      ],
+      "left_index_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "left_index_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "left_middle_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "left_middle_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "left_pinky_abad_joint": [
+        -0.185,
+        0.0
+      ],
+      "left_pinky_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "left_pinky_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "left_ring_abad_joint": [
+        -0.1693,
+        0.0
+      ],
+      "left_ring_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "left_ring_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "left_thumb_abad_joint": [
+        -0.0454,
+        1.6424
+      ],
+      "left_thumb_dip_joint": [
+        -1.1345,
+        0.0
+      ],
+      "left_thumb_mcp_joint": [
+        -0.8416,
+        0.0
+      ],
+      "left_thumb_pip_joint": [
+        -1.1345,
+        0.0
+      ],
+      "left_thumb_roll_joint": [
+        -1.1214,
+        0.0297
+      ],
+      "right_index_abad_joint": [
+        -0.1641,
+        0.0
+      ],
+      "right_index_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "right_index_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "right_middle_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "right_middle_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "right_pinky_abad_joint": [
+        0.0,
+        0.185
+      ],
+      "right_pinky_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "right_pinky_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "right_ring_abad_joint": [
+        0.0,
+        0.1693
+      ],
+      "right_ring_dip_joint": [
+        0.0,
+        1.7541
+      ],
+      "right_ring_pip_joint": [
+        0.0,
+        1.4835
+      ],
+      "right_thumb_abad_joint": [
+        -1.6424,
+        0.0454
+      ],
+      "right_thumb_dip_joint": [
+        0.0,
+        1.1345
+      ],
+      "right_thumb_mcp_joint": [
+        0.0,
+        0.8416
+      ],
+      "right_thumb_pip_joint": [
+        0.0,
+        1.1345
+      ],
+      "right_thumb_roll_joint": [
+        -0.0297,
+        1.1214
+      ]
+    }
+  }
+}

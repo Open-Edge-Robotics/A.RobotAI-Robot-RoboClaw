@@ -1,0 +1,13 @@
+flowchart TD
+    A[./rc.sh sim] --> B[ROS_DISTRO 감지]
+    B --> C{배포판}
+    C -->|jazzy| D[Gazebo Harmonic + TurtleBot4]
+    C -->|humble| E[Gazebo Classic + TurtleBot3]
+    D --> F{옵션}
+    E --> F
+    F -->|--nav2| G[Nav2 활성화]
+    F -->|--slam| H[SLAM + Nav2 활성화]
+    F -->|기본| I[기본 시뮬레이션]
+    G --> J[Agent, Discovery, Channel 기동]
+    H --> J
+    I --> J

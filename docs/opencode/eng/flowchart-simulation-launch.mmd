@@ -1,0 +1,13 @@
+flowchart TD
+    A[./rc.sh sim] --> B[Detect ROS_DISTRO]
+    B --> C{Distribution}
+    C -->|jazzy| D[Gazebo Harmonic + TurtleBot4]
+    C -->|humble| E[Gazebo Classic + TurtleBot3]
+    D --> F{Options}
+    E --> F
+    F -->|--nav2| G[Enable Nav2]
+    F -->|--slam| H[Enable SLAM + Nav2]
+    F -->|default| I[Basic Simulation]
+    G --> J[Start Agent, Discovery, Channel]
+    H --> J
+    I --> J

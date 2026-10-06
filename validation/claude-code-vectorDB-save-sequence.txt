@@ -1,0 +1,143 @@
+qdrance vector db (http://10.159.172.74:6333/) 에 RAG에 의해 필요한 데이터를 저장하는데, 처음에 저장할 raw data 를 가공해서 vector db에 저장하는 전체과정을 설명해줘.                 
+
+● 좋은 질문이에요. 먼저 이 저장소에 실제로 어떤 RAG/Qdrant 관련 코드가 있는지 확인해서, 일반론이 아니라 이 프로젝트의 실제 파이프라인을 설명드릴게요.
+  
+● Explore(Find RAG/Qdrant ingestion code)
+  ⎿  Done (9 tool uses · 39.7k tokens · 1m 5s)
+  (ctrl+o to expand)
+
+● 결론부터 말씀드리면 — 이 저장소(roboclaw_config_server)에는 raw data를 가공해서 Qdrant에 저장하는 파이프라인 코드가 없습니다. 이 저장소는 그 파이프라인이 사용할 설정값만 
+  저장/편집/배포하는 config 서버예요. 실제 적재(ingestion) 코드는 다운스트림 roboclaw 에이전트 쪽(아까 cd 하려던 robo-claw/)에 있을 가능성이 큽니다.
+
+  먼저 이 저장소가 담당하는 부분과, 그 설정으로 실제 파이프라인이 어떻게 동작하는지 나눠서 설명드릴게요.
+
+  ---
+  1. 이 저장소가 실제로 하는 일 (설정 공급)
+  
+  database/db.go의 시드 설정에 Qdrant/임베딩 관련 기본값이 박혀 있습니다:
+
+  EnableRag:            true
+  LlmEmbeddingModel:    "text-embedding-3-small"
+  LlmEmbeddingProvider: "azure"
+  LlmEmbeddingBaseUrl:  "https://robot-open-ai.openai.azure.com/"
+  RagVectorBackend:     "qdrant"
+  QdrantUrl:            "http://10.159.172.74:6333"
+  QdrantCollection:     "robo_claw_sim_azure"
+  RagTopK:              2
+  RagScoreThreshold:    0.7
+
+  이 값들은 handler/config_files.go의 buildEnvContent가 .env 형태(QDRANT_URL, RC_LLM_EMBEDDING_MODEL, RC_QDRANT_COLLECTION …)로 내보내고, 실제 에이전트가 이 env를 읽어서 임베딩/적재를
+  수행합니다. 즉 이 서버는 "어떤 모델로, 어디에, 어느 컬렉션에 저장할지"를 정해주는 역할만 합니다.
+
+  또한 database/seeds/의 지식 파일들(ROBOT.md, SKILLS.*.md, TROUBLESHOOTING.md, ROBOT_LIMITS.json)이 이 서버 DB에 텍스트 원문 그대로 저장됩니다. 이게 RAG의 "raw data" 후보이지만,
+  여기서는 청킹/임베딩을 하지 않고 원문만 보관합니다.
+
+  ---
+  2. 그 설정으로 실제 파이프라인이 도는 전체 과정 (표준 흐름)
+
+  위 설정값 기준으로 raw data → Qdrant 저장까지는 이렇게 진행됩니다:
+
+  1. Raw data 수집 — ROBOT.md, SKILLS.*.md, TROUBLESHOOTING.md, ROBOT_LIMITS.json 등 문서/지식 원문을 가져옴 (config 서버 DB 또는 파일에서).
+  2. 로딩 & 정제(clean) — 마크다운/JSON을 파싱해 불필요한 마크업·중복·공백 제거, 메타데이터(문서 출처, 로봇 프로필 sim/former, 섹션 제목) 추출.
+  3. 청킹(chunking) — 긴 문서를 검색 단위로 분할. 보통 섹션/문단 기준 + 토큰 수 제한(예: 500~1000 토큰, 약간의 overlap). RagTopK=2라 검색 시 상위 2개 청크만 쓰므로, 청크가 너무 잘게
+  쪼개지지 않도록 하는 게 중요합니다.
+  4. 임베딩 생성 — 각 청크를 Azure OpenAI text-embedding-3-small(LlmEmbeddingBaseUrl)로 보내 벡터로 변환. text-embedding-3-small은 1536차원입니다.
+  5. Qdrant 컬렉션 준비 — http://10.159.172.74:6333에 robo_claw_sim_azure 컬렉션이 없으면 생성. 이때 size=1536, distance=Cosine(임베딩 모델 특성상 코사인이 표준)로 설정. ⚠️  이
+  차원/거리 설정은 이 저장소 어디에도 선언돼 있지 않으므로 에이전트 쪽 코드에서 확인해야 합니다.
+  6. Upsert(저장) — 청크마다 PointStruct { id, vector(1536), payload{ text, source, robot_profile, section, ... } }를 만들어 컬렉션에 upsert. payload에 원문 텍스트와 메타데이터를
+  넣어야 검색 후 LLM 컨텍스트로 되돌려줄 수 있습니다.
+  7. 검색(런타임) — 질의가 오면 같은 임베딩 모델로 질의를 벡터화 → Qdrant에서 top-K(RagTopK=2) 검색, RagScoreThreshold=0.7 미만 점수는 버림 → 남은 청크의 payload를 LLM 프롬프트에 주입.
+
+  ---
+  다음 단계 제안
+
+  4~6번(청킹/임베딩/Qdrant upsert)의 실제 구현 코드는 이 저장소에 없고 robo-claw 에이전트 쪽에 있을 것입니다. 원하시면 그 디렉터리를 알려주시거나 접근 가능하게 해주시면, 실제 청크
+  크기·거리 메트릭·컬렉션 생성 로직을 확인해서 위 설명을 이 프로젝트의 진짜 코드 기준으로 정확히 채워드릴게요.
+
+  어느 쪽을 볼까요?
+
+✻ Worked for 1m 55s
+
+! pwd                                                                                                                                                                                   
+  ⎿  /home/gusewan/workspace-roboclaw/roboclaw_config_server
+
+● /home/gusewan/workspace-roboclaw/roboclaw_config_server 확인됩니다. 대기 중이니 필요한 작업 알려주세요.
+
+✻ Sautéed for 3s
+
+! cd ~/workspace-roboclaw/robo-claw/                                                                                                                                                    
+  ⎿  (Bash completed with no output)
+  ⎿  Shell cwd was reset to /home/gusewan/workspace-roboclaw/roboclaw_config_server
+
+● robo-claw 디렉터리로 실제 파이프라인을 확인해보겠습니다. (Bash 도구는 cd가 유지되지 않으니 절대경로로 직접 탐색할게요.)
+
+  Listed 1 directory (ctrl+o to expand)
+
+● This is the actual agent project (Python/uv). Let me find the RAG ingestion code here.
+
+● Explore(Find RAG ingestion pipeline in robo-claw)
+  ⎿  Done (21 tool uses · 70.4k tokens · 2m 43s)
+  (ctrl+o to expand)
+
+● 실제 robo-claw 코드를 확인했습니다. 앞서 드린 "표준 흐름" 설명과 중요하게 다른 점이 하나 있어요. 정확히 정리해 드립니다.
+
+  핵심 반전: 정적 문서는 Qdrant로 안 갑니다
+
+  ROBOT.md, SKILLS.*.md, TROUBLESHOOTING.md, ROBOT_LIMITS.json 같은 지식 문서는 벡터 DB에 적재되지 않습니다. 이들은 LLM 시스템 프롬프트에 원문 그대로 주입됩니다
+  (agent_node/prompts.py:290-401, skills/limits.py:20).
+
+  Qdrant(http://10.159.172.74:6333)는 런타임에 로봇이 만들어내는 경험 데이터로만 채워집니다. 즉 "미리 문서를 청킹해서 인덱싱하는 배치 파이프라인"은 없고, 에이전트가 돌면서 동적으로
+  쌓는 구조예요.
+
+  Qdrant에 들어가는 raw data의 3가지 출처
+
+  1. 자동 경험 캡처 — 인지/주행/맵 스킬이 실행되며 관찰 결과를 저장 (perception_skill/scan.py, navigation_skill/navigate.py, map_skill/* 등이 add_knowledge 직접 호출). log_observation
+  스킬은 로봇 pose + 감지 객체를 저장하며 0.5m/0.95-score 중복 제거 (system_skill/rag.py:270-358).
+  2. 스킬 자가학습 — 성공/실패 교훈을 저장 (memory_manager/skill_learning.py:121,350).
+  3. 수동 추가 — rag_add(텍스트), rag_add_file(파일) 스킬 (system_skill/rag.py:86-151). 문서를 벡터 DB에 넣고 싶으면 이 경로를 써야 합니다.
+
+  전체 파이프라인 (실제 코드 기준)
+
+  ┌────────────────┬─────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │      단계      │                코드                 │                                                           내용                                                           │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1. 로딩        │ memory_manager/rag.py:94            │ Path.read_text(encoding="utf-8") (파일 경로일 때)                                                                        │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 2. 정제        │ rag.py:120,511                      │ 전체·청크별 .strip()만. 마크다운/JSON 구조 파싱 없음                                                                     │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 3. 청킹        │ rag.py:503-515                      │ 문자 기반 슬라이딩 윈도우 (토큰 아님). chunk_size=1000, overlap=100, step=900자                                          │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4. 임베딩      │ rag.py:35 →                         │ Azure text-embedding-3-small, 1536차원                                                                                   │
+  │                │ llm_bridge/azure.py:88-105          │                                                                                                                          │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5. 컬렉션 생성 │ vector_store/qdrant.py:369-377      │ 첫 upsert 시 lazy 생성. VectorParams(size=<차원>, distance=COSINE)                                                       │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 6.             │ qdrant.py:88-102                    │ PointStruct(id=uuid4, vector, payload={text, metadata, timestamp}), wait=True                                            │
+  │ 저장(upsert)   │                                     │                                                                                                                          │
+  ├────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 7. 검색        │ qdrant.py:115-210,                  │ 질의를 LLM이 키워드로 재작성 → 임베딩 → top_k=2, score_threshold=0.7, cosine. 실제로는 max(top_k*4, top_k+8)개           │
+  │                │ planner.py:145-181                  │ over-fetch 후 점수+최신성 재정렬해 top_k만 사용                                                                          │
+  └────────────────┴─────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  알아둘 특징 몇 가지
+
+  - 임베딩 차원은 하드코딩 안 됨. 시작 시 embed("robo_claw_rag_healthcheck") 프로브로 차원을 알아내 컬렉션을 그 크기로 만들고, 기존 컬렉션과 크기 불일치면 검증 실패
+  (agent_node/initialization.py:191-211, qdrant.py:381-389).
+  - 로컬 미러 이중화. rag_local_mirror가 켜지면 DualVectorStore가 Qdrant(주) + 로컬(미러)에 동시 기록하고 백그라운드 reconcile()로 동기화 (initialization.py:80-83,
+  vector_store/dual.py).
+  - http://10.159.172.74:6333는 소스에 하드코딩 아님 — QDRANT_URL env로 주입되며, 이 값이 바로 앞서 본 roboclaw_config_server가 내보내는 설정입니다. (.env.example의 기본값은
+  127.0.0.1:6333)
+  - 전체 재인덱싱은 rag_reindex 스킬 → reindex_knowledge(rag.py:292-400)가 저장된 전 항목을 재임베딩(batch)해 다시 upsert.
+  - 관찰 데이터 TTL 관리 — type=="observation" 항목은 만료되면 SQLite cold store(memory.cold.db)로 축출 (rag.py:402-501).
+
+  ---
+  정리하면: 이 시스템의 RAG는 "사전 문서 인덱싱"이 아니라 로봇 경험 기반 런타임 축적 방식입니다. 만약 원하시는 게 "특정 raw 문서들을 미리 벡터 DB에 넣는 배치 작업"이라면, 그런 전용
+  스크립트는 없고 rag_add_file 스킬 경로를 쓰거나 새로 만들어야 합니다.
+
+  특정 단계(예: 청킹 로직 개선, 배치 인덱싱 스크립트 작성, payload 스키마)를 더 깊이 보거나 수정하고 싶으시면 말씀해 주세요.
+
+✻ Cooked for 3m 31s
+
+※ recap: We explained how robo-claw ingests data into Qdrant: static docs go to the LLM prompt, while Qdrant is filled at runtime from robot experience and manual rag_add skills. Next,
+  tell me which part you want to explore or change. (disable recaps in /config)
+

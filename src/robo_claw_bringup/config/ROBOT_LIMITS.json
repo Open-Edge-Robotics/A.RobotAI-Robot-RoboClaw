@@ -1,0 +1,24 @@
+{
+  "navigation": {
+    "max_relative_distance_m": 5.0,
+    "max_rotation_deg": 180.0,
+    "forbidden_zones": [
+      {
+        "name": "stairs_zone",
+        "x_min": 1.5,
+        "x_max": 2.5,
+        "y_min": -1.0,
+        "y_max": 1.0,
+        "reason": "낙하 위험 구역 (Stairs)"
+      }
+    ]
+  },
+  "manipulation": {
+    "joint_limits_deg": {
+      "joint_1_base": [-150.0, 150.0],
+      "joint_2_shoulder": [-30.0, 90.0],
+      "joint_3_elbow": [-110.0, 110.0],
+      "joint_4_wrist": [-180.0, 180.0]
+    }
+  }
+}

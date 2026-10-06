@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cyclonedds.org/schema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cyclonedds.org/schema https://cyclonedds.org/schema/cyclonedds.xsd">
+    <Domain id="any">
+        <General>
+            <!-- <Interfaces> -->
+                <!-- 루프백 인터페이스 사용 -->
+                <!-- <NetworkInterface address="127.0.0.1"/> -->
+            <!-- </Interfaces> -->
+            <!-- 루프백 환경에서는 멀티캐스트를 명시적으로 끄고 유니캐스트 기반 검색 사용 -->
+            <AllowMulticast>true</AllowMulticast>
+            <MaxMessageSize>65500B</MaxMessageSize>
+            <FragmentSize>1300B</FragmentSize>
+        </General>
+
+        <Discovery>
+            <!-- 참가자 인덱스 범위를 크게 늘려 'Failed to find a free participant index' 해결 -->
+            <MaxAutoParticipantIndex>200</MaxAutoParticipantIndex>
+            <ParticipantIndex>auto</ParticipantIndex>
+        </Discovery>
+    </Domain>
+</CycloneDDS>

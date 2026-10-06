@@ -1,0 +1,5 @@
+# target_peers_json으로 설정된 동료 로봇(gRPC 피어) 목록과 연결 상태를 조회하기 위한 서비스
+---
+bool success
+robo_claw_msgs/PeerInfo[] peers
+string error_message

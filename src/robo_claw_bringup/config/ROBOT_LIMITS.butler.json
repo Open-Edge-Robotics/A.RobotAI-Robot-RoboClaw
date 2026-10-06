@@ -1,0 +1,30 @@
+{
+  "navigation": {
+    "max_relative_distance_m": 5.0,
+    "max_rotation_deg": 180.0,
+    "forbidden_zones": [
+      {
+        "name": "stairs_zone",
+        "x_min": 10.5,
+        "x_max": 12.5,
+        "y_min": -1.5,
+        "y_max": 1.5,
+        "reason": "낙하 위험 구역 (Stairs/Escalator)"
+      }
+    ],
+    "note": "Butler 모바일 베이스. cmd_vel 은 /cmd_vel, odometry 는 /odom 사용. AMCL/Lidar 기반 위치 추정."
+  },
+  "manipulation": {
+    "backend": "moveit",
+    "note": "Butler 는 Piper 7-DOF 매니퓰레이터 + gripper 를 가진다. 조작 전 드라이버(50_piper_node.sh)와 MoveIt(51_start_moveit.sh) 기동이 선행되어야 한다. 팔 제어는 run_butler_script 스킬 기반의 셸 스크립트와 MoveIt 모션 계획을 통해 수행된다.",
+    "joint_limits_deg": {
+      "joint1": [-150.0, 124.0],
+      "joint2": [0.0, 180.0],
+      "joint3": [-170.0, 0.0],
+      "joint4": [-100.0, 100.0],
+      "joint5": [-70.0, 70.0],
+      "joint6": [-120.0, 120.0],
+      "joint7_gripper": [0.0, 0.08]
+    }
+  }
+}

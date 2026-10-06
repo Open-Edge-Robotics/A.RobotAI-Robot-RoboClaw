@@ -1,0 +1,273 @@
+{
+  "name": "First-Use 시나리오 자동 검증 (RAG 위치 지식 개선 P1~P5)",
+  "description": "first-use-scenario-test-gemma4_31b.md 를 robo_claw_cli custom 러너용으로 자동화. 방식 A(navigate_to 좌표로 이동 후 현재 위치 저장). 핵심 판정: fail_keywords '[스킬' 로 내부 스킬 로그 누수(이번 버그)를 검출한다. 좌표 3곳(충전대/거실/키친)은 맵 w2_2f_2 기준 예시값이므로 실제 도달 가능 좌표로 수정할 것.",
+  "test_cases": [
+    {
+      "id": "tc00_ping",
+      "name": "0. 연결성 확인",
+      "step": "Phase 0",
+      "type": "ping",
+      "timeout_ms": 5000,
+      "enabled": true
+    },
+
+    {
+      "id": "tc01_nav_charger",
+      "name": "1. 충전대 지점으로 이동",
+      "step": "Phase 1 (충전대)",
+      "type": "custom",
+      "timeout_ms": 180000,
+      "enabled": true,
+      "params": {
+        "prompt": "x=3.96, y=0.83 으로 이동해",
+        "expect_success": true,
+        "expected_keywords": ["이동"],
+        "fail_keywords": ["실패", "[스킬"]
+      }
+    },
+    {
+      "id": "tc02_save_charger",
+      "name": "2. 현재 위치를 충전대로 기억",
+      "step": "Phase 1 (충전대)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "현재 위치를 충전대로 기억해",
+        "expect_success": true,
+        "expected_keywords": ["저장"],
+        "fail_keywords": ["실패"]
+      }
+    },
+    {
+      "id": "tc03_query_charger",
+      "name": "3. 충전대 위치 질의 (내부 로그 누수 검출)",
+      "step": "Phase 1 (충전대)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "충전대 위치를 알려줘",
+        "expect_success": true,
+        "expected_keywords": ["충전대"],
+        "fail_keywords": ["[스킬", "rag_search", "rag_add", "상황:", "이동 성공 좌표"]
+      }
+    },
+    {
+      "id": "tc04_query_charger_xy",
+      "name": "4. 충전대 좌표 질의",
+      "step": "Phase 1 (충전대)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "충전대 위치 좌표를 알려줘",
+        "expect_success": true,
+        "expected_keywords": ["충전대", "x"],
+        "fail_keywords": ["[스킬", "rag_search", "상황:", "이동 성공 좌표"]
+      }
+    },
+
+    {
+      "id": "tc05_nav_living",
+      "name": "5. 거실 지점으로 이동",
+      "step": "Phase 2 (거실)",
+      "type": "custom",
+      "timeout_ms": 180000,
+      "enabled": true,
+      "params": {
+        "prompt": "x=0.66, y=0.73 으로 이동해",
+        "expect_success": true,
+        "expected_keywords": ["이동"],
+        "fail_keywords": ["실패", "[스킬"]
+      }
+    },
+    {
+      "id": "tc06_save_living",
+      "name": "6. 현재 위치를 거실로 저장",
+      "step": "Phase 2 (거실)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "그 위치를 거실로 저장해",
+        "expect_success": true,
+        "expected_keywords": ["저장"],
+        "fail_keywords": ["실패"]
+      }
+    },
+    {
+      "id": "tc07_query_living",
+      "name": "7. 거실 위치 질의 (내부 로그 누수 검출)",
+      "step": "Phase 2 (거실)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "거실의 위치를 알려줘",
+        "expect_success": true,
+        "expected_keywords": ["거실"],
+        "fail_keywords": ["[스킬", "rag_search", "rag_add", "상황:", "이동 성공 좌표"]
+      }
+    },
+
+    {
+      "id": "tc08_nav_kitchen",
+      "name": "8. 키친 지점으로 이동",
+      "step": "Phase 3 (키친)",
+      "type": "custom",
+      "timeout_ms": 240000,
+      "enabled": true,
+      "params": {
+        "prompt": "x=-5.36, y=-1.25 로 이동해",
+        "expect_success": true,
+        "expected_keywords": ["이동"],
+        "fail_keywords": ["실패", "[스킬"]
+      }
+    },
+    {
+      "id": "tc09_save_kitchen",
+      "name": "9. 현재 위치를 키친으로 기억",
+      "step": "Phase 3 (키친)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "그 위치를 키친으로 기억해",
+        "expect_success": true,
+        "expected_keywords": ["저장"],
+        "fail_keywords": ["실패"]
+      }
+    },
+    {
+      "id": "tc10_query_kitchen",
+      "name": "10. 키친 위치 질의 (내부 로그 누수 검출)",
+      "step": "Phase 3 (키친)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "키친 위치를 알려줘",
+        "expect_success": true,
+        "expected_keywords": ["키친"],
+        "fail_keywords": ["[스킬", "rag_search", "rag_add", "상황:", "이동 성공 좌표"]
+      }
+    },
+
+    {
+      "id": "tc11_requery_charger",
+      "name": "11. 충전대 재질의 (회귀: 원본 Fail 12/24)",
+      "step": "Phase 4 (반복 질의 회귀)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "충전대 위치를 알려줘",
+        "expect_success": true,
+        "expected_keywords": ["충전대"],
+        "fail_keywords": ["[스킬", "rag_search", "상황:", "이동 성공 좌표"]
+      }
+    },
+    {
+      "id": "tc12_requery_charger_xy",
+      "name": "12. 충전대 좌표 재질의 (회귀: 원본 Fail 25)",
+      "step": "Phase 4 (반복 질의 회귀)",
+      "type": "custom",
+      "timeout_ms": 30000,
+      "enabled": true,
+      "params": {
+        "prompt": "충전대 위치 좌표를 알려줘",
+        "expect_success": true,
+        "expected_keywords": ["충전대", "x"],
+        "fail_keywords": ["[스킬", "rag_search", "상황:", "이동 성공 좌표"]
+      }
+    },
+
+    {
+      "id": "tc13_goto_charger",
+      "name": "13. 충전대로 이동 (이름 기반, 원본 Fail 22)",
+      "step": "Phase 5 (이름 기반 이동)",
+      "type": "custom",
+      "timeout_ms": 240000,
+      "enabled": true,
+      "params": {
+        "prompt": "충전대로 이동해",
+        "expect_success": true,
+        "expected_keywords": ["이동"],
+        "fail_keywords": ["[스킬", "rag_search", "상황:", "이동 성공 좌표"]
+      }
+    },
+    {
+      "id": "tc14_goto_living",
+      "name": "14. 거실로 이동 (이름 기반, 원본 Fail 14)",
+      "step": "Phase 5 (이름 기반 이동)",
+      "type": "custom",
+      "timeout_ms": 240000,
+      "enabled": true,
+      "params": {
+        "prompt": "거실로 이동해",
+        "expect_success": true,
+        "expected_keywords": ["이동"],
+        "fail_keywords": ["[스킬", "rag_search", "상황:", "이동 성공 좌표"]
+      }
+    },
+    {
+      "id": "tc15_goto_kitchen",
+      "name": "15. 키친으로 이동 (이름 기반)",
+      "step": "Phase 5 (이름 기반 이동)",
+      "type": "custom",
+      "timeout_ms": 240000,
+      "enabled": true,
+      "params": {
+        "prompt": "키친으로 이동해",
+        "expect_success": true,
+        "expected_keywords": ["이동"],
+        "fail_keywords": ["[스킬", "rag_search", "상황:", "이동 성공 좌표"]
+      }
+    },
+
+    {
+      "id": "tc16_whereami_name",
+      "name": "16. 현재 위치 이름 파악 (역방향 조회, 원본 Fail 17)",
+      "step": "Phase 6 (역방향 조회)",
+      "type": "custom",
+      "timeout_ms": 60000,
+      "enabled": true,
+      "params": {
+        "prompt": "현재 있는 위치의 이름이 뭐야?",
+        "expect_success": true,
+        "expected_keywords": ["키친"],
+        "fail_keywords": ["[스킬", "사무실", "추정", "estimated_place", "location_analysis"]
+      }
+    },
+    {
+      "id": "tc17_whereami_compare",
+      "name": "17. 좌표 비교로 위치명 파악 (역방향 조회, 원본 Fail 18)",
+      "step": "Phase 6 (역방향 조회)",
+      "type": "custom",
+      "timeout_ms": 60000,
+      "enabled": true,
+      "params": {
+        "prompt": "현재 위치 x, y 좌표와 비교해서 현재 위치의 이름을 파악해봐",
+        "expect_success": true,
+        "expected_keywords": ["키친"],
+        "fail_keywords": ["[스킬", "get_status", "상황:"]
+      }
+    },
+
+    {
+      "id": "tc18_goto_living_en",
+      "name": "18. go to living room (교차언어 — 알려진 한계, 기본 SKIP)",
+      "step": "Phase 7 (교차언어 / 알려진 한계)",
+      "type": "custom",
+      "timeout_ms": 240000,
+      "enabled": false,
+      "params": {
+        "prompt": "go to living room",
+        "expect_success": true,
+        "expected_keywords": ["거실"],
+        "fail_keywords": ["[스킬", "rag_search"]
+      }
+    }
+  ]
+}

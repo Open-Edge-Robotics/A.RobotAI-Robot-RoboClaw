@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""robo_claw_channel 메신저 클라이언트 노드 진입점"""
+
+import sys
+from robo_claw_channel.client_node import main
+
+if __name__ == "__main__":
+    main()

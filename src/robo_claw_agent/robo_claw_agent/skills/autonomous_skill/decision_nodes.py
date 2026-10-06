@@ -1,0 +1,519 @@
+import json
+import logging
+import re
+from typing import Any
+
+from robo_claw_agent.skill_manager import BaseSkill
+
+from .core import BTNode, NodeStatus
+from .helpers import (
+    _discover_peer_agents,
+    _extract_rag_location_candidates,
+    _find_peer_with_capability,
+    _format_place,
+    _has_manipulation_capability,
+    _self_capabilities,
+    _split_semantic_places,
+)
+
+logger = logging.getLogger(__name__)
+
+_LOCATION_PARAM_KEYS = ("target_name", "target_location")
+
+
+def _peek_next_action(blackboard: dict[str, Any]) -> tuple[str, dict[str, Any], bool]:
+    task_queue = blackboard.get("task_queue", [])
+    if task_queue:
+        step = task_queue[0]
+        return step.get("skill", ""), step.get("params", {}) or {}, True
+    return blackboard.get("decided_skill", ""), blackboard.get("decided_params", {}) or {}, False
+
+
+class LLMDecideAction(BTNode):
+    """LLM에게 현재 상황을 주고 다음 행동(단일 또는 다단계 계획)을 결정받는다."""
+
+    def __init__(self, skill: BaseSkill) -> None:
+        super().__init__("LLMDecideAction")
+        self._skill = skill
+
+    def tick(self) -> NodeStatus:
+        node = self._skill.node
+        if not node or not getattr(node, "_llm", None):
+            return NodeStatus.FAILURE
+
+        if self._blackboard.get("task_queue"):
+            return NodeStatus.SUCCESS
+
+        scene = self._blackboard.get("scene_analysis", "장면 분석 정보 없음")
+        objects = self._blackboard.get("detected_objects", [])
+        coverage = self._blackboard.get("current_map_coverage", "알 수 없음")
+        cycle = self._blackboard.get("cycle_count", 0)
+
+        history_str = ""
+        task_history = self._blackboard.get("task_history", [])
+        if task_history:
+            history_str = "\n".join(
+                f"  - [사이클 {h['cycle']}] {h['decided_skill']}({h['decided_params']}) -> {'성공' if h['success'] else '실패'} (이유: {h['decided_reason']})"
+                for h in task_history[-5:]
+            )
+        else:
+            history_str = "  - 없음 (자율 행동 시작 단계)"
+
+        invalid_reason = self._blackboard.pop("decision_invalid_reason", "")
+        if invalid_reason:
+            history_str += f"\n  - [경고] 직전 결정이 무효하여 실행하지 않고 폐기됨: {invalid_reason}"
+
+        if self._blackboard.get("repeat_failure_count", 0) >= 2:
+            history_str += (
+                f"\n  - [경고] 동일한 (스킬, 목적지) 조합이 "
+                f"{self._blackboard['repeat_failure_count']}회 연속 실패했습니다. "
+                "반드시 다른 장소나 다른 행동을 선택하세요."
+            )
+
+        semantic_places_str = "  • 없음"
+        rag_places_str = "  • 없음"
+        map_generated_places_str = "  • 없음"
+        if hasattr(node, "_memory"):
+            try:
+                all_objs = node._memory.get_all_objects()
+                semantic_places, map_generated_places = _split_semantic_places(all_objs)
+                if semantic_places:
+                    semantic_places_str = "\n".join(_format_place(obj) for obj in semantic_places)
+                rag_candidates = _extract_rag_location_candidates(node._memory, limit=5)
+                if rag_candidates:
+                    rag_places_str = "\n".join(_format_place(obj) for obj in rag_candidates)
+                if map_generated_places:
+                    map_generated_places_str = "\n".join(
+                        _format_place(obj) for obj in map_generated_places
+                    )
+            except Exception as e:
+                logger.warning("[BT] Failed to query location: %s", e)
+                semantic_places_str = "  • 조회 실패"
+        else:
+            semantic_places_str = "  • 미지원"
+
+        robot_pose_str = "알 수 없음"
+        try:
+            pose = self._skill.get_map_pose()
+            if pose:
+                robot_pose_str = f"x={pose['x']:.2f}, y={pose['y']:.2f}"
+        except Exception:
+            pass
+
+        other_agents = _discover_peer_agents(node)
+        peer_status_cache = self._blackboard.get("peer_status_cache", {})
+
+        agent_lines = []
+        for name, info in other_agents.items():
+            role = info.get("role") or "역할 미지정"
+            desc = info.get("description") or "설명 없음"
+            caps = info.get("capabilities") or []
+            caps_str = f", 능력: {', '.join(caps)}" if caps else ""
+            status_entry = peer_status_cache.get(name)
+            status_str = f", 상태: {status_entry['summary']}" if status_entry else ""
+            agent_lines.append(f"  - {name} (역할: {role}{caps_str}): {desc}{status_str}")
+        agents_list_str = "\n".join(agent_lines) if agent_lines else "  - 없음"
+
+        # 자율협동 — 동료와의 최근 대화 컨텍스트 주입
+        peer_conversation_ctx = ""
+        try:
+            from robo_claw_agent.skills.cooperation_skill.bt_nodes import (
+                build_peer_conversation_context,
+            )
+
+            peer_conversation_ctx = build_peer_conversation_context(self._blackboard)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[BT] Peer conversation context unavailable (ignored): %s", exc)
+
+        available_skills = (
+            node._skills.list_skills() if hasattr(node._skills, "list_skills") else []
+        )
+        skill_list = "\n".join(
+            f"  - {s['name']}: {s['description']}"
+            for s in available_skills
+            if s["name"] not in ("autonomous_act", "stop_autonomous")
+        )
+
+        rag_context = ""
+        if (
+            hasattr(node, "_memory")
+            and node._memory.rag_status().get("enabled")
+            and scene != "장면 분석 정보 없음"
+        ):
+            try:
+                query_parts = []
+                if objects:
+                    query_parts.append(f"감지 객체: {', '.join(objects)}")
+                if scene:
+                    query_parts.append(f"장면: {scene[:200]}")
+                query_str = ". ".join(query_parts) if query_parts else "상황 묘사 없음"
+
+                hits = node._memory.search_knowledge(query_str, top_k=3)
+                if hits:
+                    entries = "\n".join(f"  • {h['text']}" for h in hits)
+                    rag_context = f"\n[과거 관련 관찰]\n{entries}\n"
+                    logger.debug("[BT] Injected %d RAG search results", len(hits))
+            except Exception as exc:
+                logger.debug("[BT] RAG search failed (ignored): %s", exc)
+
+        robot_soul = getattr(node, "_robot_soul", "")
+        soul_prefix = f"{robot_soul}\n\n---\n\n" if robot_soul else ""
+
+        self_caps = _self_capabilities(node)
+        self_caps_str = ", ".join(self_caps) if self_caps else "없음"
+        delegate_force_hint = ""
+        if not _has_manipulation_capability(node):
+            manipulation_peer = _find_peer_with_capability(node, "manipulation")
+            if manipulation_peer:
+                delegate_force_hint = (
+                    f"\n- [위임 필수] 당신에게 매니퓰레이션(파지/배치) 능력이 없습니다. "
+                    f"쓰레기/컵/물체 줍기 등 파지가 필요한 행동은 반드시 동료 "
+                    f"'{manipulation_peer}'에게 `delegate_task` 또는 `call_peer_robot`로 위임하세요. "
+                    "직접 grasp/place를 시도하지 마세요."
+                )
+            else:
+                delegate_force_hint = (
+                    "\n- [주의] 당신에게 매니퓰레이션 능력이 없으며, 매니퓰레이션 가능 동료도 "
+                    "현재 발견되지 않았습니다. 파지가 필요한 물체를 발견한 경우, "
+                    "`query_peer_status`로 동료 상태를 확인하거나 사용자에게 보고하세요."
+                )
+
+        system_prompt = f"""{soul_prefix}당신은 자율 행동 중인 로봇 에이전트입니다.
+현재까지 수집한 정보를 바탕으로 다음에 실행할 행동을 결정하세요.
+
+[사용 가능한 스킬]
+{skill_list}
+{rag_context}
+
+[이동 후보 우선순위]
+1. 시맨틱 맵 등록 장소: 직접 등록되었거나 관찰로 의미가 붙은 장소입니다. 이동할 때 최우선으로 사용하세요.
+{semantic_places_str}
+
+2. RAG 위치 후보: 시맨틱 맵에 적절한 장소가 없을 때만 사용하세요.
+{rag_places_str}
+
+3. 맵 자동 발굴 지점: 의미 정보가 없는 단순 이동 가능 좌표입니다. 시맨틱 맵과 RAG 후보가 모두 없을 때만 최후순위로 사용하세요.
+{map_generated_places_str}
+
+[과거 행동 실행 이력 (최근 5사이클)]
+{history_str}
+
+[주변의 다른 로봇 에이전트 목록]
+{agents_list_str}
+
+[동료와의 최근 대화]
+{peer_conversation_ctx}
+
+[자신의 능력]
+{self_caps_str}
+{delegate_force_hint}
+
+[응답 형식 — 반드시 JSON만 출력]
+
+단일 행동:
+{{"skill": "<스킬명>", "params": {{}}, "reason": "<판단 근거>"}}
+
+다단계 계획 (쓰레기 줍기, 정리 등 여러 단계가 필요한 경우):
+{{"plan": [
+  {{"skill": "<스킬명>", "params": {{}}}},
+  {{"skill": "<스킬명>", "params": {{}}}}
+], "reason": "<판단 근거>"}}
+
+[규칙]
+- 이 판단은 순찰 중 발견한 특이사항에 대한 대응입니다. 정상적인 이동/순찰 자체는 이미
+  자동으로 처리되고 있으니, 여기서는 방금 발견한 특이사항(쓰레기, 어질러진 물건, 사람 등)에
+  대한 행동만 결정하세요. 별다른 특이사항이 없다면 {{"skill": "get_status", "params": {{}}, "reason": "특이사항 없음, 순찰 계속"}}을 반환하세요.
+- 등록된 스킬만 사용하세요.
+- 이동이 필요하면 반드시 시맨틱 맵 등록 장소를 먼저 고르고, 없으면 RAG 위치 후보를 사용하며, 둘 다 없을 때만 '이동가능지점1' 같은 맵 자동 발굴 지점으로 이동하세요. 각 장소 옆의 "[N분/시간/일 전 방문]" 표기를 참고해 최근에 이미 다녀온 곳은 피하세요.
+- 과거 이력을 적극 활용하세요. 특히 [경고]로 표시된 반복 실패나 무효 결정이 있다면 동일한 장소/행동을 다시 선택하지 마세요.
+- 다음 경우 [주변의 다른 로봇 에이전트 목록]을 참고해 `delegate_task`(같은 ROS 네트워크) 또는 `call_peer_robot`(gRPC 원격)로 위임을 우선 고려하세요: (1) 자신의 역할/스킬 목록에 없는 작업(예: 자신에게 매니퓰레이션 스킬이 없는데 물건을 집어야 하는 경우)을 동료의 역할(role)이나 능력(capabilities)이 커버하는 경우, (2) 동료의 상태(캐시된 배터리/위치)가 확인되고 자신보다 목적지에 훨씬 가깝거나 배터리가 더 충분한 경우. 상태가 "상태 불명"인 동료에게는 위임 전에 `query_peer_status`로 먼저 확인하세요.
+- [동료와의 최근 대화]에 동료가 보낸 메시지가 있다면, 그 요청/지시/도움 요청에 대응하는 행동을 우선 고려하세요. 동료가 도움을 요청했고 자신이 처리할 수 있으면 해당 행동을, 처리할 수 없으면 `call_peer_robot`으로 다른 동료에게 재요청하거나 처리 불가를 알리세요.
+- 쓰레기 줍기나 정리처럼 여러 단계가 필요하면 plan 형식을 사용하세요.
+- JSON 외의 텍스트를 출력하지 마세요.
+"""
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    f"[사이클 {cycle}] 현재 상황:\n"
+                    f"- 현재 로봇 위치: {robot_pose_str}\n"
+                    f"- 지도 탐사율: {coverage}%\n"
+                    f"- 감지된 객체: {', '.join(objects) if objects else '없음'}\n"
+                    f"- 장면 분석: {scene[:500]}\n\n"
+                    "과거 실행 이력, 장소 목록 및 협업 가능한 다른 에이전트들을 고려하여, 다음에 할 행동을 판단해서 결정해주세요."
+                ),
+            }
+        ]
+
+        try:
+            response = node._llm.chat(messages, system_prompt=system_prompt)
+            clean = re.sub(r"```(?:json)?\s*\n?", "", response).strip()
+            from robo_claw_agent.agent_node.utils import _extract_first_json_object
+
+            json_str = _extract_first_json_object(clean)
+            if "{" not in json_str:
+                raise ValueError("JSON 객체를 찾을 수 없음")
+            decision = json.loads(json_str)
+
+            if "plan" in decision:
+                plan: list[dict[str, Any]] = decision["plan"]
+                self._blackboard["task_queue"] = plan
+                self._blackboard["decided_skill"] = ""
+                self._blackboard["decided_params"] = {}
+                self._blackboard["decided_reason"] = decision.get("reason", "")
+                logger.info(
+                    "[BT] LLM multi-step plan: %d steps (%s)",
+                    len(plan),
+                    decision.get("reason", ""),
+                )
+            else:
+                self._blackboard["decided_skill"] = decision.get("skill", "")
+                self._blackboard["decided_params"] = decision.get("params", {})
+                self._blackboard["decided_reason"] = decision.get("reason", "")
+                logger.info(
+                    "[BT] LLM single decision: skill=%s, reason=%s",
+                    decision.get("skill"),
+                    decision.get("reason"),
+                )
+            return NodeStatus.SUCCESS
+        except Exception as exc:
+            logger.error("[BT] LLM decision failed: %s", exc)
+            return NodeStatus.FAILURE
+
+
+class ValidateDecidedAction(BTNode):
+    """LLM이 결정한 다음 행동(스킬/목적지)이 실행 가능한지 실행 전에 검증한다."""
+
+    def __init__(self, skill: BaseSkill) -> None:
+        super().__init__("ValidateDecidedAction")
+        self._skill = skill
+
+    def tick(self) -> NodeStatus:
+        node = self._skill.node
+        skill_name, params, from_queue = _peek_next_action(self._blackboard)
+
+        if not skill_name:
+            return NodeStatus.SUCCESS
+
+        reason = self._validate(node, skill_name, params)
+        if reason is None:
+            return NodeStatus.SUCCESS
+
+        logger.warning("[BT] Discarding invalid decision: %s(%s) — %s", skill_name, params, reason)
+        self._blackboard["decision_invalid_reason"] = f"{skill_name}({params}): {reason}"
+        if from_queue:
+            task_queue: list[dict[str, Any]] = self._blackboard.get("task_queue", [])
+            if task_queue:
+                task_queue.pop(0)
+            self._blackboard["task_queue"] = task_queue
+        else:
+            self._blackboard["decided_skill"] = ""
+            self._blackboard["decided_params"] = {}
+        return NodeStatus.FAILURE
+
+    _DISALLOWED_AUTONOMOUS_SKILLS = frozenset({
+        "autonomous_act",
+        "reactive_navigate",
+        "autonomous_cooperate",
+        "stop_autonomous",
+        "emergency_stop",
+        "ros_command",
+        "run_script",
+    })
+
+    def _validate(self, node: Any, skill_name: str, params: dict[str, Any]) -> str | None:
+        if skill_name in self._DISALLOWED_AUTONOMOUS_SKILLS:
+            return f"자율 행동 내 재귀 실행 및 위험 스킬 차단 ({skill_name})"
+
+        skills = getattr(node, "_skills", None) if node else None
+        if skills is None or not skills.has_skill(skill_name):
+            return "등록되지 않은 스킬"
+
+        skill_obj = getattr(skills, "get_skill", lambda name: None)(skill_name)
+        if skill_obj is not None:
+            if getattr(skill_obj, "terminal_behavior", None) == "background":
+                return f"백그라운드 스킬은 자율 계획 내 직접 실행 금지 ({skill_name})"
+            schema_fn = getattr(skill_obj, "validate_input_schema", None)
+            if callable(schema_fn):
+                schema_result = schema_fn(params)
+                if isinstance(schema_result, tuple) and len(schema_result) == 2:
+                    schema_valid, schema_error = schema_result
+                    if not schema_valid:
+                        return f"파라미터 스키마 검증 실패 ({skill_name}: {schema_error})"
+            validate_fn = getattr(skill_obj, "validate_params", None)
+            if callable(validate_fn) and not validate_fn(params):
+                return f"파라미터 유효성 검증 실패 ({skill_name}: {params})"
+
+        location_value = None
+        for key in _LOCATION_PARAM_KEYS:
+            value = params.get(key)
+            if value:
+                location_value = str(value)
+                break
+        if location_value is None:
+            return None
+        if params.get("x") is not None and params.get("y") is not None:
+            return None
+
+        memory = getattr(node, "_memory", None)
+        if memory is None:
+            return None
+        from robo_claw_agent.skills.navigation_skill.core import (
+            _resolve_target_coordinates,
+        )
+
+        if _resolve_target_coordinates(memory, location_value) is None:
+            return f"목적지 '{location_value}'를 후보 목록에서 찾을 수 없음"
+        return None
+
+
+class GoalPlannerNode(BTNode):
+    """목표 지시형 자율행동 모드에서 LLM이 주어진 goal을 다단계 plan으로 분해한다."""
+
+    def __init__(self, skill: BaseSkill, goal: str) -> None:
+        super().__init__("GoalPlannerNode")
+        self._skill = skill
+        self._goal = goal
+
+    def tick(self) -> NodeStatus:
+        node = self._skill.node
+        if not node or not getattr(node, "_llm", None):
+            logger.error("[BT] GoalPlannerNode: no LLM available")
+            return NodeStatus.FAILURE
+
+        if self._blackboard.get("task_queue"):
+            return NodeStatus.SUCCESS
+
+        goal = self._goal or str(self._blackboard.get("goal", ""))
+        if not goal:
+            logger.warning("[BT] GoalPlannerNode: no goal specified")
+            return NodeStatus.FAILURE
+
+        semantic_places_str = "  • 없음"
+        rag_places_str = "  • 없음"
+        if hasattr(node, "_memory"):
+            try:
+                all_objs = node._memory.get_all_objects()
+                semantic_places, _map_generated = _split_semantic_places(all_objs)
+                if semantic_places:
+                    semantic_places_str = "\n".join(_format_place(obj) for obj in semantic_places)
+                rag_candidates = _extract_rag_location_candidates(node._memory, limit=5)
+                if rag_candidates:
+                    rag_places_str = "\n".join(_format_place(obj) for obj in rag_candidates)
+            except Exception as e:
+                logger.warning("[BT] GoalPlannerNode: failed to query locations: %s", e)
+
+        self_caps = _self_capabilities(node)
+        self_caps_str = ", ".join(self_caps) if self_caps else "없음"
+        other_agents = _discover_peer_agents(node)
+        agent_lines = []
+        for name, info in other_agents.items():
+            role = info.get("role") or "역할 미지정"
+            caps = info.get("capabilities") or []
+            caps_str = f", 능력: {', '.join(caps)}" if caps else ""
+            agent_lines.append(f"  - {name} (역할: {role}{caps_str})")
+        agents_list_str = "\n".join(agent_lines) if agent_lines else "  - 없음"
+
+        available_skills = (
+            node._skills.list_skills() if hasattr(node._skills, "list_skills") else []
+        )
+        skill_list = "\n".join(
+            f"  - {s['name']}: {s['description']}"
+            for s in available_skills
+            if s["name"] not in ("autonomous_act", "stop_autonomous")
+        )
+
+        robot_soul = getattr(node, "_robot_soul", "")
+        soul_prefix = f"{robot_soul}\n\n---\n\n" if robot_soul else ""
+
+        system_prompt = f"""{soul_prefix}당신은 목표 지시형 자율 행동 모드의 로봇 에이전트입니다.
+주어진 목표를 달성하기 위해 실행 가능한 다단계 계획을 수립하세요.
+
+[사용 가능한 스킬]
+{skill_list}
+
+[이동 후보]
+1. 시맨틱 맵 등록 장소:
+{semantic_places_str}
+2. RAG 위치 후보:
+{rag_places_str}
+
+[주변의 다른 로봇 에이전트 목록]
+{agents_list_str}
+
+[자신의 능력]
+{self_caps_str}
+
+[응답 형식 — 반드시 JSON만 출력]
+{{"plan": [
+  {{"skill": "<스킬명>", "params": {{}}, "reason": "<이 단계의 목적>"}},
+  ...
+], "goal_achieved": <true|false>}}
+
+[규칙]
+- 목표를 달성하기 위해 필요한 스킬을 순서대로 배치하세요.
+- 이동이 필요하면 시맨틱 맵 등록 장소를 먼저 사용하고, 없으면 RAG 위치 후보를 사용하세요.
+- 자신에게 없는 능력(예: 매니퓰레이션)이 필요한 단계는 동료에게 위임하세요.
+  같은 ROS 네트워크면 `delegate_task`(agent_id, instruction), gRPC 원격이면
+  `call_peer_robot`(peer_name, instruction)을 plan 단계로 배치하세요.
+- 각 단계는 이전 단계의 결과를 전제로 작성하세요.
+- 목표가 이미 달성된 상태라면 빈 plan과 goal_achieved=true를 반환하세요.
+- JSON 외의 텍스트를 출력하지 마세요.
+"""
+        messages = [
+            {
+                "role": "user",
+                "content": f"목표: {goal}\n\n이 목표를 달성하기 위한 실행 계획을 수립해주세요.",
+            }
+        ]
+
+        try:
+            response = node._llm.chat(messages, system_prompt=system_prompt)
+            clean = re.sub(r"```(?:json)?\s*\n?", "", response).strip()
+            from robo_claw_agent.agent_node.utils import _extract_first_json_object
+
+            json_str = _extract_first_json_object(clean)
+            if "{" not in json_str:
+                raise ValueError("JSON 객체를 찾을 수 없음")
+            decision = json.loads(json_str)
+
+            plan: list[dict[str, Any]] = decision.get("plan", [])
+            goal_achieved = decision.get("goal_achieved", False)
+
+            if goal_achieved:
+                logger.info("[BT] GoalPlannerNode: goal already achieved or empty plan")
+                self._blackboard["goal_achieved"] = True
+                self._blackboard["task_queue"] = []
+                return NodeStatus.SUCCESS
+            if not plan:
+                self._blackboard["goal_achieved"] = False
+                planning_failures = self._blackboard.get("planning_failure_count", 0) + 1
+                self._blackboard["planning_failure_count"] = planning_failures
+                self._blackboard["planning_failure_reason"] = (
+                    "planner returned an empty plan without explicit goal_achieved"
+                )
+                logger.warning(
+                    "[BT] GoalPlannerNode: empty plan did not prove goal completion "
+                    "(attempt %d)",
+                    planning_failures,
+                )
+                return NodeStatus.FAILURE
+
+            self._blackboard["task_queue"] = plan
+            self._blackboard["decided_reason"] = f"목표: {goal}"
+            self._blackboard["goal_achieved"] = False
+            self._blackboard["planning_failure_count"] = 0
+            self._blackboard.pop("planning_failure_reason", None)
+            logger.info(
+                "[BT] GoalPlannerNode: decomposed goal '%s' into %d steps",
+                goal,
+                len(plan),
+            )
+            return NodeStatus.SUCCESS
+        except Exception as exc:
+            logger.error("[BT] GoalPlannerNode: LLM planning failed: %s", exc)
+            self._blackboard["planning_failure_count"] = (
+                self._blackboard.get("planning_failure_count", 0) + 1
+            )
+            self._blackboard["planning_failure_reason"] = str(exc)
+            return NodeStatus.FAILURE

@@ -1,0 +1,22 @@
+graph LR
+    subgraph IF[Interface Layer]
+        C1[Channel Reception]
+        C2[gRPC Server]
+        C3[Command Parsing]
+    end
+    
+    subgraph INTEL[Intelligence Layer]
+        A1[LLM Inference/Planning]
+        A2[Short/Long-term Memory]
+        A3[Context Awareness]
+    end
+    
+    subgraph CTRL[Control Layer]
+        S1[Skill Manager]
+        S2[Dynamic Discovery]
+        C[Core Control Loop]
+        H[Hardware IO]
+    end
+    
+    IF -->|Natural Language Command| INTEL
+    INTEL -->|Action/Plan| CTRL

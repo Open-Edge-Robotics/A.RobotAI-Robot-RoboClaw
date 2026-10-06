@@ -1,0 +1,10 @@
+{
+  "navigation": {
+    "max_relative_distance_m": 5.0,
+    "max_rotation_deg": 180.0
+  },
+  "manipulation": {
+    "enabled": false,
+    "note": "Former 는 팔/그리퍼가 없는 주행·관측 전용 로봇입니다. 조작(manipulation) 스킬과 stretch 전용 모드 전환 스킬은 사용할 수 없습니다."
+  }
+}

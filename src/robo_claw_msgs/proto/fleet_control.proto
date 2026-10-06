@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package robo_claw.fleet.v1;
+
+service FleetControl {
+  rpc Connect(stream RobotToMaestro) returns (stream MaestroToRobot);
+}
+
+message RobotDescriptor {
+  string robot_id = 1;
+  string display_name = 2;
+  string robot_type = 3;
+  string software_version = 4;
+  string protocol_version = 5;
+  string site_id = 6;
+  string map_id = 7;
+  repeated Capability capabilities = 8;
+  string map_version = 9;
+  string frame_id = 10;
+}
+
+message Capability {
+  string name = 1;
+  string version = 2;
+  string risk_level = 3;
+  string input_schema_json = 4;
+  repeated string requirements = 5;
+}
+
+message Register {
+  RobotDescriptor descriptor = 1;
+  string session_id = 2;
+}
+
+message Heartbeat { int64 timestamp_ms = 1; }
+
+message Telemetry {
+  double battery_percentage = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+  double yaw = 5;
+  string frame_id = 6;
+  string map_id = 7;
+  string operational_state = 8;
+  string current_task_id = 9;
+  string current_skill = 10;
+  uint32 queue_depth = 11;
+  repeated string health_issues = 12;
+  int64 observed_at_ms = 13;
+}
+
+message CommandAck {
+  string command_id = 1;
+  bool accepted = 2;
+  string error_code = 3;
+  string message = 4;
+}
+
+message TaskUpdate {
+  string command_id = 1;
+  string task_id = 2;
+  string status = 3;
+  uint32 progress = 4;
+  string message = 5;
+  string result_json = 6;
+  string error_code = 7;
+}
+
+message RobotToMaestro {
+  string protocol_version = 1;
+  string robot_id = 2;
+  string session_id = 3;
+  oneof payload {
+    Register register = 10;
+    Heartbeat heartbeat = 11;
+    Telemetry telemetry = 12;
+    CommandAck command_ack = 13;
+    TaskUpdate task_update = 14;
+  }
+}
+
+message RegistrationResult {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message ExecuteTaskCommand {
+  string mission_id = 1;
+  string task_id = 2;
+  string attempt_id = 3;
+  string correlation_id = 4;
+  string idempotency_key = 5;
+  string instruction = 6;
+  int64 deadline_ms = 7;
+}
+
+message ExecuteSkillCommand {
+  string mission_id = 1;
+  string task_id = 2;
+  string attempt_id = 3;
+  string correlation_id = 4;
+  string idempotency_key = 5;
+  string skill_name = 6;
+  string params_json = 7;
+  int64 deadline_ms = 8;
+}
+
+message CancelTaskCommand { string task_id = 1; }
+message EmergencyStopCommand { string reason = 1; }
+message RequestSnapshotCommand { string image_type = 1; }
+
+message MaestroToRobot {
+  string protocol_version = 1;
+  string command_id = 2;
+  oneof payload {
+    RegistrationResult registration_result = 10;
+    ExecuteTaskCommand execute_task = 11;
+    ExecuteSkillCommand execute_skill = 12;
+    CancelTaskCommand cancel_task = 13;
+    EmergencyStopCommand emergency_stop = 14;
+    RequestSnapshotCommand request_snapshot = 15;
+  }
+}

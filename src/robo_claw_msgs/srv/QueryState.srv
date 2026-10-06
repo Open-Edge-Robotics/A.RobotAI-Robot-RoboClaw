@@ -1,0 +1,7 @@
+# 에이전트 상태 조회 요청
+string query  # 빈 문자열이면 전체 상태 반환
+---
+# 응답
+bool success
+string state_json  # JSON 직렬화된 에이전트 상태
+string message

@@ -1,0 +1,16 @@
+graph TD
+    User([User]) -->|Discord/Telegram/Slack/HTTP| Channel[Channel Node]
+    User -->|gRPC| Channel
+    
+    Channel -->|Command Delivery| Agent[Agent Node]
+    
+    Agent <--> LLM[LLM Bridge\nOllama, OpenAI, etc.]
+    Agent <--> Memory[Memory Manager\nRAG-based]
+    Agent --> SkillMgr[Skill Manager]
+    
+    SkillMgr -->|Execute Skill| Core[Core Node\nC++]
+    SkillMgr -->|Dynamic Discovery| Discovery[Discovery Node]
+    
+    Core <--> HW[Hardware Interface\nGuardrails/Speed Limits]
+    Core <--> Sensor[Sensor Manager]
+    HW <--> Robot([Actual Robot / Gazebo Simulator])

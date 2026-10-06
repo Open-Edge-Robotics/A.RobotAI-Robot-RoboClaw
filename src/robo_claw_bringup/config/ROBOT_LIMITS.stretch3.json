@@ -1,0 +1,21 @@
+{
+  "navigation": {
+    "max_relative_distance_m": 5.0,
+    "max_rotation_deg": 180.0,
+    "note": "Hello Robot Stretch3 모바일 베이스. 베이스 이동 전 팔/그리퍼가 주행 안전 자세(stow)인지 확인해야 한다. cmd_vel 은 /stretch/cmd_vel 을 사용한다."
+  },
+  "manipulation": {
+    "backend": "stretch",
+    "note": "Stretch3 는 몸통 우측에 장착된 telescoping arm + gripper, 그리고 head pan/tilt 를 가진다. 팔은 우측 측면 방향으로 뻗으므로 정면 물체 파지 시 베이스를 회전해 우측 팔 작업축을 물체 방향에 맞춰야 한다. 조작 전 position 모드, 주행 전 navigation 모드 전환이 필요하며 팔이 펴진 상태의 주행은 금지된다.",
+    "joint_limits": {
+      "joint_lift": [0.0, 1.1],
+      "wrist_extension": [0.0, 0.52],
+      "joint_wrist_yaw": [-1.75, 4.0],
+      "joint_wrist_pitch": [-1.57, 0.56],
+      "joint_wrist_roll": [-3.14, 3.14],
+      "gripper_aperture": [0.0, 0.3],
+      "joint_head_pan": [-3.9, 1.5],
+      "joint_head_tilt": [-1.53, 0.79]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# 자율협동 — 동료 로봇이 보낸 대화 메시지를 에이전트의 협동 인박스로 전달하기 위한 서비스
+
+string peer_name      # 메시지를 보낸 동료 로봇의 이름 (peer_name)
+string message        # 동료가 보낸 자연어 메시지
+---
+bool success          # 인박스 수신 성공 여부
+string result_message # 처리 결과 메시지
+string error_message  # 실패 시 에러 내용

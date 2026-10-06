@@ -1,0 +1,16 @@
+graph TD
+    User([사용자]) -->|Discord/Telegram/Slack/HTTP| Channel[Channel Node]
+    User -->|gRPC| Channel
+    
+    Channel -->|명령 전달| Agent[Agent Node]
+    
+    Agent <--> LLM[LLM Bridge\nOllama, OpenAI 등]
+    Agent <--> Memory[Memory Manager\nRAG 기반]
+    Agent --> SkillMgr[Skill Manager]
+    
+    SkillMgr -->|스킬 실행| Core[Core Node\nC++]
+    SkillMgr -->|동적 탐색| Discovery[Discovery Node]
+    
+    Core <--> HW[Hardware Interface\n가드레일/속도제한]
+    Core <--> Sensor[Sensor Manager]
+    HW <--> Robot([실제 로봇 / Gazebo 시뮬레이터])

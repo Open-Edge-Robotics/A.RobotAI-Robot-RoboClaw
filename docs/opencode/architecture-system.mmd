@@ -1,0 +1,26 @@
+graph TD
+    U[사용자] --> HTTP[HTTP REST]
+    U --> MSG[Discord / Slack / Telegram]
+    U --> GRPC[gRPC Messenger]
+    HTTP --> CH[robo_claw_channel]
+    MSG --> CH
+    GRPC --> CH
+    CH -->|ExecuteTask action| AG[robo_claw_agent]
+    CH -->|ExecuteSkill service| AG
+    CH -->|QueryState service| AG
+    AG --> LLM[LLM Bridge]
+    AG --> MEM[MemoryManager]
+    AG --> SK[SkillManager]
+    SK --> NAV[Navigation Skills]
+    SK --> VIS[Vision / Map Skills]
+    SK --> SYS[System / HRI Skills]
+    SK --> COOP[Cooperate / File Skills]
+    NAV --> ROS[ROS 2 Graph / Nav2 / Topics]
+    VIS --> ROS
+    SYS --> ROS
+    COOP --> ROS
+    AG -->|SendMessage service| CH
+    ROS --> CORE[robo_claw_core]
+    CORE --> HW[Robot HW / Simulator]
+    DISC[robo_claw_discovery] --> ROS
+    DISC --> CAP[Capability JSON]

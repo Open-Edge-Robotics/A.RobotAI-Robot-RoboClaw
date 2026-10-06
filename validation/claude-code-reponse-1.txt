@@ -1,0 +1,99 @@
+❯ 첨부 정보를 토대로 어떻게 수정해야 할지 의견을 줘. '/home/gusewan/workspace-roboclaw/robo-claw/validation/first-use-scenario-test-gemma4_31b.md'                                      
+
+  Read 1 file (ctrl+o to expand)
+
+● 테스트 결과를 분석하기 전에, 실패 케이스들의 실제 원인을 코드에서 확인하겠습니다. 특히 "[스킬 rag_add 성공] 상황:..." 형태가 검색 결과로 튀어나오는 부분이 핵심으로 보이네요.
+
+● Bash(cd /home/gusewan/workspace-roboclaw/robo-claw && grep -rn "스킬.*성공\|스킬.*상황\|상황:" src/ --include=*.py | head -30)
+  ⎿  src/robo_claw_bringup/launch/_common_launch_args.py:135:            description="스킬 성공 경험 샘플링 비율 오버라이드. 비우면 agent.yaml 값을 사용",
+     src/robo_claw_agent/robo_claw_agent/skills/autonomous_skill/decision_nodes.py:224:                    f"[사이클 {cycle}] 현재 상황:\n"
+     src/robo_claw_agent/robo_claw_agent/skills/system_skill/learning.py:16:        "수집된 스킬 실행 경험(성공/실패)을 LLM으로 분석하여 스킬별 교훈을 추출·갱신합니다. "
+     … +7 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/gusewan/workspace-roboclaw/roboclaw_config_server
+
+● 확인했습니다. skill_learning.py가 스킬 실행 경험을 RAG에 저장하는 부분이 핵심이네요. 이 파일과 검색/저장 로직을 자세히 봅니다.
+
+  Read 1 file (ctrl+o to expand)
+
+● 핵심 원인이 확인됐습니다. 마지막으로 검색 결과의 재정렬(recency) 로직과 결과가 사용자에게 전달되는 방식만 확인하겠습니다.
+
+● Bash(cd /home/gusewan/workspace-roboclaw/robo-claw && sed -n '175,215p' src/robo_claw_agent/robo_claw_agent/vector_store/qdrant.py)
+  ⎿              fetch_limit = max(top_k * 4, top_k + 8)
+                 response = self._client.query_points(
+                     self._collection_name,
+     … +38 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/gusewan/workspace-roboclaw/roboclaw_config_server
+
+● Bash(cd /home/gusewan/workspace-roboclaw/robo-claw && grep -n "_sort_by_score_and_recency" -A 25 src/robo_claw_agent/robo_claw_agent/vector_store/qdrant.py | head -3…)
+  ⎿  11:from .base import _matches_delete_filter, _sort_by_score_and_recency
+     12-
+     13-
+     … +32 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/gusewan/workspace-roboclaw/roboclaw_config_server
+
+● Bash(cd /home/gusewan/workspace-roboclaw/robo-claw && grep -n "_sort_by_score_and_recency" -A 30 src/robo_claw_agent/robo_claw_agent/vector_store/base.py)
+  ⎿  66:def _sort_by_score_and_recency(
+     67-    results: list[dict[str, Any]],
+     68-    *,
+     … +28 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to /home/gusewan/workspace-roboclaw/roboclaw_config_server
+
+● 분석 완료했습니다. 코드까지 확인해보니 실패 케이스 6건이 사실상 하나의 근본 원인에서 나옵니다. 진단 → 실패 매핑 → 수정 의견 순으로 드릴게요.
+
+  근본 원인: 벡터 DB가 "사실"과 "스킬 실행 로그"를 한 통에 섞어 저장
+
+  memory_manager/skill_learning.py:60-121의 record_skill_episode가 모든 스킬 실행(rag_search, rag_add, get_status 포함)을 [스킬 X 성공] 상황: '...'. 파라미터: {...} 형태의 텍스트로
+  만들어, 위치 사실과 똑같은 벡터 컬렉션에 add_knowledge로 저장합니다 (:121, metadata.type="skill_episode").
+
+  문제가 두 겹입니다:
+
+  1. rag_search 실행 기록까지 지식으로 저장됨 → 이 기록엔 좌표가 없고 query 문자열만 있습니다. 순수 노이즈인데도 다음 검색에서 상위로 잡힙니다.
+  2. recency 재정렬이 사실을 밀어냄 — vector_store/base.py:66-96의 _sort_by_score_and_recency가 점수가 비슷한(epsilon 이내) 결과들 중 더 최신 것을 위로 올립니다. 그래서 처음 질문 때
+  만들어진 rag_search 에피소드가, 그보다 오래된 진짜 rag_add 좌표 기록을 눌러버립니다.
+
+  실패 케이스 매핑
+
+  ┌────────┬─────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────┐
+  │   #    │                                증상                                 │                                        원인                                         │
+  ├────────┼─────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ 12, 13 │ "충전대 위치 알려줘" 재질문 → 좌표 대신 이전 rag_search 기록을 답변 │ 최신 검색 에피소드가 좌표 기록을 recency로 추월                                     │
+  ├────────┼─────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ 15     │ "충전대로 이동해" → 이동 안 하고 검색 기록 echo                     │ 최상위 hit이 좌표 없는 에피소드라 네비 좌표 추출 실패                               │
+  ├────────┼─────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ 20     │ "go to living room" → 이동 안 함                                    │ 영어 질의는 임베딩상 거실과 매칭됐으나(교차언어 OK), 역시 rag_search 에피소드가 hit │
+  ├────────┼─────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ 17     │ "현재 위치 이름이 뭐야" → 비전 스캔으로 "사무실 추정"               │ 좌표→이름 역방향 조회(reverse geocoding) 미구현, 비전으로 폴백                      │
+  ├────────┼─────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ 18     │ "x,y 비교해서 위치 이름 파악" → get_status 기록 반환                │ 현재 pose + 저장된 위치 지식 결합 로직 없음                                         │
+  └────────┴─────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+
+  부수 문제: 성공 케이스(11)에서도 답변이 [스킬 rag_add 성공] 상황:... 원문을 그대로 사용자에게 노출합니다. 내부 로그 포맷이 UX로 새고 있어요.
+
+  수정 의견 (우선순위순)
+
+  1순위 — 검색 시 스킬 에피소드 오염 차단 (가장 효과 큼)
+  - 사용자 사실 질의(위치 조회/이동)에서는 metadata.type="skill_episode"를 검색에서 제외하도록 필터를 겁니다. Qdrant 스토어에 이미 metadata 필터 인프라가 있으니(qdrant.py:133-173)
+  저비용입니다.
+  - 특히 rag_search/rag_add/rag_delete/get_status 같은 자기참조·조회성 스킬은 애초에 에피소드로 저장하지 않도록 record_skill_episode에 skip 목록을 두세요. 검색 행위를 지식으로 학습하는
+  건 무의미합니다.
+
+  2순위 — 위치를 구조화 엔트리로 저장하고 전용 조회 경로 사용
+  - 지금 "충전대 좌표"의 실체는 rag_add 에피소드 텍스트라 취약합니다. type="location", location_name, x, y를 metadata에 담은 전용 엔트리로 저장하고, 이름→좌표 해석은 의미검색 top_k가 
+  아니라 이름 정확매칭/구조화 조회로 결정론적으로 처리하세요. (이동 명령이 fuzzy 검색에 의존하면 안 됨)
+
+  3순위 — 사실 질의에 recency 재정렬 끄기
+  - recency 가중은 관찰(observation) 데이터엔 맞지만 안정적 사실(위치)엔 해롭습니다. type=location 조회는 순수 score 정렬로, 혹은 사실이 에피소드보다 항상 우선하도록 카테고리 정렬.
+
+  4순위 — reverse geocoding 구현 (케이스 17/18)
+  - 스토어가 이미 metadata.x/y 반경 필터(current_pose/radius_m, rag.py)를 지원합니다. "현재 위치 이름"은 pose 조회 → type=location 공간검색(반경 내 최근접) → 이름 반환으로 처리. 지금은
+  이 인텐트에서 비전 스캔으로 폴백하고 있습니다.
+
+  5순위 — 응답 포맷팅
+  - planner가 hit의 원문([스킬 ... 성공] ...)을 그대로 내보내지 말고, metadata에서 좌표/이름을 추출해 자연어로 답하도록. 성공 케이스에서도 내부 로그가 노출되는 걸 막아야 합니다.
+
+  ---
+  참고: top_k=2, score_threshold=0.7을 올려서 해결하려는 유혹이 있는데, 오염이 남아 있으면 top_k를 키울수록 노이즈만 더 딸려옵니다. 1·2순위(오염 차단 + 구조화 저장)를 먼저 하는 게
+  맞습니다.
+
+  원하시면 1순위(스킬 에피소드 검색 제외 + 조회성 스킬 저장 skip)부터 실제 코드 수정으로 들어갈 수 있습니다. 어느 것부터 진행할까요?
+

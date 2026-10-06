@@ -1,0 +1,7 @@
+echo "Check optional variables like former w2_2f_2"
+echo "Please run the following with checking your option"
+echo "./robo_claw_cli launch <robot_name> <environment> --docker image-tag <image-tag> --pull --use-grpc"
+echo "<robot_name> : robot_name in AI Robot config Profile"
+echo "<environment> : environment in AI Robot Config Profile"
+echo "Example : "
+echo "./robo_claw_cli launch former w2_2f_2 --docker --image-tag 20260804-p1p5 --pull --use-grpc"

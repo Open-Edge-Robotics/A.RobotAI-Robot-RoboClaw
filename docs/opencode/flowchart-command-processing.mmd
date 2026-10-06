@@ -1,0 +1,37 @@
+flowchart TD
+    A[사용자 명령 입력] --> B{입력 채널 선택}
+    B -->|HTTP| C[robo_claw_channel]
+    B -->|gRPC| C
+    B -->|Discord/Slack/Telegram| C
+    B -->|ROS Action 직접 호출| D[robo_claw_agent]
+    C --> D
+    D --> E[메모리/대화 히스토리 수집]
+    E --> F{RAG 활성화 여부}
+    F -->|Yes| G[관련 경험 검색]
+    F -->|No| H[로봇 상태 요약 수집]
+    G --> H
+    H --> I[시스템 프롬프트 + 스킬 목록 구성]
+    I --> J[LLM 계획 생성]
+    J --> K{응답 타입}
+    K -->|최종 응답| L[사용자 답변 생성]
+    K -->|단일 스킬| M[스킬 실행]
+    K -->|복수 스킬| N[체인 순차 실행]
+    N --> M
+    M --> O{성공 여부}
+    O -->|실패| P[실패 사유를 LLM에 재투입]
+    P --> Q{재플래닝 한도 초과?}
+    Q -->|No| J
+    Q -->|Yes| R[실패 종료]
+    O -->|성공| S{file_path 포함?}
+    S -->|Yes| T[채널 노드로 파일 자동 전송]
+    S -->|No| U[다음 스킬 또는 결과 정리]
+    T --> U
+    U --> V{더 실행할 스킬 존재?}
+    V -->|Yes| M
+    V -->|No| W[최종 결과 저장]
+    W --> X{RAG 저장 조건 만족?}
+    X -->|Yes| Y[성공 경험 지식 저장]
+    X -->|No| Z[액션 결과 반환]
+    Y --> Z
+    L --> Z
+    R --> Z

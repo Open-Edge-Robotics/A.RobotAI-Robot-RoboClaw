@@ -1,0 +1,43 @@
+robo_claw_agent_node:
+  ros__parameters:
+    # ── Memory (로컬 스토리지형 메모리 설정) ─────────────────────────
+    memory_backend: "json"
+    memory_path: ""
+    multiturn_history_n: 5
+    # Qdrant(원격) 사용 시 로컬에도 동시 저장(미러). 원격 접속 불가 시 로컬로 폴백한다.
+    rag_local_mirror: true
+
+    # ── 스킬 자가 학습 (스킬 실행 경험 RAG 수집/교훈 추출) ──────────
+    # 실패는 항상, 성공은 success_sample_rate 확률로 수집한다. (enable_rag 필요)
+    enable_skill_learning: false
+    skill_learning_success_sample_rate: 0.1
+    # 주기적 교훈 자동 추출 간격(초). 0이면 비활성(reflect_skills 스킬로 수동 실행).
+    skill_learning_reflect_interval_sec: 0.0
+
+    # ── Manipulation / MoveIt ───────────────────────────────
+    manipulation_enabled: true
+    manipulation_arm_group: "arm"
+    manipulation_gripper_group: "gripper"
+    manipulation_end_effector_link: ""
+    manipulation_base_frame: "base_link"
+    manipulation_tool_frame: ""
+    # alias -> MoveIt named target
+    manipulation_named_poses_json: '{"home":"home","ready":"ready","carry":"carry","stow":"stow"}'
+    # preset -> {joint_name: position}
+    manipulation_gripper_presets_json: "{}"
+    manipulation_planning_pipeline: ""
+    manipulation_planner_id: ""
+    manipulation_cartesian_step: 0.01
+    manipulation_velocity_scaling: 0.2
+    manipulation_acceleration_scaling: 0.2
+    manipulation_default_approach_distance_m: 0.1
+    manipulation_default_retreat_distance_m: 0.1
+
+    # ── MCP / 기타 ──────────────────────────────────────────
+    mcp_enabled: false
+    mcp_servers_json: ""
+
+robo_claw_channel_node:
+  ros__parameters:
+    agent_name: "robo_claw_agent_node"
+    request_timeout_sec: 600.0

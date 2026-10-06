@@ -1,0 +1,43 @@
+// robo_claw RoboMessenger — 외부 호스트 테스트 클라이언트(robo_talk)용 사본.
+// 원본: src/robo_claw_msgs/proto/messenger.proto
+// gen_proto.sh 로 messenger_pb2.py / messenger_pb2_grpc.py 를 생성해 사용한다.
+syntax = "proto3";
+
+package robo_claw;
+
+service RoboMessenger {
+  rpc ChatStream (stream ChatMessage) returns (stream ChatMessage);
+  rpc SendCommand (ChatMessage) returns (CommandResponse);
+  rpc UploadFile (stream FileChunk) returns (UploadResponse);
+  rpc DownloadFile (DownloadRequest) returns (stream FileChunk);
+}
+
+message ChatMessage {
+  string sender_id = 1;
+  string content = 2;
+  int64 timestamp = 3;
+  map<string, string> metadata = 4;
+}
+
+message CommandResponse {
+  bool success = 1;
+  string message = 2;
+  string result_json = 3;
+}
+
+message FileChunk {
+  string file_id = 1;
+  bytes data = 2;
+  bool is_last = 3;
+  string filename = 4;
+}
+
+message UploadResponse {
+  bool success = 1;
+  string file_id = 2;
+  string message = 3;
+}
+
+message DownloadRequest {
+  string file_id = 1;
+}

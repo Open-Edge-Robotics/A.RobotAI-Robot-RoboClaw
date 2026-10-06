@@ -1,0 +1,279 @@
+syntax = "proto3";
+
+package ros_grpc;
+
+// Empty messages
+
+// Pong message
+message Pong {
+  string message = 1;
+}
+
+// Robot information message
+message Robot {
+  string    id          = 1;
+  string    name        = 2;
+  string    description = 3;
+  RobotType type        = 4;
+}
+
+// Robot type
+enum RobotType {
+  TEST    = 0;
+  FORMER  = 1;
+  STRETCH = 2;
+  EXTRA   = 3;
+}
+
+// Robot pose
+message Point {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+// Robot orientation
+message Quaternion {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+  double w = 4;
+}
+
+// Robot pose and orientation
+message RobotPose {
+  string     id          = 1;
+  string     robot_id    = 2;
+  Point      position    = 3;
+  Quaternion orientation = 4;
+}
+
+// Robot battery information
+message RobotBattery {
+  string id         = 1;
+  string robot_id   = 2;
+  float  voltage    = 3;
+  float  current    = 4;
+  float  charge     = 5;
+  float  capacity   = 6;
+  float  percentage = 7;
+}
+
+// Robot camera image
+message RobotCameraImage {
+  string    id        = 1;
+  string    robot_id  = 2;
+  string    image     = 3;
+  RobotPose pose      = 4;
+  int64     timestamp = 5;
+  string    format    = 6;
+}
+
+// Image Type Enum
+enum ImageType {
+  RAW = 0;
+  COMPRESSED = 1;
+}
+
+// Camera Request
+message CameraRequest {
+  ImageType image_type = 1;
+}
+
+// Robot history
+message RobotHistory {
+  int32  id                 = 1;
+
+  string robot_id           = 2;
+  bool   is_connected       = 3;
+  float  battery_percentage = 4;
+  float  cpu_usage          = 5;
+  float  ram_usage          = 6;
+  float  disk_usage         = 7;
+  float  network_usage      = 8;
+  int32  uptime             = 9;
+  int32  last_seen          = 10;
+
+  // New fields for history
+  string request_type       = 11;
+  string request_payload    = 12;
+  string response_payload   = 13;
+  string image_snapshot     = 14;
+}
+
+// Robot history list
+message RobotHistoryList {
+  repeated RobotHistory history = 1;
+}
+
+// Robot status
+message RobotStatus {
+  string     robot_id          = 1;
+  float      battery_percentage = 2;
+  float      cpu_usage         = 3;
+  float      ram_usage         = 4;
+  float      disk_usage        = 5;
+  float      network_usage     = 6;
+  int32      uptime            = 7;
+  RobotPose  current_pose      = 8;
+  string     current_task      = 9;
+  string     image_snapshot    = 10;
+  int64      timestamp         = 11;
+}
+
+
+// Empty request message
+message EmptyRequest {}
+
+// Ping request message
+message PingRequest {
+  string message = 1;
+}
+
+// Navigation Goal
+message NavigationGoal {
+  RobotPose target_pose = 1;
+}
+
+// Action Result
+message ActionResult {
+  bool success = 1;
+  string message = 2;
+}
+
+// Waypoint List
+message WaypointList {
+  repeated RobotPose waypoints = 1;
+}
+
+// Map Meta Data
+message MapMetaData {
+  double resolution = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  RobotPose origin = 4;
+}
+
+// Occupancy Grid Map
+message OccupancyGrid {
+  MapMetaData info = 1;
+  bytes data = 2;
+}
+
+// Joint Control Request
+message JointControlRequest {
+  map<string, float> joints = 1; 
+}
+
+// Command Request
+message CommandRequest {
+  string command = 1;
+}
+
+// Command Response
+message CommandResponse {
+  bool success = 1;
+  string output = 2;
+  string error = 3;
+}
+
+// File Upload Request (Stream)
+message UploadFileRequest {
+  string filename = 1;  // 전송할 파일 이름 (첫 번째 청크에만 포함해도 됨)
+  bytes chunk_data = 2; // 파일 데이터 청크
+}
+
+// File Upload Response
+message UploadFileResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// File Download Request
+message DownloadFileRequest {
+  string filename = 1; // 요청할 파일 이름
+}
+
+// File Download Response (Stream)
+message DownloadFileResponse {
+  bytes chunk_data = 1; // 파일 데이터 청크
+}
+
+// ExecuteSkill Request — robo_claw_agent의 모든 스킬을 범용적으로 호출
+message ExecuteSkillRequest {
+  string skill_name = 1;   // 실행할 스킬 이름 (예: "send_message", "grasp", "rotate")
+  string params_json = 2;  // JSON 형식의 파라미터 (예: '{"message": "안녕"}')
+  double timeout_sec = 3;  // 타임아웃 (초), 0이면 서버 기본값 사용
+}
+
+// ExecuteSkill Response
+message ExecuteSkillResponse {
+  bool success = 1;       // 스킬 실행 성공 여부
+  string message = 2;     // 스킬 실행 결과 메시지
+  string skill_name = 3;  // 실행된 스킬 이름
+  string result_json = 4; // 스킬이 반환한 추가 데이터 (JSON)
+}
+
+// ExecuteTask Request — robo_claw_agent의 ExecuteTask 액션을 gRPC로 노출
+// 채널(Telegram/Slack/HTTP/peer) 수신과 동일하게 자연어 명령을
+// LLM 에이전트로 전달해 추론·스킬 실행을 수행합니다.
+message ExecuteTaskRequest {
+  string instruction = 1;  // 자연어 명령 (예: "메인룸으로 이동해줘")
+  string context_json = 2;  // 선택적 컨텍스트 (JSON)
+  double timeout_sec = 3;   // 타임아웃 (초), 0이면 서버 기본값 사용
+}
+
+// ExecuteTask Response
+message ExecuteTaskResponse {
+  bool success = 1;         // 태스크 실행 성공 여부
+  string result_message = 2; // 태스크 실행 결과 메시지
+}
+
+// Service definition
+service RosGrpc {
+  // Ping service
+  rpc Ping(PingRequest) returns (Pong) {}
+  // Robot information service
+  rpc GetRobotInfo(EmptyRequest) returns (Robot) {}
+  // Robot camera image service
+  rpc GetRobotCameraImage(CameraRequest) returns (RobotCameraImage) {}
+  // Robot camera image stream service
+  rpc GetRobotCameraImageStream(CameraRequest) returns (stream RobotCameraImage) {}
+  // Robot pose service
+  rpc GetCurrentRobotPose(EmptyRequest) returns (RobotPose) {}
+  // Robot battery service
+  rpc GetCurrentRobotBattery(EmptyRequest) returns (RobotBattery) {}
+  // Robot history service - REFACTORED
+  rpc GetLatestRobotHistory(EmptyRequest) returns (RobotHistory) {}
+  // Robot history list service - REFACTORED
+  rpc GetRobotHistoryList(EmptyRequest) returns (RobotHistoryList) {}
+  // Navigate to pose service
+  rpc NavigateToPose(NavigationGoal) returns (ActionResult) {}
+  // Emergency stop service
+  rpc EmergencyStop(EmptyRequest) returns (ActionResult) {}
+  // Follow waypoints service
+  rpc FollowWaypoints(WaypointList) returns (ActionResult) {}
+  // Set initial pose service
+  rpc SetInitialPose(RobotPose) returns (ActionResult) {}
+  // Get robot map service
+  rpc GetRobotMap(EmptyRequest) returns (OccupancyGrid) {}
+  // Control joints service
+  rpc ControlJoints(JointControlRequest) returns (ActionResult) {}
+  // Get robot status service
+  rpc GetRobotStatus(EmptyRequest) returns (RobotStatus) {}
+  // Get robot status stream service
+  rpc GetRobotStatusStream(EmptyRequest) returns (stream RobotStatus) {}
+  // Execute ROS command service
+  rpc ExecuteROSCommand(CommandRequest) returns (CommandResponse) {}
+  // Execute ROS command stream service
+  rpc ExecuteROSCommandStream(CommandRequest) returns (stream CommandResponse) {}
+  // Upload file service
+  rpc UploadFile(stream UploadFileRequest) returns (UploadFileResponse) {}
+  // Download file service
+  rpc DownloadFile(DownloadFileRequest) returns (stream DownloadFileResponse) {}
+  // Execute skill service — robo_claw_agent의 모든 스킬을 범용적으로 호출
+  rpc ExecuteSkill(ExecuteSkillRequest) returns (ExecuteSkillResponse) {}
+  // Execute task service — robo_claw_agent의 ExecuteTask 액션을 gRPC로 노출
+  // 채널 수신과 동일하게 자연어 명령을 LLM 에이전트로 전달합니다.
+  rpc ExecuteTask(ExecuteTaskRequest) returns (ExecuteTaskResponse) {}
+}

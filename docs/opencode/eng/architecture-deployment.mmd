@@ -1,0 +1,27 @@
+graph LR
+    subgraph Runtime
+        BR[robo_claw_bringup]
+        CH[robo_claw_channel]
+        AG[robo_claw_agent]
+        DISC[robo_claw_discovery]
+    end
+
+    subgraph Real Robot Path
+        CORE[robo_claw_core]
+        HW[Stretch 3 or other robot]
+    end
+
+    subgraph Simulation Path
+        GZ[Gazebo]
+        NAV2[Nav2 / AMCL / SLAM]
+    end
+
+    BR --> CH
+    BR --> AG
+    BR --> DISC
+    BR --> CORE
+    BR --> GZ
+    GZ --> NAV2
+    CORE --> HW
+    AG --> NAV2
+    AG --> GZ

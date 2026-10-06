@@ -1,0 +1,26 @@
+  문제 1·2 — "저장"이 "검색"으로 라우팅 (검색 결과 없음 / 클라이언트별 상이)
+  원인: 약한 LLM이 "그 위치를 거실로 저장해"를 rag_search로 오라우팅. GUI에선 대화 맥락으로 우연히 성공, 자동화에선 실패.
+  → planner에 저장 명령 결정론적 라우팅 추가: "…<장소>로 기억/저장/등록" → rag_add(location_name=<장소>) 강제. "그 위치"는 pose 보완이 현재 좌표로 채우므로 맥락 없이도, robo_talk·GUI 
+  동일하게 저장됩니다. (정규식 6종 검증)
+
+  문제 3 — 근거(navigated_coordinate)는 있는데 못 찾음
+  원인: 키친은 type=location 없이 navigated_coordinate("…(키친 (-5.15,-1.18))")만 존재 → rag_search가 제외.
+  → 정방향 조회를 벡터스토어까지 스캔: 시맨틱맵 → type=location → navigated_coordinate 순 우선, 괄호 안 장소명도 인식. 문제 1의 다른 양상(type=location이 Qdrant엔 있는데 시맨틱맵
+  desync)도 스토어 스캔으로 해결.
+
+  추가 요구사항 — 참조 Qdrant 데이터 로깅
+  - 에이전트: [rag_search] … 참조 N건: id=… score=… type=… '텍스트' (docker logs) + 결과에 referenced 필드
+  - robo_talk 리포트: 상세 로그에 "참조 Qdrant 항목"(id·score·type·근거·좌표) 강조 출력
+
+  변경 파일
+
+  - agent_node/planner.py — 저장 라우팅
+  - skills/system_skill/rag.py — 정방향 스토어 스캔(_query_target_names/_best_location_for_targets/_PAREN_NAME_RE) + 참조 로깅
+  - validation/talk/robo_talk.py — referenced 강조 출력
+  - 회귀 테스트 +2(총 23), changenote.md·validation/talk/README.md
+
+  배포 후 기대
+
+  - "그 위치를 거실로 저장해" → 저장 성공(rag_add)
+  - "키친의 위치를 알려줘"(navigated_coordinate만) → 좌표 응답(이동 기록 근거)
+  - 리포트/로그에 참조한 Qdrant id·근거 표시

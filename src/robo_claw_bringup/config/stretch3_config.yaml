@@ -1,0 +1,114 @@
+robo_claw_core_node:
+  ros__parameters:
+    loop_rate_hz: 50.0
+    agent_id: "stretch3_agent"
+
+    # 1순위는 robot_description 기반 자동 추출이다.
+    # 필요 시 아래 robot_description_file 또는 joint_names override를 사용한다.
+    # 2단계 IK 검증/비전용: robot_state_publisher 가 base_link->link_grasp_center TF 를 발행하도록
+    # stretch_urdf 패키지의 SE3 dw3 sg3 URDF 를 지정한다.
+    robot_description_file: "/home/hello-robot/ament_ws/src/stretch_ros2/stretch_description/urdf/stretch.urdf"
+    # joint_names:
+    #   - "base_left_wheel"
+    #   - "base_right_wheel"
+
+    # 센서 목록
+    sensor_names:
+      - "lidar"
+      - "imu"
+      - "realsense_camera"
+      - "realsense_depth"
+      - "realsense_camera_info"
+      - "realsense_points"
+      - "gripper_camera"
+      - "gripper_depth"
+      - "gripper_camera_info"
+      - "gripper_points"
+
+    # 센서 토픽 매핑 (sensor_topics.<sensor_name>)
+    # depth/camera_info/points 는 RealSense 드라이버가 align_depth.enable:=true,
+    # pointcloud.enable:=true 로 실행 중이어야 발행됨 (robo_claw가 직접 launch하지 않음).
+    sensor_topics:
+      lidar: "/scan"
+      imu: "/imu/data"
+      realsense_camera: "/camera/color/image_raw"
+      realsense_depth: "/camera/aligned_depth_to_color/image_raw"
+      realsense_camera_info: "/camera/aligned_depth_to_color/camera_info"
+      realsense_points: "/camera/depth/color/points"
+      gripper_camera: "/gripper_camera/color/image_rect_raw"
+      gripper_depth: "/gripper_camera/aligned_depth_to_color/image_raw"
+      gripper_camera_info: "/gripper_camera/aligned_depth_to_color/camera_info"
+      gripper_points: "/gripper_camera/depth/color/points"
+
+    # 제어 명령 매핑
+    cmd_vel_topic: "/stretch/cmd_vel"
+    odom_topic: "/odom"
+
+robo_claw_agent_node:
+  ros__parameters:
+    # 자가진단용 센서 토픽 (core_node sensor_topics와 일치)
+    lidar_topic: "/scan"
+    imu_topic: "/imu/data"
+    camera_topic: "/camera/color/image_raw"
+    depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/aligned_depth_to_color/camera_info"
+    gripper_camera_topic: "/gripper_camera/color/image_rect_raw"
+    gripper_depth_topic: "/gripper_camera/aligned_depth_to_color/image_raw"
+    gripper_camera_info_topic: "/gripper_camera/aligned_depth_to_color/camera_info"
+    gripper_pointcloud_topic: "/gripper_camera/depth/color/points"
+    # 헤드 카메라 upright 회전 보정(option 2: upright_rotater 활성화 + camera_topic
+    # upright) 시, depth/camera_info는 raw 좌표계를 그대로 쓰므로 upright bbox 픽셀을
+    # raw로 역회전해 depth 샘플링/역투영해야 좌표계가 일치한다.
+    # upright_rotater(image_rotate)는 raw 640x480 -> 640x640 정사각 패딩 캔버스로 회전.
+    # 0.0 = 보정 없음(현재). upright_rotater(target_x=-1.5708=-90°)를 썼다면
+    # 예상값은 -90.0(또는 검증 결과 90.0). 반드시 로봇에서 알려진 거리 D의 컵으로
+    # depth_distance_m == D 인 방향으로 확정 후 활성화(docs/HEAD_CAMERA_UPRIGHT_ROTATION.md).
+    head_image_rotate_deg: 0.0
+
+    # ── 헤드 카메라 파지 보조 (dual-camera grasp) ──
+    # 그리퍼 카메라(D405)는 손목 고정이라 wrist_extension이 늘수록 대상이 화면 밖으로
+    # 밀리고, 근접하면 YOLO가 물체 전체를 못 봐 탐지에 실패한다. 헤드 카메라(D435i)는
+    # 마스트 상단에 있어 팔이 뻗어도 계속 대상을 보므로, 대상을 놓쳤을 때 눈감고
+    # 흔드는 대신 실제 3D 오차 방향으로 유도한다. docs/DUAL_CAMERA_GRASP.md 참조.
+    head_detections_topic: "/object_detector_node/detections"
+    # 서보 중 헤드가 파지 구역을 내려다보는 자세(head.py의 _DEFAULT_HEAD_POSES 키).
+    # 현재 프리셋은 pan -1.8rad(-103°)이나, FK 기준 헤드->grasp center 방위는 약 -87°다.
+    # 실기에서 /camera/color/image_raw를 보며 조정할 것(코드 수정 불필요).
+    head_assist_pose: "gripper_side_head"
+
+    # ── ArUco 차분 보정 ──
+    # 마커로 로봇 부위 위치를 "추정"하는 것이 아니다(그건 encoder+URDF가 이미 안다).
+    # 헤드 카메라가 본 손목 마커 위치와 URDF가 말하는 위치의 잔차 = 헤드 카메라
+    # 외부파라미터/pan-tilt 캘리브레이션 오차이며, 같은 카메라로 본 물체 좌표에도
+    # 똑같이 실려 있다. 물체 관측에 잔차를 더하면 그 계통 오차가 상쇄된다.
+    #
+    # 동작 전제: 별도 터미널에서 마커 검출 노드를 실행해야 한다.
+    #   ros2 launch stretch_core stretch_aruco.launch.py
+    # 미실행 시 자동으로 offset 0으로 동작한다(헤드 보조 자체는 그대로 동작).
+    #
+    # [측정 프레임(aruco 노드 발행), URDF 프레임] 쌍. 손목 마커만 쓴다 — 파지에
+    # 관계되는 것은 그리퍼 근방의 잔차이고, base/shoulder 마커는 체인의 다른 구간이다.
+    # 실기에서 프레임 이름은 `ros2 run tf2_tools view_frames`로 반드시 확인할 것.
+    aruco_marker_frame_pairs_json: >
+      [["wrist_inside","link_aruco_inner_wrist"],["wrist_top","link_aruco_top_wrist"]]
+    aruco_marker_max_age_sec: 1.5
+    aruco_max_residual_m: 0.10
+
+    # manipulation — Stretch driver 직접 제어 백엔드
+    manipulation_backend: "stretch"
+    manipulation_enabled: true
+    manipulation_arm_group: "arm"
+    manipulation_gripper_group: "gripper"
+    manipulation_end_effector_link: "link_grasp_center"
+    manipulation_base_frame: "base_link"
+    manipulation_cmd_vel_topic: "/stretch/cmd_vel"
+    # home/stow 는 stretch_driver Trigger 서비스로 매핑(문자열).
+    # ready/carry 는 joint 값 사전정의(객체) — 백엔드가 move_to_joint_target 재사용.
+    manipulation_named_poses_json: >
+      {"home":"home","stow":"stow","ready":{"joint_lift":0.7,"wrist_extension":0.2,"joint_wrist_yaw":-1.0,"joint_wrist_pitch":0.0,"joint_wrist_roll":0.0},"carry":{"joint_lift":0.3,"wrist_extension":0.05,"joint_wrist_yaw":1.5,"joint_wrist_pitch":-1.0,"joint_wrist_roll":0.0},"right_side_pick_ready":{"joint_lift":0.45,"wrist_extension":0.10,"joint_wrist_yaw":0.0,"joint_wrist_pitch":-0.8,"joint_wrist_roll":0.0},"right_side_pick_reach":{"joint_lift":0.45,"wrist_extension":0.32,"joint_wrist_yaw":0.0,"joint_wrist_pitch":-0.8,"joint_wrist_roll":0.0},"right_side_pick_lift":{"joint_lift":0.55,"wrist_extension":0.18,"joint_wrist_yaw":0.0,"joint_wrist_pitch":-0.8,"joint_wrist_roll":0.0}}
+    # "open" 값은 의도적으로 실제 캘리브레이션 상한을 초과하는 값이다.
+    # stretch_core의 bound_ros_command가 fail_out_of_range_goal=False일 때
+    # 목표를 조용히 실제 상한으로 clamp하므로, 정확한 최대값을 몰라도
+    # 항상 그 로봇의 실제 최대 개방폭에 도달한다(캘리브레이션이 바뀌어도 그대로 유효).
+    manipulation_gripper_presets_json: >
+      {"open":{"gripper_aperture":0.3},"close":{"gripper_aperture":0.0},"close_loose":{"gripper_aperture":0.025}}

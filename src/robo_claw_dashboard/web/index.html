@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RoboClaw Dashboard</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header>
+    <h1>RoboClaw Dashboard</h1>
+    <div class="connection" id="connection">연결 확인…</div>
+  </header>
+
+  <main>
+    <section id="token-panel" class="card">
+      <h2>접근 토큰 <small>(선택, auth 활성 시 필수)</small></h2>
+      <label>읽기(readonly) <input id="readonly-token" type="password" placeholder="선택"></label>
+      <label>제어(control) <input id="control-token" type="password" placeholder="/chat 전송용"></label>
+      <button id="save-tokens" type="button">토큰 저장</button>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>에이전트</h2>
+        <dl>
+          <dt>상태</dt><dd id="agent-state">–</dd>
+          <dt>현재 스킬</dt><dd id="current-skill">–</dd>
+          <dt>메시지</dt><dd id="agent-message">–</dd>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h2>배터리</h2>
+        <dl>
+          <dt>잔량</dt><dd id="battery">–</dd>
+          <dt>전압</dt><dd id="battery-voltage">–</dd>
+          <dt>충전</dt><dd id="battery-charging">–</dd>
+        </dl>
+      </article>
+
+      <article class="card">
+        <h2>센서 헬스</h2>
+        <ul id="sensor-health" class="kv"></ul>
+      </article>
+
+      <article class="card">
+        <h2>피어 로봇</h2>
+        <ul id="peers" class="kv"></ul>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>에이전트에게 메시지</h2>
+      <form id="chat-form">
+        <textarea id="chat-input" rows="2" placeholder="예: 현재 상태 알려줘, 지금 위치에서 스캔해봐"></textarea>
+        <button id="chat-send" type="submit">전송</button>
+        <div id="chat-result" class="result" aria-live="polite"></div>
+      </form>
+    </section>
+  </main>
+
+  <footer><time id="last-updated"></time></footer>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

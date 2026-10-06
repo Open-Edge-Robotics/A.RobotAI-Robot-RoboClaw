@@ -1,0 +1,7 @@
+# 사용자가 활성화된 메신저 채널로 메시지나 파일을 전송하기 위한 서비스
+
+string message         # 전송할 텍스트 메시지
+string file_path       # 전송할 로컬 파일 경로 (옵션)
+---
+bool success           # 전송 성공 여부
+string error_message   # 실패 시 에러 내용

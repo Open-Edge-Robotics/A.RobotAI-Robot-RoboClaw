@@ -1,0 +1,10 @@
+flowchart TD
+    A[analyze_scene / annotate_image / get_map_visual / annotate_map] --> B[센서 또는 맵 데이터 수신]
+    B --> C[이미지 생성 또는 가공]
+    C --> D[VLM 분석 선택 수행]
+    D --> E[로컬 파일 저장]
+    E --> F[스킬 결과에 file_path 포함]
+    F --> G[AgentNode가 file_path 감지]
+    G --> H[SendMessage 서비스 호출]
+    H --> I[ChannelNode가 활성 채널들에 병렬 전송]
+    I --> J[사용자에게 이미지 또는 파일 전달]

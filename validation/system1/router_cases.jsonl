@@ -1,0 +1,32 @@
+{"id": "smalltalk-01", "instruction": "안녕", "expected": {"kind": "simple_reply"}}
+{"id": "smalltalk-02", "instruction": "고마워", "expected": {"kind": "simple_reply"}}
+{"id": "smalltalk-03", "instruction": "안녕하세요 반가워요", "expected": {"kind": "simple_reply"}}
+{"id": "smalltalk-04", "instruction": "고마워요 수고했어", "expected": {"kind": "simple_reply"}}
+{"id": "smalltalk-05", "instruction": "잘했어 최고야", "expected": {"kind": "simple_reply"}}
+{"id": "smalltalk-06", "instruction": "thanks a lot", "expected": {"kind": "simple_reply"}}
+{"id": "status-01", "instruction": "지금 배터리 얼마나 남았어?", "expected": {"kind": "direct_skill", "skill": "get_status", "params": {}}}
+{"id": "status-02", "instruction": "로봇 상태 알려줘", "expected": {"kind": "direct_skill", "skill": "get_status", "params": {}}}
+{"id": "status-03", "instruction": "현재 좌표 알려줘", "expected": {"kind": "direct_skill", "skill": "get_status", "params": {}}}
+{"id": "where-01", "instruction": "여기 어디야?", "expected": {"kind": "direct_skill", "skill": "identify_location", "params": {}}}
+{"id": "where-02", "instruction": "지금 있는 곳 이름이 뭐야", "expected": {"kind": "direct_skill", "skill": "identify_location", "params": {}}}
+{"id": "time-01", "instruction": "지금 몇 시야?", "expected": {"kind": "direct_skill", "skill": "get_datetime", "params": {}}}
+{"id": "time-02", "instruction": "오늘 날짜 알려줘", "expected": {"kind": "direct_skill", "skill": "get_datetime", "params": {}}}
+{"id": "rag-01", "instruction": "저장된 지식 목록 보여줘", "expected": {"kind": "direct_skill", "skill": "rag_list", "params": {}}}
+{"id": "peer-01", "instruction": "연결된 동료 로봇 누구 있어?", "expected": {"kind": "direct_skill", "skill": "list_peer_robots", "params": {}}}
+{"id": "topic-01", "instruction": "ROS 토픽 목록 보여줘", "expected": {"kind": "direct_skill", "skill": "list_topics", "params": {}}}
+{"id": "nav-01", "instruction": "주방으로 가줘", "expected": {"kind": "llm"}, "expected_navigation": {"kind": "direct_skill", "skill": "navigate_to", "params": {"target_name": "주방"}}}
+{"id": "nav-02", "instruction": "충전대로 이동해", "expected": {"kind": "llm"}, "expected_navigation": {"kind": "direct_skill", "skill": "navigate_to", "params": {"target_name": "충전대"}}}
+{"id": "nav-03", "instruction": "회의실 가서 기다려", "expected": {"kind": "llm"}}
+{"id": "nav-04", "instruction": "저기로 가", "expected": {"kind": "llm"}}
+{"id": "move-01", "instruction": "앞으로 2미터 가줘", "expected": {"kind": "direct_skill", "skill": "move_relative", "params": {"forward": 2.0}}}
+{"id": "move-02", "instruction": "뒤로 0.5m 이동", "expected": {"kind": "direct_skill", "skill": "move_relative", "params": {"forward": -0.5}}}
+{"id": "compound-01", "instruction": "회의실로 이동한 다음 컵을 집어줘", "expected": {"kind": "llm"}}
+{"id": "compound-02", "instruction": "배터리 확인하고 충전대로 가", "expected": {"kind": "llm"}}
+{"id": "question-01", "instruction": "너는 어떤 일을 할 수 있어?", "expected": {"kind": "llm"}}
+{"id": "question-02", "instruction": "주방 좌표가 어디야?", "expected": {"kind": "llm"}}
+{"id": "question-03", "instruction": "왜 아까 멈췄어?", "expected": {"kind": "llm"}}
+{"id": "save-01", "instruction": "여기를 거실로 저장해", "expected": {"kind": "llm"}}
+{"id": "search-01", "instruction": "냉장고에 대해 기억하는 거 찾아줘", "expected": {"kind": "llm"}}
+{"id": "ambiguous-01", "instruction": "그거 좀 해줘", "expected": {"kind": "llm"}}
+{"id": "manip-01", "instruction": "테이블 위 컵 집어줘", "expected": {"kind": "direct_skill", "skill": "adaptive_pick_object", "params": {"target_object": "cup"}}}
+{"id": "vision-01", "instruction": "앞에 뭐가 보이는지 설명해줘", "expected": {"kind": "llm"}}

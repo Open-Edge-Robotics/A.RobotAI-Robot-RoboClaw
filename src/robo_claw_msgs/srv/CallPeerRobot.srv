@@ -1,0 +1,11 @@
+# 이름으로 특정 동료 로봇(gRPC 피어)을 지정해 지시/메시지를 전달하기 위한 서비스
+
+string peer_name        # target_peers_json에서 설정한 agent_name (연결된 피어 식별자)
+string instruction      # 전달할 자연어 지시/메시지
+string file_path        # 전송할 로컬 파일 경로 (옵션)
+bool wait_for_result    # true면 SendCommand로 동기 호출해 응답 대기, false면 큐잉 후 즉시 반환
+float64 timeout_sec     # 0이면 노드 기본 request_timeout_sec 사용
+---
+bool success
+string result_message   # wait_for_result=true일 때 상대 로봇의 실제 처리 결과
+string error_message    # 실패 시 에러 내용

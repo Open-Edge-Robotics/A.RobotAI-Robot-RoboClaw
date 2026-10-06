@@ -1,0 +1,10 @@
+flowchart TD
+    A[analyze_scene / annotate_image / get_map_visual / annotate_map] --> B[Receive Sensor or Map Data]
+    B --> C[Generate or Process Image]
+    C --> D[Optionally Run VLM Analysis]
+    D --> E[Save Local File]
+    E --> F[Include file_path in Skill Result]
+    F --> G[AgentNode Detects file_path]
+    G --> H[Call SendMessage Service]
+    H --> I[ChannelNode Sends to Active Channels in Parallel]
+    I --> J[Deliver Image or File to User]

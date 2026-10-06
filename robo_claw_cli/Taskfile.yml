@@ -1,0 +1,82 @@
+version: '3'
+
+vars:
+  BINARY_NAME: rclaw
+  BIN_DIR: bin
+  LDFLAGS: -s -w
+
+tasks:
+  default:
+    desc: Build the binary (alias for build)
+    deps: [build]
+
+  all:
+    desc: Build the binary (default target)
+    deps: [build]
+
+  tidy:
+    desc: Run go mod tidy
+    run: once
+    cmds:
+      - echo "Running go mod tidy..."
+      - go mod tidy
+
+  build:
+    desc: Build the Go binary for host architecture (optimized)
+    deps: [tidy]
+    cmds:
+      - echo "Building for host architecture (optimized)..."
+      - go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}} .
+
+  build-all:
+    desc: Build binaries for both amd64 and arm64 architectures
+    cmds:
+      - task: build-linux-amd64
+      - task: build-linux-arm64
+
+  build-linux-amd64:
+    desc: Build binary for linux/amd64 (saved to bin/)
+    deps: [tidy]
+    cmds:
+      - echo "Building for linux/amd64..."
+      - mkdir -p {{.BIN_DIR}}
+      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BIN_DIR}}/{{.BINARY_NAME}}_linux_amd64 .
+
+  build-linux-arm64:
+    desc: Build binary for linux/arm64 (saved to bin/)
+    deps: [tidy]
+    cmds:
+      - echo "Building for linux/arm64..."
+      - mkdir -p {{.BIN_DIR}}
+      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o {{.BIN_DIR}}/{{.BINARY_NAME}}_linux_arm64 .
+
+  clean:
+    desc: Remove build artifacts (including bin/)
+    cmds:
+      - echo "Cleaning build artifacts..."
+      - rm -f {{.BINARY_NAME}}
+      - rm -rf {{.BIN_DIR}}
+
+  test:
+    desc: Run all unit tests
+    cmds:
+      - echo "Running tests..."
+      - go test -v ./...
+
+  contract-check:
+    desc: Validate canonical RoboClaw configuration registry and generated mappings
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_NAME}} contract check
+
+  fmt:
+    desc: Run go fmt on all packages
+    cmds:
+      - echo "Running go fmt..."
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet static analysis
+    cmds:
+      - echo "Running go vet..."
+      - go vet ./...

@@ -1,0 +1,17 @@
+{
+  "_comment": "System 1 라우터 평가용 고정 컨텍스트. 실제 로봇의 list_skills()/시맨틱 맵 대신 사용한다. risk_level/input_schema는 실제 스킬 정의(skills/)와 맞춘다.",
+  "skills": [
+    {"name": "get_status", "description": "로봇의 실시간 배터리 잔량, 현재 좌표 등 하드웨어 텔레메트리 정보를 조회합니다.", "risk_level": "read"},
+    {"name": "identify_location", "description": "로봇의 현재 위치가 기억된 어떤 장소에 해당하는지 이름으로 알려줍니다.", "risk_level": "read"},
+    {"name": "get_datetime", "description": "현재 날짜와 시간을 조회합니다.", "risk_level": "read"},
+    {"name": "rag_list", "description": "RAG 지식 베이스에 저장된 항목 목록을 조회합니다.", "risk_level": "read"},
+    {"name": "rag_status", "description": "RAG 인덱스 상태, 벡터 저장소 종류, 문서 수를 조회합니다.", "risk_level": "read"},
+    {"name": "list_peer_robots", "description": "연결된 동료 로봇들의 이름과 gRPC 연결 상태를 조회합니다.", "risk_level": "read"},
+    {"name": "list_topics", "description": "현재 ROS 토픽 목록을 조회합니다.", "risk_level": "read"},
+    {"name": "rag_search", "description": "지식 베이스를 검색합니다.", "risk_level": "read", "input_schema": {"type": "object", "required": ["query"]}},
+    {"name": "get_location", "description": "기억된 장소의 좌표를 조회합니다.", "risk_level": "read", "input_schema": {"type": "object", "required": ["location_name"]}},
+    {"name": "navigate_to", "description": "로봇을 기억된 장소(target_name)나 좌표로 이동시킵니다.", "risk_level": "action"},
+    {"name": "move_relative", "description": "현재 위치 기준으로 상대 거리만큼 이동합니다.", "risk_level": "action"}
+  ],
+  "places": ["주방", "거실", "충전대", "회의실", "현관"]
+}

@@ -1,0 +1,67 @@
+robo_claw_core_node:
+  ros__parameters:
+    loop_rate_hz: 50.0
+    agent_id: "cloid_agent"
+
+    # CLOiD(CLOi-D) 는 로봇 측 tofu(tofu_control) 컨테이너가 robot_state_publisher 를
+    # 실행하고, URDF(hmc_v2_hand)는 그 컨테이너 이미지 안에만 존재한다. robo_claw
+    # 컨테이너에서는 해당 파일에 접근할 수 없으므로 robot_description_file 을 지정하지
+    # 않는다. 이 경우 core_node 는 /joint_states 의 조인트 이름으로 관절을 자동
+    # 등록(discovery)한다.
+    # 로봇의 URDF/TF 기준 팔·waist·neck 조인트 한계는 ROBOT_LIMITS.cloid.json 참고.
+    # robot_description_file: ""
+
+    # 센서 목록
+    # SensorManager 는 IMU(sensor_msgs/Imu) / LIDAR(sensor_msgs/LaserScan) /
+    # CAMERA(sensor_msgs/Image) 만 구독해 activity 를 추적한다. 아래 두 개만 등록한다.
+    #
+    # 주의: 센서 이름에 "camera" 가 들어가면 launch 의 camera_topic 자동 해석
+    # (_resolve_camera_topic)이 그 토픽을 agent/vision 카메라로 선택한다. CLOiD 의
+    # agent 카메라는 compressed 헤드 RGB(rgb_cam_head_front_left)여야 하므로,
+    # raw Image 를 추적하는 이 센서는 link 이름(front_d435)으로 등록하고 agent
+    # camera_topic 은 robo_claw_agent_node 에서 명시한다.
+    sensor_names:
+      - "imu"
+      - "front_d435"
+
+    # 센서 토픽 매핑 (sensor_topics.<sensor_name>)
+    sensor_topics:
+      # chest_link 에 장착된 IMU 브로드캐스터
+      imu: "/chest_imu_broadcaster/imu"
+      # 전면 D435 depth 스트림(raw sensor_msgs/Image, 15Hz).
+      # CLOiD 의 RGB 카메라(rgb_cam_*)는 CompressedImage 만 발행하므로 activity
+      # 추적 대상으로는 raw Image 를 발행하는 이 토픽을 사용한다.
+      front_d435: "/camera_front/camera_front/depth/image_rect_raw"
+
+    # CLOiD 는 2D LaserScan(/scan)을 발행하지 않는다(장애물 인지는 3D 라이다
+    # /lidar_points_bounded 와 Nav2 costmap 사용). 3D 포인트클라우드 activity 추적은
+    # SensorManager 에 아직 없으므로 lidar 센서는 등록하지 않는다.
+
+    # 제어 명령 매핑
+    # 주의: Tofu 의 diff_drive_controller 는 /cmd_vel 을 geometry_msgs/TwistStamped 로
+    # 구독한다. robo_claw 의 직접 cmd_vel 제어(Twist)는 이 로봇에 적용되지 않으므로
+    # 베이스 이동·회전은 Nav2 action(navigate_to_pose, spin)을 사용한다.
+    cmd_vel_topic: "/cmd_vel"
+    odom_topic: "/odom"
+
+robo_claw_agent_node:
+  ros__parameters:
+    # 자가진단용 센서 토픽
+    # lidar_topic 기본값은 /scan 이며, CLOiD 에는 LaserScan 토픽이 없어 health state
+    # 에 LIDAR_NO_DATA 가 표시된다(알려진 한계, 3D 라이다 health check 미구현).
+    lidar_topic: "/scan"
+    imu_topic: "/chest_imu_broadcaster/imu"
+    # VLM 분석·객체 인식용 카메라(전면 헤드 RGB). CLOiD 는 CompressedImage 만
+    # 발행하므로 compressed 토픽을 지정한다(skill_manager 가 자동으로 분기).
+    # depth/camera_info 토픽은 지정하지 않는다 — 헤드 RGB 카메라의 optical frame 이
+    # TF 트리에 없어 3D 역투영이 성립하지 않는다.
+    camera_topic: "/rgb_cam_head_front_left/image_raw/compressed"
+
+    # 실제 모션 목록은 /task_manager/motion_map 토픽에서 읽는다. 토픽이 비어 있을 때만
+    # 읽기 전용 파일 fallback을 사용하며, 파일은 RoboClaw 컨테이너 내부에 마운트되어야 한다.
+    cloid_motion_catalog_file: "/ws/motion_list/motion_map.json"
+
+    # manipulation — CLOiD 팔/hand 제어 백엔드는 아직 구현되지 않았다.
+    # manipulation_enabled=false 로 조작 계열 스킬을 실행 단에서 차단한다.
+    manipulation_enabled: false
+    manipulation_backend: "moveit"

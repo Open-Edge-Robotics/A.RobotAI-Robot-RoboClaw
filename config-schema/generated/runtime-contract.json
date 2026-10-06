@@ -1,0 +1,886 @@
+{
+  "schema_version": "2.0",
+  "fields": {
+    "llm.provider": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_PROVIDER",
+      "api_json": "llm_provider",
+      "launch_argument": "llm_provider",
+      "ros_parameter": "llm_provider",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "llm.model": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_MODEL",
+      "api_json": "llm_model",
+      "launch_argument": "llm_model",
+      "ros_parameter": "llm_model",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "ros.domain_id": {
+      "type": "integer",
+      "scope": "host",
+      "secret": false,
+      "env": "ROS_DOMAIN_ID",
+      "api_json": "ros_domain_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "agent.id": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_AGENT_ID",
+      "api_json": "agent_id",
+      "launch_argument": "agent_id",
+      "ros_parameter": "agent_id",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "rag.enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_ENABLE_RAG",
+      "api_json": "enable_rag",
+      "launch_argument": "enable_rag",
+      "ros_parameter": "enable_rag",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "rag.top_k": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_RAG_TOP_K",
+      "api_json": "rag_top_k",
+      "launch_argument": "rag_top_k",
+      "ros_parameter": "rag_top_k",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "task.strict_config": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_STRICT_CONFIG",
+      "api_json": "strict_config",
+      "launch_argument": "strict_config",
+      "ros_parameter": "strict_config",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "http.port": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_HTTP_PORT",
+      "api_json": "http_port",
+      "launch_argument": "http_port",
+      "ros_parameter": "http_port",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "http.control_token": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "RC_HTTP_CONTROL_TOKEN",
+      "api_json": "http_control_token",
+      "launch_argument": "http_control_token",
+      "ros_parameter": "http_control_token",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "messenger.server.port": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ROBO_CLAW_GRPC_PORT",
+      "api_json": "grpc_port",
+      "launch_argument": "grpc_port",
+      "ros_parameter": "grpc_port",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "messenger.peer_token": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "GRPC_PEER_TOKEN",
+      "api_json": "grpc_peer_token",
+      "launch_argument": "grpc_peer_token",
+      "ros_parameter": "grpc_peer_token",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "vision.enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_USE_VISION",
+      "api_json": "use_vision",
+      "launch_argument": "use_vision",
+      "ros_parameter": "use_vision",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "vision.model_path": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "RC_VISION_MODEL_PATH",
+      "api_json": "vision_model_path",
+      "launch_argument": "vision_model_path",
+      "ros_parameter": "model_path",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "ollama.base_url": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_OLLAMA_BASE_URL",
+      "api_json": "ollama_base_url",
+      "launch_argument": "llm_base_url",
+      "ros_parameter": "llm_base_url",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "ollama.options": {
+      "type": "object",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_OLLAMA_OPTIONS_JSON",
+      "api_json": "ollama_options_json",
+      "launch_argument": "ollama_options_json",
+      "ros_parameter": "ollama_options_json",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "embedding.model": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_EMBEDDING_MODEL",
+      "api_json": "llm_embedding_model",
+      "launch_argument": "llm_embedding_model",
+      "ros_parameter": "llm_embedding_model",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "embedding.provider": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_EMBEDDING_PROVIDER",
+      "api_json": "llm_embedding_provider",
+      "launch_argument": "llm_embedding_provider",
+      "ros_parameter": "llm_embedding_provider",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "embedding.base_url": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_EMBEDDING_BASE_URL",
+      "api_json": "llm_embedding_base_url",
+      "launch_argument": "llm_embedding_base_url",
+      "ros_parameter": "llm_embedding_base_url",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "embedding.api_key": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "RC_LLM_EMBEDDING_API_KEY",
+      "api_json": "llm_embedding_api_key",
+      "launch_argument": "llm_embedding_api_key",
+      "ros_parameter": "llm_embedding_api_key",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "rag.vector_backend": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_RAG_VECTOR_BACKEND",
+      "api_json": "rag_vector_backend",
+      "launch_argument": "rag_vector_backend",
+      "ros_parameter": "rag_vector_backend",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "rag.score_threshold": {
+      "type": "number",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_RAG_SCORE_THRESHOLD",
+      "api_json": "rag_score_threshold",
+      "launch_argument": "rag_score_threshold",
+      "ros_parameter": "rag_score_threshold",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "rag.local_mirror": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_RAG_LOCAL_MIRROR",
+      "api_json": "rag_local_mirror",
+      "launch_argument": "rag_local_mirror",
+      "ros_parameter": "rag_local_mirror",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "qdrant.url": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "QDRANT_URL",
+      "api_json": "qdrant_url",
+      "launch_argument": "qdrant_url",
+      "ros_parameter": "qdrant_url",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "qdrant.api_key": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "QDRANT_API_KEY",
+      "api_json": "qdrant_api_key",
+      "launch_argument": "qdrant_api_key",
+      "ros_parameter": "qdrant_api_key",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "task.queue_max_size": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_TASK_QUEUE_MAX_SIZE",
+      "api_json": "task_queue_max_size",
+      "launch_argument": "task_queue_max_size",
+      "ros_parameter": "task_queue_max_size",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "task.llm_fail_fast": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_FAIL_FAST",
+      "api_json": "llm_fail_fast",
+      "launch_argument": "llm_fail_fast",
+      "ros_parameter": "llm_fail_fast",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "task.decomposition_enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_ENABLE_TASK_DECOMPOSITION",
+      "api_json": "enable_task_decomposition",
+      "launch_argument": "enable_task_decomposition",
+      "ros_parameter": "enable_task_decomposition",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "task.decomposition_max_steps": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_TASK_DECOMPOSITION_MAX_STEPS",
+      "api_json": "task_decomposition_max_steps",
+      "launch_argument": "task_decomposition_max_steps",
+      "ros_parameter": "task_decomposition_max_steps",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "task.step_max_retries": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_TASK_STEP_MAX_RETRIES",
+      "api_json": "task_step_max_retries",
+      "launch_argument": "task_step_max_retries",
+      "ros_parameter": "task_step_max_retries",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "http.host": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_HTTP_HOST",
+      "api_json": "http_host",
+      "launch_argument": "http_host",
+      "ros_parameter": "http_host",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "http.allowed_cidrs": {
+      "type": "array",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_HTTP_ALLOWED_CIDRS_JSON",
+      "api_json": "http_allowed_cidrs_json",
+      "launch_argument": "http_allowed_cidrs_json",
+      "ros_parameter": "http_allowed_cidrs_json",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "http.rate_limit_per_minute": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_HTTP_RATE_LIMIT_PER_MINUTE",
+      "api_json": "http_rate_limit_per_minute",
+      "launch_argument": "http_rate_limit_per_minute",
+      "ros_parameter": "http_rate_limit_per_minute",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "dashboard.host": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_DASHBOARD_HOST",
+      "api_json": "dashboard_host",
+      "launch_argument": "dashboard_host",
+      "ros_parameter": "dashboard_host",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "dashboard.port": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_DASHBOARD_PORT",
+      "api_json": "dashboard_port",
+      "launch_argument": "dashboard_port",
+      "ros_parameter": "dashboard_port",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "channels.discord_enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ENABLE_DISCORD",
+      "api_json": "enable_discord",
+      "launch_argument": "enable_discord",
+      "ros_parameter": "enable_discord",
+      "modes": [
+          "local",
+          "docker",
+          "config_server"
+        ]
+    },
+    "channels.discord_token": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "DISCORD_BOT_TOKEN",
+      "api_json": "discord_bot_token",
+      "launch_argument": "discord_token",
+      "ros_parameter": "discord_token",
+      "modes": [
+          "local",
+          "docker",
+          "config_server"
+        ]
+    },
+    "channels.telegram_enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ENABLE_TELEGRAM",
+      "api_json": "enable_telegram",
+      "launch_argument": "enable_telegram",
+      "ros_parameter": "enable_telegram",
+      "modes": [
+          "local",
+          "docker",
+          "config_server"
+        ]
+    },
+    "channels.slack_enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ENABLE_SLACK",
+      "api_json": "enable_slack",
+      "launch_argument": "enable_slack",
+      "ros_parameter": "enable_slack",
+      "modes": [
+          "local",
+          "docker",
+          "config_server"
+        ]
+    },
+    "mcp.enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_ENABLE_MCP",
+      "api_json": "enable_mcp",
+      "launch_argument": "mcp_enabled",
+      "ros_parameter": "mcp_enabled",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "mcp.servers": {
+      "type": "array",
+      "scope": "secret",
+      "secret": true,
+      "env": "RC_MCP_SERVERS_JSON",
+      "api_json": "mcp_servers_json",
+      "launch_argument": "mcp_servers_json",
+      "ros_parameter": "mcp_servers_json",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "diagnostics.lidar_topic": {
+      "type": "string",
+      "scope": "robot_profile",
+      "secret": false,
+      "env": "RC_LIDAR_TOPIC",
+      "api_json": "lidar_topic",
+      "launch_argument": "lidar_topic",
+      "ros_parameter": "lidar_topic",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "diagnostics.imu_topic": {
+      "type": "string",
+      "scope": "robot_profile",
+      "secret": false,
+      "env": "RC_IMU_TOPIC",
+      "api_json": "imu_topic",
+      "launch_argument": "imu_topic",
+      "ros_parameter": "imu_topic",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "debug.enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_DEBUG",
+      "api_json": "debug",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "langsmith.workspace_id": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "LANGSMITH_WORKSPACE_ID",
+      "api_json": "langsmith_workspace_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.maestro_ip": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "MAESTRO_IP",
+      "api_json": "maestro_ip",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.robot_port": {
+      "type": "integer",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ROBOT_PORT",
+      "api_json": "robot_port",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.robot_id": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ROBOT_ID",
+      "api_json": "robot_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.robot_site_id": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ROBOT_SITE_ID",
+      "api_json": "robot_site_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.robot_map_id": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ROBOT_MAP_ID",
+      "api_json": "robot_map_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.robot_map_version": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "ROBOT_MAP_VERSION",
+      "api_json": "robot_map_version",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.robot_map_frame_id": {
+      "type": "string",
+      "scope": "robot_profile",
+      "secret": false,
+      "env": "ROBOT_MAP_FRAME_ID",
+      "api_json": "robot_map_frame_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.disconnect_policy": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "MAESTRO_DISCONNECT_POLICY",
+      "api_json": "maestro_disconnect_policy",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.heartbeat_sec": {
+      "type": "number",
+      "scope": "runtime",
+      "secret": false,
+      "env": "FLEET_HEARTBEAT_SEC",
+      "api_json": "fleet_heartbeat_sec",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.command_journal_path": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "FLEET_COMMAND_JOURNAL_PATH",
+      "api_json": "fleet_command_journal_path",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.skills_guide_file": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "RC_SKILLS_GUIDE_FILE",
+      "api_json": "skills_guide_file",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.control_tls": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "FLEET_CONTROL_TLS",
+      "api_json": "fleet_control_tls",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.control_ca_cert": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "FLEET_CONTROL_CA_CERT",
+      "api_json": "fleet_control_ca_cert",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.control_client_cert": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "FLEET_CONTROL_CLIENT_CERT",
+      "api_json": "fleet_control_client_cert",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "fleet.control_client_key": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "FLEET_CONTROL_CLIENT_KEY",
+      "api_json": "fleet_control_client_key",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    }
+  }
+}

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package robo_claw;
+
+service RoboMessenger {
+  // 양방향 스트리밍 대화: 사용자와 로봇이 실시간으로 메시지를 주고받음
+  rpc ChatStream (stream ChatMessage) returns (stream ChatMessage);
+
+  // 단발성 명령 전송 및 결과 수신
+  rpc SendCommand (ChatMessage) returns (CommandResponse);
+
+  // 파일 업로드 스트리밍
+  rpc UploadFile (stream FileChunk) returns (UploadResponse);
+
+  // 파일 다운로드 스트리밍
+  rpc DownloadFile (DownloadRequest) returns (stream FileChunk);
+}
+
+message ChatMessage {
+  string sender_id = 1;             // 보낸 주체 (사용자 아이디 또는 'robot')
+  string content = 2;               // 메시지 내용 (자연어 명령 등)
+  int64 timestamp = 3;              // 발생 시각 (Unix epoch)
+  map<string, string> metadata = 4; // 이미지 file_id, 위치 정보 등
+}
+
+message CommandResponse {
+  bool success = 1;
+  string message = 2;
+  string result_json = 3;
+}
+
+message FileChunk {
+  string file_id = 1;     // 다운로드 요청 시 기준 파일, 업로드 시엔 클라이언트가 지정하거나 첫 Chunk에 파일명 전송용
+  bytes data = 2;         // 쪼개진 바이너리 데이터 청크
+  bool is_last = 3;       // 마지막 청크 여부
+  string filename = 4;    // (옵션) 원본 파일명, 업로드 시 주로 처음에 전달
+}
+
+message UploadResponse {
+  bool success = 1;
+  string file_id = 2;     // 성공적으로 생성된 파일 식별 ID
+  string message = 3;
+}
+
+message DownloadRequest {
+  string file_id = 1;     // 다운로드 받을 파일 식별 ID
+}
+

@@ -1,0 +1,104 @@
+{
+  "name": "RoboClaw 디폴트 테스트 시나리오",
+  "description": "gRPC 및 AI 에이전트 능력 검증을 위한 표준 시나리오",
+  "test_cases": [
+    {
+      "id": "tc_ping",
+      "name": "gRPC Ping 연결성",
+      "step": "Step 1",
+      "type": "ping",
+      "timeout_ms": 3000,
+      "enabled": true
+    },
+    {
+      "id": "tc_robot_info",
+      "name": "로봇 정보 조회 및 정합성",
+      "step": "Step 1",
+      "type": "robot_info",
+      "timeout_ms": 3000,
+      "enabled": true
+    },
+    {
+      "id": "tc_battery",
+      "name": "배터리 상태 점검",
+      "step": "Step 1",
+      "type": "battery",
+      "timeout_ms": 10000,
+      "enabled": true
+    },
+    {
+      "id": "tc_camera",
+      "name": "카메라 이미지 획득",
+      "step": "Step 2",
+      "type": "camera",
+      "timeout_ms": 5000,
+      "enabled": true
+    },
+    {
+      "id": "tc_slam_map",
+      "name": "SLAM 지도 맵 수신",
+      "step": "Step 2",
+      "type": "map",
+      "timeout_ms": 5000,
+      "enabled": true
+    },
+    {
+      "id": "tc_camera_analysis",
+      "name": "카메라 이미지 분석 및 전달 스킬",
+      "step": "Step 2",
+      "type": "camera_analysis",
+      "timeout_ms": 25000,
+      "enabled": true
+    },
+    {
+      "id": "tc_map_analysis",
+      "name": "맵 이미지 분석 및 전달 스킬",
+      "step": "Step 2",
+      "type": "map_analysis",
+      "timeout_ms": 25000,
+      "enabled": true
+    },
+    {
+      "id": "tc_guardrail",
+      "name": "물리 가드레일 속도 제약",
+      "step": "Step 3",
+      "type": "navigation",
+      "timeout_ms": 15000,
+      "enabled": true,
+      "params": {
+        "mode": "guardrail",
+        "speed": 0.05
+      }
+    },
+    {
+      "id": "tc_motion_chat",
+      "name": "자연어 기반 주행 스킬 기동",
+      "step": "Step 3",
+      "type": "navigation",
+      "timeout_ms": 15000,
+      "enabled": true,
+      "params": {
+        "mode": "motion"
+      }
+    },
+    {
+      "id": "tc_joint_control",
+      "name": "매니퓰레이션 관절 구동 검증",
+      "step": "Step 3",
+      "type": "manipulation",
+      "timeout_ms": 15000,
+      "enabled": true
+    },
+    {
+      "id": "tc_persona",
+      "name": "LLM 페르소나 및 응답 지능",
+      "step": "Step 4",
+      "type": "persona",
+      "timeout_ms": 15000,
+      "enabled": true,
+      "params": {
+        "prompt": "너의 정체성과 성격에 대해 한 문장으로 답변해줘."
+      }
+    }
+  ]
+}

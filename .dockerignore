@@ -1,0 +1,33 @@
+# Python 가상환경
+.venv/
+
+# ROS 2 빌드 산출물
+build/
+install/
+log/
+
+# 모델 파일 (볼륨 마운트로 제공)
+models/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# IDE / 설정
+.vscode/
+.claude/
+.env
+.env.example
+
+# 테스트 캐시
+.pytest_cache/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# 문서
+*.md
+!src/robo_claw_bringup/config/*.md
+docs/
+sim/

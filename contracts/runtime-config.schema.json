@@ -1,0 +1,548 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RoboClaw Runtime Configuration",
+  "type": "object",
+  "x-contract-version": "2.3.0",
+  "required": [
+    "schema_version",
+    "config_revision",
+    "robot_name",
+    "environment",
+    "config"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "config_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "robot_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "llm_provider": {
+          "type": "string",
+          "description": "LLM provider used by the agent.",
+          "default": "azure",
+          "x-canonical-name": "llm.provider",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "enum": [
+            "azure",
+            "openai",
+            "anthropic",
+            "ollama"
+          ]
+        },
+        "llm_model": {
+          "type": "string",
+          "description": "Main conversation model name.",
+          "default": "gpt-4.1",
+          "x-canonical-name": "llm.model",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "ros_domain_id": {
+          "type": "integer",
+          "description": "ROS 2 domain identifier.",
+          "default": 0,
+          "x-canonical-name": "ros.domain_id",
+          "x-scope": "host",
+          "x-secret": false,
+          "minimum": 0,
+          "maximum": 232
+        },
+        "agent_id": {
+          "type": "string",
+          "description": "Stable identity used by agent and peer discovery.",
+          "default": "robo_claw_agent",
+          "x-canonical-name": "agent.id",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "enable_rag": {
+          "type": "boolean",
+          "description": "Enable retrieval augmented generation.",
+          "default": false,
+          "x-canonical-name": "rag.enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "rag_top_k": {
+          "type": "integer",
+          "description": "Number of RAG results returned to the planner.",
+          "default": 2,
+          "x-canonical-name": "rag.top_k",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0
+        },
+        "strict_config": {
+          "type": "boolean",
+          "description": "Fail startup when required runtime files are missing.",
+          "default": false,
+          "x-canonical-name": "task.strict_config",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "http_port": {
+          "type": "integer",
+          "description": "RoboClaw HTTP channel port.",
+          "default": 8080,
+          "x-canonical-name": "http.port",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "http_control_token": {
+          "type": "string",
+          "description": "Token required for HTTP control operations.",
+          "default": null,
+          "x-canonical-name": "http.control_token",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "grpc_port": {
+          "type": "integer",
+          "description": "RoboMessenger gRPC server port.",
+          "default": 50052,
+          "x-canonical-name": "messenger.server.port",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "grpc_peer_token": {
+          "type": "string",
+          "description": "Shared peer authentication token.",
+          "default": null,
+          "x-canonical-name": "messenger.peer_token",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "use_vision": {
+          "type": "boolean",
+          "description": "Enable the ONNX object detector.",
+          "default": false,
+          "x-canonical-name": "vision.enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "vision_model_path": {
+          "type": "string",
+          "description": "ONNX model path used when vision is enabled.",
+          "default": "",
+          "x-canonical-name": "vision.model_path",
+          "x-scope": "host",
+          "x-secret": false
+        },
+        "ollama_base_url": {
+          "type": "string",
+          "description": "Ollama service endpoint.",
+          "default": "http://127.0.0.1:11434",
+          "x-canonical-name": "ollama.base_url",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "ollama_options_json": {
+          "type": "object",
+          "description": "Ollama generation options JSON object.",
+          "default": {},
+          "x-canonical-name": "ollama.options",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "llm_embedding_model": {
+          "type": "string",
+          "description": "Embedding model used by RAG.",
+          "default": "",
+          "x-canonical-name": "embedding.model",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "llm_embedding_provider": {
+          "type": "string",
+          "description": "Provider used for embedding generation.",
+          "default": "",
+          "x-canonical-name": "embedding.provider",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "llm_embedding_base_url": {
+          "type": "string",
+          "description": "Optional embedding provider endpoint.",
+          "default": "",
+          "x-canonical-name": "embedding.base_url",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "llm_embedding_api_key": {
+          "type": "string",
+          "description": "Embedding provider API key.",
+          "default": null,
+          "x-canonical-name": "embedding.api_key",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "rag_vector_backend": {
+          "type": "string",
+          "description": "Vector storage backend.",
+          "default": "local",
+          "x-canonical-name": "rag.vector_backend",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "enum": [
+            "local",
+            "qdrant"
+          ]
+        },
+        "rag_score_threshold": {
+          "type": "number",
+          "description": "Minimum RAG similarity score.",
+          "default": 0.7,
+          "x-canonical-name": "rag.score_threshold",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rag_local_mirror": {
+          "type": "boolean",
+          "description": "Mirror remote vector entries in local memory.",
+          "default": true,
+          "x-canonical-name": "rag.local_mirror",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "qdrant_url": {
+          "type": "string",
+          "description": "Qdrant endpoint.",
+          "default": "http://127.0.0.1:6333",
+          "x-canonical-name": "qdrant.url",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "qdrant_api_key": {
+          "type": "string",
+          "description": "Qdrant API key.",
+          "default": null,
+          "x-canonical-name": "qdrant.api_key",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "task_queue_max_size": {
+          "type": "integer",
+          "description": "Maximum pending task queue size.",
+          "default": 8,
+          "x-canonical-name": "task.queue_max_size",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0
+        },
+        "llm_fail_fast": {
+          "type": "boolean",
+          "description": "Fail startup when LLM health validation fails.",
+          "default": false,
+          "x-canonical-name": "task.llm_fail_fast",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "enable_task_decomposition": {
+          "type": "boolean",
+          "description": "Decompose multi-step natural language tasks.",
+          "default": true,
+          "x-canonical-name": "task.decomposition_enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "task_decomposition_max_steps": {
+          "type": "integer",
+          "description": "Maximum number of decomposed task steps.",
+          "default": 6,
+          "x-canonical-name": "task.decomposition_max_steps",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0
+        },
+        "task_step_max_retries": {
+          "type": "integer",
+          "description": "Retry count for a failed decomposed step.",
+          "default": 1,
+          "x-canonical-name": "task.step_max_retries",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0
+        },
+        "http_host": {
+          "type": "string",
+          "description": "HTTP channel bind host.",
+          "default": "127.0.0.1",
+          "x-canonical-name": "http.host",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "http_allowed_cidrs_json": {
+          "type": "array",
+          "description": "Allowed client CIDR array for HTTP channel.",
+          "default": [],
+          "x-canonical-name": "http.allowed_cidrs",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "http_rate_limit_per_minute": {
+          "type": "integer",
+          "description": "HTTP request rate limit per minute.",
+          "default": 60,
+          "x-canonical-name": "http.rate_limit_per_minute",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0
+        },
+        "dashboard_host": {
+          "type": "string",
+          "description": "Dashboard web node bind host.",
+          "default": "127.0.0.1",
+          "x-canonical-name": "dashboard.host",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "dashboard_port": {
+          "type": "integer",
+          "description": "Dashboard web node HTTP port (distinct from HTTP channel port 8080).",
+          "default": 9090,
+          "x-canonical-name": "dashboard.port",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "enable_discord": {
+          "type": "boolean",
+          "description": "Enable Discord channel.",
+          "default": false,
+          "x-canonical-name": "channels.discord_enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "discord_bot_token": {
+          "type": "string",
+          "description": "Discord bot token.",
+          "default": null,
+          "x-canonical-name": "channels.discord_token",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "enable_telegram": {
+          "type": "boolean",
+          "description": "Enable Telegram channel.",
+          "default": false,
+          "x-canonical-name": "channels.telegram_enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "enable_slack": {
+          "type": "boolean",
+          "description": "Enable Slack channel.",
+          "default": false,
+          "x-canonical-name": "channels.slack_enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "enable_mcp": {
+          "type": "boolean",
+          "description": "Enable Model Context Protocol servers.",
+          "default": false,
+          "x-canonical-name": "mcp.enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "mcp_servers_json": {
+          "type": "array",
+          "description": "MCP server definitions, which may contain credentials.",
+          "default": null,
+          "x-canonical-name": "mcp.servers",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "lidar_topic": {
+          "type": "string",
+          "description": "Lidar topic used by sensor diagnostics.",
+          "default": "",
+          "x-canonical-name": "diagnostics.lidar_topic",
+          "x-scope": "robot_profile",
+          "x-secret": false
+        },
+        "imu_topic": {
+          "type": "string",
+          "description": "IMU topic used by sensor diagnostics.",
+          "default": "",
+          "x-canonical-name": "diagnostics.imu_topic",
+          "x-scope": "robot_profile",
+          "x-secret": false
+        },
+        "debug": {
+          "type": "boolean",
+          "description": "Enable verbose ROS logging.",
+          "default": false,
+          "x-canonical-name": "debug.enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "langsmith_workspace_id": {
+          "type": "string",
+          "description": "LangSmith workspace identifier for API keys with access to multiple workspaces.",
+          "default": "",
+          "x-canonical-name": "langsmith.workspace_id",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "maestro_ip": {
+          "type": "string",
+          "description": "Maestro FleetControl server IP; empty disables the outbound connector.",
+          "default": "",
+          "x-canonical-name": "fleet.maestro_ip",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "robot_port": {
+          "type": "integer",
+          "description": "Maestro FleetControl server port for the outbound connector.",
+          "default": 50053,
+          "x-canonical-name": "fleet.robot_port",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "robot_id": {
+          "type": "string",
+          "description": "Stable robot identity reported to Maestro; required when maestro IP is set.",
+          "default": "",
+          "x-canonical-name": "fleet.robot_id",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "robot_site_id": {
+          "type": "string",
+          "description": "Site identifier reported to Maestro for fleet grouping.",
+          "default": "",
+          "x-canonical-name": "fleet.robot_site_id",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "robot_map_id": {
+          "type": "string",
+          "description": "Map identifier reported to Maestro.",
+          "default": "",
+          "x-canonical-name": "fleet.robot_map_id",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "robot_map_version": {
+          "type": "string",
+          "description": "Map version reported to Maestro for deployment consistency.",
+          "default": "",
+          "x-canonical-name": "fleet.robot_map_version",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "robot_map_frame_id": {
+          "type": "string",
+          "description": "TF frame identifier of the robot map.",
+          "default": "map",
+          "x-canonical-name": "fleet.robot_map_frame_id",
+          "x-scope": "robot_profile",
+          "x-secret": false
+        },
+        "maestro_disconnect_policy": {
+          "type": "string",
+          "description": "In-flight command handling when the Maestro connection drops.",
+          "default": "complete",
+          "x-canonical-name": "fleet.disconnect_policy",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "enum": [
+            "complete",
+            "stop",
+            "finish_atomic"
+          ]
+        },
+        "fleet_heartbeat_sec": {
+          "type": "number",
+          "description": "Outbound heartbeat interval in seconds; must be positive.",
+          "default": 1.0,
+          "x-canonical-name": "fleet.heartbeat_sec",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "minimum": 0
+        },
+        "fleet_command_journal_path": {
+          "type": "string",
+          "description": "SQLite journal path used to deduplicate and replay fleet commands.",
+          "default": "/tmp/robo_claw_fleet_commands.sqlite3",
+          "x-canonical-name": "fleet.command_journal_path",
+          "x-scope": "host",
+          "x-secret": false
+        },
+        "skills_guide_file": {
+          "type": "string",
+          "description": "Skills guide file advertised to Maestro; auto-detected when empty.",
+          "default": "",
+          "x-canonical-name": "fleet.skills_guide_file",
+          "x-scope": "host",
+          "x-secret": false
+        },
+        "fleet_control_tls": {
+          "type": "boolean",
+          "description": "Enable mTLS for the Maestro FleetControl connection.",
+          "default": false,
+          "x-canonical-name": "fleet.control_tls",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "fleet_control_ca_cert": {
+          "type": "string",
+          "description": "CA certificate path used when FleetControl mTLS is enabled.",
+          "default": "",
+          "x-canonical-name": "fleet.control_ca_cert",
+          "x-scope": "host",
+          "x-secret": false
+        },
+        "fleet_control_client_cert": {
+          "type": "string",
+          "description": "Client certificate path used when FleetControl mTLS is enabled.",
+          "default": "",
+          "x-canonical-name": "fleet.control_client_cert",
+          "x-scope": "host",
+          "x-secret": false
+        },
+        "fleet_control_client_key": {
+          "type": "string",
+          "description": "Client private key path used when FleetControl mTLS is enabled.",
+          "default": "",
+          "x-canonical-name": "fleet.control_client_key",
+          "x-scope": "host",
+          "x-secret": false
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

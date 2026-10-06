@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""robo_claw_dashboard 노드 실행 스크립트 (Phase 이후 wiring)."""
+import sys
+
+from robo_claw_dashboard.dashboard_node import main
+
+if __name__ == "__main__":
+    sys.exit(main())

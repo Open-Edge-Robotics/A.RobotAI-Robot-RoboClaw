@@ -1,0 +1,22 @@
+graph LR
+    subgraph IF[인터페이스 계층]
+        C1[채널 수신]
+        C2[gRPC 서버]
+        C3[명령어 파싱]
+    end
+    
+    subgraph INTEL[지능 계층]
+        A1[LLM 추론/플래닝]
+        A2[단기/장기 메모리]
+        A3[상황 인지]
+    end
+    
+    subgraph CTRL[제어 계층]
+        S1[스킬 매니저]
+        S2[동적 탐색]
+        C[Core 제어 루프]
+        H[Hardware IO]
+    end
+    
+    IF -->|자연어 명령| INTEL
+    INTEL -->|Action/Plan| CTRL

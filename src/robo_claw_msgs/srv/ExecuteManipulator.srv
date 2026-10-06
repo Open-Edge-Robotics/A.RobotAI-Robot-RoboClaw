@@ -1,0 +1,10 @@
+string type                # "named_pose", "joint", "pose"
+string group_name
+string target_name         # named_pose
+string[] joint_names       # joint target
+float64[] joint_values     # joint target
+geometry_msgs/PoseStamped pose_target   # pose target
+string end_effector_link   # pose target (optional)
+---
+bool success
+string message

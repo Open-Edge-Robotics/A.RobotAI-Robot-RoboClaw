@@ -1,0 +1,12 @@
+flowchart TD
+    A[Command Input] --> B[Received by Channel Node]
+    B --> C[Send Data to Agent Node]
+    C --> D{LLM Planning}
+    D -->|Complex Command| E[Skill Decomposition]
+    D -->|Simple Command| F[Skill Matching]
+    E --> G[Execute Skill Manager]
+    F --> G
+    G --> H[Call Core Node Action]
+    H --> I{Safety Check\nGuardrails}
+    I -->|Pass| J[Robot Hardware Control]
+    I -->|Hazard Detected| K[Emergency Stop / Speed Limit]

@@ -1,0 +1,293 @@
+version: "3"
+
+vars:
+  BINARY_NAME: rclaw
+  CLI_DIR: robo_claw_cli
+  BIN_DIR: bin
+  LDFLAGS: -s -w
+  DOCKER_IMAGE: lgecloudroboticstask/robo-claw
+
+tasks:
+  default:
+    desc: 전체 빌드 (ROS 2 워크스페이스 및 rclaw 바이너리)
+    deps: [build]
+
+  all:
+    desc: default 태스크 별칭
+    deps: [default]
+
+  # -------------------------------------------------------------
+  # 환경 및 의존성
+  # -------------------------------------------------------------
+  setup-deps:
+    desc: uv 기반 Python 가상환경 설정 및 ONNX Runtime C++ SDK 설치
+    cmds:
+      - ./scripts/setup_deps.sh
+
+  # -------------------------------------------------------------
+  # 코드 생성 및 빌드
+  # -------------------------------------------------------------
+  proto:
+    desc: gRPC proto 파일 컴파일 (robo.proto 및 messenger.proto)
+    sources:
+      - "src/robo_claw_grpc/proto/*.proto"
+      - "src/robo_claw_channel/proto/*.proto"
+    generates:
+      - "src/robo_claw_grpc/robo_claw_grpc/robo_pb2.py"
+      - "src/robo_claw_grpc/robo_claw_grpc/robo_pb2_grpc.py"
+      - "src/robo_claw_channel/robo_claw_channel/messenger_pb2.py"
+      - "src/robo_claw_channel/robo_claw_channel/messenger_pb2_grpc.py"
+    cmds:
+      - ./generate_protos.sh
+
+  build:
+    desc: 전체 워크스페이스 빌드 (proto 컴파일, ROS 패키지 빌드, rclaw 바이너리)
+    deps: [proto, build-cli]
+    cmds:
+      - echo "Building ROS 2 packages..."
+      - ./scripts/run_in_ros_env.sh --ros-only colcon build --symlink-install --cmake-args -DPYTHON_EXECUTABLE=/usr/bin/python3 {{.CLI_ARGS}}
+      - find src -path "*/scripts/*" -type f ! -name "*.py" -exec chmod +x {} \;
+
+  build-fast:
+    desc: agent 및 channel 패키지 빠른 빌드 (proto 재생성 생략)
+    cmds:
+      - ./scripts/run_in_ros_env.sh --ros-only colcon build --symlink-install --packages-up-to robo_claw_agent robo_claw_channel {{.CLI_ARGS}}
+
+  tidy:
+    desc: CLI 디렉터리에서 go mod tidy 실행
+    run: once
+    cmds:
+      - echo "Running go mod tidy..."
+      - cd {{.CLI_DIR}} && go mod tidy
+
+  build-cli:
+    desc: 호스트 아키텍처용 rclaw 바이너리 빌드 (프로젝트 루트)
+    deps: [tidy]
+    cmds:
+      - echo "Building {{.BINARY_NAME}} for host architecture..."
+      - cd {{.CLI_DIR}} && go build -ldflags="{{.LDFLAGS}}" -o ../{{.BINARY_NAME}} .
+
+  build-all:
+    desc: amd64 및 arm64 아키텍처 바이너리 일괄 빌드
+    cmds:
+      - task: build-linux-amd64
+      - task: build-linux-arm64
+
+  build-linux-amd64:
+    desc: linux/amd64용 바이너리 빌드 (bin/에 저장)
+    deps: [tidy]
+    cmds:
+      - echo "Building for linux/amd64..."
+      - mkdir -p {{.BIN_DIR}}
+      - cd {{.CLI_DIR}} && GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o ../{{.BIN_DIR}}/{{.BINARY_NAME}}_linux_amd64 .
+
+  build-linux-arm64:
+    desc: linux/arm64용 바이너리 빌드 (bin/에 저장)
+    deps: [tidy]
+    cmds:
+      - echo "Building for linux/arm64..."
+      - mkdir -p {{.BIN_DIR}}
+      - cd {{.CLI_DIR}} && GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o ../{{.BIN_DIR}}/{{.BINARY_NAME}}_linux_arm64 .
+
+  rebuild:
+    desc: 클린 상태에서 전체 재빌드 (clean + setup-deps + build)
+    cmds:
+      - task: clean
+      - task: setup-deps
+      - task: build
+
+  clean:
+    desc: 빌드 산출물 삭제 (build/, install/, log/, .venv/, Go 바이너리 등)
+    cmds:
+      - echo "Cleaning build artifacts..."
+      - rm -rf build/ install/ log/ .venv/ bin/ {{.BINARY_NAME}} {{.CLI_DIR}}/robo_claw_cli
+      - rm -f src/robo_claw_channel/robo_claw_channel/messenger_pb2*
+      - rm -f src/robo_claw_grpc/robo_claw_grpc/robo_pb2*
+
+  # -------------------------------------------------------------
+  # Docker 이미지 빌드 (docs/DOCKER_GUIDE.md 참고)
+  # -------------------------------------------------------------
+  docker-setup:
+    desc: QEMU binfmt 에뮬레이터 등록 (멀티 아키텍처 빌드 전 호스트에 1회)
+    cmds:
+      - docker run --privileged --rm tonistiigi/binfmt --install all
+
+  docker-buildx-check:
+    desc: buildx 빌더 플랫폼 및 binfmt 등록 상태 확인 (출력에 linux/arm64 있으면 OK)
+    cmds:
+      - docker buildx inspect --bootstrap | grep -i platforms
+      - ls /proc/sys/fs/binfmt_misc/ | grep qemu
+
+  docker-buildx-recreate:
+    desc: multiarch 빌더 생성/부트스트랩 (binfmt 등록 후에도 exec format error 재발 시)
+    cmds:
+      - docker buildx inspect multiarch >/dev/null 2>&1 || docker buildx create --name multiarch --driver docker-container
+      - docker buildx inspect --bootstrap multiarch
+      - docker buildx use multiarch
+
+  docker-build:
+    desc: 멀티 아키텍처(amd64+arm64) 이미지 빌드 및 push (사전에 docker-setup 필요, TAG 오버라이드 가능)
+    vars:
+      TAG:
+        sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+    cmds:
+      - |
+        echo "Building multi-arch image {{.DOCKER_IMAGE}}:{{.TAG}} (linux/amd64,linux/arm64)..."
+        docker buildx build --platform=linux/amd64,linux/arm64 \
+          --build-arg BUILD_DATE="$(date +'%Y-%m-%d %H:%M:%S %Z')" \
+          --build-arg GIT_COMMIT="$(git rev-parse --short HEAD)" \
+          --build-arg IMAGE_TAG="{{.TAG}}" \
+          -t {{.DOCKER_IMAGE}}:latest \
+          -t {{.DOCKER_IMAGE}}:{{.TAG}} . --push
+
+  docker-build-local:
+    desc: 로컬 테스트용 amd64 전용 이미지 빌드 (push 없음, arm64 빌드 생략)
+    vars:
+      TAG:
+        sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+    cmds:
+      - |
+        echo "Building local amd64 image {{.DOCKER_IMAGE}}:{{.TAG}}..."
+        docker buildx build --platform=linux/amd64 --load \
+          --build-arg BUILD_DATE="$(date +'%Y-%m-%d %H:%M:%S %Z')" \
+          --build-arg GIT_COMMIT="$(git rev-parse --short HEAD)" \
+          --build-arg IMAGE_TAG="{{.TAG}}" \
+          -t {{.DOCKER_IMAGE}}:latest \
+          -t {{.DOCKER_IMAGE}}:{{.TAG}} .
+
+  docker-build-native:
+    desc: arm64 네이티브 빌드 (QEMU 세그폴트 발생 시 로봇에서 직접 실행, push 없음)
+    vars:
+      TAG:
+        sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+    cmds:
+      - |
+        echo "Building native image {{.DOCKER_IMAGE}}:{{.TAG}}..."
+        docker build \
+          --build-arg BUILD_DATE="$(date +'%Y-%m-%d %H:%M:%S %Z')" \
+          --build-arg GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+          --build-arg IMAGE_TAG="{{.TAG}}" \
+          -t {{.DOCKER_IMAGE}}:latest \
+          -t {{.DOCKER_IMAGE}}:{{.TAG}} .
+
+  # -------------------------------------------------------------
+  # 테스트
+  # -------------------------------------------------------------
+  unit-test:
+    desc: 빠른 단위 테스트 실행 (ROS 2 및 하드웨어 의존 테스트 제외)
+    cmds:
+      - |
+        if [[ ! -f install/setup.bash ]]; then
+          echo "[rc] 워크스페이스가 빌드되지 않았습니다. 먼저 'task build'를 실행하세요." >&2
+          exit 1
+        fi
+        COVERAGE_ARGS=""
+        if python3 -c "import pytest_cov" >/dev/null 2>&1; then
+          COVERAGE_ARGS="-p pytest_cov --cov=robo_claw_agent --cov=robo_claw_channel --cov=robo_claw_discovery --cov=robo_claw_grpc --cov-report=term-missing"
+        fi
+        ./scripts/run_in_ros_env.sh --ws env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
+          -p pytest_asyncio.plugin \
+          ${COVERAGE_ARGS} \
+          src/robo_claw_agent/tests/ \
+          src/robo_claw_channel/tests/ \
+          src/robo_claw_discovery/tests/ \
+          src/robo_claw_grpc/tests/ \
+          src/robo_claw_dashboard/tests/ \
+          src/robo_claw_bringup/tests/ \
+          --ignore=src/robo_claw_agent/tests/test_head_assist.py \
+          --ignore=src/robo_claw_agent/tests/test_manipulation_skill.py \
+          --ignore=src/robo_claw_channel/tests/test_client_node.py \
+          -m "not ros2 and not hardware" \
+          -v --tb=short {{.CLI_ARGS}}
+
+  test:
+    desc: 전체 테스트 실행 (pytest 및 colcon test)
+    cmds:
+      - |
+        if [[ ! -f install/setup.bash ]]; then
+          echo "[rc] 워크스페이스 미빌드 상태. 먼저 'task build'를 실행합니다."
+          task build
+        fi
+        echo "Running pytest..."
+        ./scripts/run_in_ros_env.sh --ws env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
+          -p pytest_asyncio.plugin \
+          src/robo_claw_agent/tests/ \
+          src/robo_claw_channel/tests/ \
+          src/robo_claw_discovery/tests/ \
+          src/robo_claw_grpc/tests/ \
+          src/robo_claw_dashboard/tests/ \
+          src/robo_claw_bringup/tests/ \
+          -v --tb=short
+        echo "Running colcon test..."
+        ./scripts/run_in_ros_env.sh --ws colcon test-result --delete-yes >/dev/null 2>&1 || true
+        ./scripts/run_in_ros_env.sh --ws colcon test \
+          --event-handlers console_direct+ \
+          --return-code-on-test-failure \
+          --packages-select \
+          robo_claw_msgs \
+          robo_claw_core \
+          robo_claw_bringup \
+          robo_claw_agent \
+          robo_claw_channel \
+          robo_claw_discovery \
+          robo_claw_grpc \
+          robo_claw_dashboard \
+          robo_claw_vision \
+          {{.CLI_ARGS}}
+        ./scripts/run_in_ros_env.sh --ws colcon test-result --verbose
+
+  test-cli:
+    desc: CLI Go 단위 테스트 실행
+    cmds:
+      - echo "Running Go tests..."
+      - cd {{.CLI_DIR}} && go test -v ./...
+
+  # -------------------------------------------------------------
+  # 코드 품질 및 컨트랙트
+  # -------------------------------------------------------------
+  lint:
+    desc: 전체 린트 검사 실행 (ruff, 스킬 카탈로그, 프롬프트 톤, 의존성, go vet)
+    cmds:
+      - uv run ruff check src/
+      - python3 scripts/validate_skill_catalog.py
+      - python3 scripts/check_prompt_tone.py
+      - python3 scripts/check_docker_deps.py
+      - cd {{.CLI_DIR}} && go vet ./...
+
+  deps-check:
+    desc: Dockerfile pip 의존성과 pyproject.toml/uv.lock 정합성 검증
+    cmds:
+      - python3 scripts/check_docker_deps.py
+
+  lint-skills:
+    desc: 스킬 카탈로그 정적 일관성 검증 (docs/SKILLS.md 대조)
+    cmds:
+      - python3 scripts/validate_skill_catalog.py
+
+  lint-prompt-tone:
+    desc: 시스템 프롬프트 톤 및 강제어 사용 점검
+    cmds:
+      - python3 scripts/check_prompt_tone.py
+
+  fmt:
+    desc: "코드 포맷팅 (Python: ruff format, Go: go fmt)"
+    cmds:
+      - uv run ruff format src/
+      - cd {{.CLI_DIR}} && go fmt ./...
+
+  vet:
+    desc: Go 정적 분석 (go vet)
+    cmds:
+      - cd {{.CLI_DIR}} && go vet ./...
+
+  contract-check:
+    desc: 설정 컨트랙트 레지스트리 및 생성 코드 매핑 검증
+    deps: [build-cli]
+    cmds:
+      - ./{{.BINARY_NAME}} contract check
+
+  contract-update:
+    desc: 컨트랙트 번들 업데이트 및 코드 아티팩트 재생성
+    deps: [build-cli]
+    cmds:
+      - ./{{.BINARY_NAME}} contract update {{.CLI_ARGS}}

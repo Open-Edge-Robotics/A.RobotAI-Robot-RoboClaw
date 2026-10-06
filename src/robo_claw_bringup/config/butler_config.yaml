@@ -1,0 +1,37 @@
+robo_claw_core_node:
+  ros__parameters:
+    loop_rate_hz: 50.0
+    agent_id: "butler_agent"
+
+    # 버틀러 로봇 설정
+
+    # 센서 목록
+    sensor_names:
+      - "lidar"
+      - "imu"
+      - "realsense_camera"
+      - "realsense_depth"
+      - "realsense_camera_info"
+      - "realsense_points"
+
+    # 센서 토픽 매핑 (sensor_topics.<sensor_name>)
+    # depth/camera_info/points 는 RealSense 드라이버가 align_depth.enable:=true,
+    # pointcloud.enable:=true 로 실행 중이어야 발행됨 (robo_claw가 직접 launch하지 않음).
+    sensor_topics:
+      lidar: "/aslam/lidar/scan"
+      imu: "/imu/data"
+      realsense_camera: "/front_cam/color/image_raw"
+      realsense_depth: "/front_cam/aligned_depth_to_color/image_raw"
+      realsense_camera_info: "/front_cam/aligned_depth_to_color/camera_info"
+      realsense_points: "/front_cam/depth/color/points"
+
+    # 제어 명령 매핑
+    cmd_vel_topic: "/cmd_vel"
+    odom_topic: "/odom"
+
+robo_claw_agent_node:
+  ros__parameters:
+    butler_script_dir: "/ros2_ws/butler_scripts" # Butler 로봇 스크립트 디렉토리
+    # 자가진단용 센서 토픽 (core_node sensor_topics와 일치)
+    lidar_topic: "/aslam/lidar/scan"
+    imu_topic: "/imu/data"

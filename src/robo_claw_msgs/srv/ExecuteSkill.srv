@@ -1,0 +1,10 @@
+# 스킬 실행 요청
+# 스킬 이름
+string skill_name
+# JSON 형식의 파라미터
+string params_json
+# 타임아웃 (초), 0이면 무제한
+float64 timeout_sec
+---
+# 응답: SkillResult 메시지
+robo_claw_msgs/SkillResult result

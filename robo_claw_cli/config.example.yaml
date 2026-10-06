@@ -1,0 +1,26 @@
+# rclaw 로컬 설정 예시 템플릿
+#
+# 이 파일(config.example.yaml)은 커밋 대상이며, 실제 로컬 사용 설정은
+# `config.yaml`(gitignore 처리, 커밋 금지) 또는 플랫폼별 기본 저장 폴더에 둔다.
+#
+# 초기화·확인·변경:
+#   ./rclaw config init          # 기본 config.yaml 생성
+#   ./rclaw config show          # 현재 유효 설정 확인
+#   ./rclaw config set <key> <val>   # 값 변경 (예: server.host)
+#   ./rclaw config path          # 저장 경로 확인
+#
+# 실제 사용 시 device_token 은 아래처럼 넣지 말고 환경변수로 주입하는 것을 권장한다.
+#   export ROBO_CLAW_CLI_DEVICE_TOKEN=...
+#
+name: robo_claw_cli
+# device_token: ""   # 실제 토큰은 ROBO_CLAW_CLI_DEVICE_TOKEN 환경변수로 주입(커밋 금지)
+server:
+  host: 0.0.0.0
+  port: 8080
+  # 개발용 평문 HTTP는 명시적으로만 허용한다. 운영은 반드시 false(HTTPS) 유지.
+  allow_insecure_http: false
+log:
+  level: info
+contract:
+  project: wkqco33/rcf-config-contract
+  base_url: https://gitlab.com/api/v4

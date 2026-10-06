@@ -1,0 +1,7 @@
+graph LR
+    IN[Input Acquisition] --> CTX[Context Building]
+    CTX --> PLAN[LLM Planning]
+    PLAN --> EXEC[Skill Execution]
+    EXEC --> OUT[Response Delivery]
+    EXEC --> MEM[Experience Accumulation]
+    MEM --> CTX

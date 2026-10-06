@@ -1,0 +1,40 @@
+robo_claw_core_node:
+  ros__parameters:
+    loop_rate_hz: 50.0
+    agent_id: "former_agent"
+
+    # 센서 목록
+    sensor_names:
+      - "lidar"
+      - "imu"
+      - "realsense_camera"
+      - "realsense_depth"
+      - "realsense_camera_info"
+      - "realsense_points"
+
+    # 센서 토픽 매핑 (sensor_topics.<sensor_name>)
+    # depth/camera_info/points 는 RealSense 드라이버가 align_depth.enable:=true,
+    # pointcloud.enable:=true 로 실행 중이어야 발행됨 (robo_claw가 직접 launch하지 않음).
+    sensor_topics:
+      lidar: "/scan"
+      imu: "/imu_raw"
+      realsense_camera: "/former0045/camera/color/image_raw"
+      realsense_depth: "/former0045/camera/aligned_depth_to_color/image_raw"
+      realsense_camera_info: "/former0045/camera/aligned_depth_to_color/camera_info"
+      realsense_points: "/former0045/camera/depth/color/points"
+
+    # 제어 명령 매핑
+    cmd_vel_topic: "/base_controller/cmd_vel_unstamped"
+    odom_topic: "/base_controller/odom"
+
+robo_claw_agent_node:
+  ros__parameters:
+    # 자가진단용 센서 토픽 (core_node sensor_topics와 일치)
+    lidar_topic: "/scan"
+    imu_topic: "/imu_raw"
+
+    # manipulation — Former 는 팔이 없는 주행·관측 전용 로봇이므로 조작 비활성화.
+    # stretch 전용 스킬(stow_for_navigation, switch_stretch_mode 등)은
+    # requires_manipulation_backend="stretch" 게이팅으로 카탈로그에서 제외되며,
+    # 조작 계열 스킬도 아래 설정으로 실행 단에서 안전하게 막힌다.
+    manipulation_enabled: false

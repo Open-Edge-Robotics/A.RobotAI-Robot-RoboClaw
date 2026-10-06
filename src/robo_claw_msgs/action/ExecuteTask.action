@@ -1,0 +1,14 @@
+# 자연어 명령으로 태스크 실행 요청
+string instruction       # 자연어 명령
+string context_json      # 선택적 컨텍스트 (JSON)
+float64 timeout_sec      # 타임아웃 (초)
+---
+# 최종 결과
+bool success
+string result_message
+robo_claw_msgs/SkillResult[] skill_results  # 실행된 스킬별 결과
+---
+# 중간 피드백 (실행 중 전달)
+string current_step      # 현재 진행 단계 설명
+uint8 progress           # 0-100 진행률
+robo_claw_msgs/AgentStatus agent_status
