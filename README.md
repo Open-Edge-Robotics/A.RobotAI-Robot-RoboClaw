@@ -343,6 +343,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/DASHBOARD.md](docs/DASHBOARD.md)                                       | 웹 대시보드(`robo_claw_dashboard`) 상태 조회·메시지 전송                  |
 | [docs/LANGSMITH_INTEGRATION.md](docs/LANGSMITH_INTEGRATION.md)               | LangSmith LLM 트레이싱/모니터링 활성화                                    |
 | [docs/SYSTEM1_FAST_ROUTER.md](docs/SYSTEM1_FAST_ROUTER.md)                   | System 1 Fast Router(Laya) 설정·환경변수·운영 가이드                      |
+| [docs/SYSTEM1_LAYA_DOCKER.md](docs/SYSTEM1_LAYA_DOCKER.md)                   | Laya 서버 Docker 실행(같은 호스트 AGX Orin / 다른 호스트 엣지 서버)       |
 | [docs/SYSTEM1_FAST_ROUTER_DESIGN.md](docs/SYSTEM1_FAST_ROUTER_DESIGN.md)     | System 1 Fast Router(Laya) 설계·단계별 도입 계획                          |
 | [docs/DOCKER_GUIDE.md](docs/DOCKER_GUIDE.md)                                 | Docker 실행(`run_robo_claw_docker.sh`) 및 이미지 빌드(`task docker-*`)    |
 | [docs/BUILD_TROUBLESHOOTING.md](docs/BUILD_TROUBLESHOOTING.md)               | 빌드/설치/실행 오류 해결                                                  |

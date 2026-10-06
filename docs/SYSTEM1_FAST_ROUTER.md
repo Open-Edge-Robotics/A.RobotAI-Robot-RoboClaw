@@ -43,6 +43,10 @@ robo-claw는 `SYSTEM1_ENDPOINT`로 HTTP 요청만 보내므로, Laya 서버를 �
 | B. Thor 내장 | robo-claw 컨테이너 안(launch가 함께 실행) | Thor GPU, 없으면 CPU | 네트워크 없이 로봇 단독으로 쓸 때 |
 | C. CPU | B와 같거나 별도 호스트 | 없음 | 동작 확인, GPU가 없는 장비 |
 
+> Laya를 별도 Docker 컨테이너로 실행하는 상세 절차(같은 호스트 AGX Orin, 다른 호스트 엣지 서버, 인증·방화벽·네트워크 고려)는 [SYSTEM1_LAYA_DOCKER.md](SYSTEM1_LAYA_DOCKER.md)를 따릅니다.
+>
+> B(robo-claw 컨테이너 내장) 방식은 robo-claw 이미지 베이스(`ros:humble-ros-base`)에 CUDA/cuDNN 라이브러리가 없어, JetPack 6 장비(AGX Orin)에서는 CPU로만 동작합니다. Jetson GPU를 쓰려면 `l4t-jetpack` 베이스의 별도 Laya 컨테이너를 같은 호스트에 띄웁니다. Thor에서의 내장 GPU 동작도 검증되지 않았습니다.
+
 세 방식 모두 `docker/laya/install_laya.sh` 한 가지 설치 절차를 씁니다. GPU 사용 여부는 torch 휠 인덱스(`LAYA_TORCH_INDEX_URL`)로 정합니다.
 
 | 대상 | `LAYA_TORCH_INDEX_URL` |

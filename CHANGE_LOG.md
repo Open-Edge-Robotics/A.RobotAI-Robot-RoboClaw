@@ -5,6 +5,20 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-06**
 
+## 2026-10-06 — Laya 서버 Docker 실행 가이드
+
+- **조치**: `docs/SYSTEM1_LAYA_DOCKER.md`를 추가했다. Laya를 별도 컨테이너로 실행하는 절차를 배치별로 정리했다.
+  - 같은 호스트(AGX Orin): CPU로 동작 확인 → `l4t-jetpack` 베이스 + Jetson torch로 GPU 전환, `--cpus`/`--cpu-shares`로
+    주행·모션 제어 보호, `127.0.0.1` 바인딩
+  - 다른 호스트(엣지 서버, 다른 Jetson): `LAYA_HOST=0.0.0.0`, `LAYA_API_KEY`/`SYSTEM1_API_KEY` 인증, 방화벽, 무선 구간
+    지연·단절, 평문 HTTP 보안(TLS reverse proxy), 여러 로봇 공유
+  - robo-claw 설정값, 연결·속도 확인, AGX Orin 예상 지연(추정), 문제 해결
+- **정정**: robo-claw 컨테이너 내장 방식은 베이스 이미지(`ros:humble-ros-base`)에 CUDA/cuDNN이 없어 JetPack 6(AGX Orin)에서 CPU로만
+  동작한다. `docs/SYSTEM1_FAST_ROUTER.md` 3장에 이 제약과 새 가이드 링크를 추가했다.
+- **남은 과제**: `l4t-jetpack` 베이스에는 pip가 없을 수 있어 `docker/laya/Dockerfile`에 `python3-pip` 설치 단계가 필요할 수
+  있다. `scripts/system1_eval.py`는 `SYSTEM1_API_KEY`를 보내지 않아 인증을 켠 서버는 그대로 측정할 수 없다. 둘 다 아직
+  수정하지 않았다.
+
 ## 2026-10-06 — Laya 서버 배치: 엣지 서버 / Thor 내장(GPU) / CPU (브랜치 `jev-laya`)
 
 - **배경**: robo-claw 이미지에는 Laya가 없어 `SYSTEM1_ENDPOINT=http://localhost:8000`이 `Connection refused`로 실패했다
