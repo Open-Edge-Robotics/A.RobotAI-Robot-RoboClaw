@@ -36,6 +36,55 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Discord accepts at most 2,000 UTF-16 code units per message. Keep headroom for
+# platform-side length accounting and do not split a Unicode code point.
+DISCORD_MESSAGE_SAFE_LIMIT = 1900
+
+
+def _split_discord_message(text: str) -> list[str]:
+    """텍스트를 Discord 제한보다 짧은 조각으로 나누며 내용을 보존합니다."""
+    chunks: list[str] = []
+    remaining = text
+
+    while remaining:
+        used_units = 0
+        end = 0
+        for end, character in enumerate(remaining, start=1):
+            character_units = 2 if ord(character) > 0xFFFF else 1
+            if used_units + character_units > DISCORD_MESSAGE_SAFE_LIMIT:
+                end -= 1
+                break
+            used_units += character_units
+        else:
+            end = len(remaining)
+
+        if end == 0:
+            # The fixed safe limit always fits at least one Unicode code point.
+            raise ValueError("Discord message limit is too small for a Unicode character")
+
+        if end < len(remaining):
+            # Prefer a nearby line or word boundary without creating tiny chunks.
+            boundary = max(remaining.rfind("\n", 0, end), remaining.rfind(" ", 0, end))
+            if boundary >= end // 2:
+                end = boundary + 1
+
+        chunks.append(remaining[:end])
+        remaining = remaining[end:]
+
+    return chunks
+
+
+async def _handle_discord_message(
+    channel: Any, on_message: Callable[[str], str], content: str
+) -> None:
+    """긴 처리와 모든 분할 메시지 전송 중 Discord typing 상태를 유지합니다."""
+    import asyncio
+
+    async with channel.typing():
+        response = await asyncio.to_thread(on_message, content)
+        for chunk in _split_discord_message(response):
+            await channel.send(chunk)
+
 
 class BaseMessengerChannel(ABC):
     """메신저 채널 공통 인터페이스"""
@@ -246,16 +295,15 @@ class DiscordChannel(BaseMessengerChannel):
 
             @self.client.event
             async def on_message(message):
-                import asyncio
-
                 if self.client is None:
                     logger.error("Discord bot is not available.")
                     return
                 if message.author == self.client.user:
                     return
                 self._last_channel = message.channel
-                res_text = await asyncio.to_thread(self.on_message, message.content)
-                await message.channel.send(res_text)
+                await _handle_discord_message(
+                    message.channel, self.on_message, message.content
+                )
 
             self.client.run(self.token)
         except Exception as e:
