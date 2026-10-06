@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RoboClaw Runtime Configuration",
   "type": "object",
-  "x-contract-version": "2.4.0",
+  "x-contract-version": "2.3.0",
   "required": [
     "schema_version",
     "config_revision",
@@ -411,111 +411,6 @@
           "x-canonical-name": "langsmith.workspace_id",
           "x-scope": "runtime",
           "x-secret": false
-        },
-        "system1_router": {
-          "type": "string",
-          "description": "Select the pre-routing implementation used before the LLM planner.",
-          "default": "rule",
-          "x-canonical-name": "system1.router",
-          "x-scope": "runtime",
-          "x-secret": false,
-          "enum": [
-            "rule",
-            "laya"
-          ]
-        },
-        "system1_shadow": {
-          "type": "boolean",
-          "description": "Run the non-selected router in the background for comparison only.",
-          "default": false,
-          "x-canonical-name": "system1.shadow",
-          "x-scope": "runtime",
-          "x-secret": false
-        },
-        "system1_shadow_log": {
-          "type": "string",
-          "description": "Optional JSONL output path for System 1 shadow decisions.",
-          "default": "",
-          "x-canonical-name": "system1.shadow_log",
-          "x-scope": "runtime",
-          "x-secret": false
-        },
-        "system1_scope": {
-          "type": "string",
-          "description": "Actions System 1 may select directly when Laya is the active router.",
-          "default": "readonly",
-          "x-canonical-name": "system1.scope",
-          "x-scope": "runtime",
-          "x-secret": false,
-          "enum": [
-            "readonly",
-            "navigation"
-          ]
-        },
-        "system1_endpoint": {
-          "type": "string",
-          "description": "HTTP endpoint of the System 1 /v1/systemone service.",
-          "default": "",
-          "x-canonical-name": "system1.endpoint",
-          "x-scope": "runtime",
-          "x-secret": false
-        },
-        "system1_provider": {
-          "type": "string",
-          "description": "Name of the configured System 1 provider.",
-          "default": "laya",
-          "x-canonical-name": "system1.provider",
-          "x-scope": "runtime",
-          "x-secret": false
-        },
-        "system1_timeout_ms": {
-          "type": "number",
-          "description": "Timeout in milliseconds for each System 1 provider request.",
-          "default": 300.0,
-          "x-canonical-name": "system1.timeout_ms",
-          "x-scope": "runtime",
-          "x-secret": false,
-          "minimum": 1
-        },
-        "system1_conf_thresholds_json": {
-          "type": "object",
-          "description": "Optional per-intent confidence thresholds encoded as JSON in the environment.",
-          "default": {
-            "smalltalk": 0.9,
-            "single_skill": 0.85,
-            "skill": 0.8,
-            "target_place": 0.8,
-            "ambiguous": 0.5
-          },
-          "x-canonical-name": "system1.conf_thresholds",
-          "x-scope": "runtime",
-          "x-secret": false
-        },
-        "system1_skills": {
-          "type": "string",
-          "description": "Optional comma-separated list of candidate direct skills for System 1.",
-          "default": "",
-          "x-canonical-name": "system1.skills",
-          "x-scope": "runtime",
-          "x-secret": false
-        },
-        "system1_max_options": {
-          "type": "integer",
-          "description": "Maximum number of candidate skills or places shown to System 1.",
-          "default": 12,
-          "x-canonical-name": "system1.max_options",
-          "x-scope": "runtime",
-          "x-secret": false,
-          "minimum": 2
-        },
-        "system1_api_key": {
-          "type": "string",
-          "description": "Optional bearer API key for a hosted System 1 provider.",
-          "default": null,
-          "x-canonical-name": "system1.api_key",
-          "x-scope": "secret",
-          "x-secret": true,
-          "writeOnly": true
         },
         "maestro_ip": {
           "type": "string",

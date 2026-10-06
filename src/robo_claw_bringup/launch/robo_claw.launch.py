@@ -19,6 +19,7 @@ _LAUNCH_DIR = os.path.dirname(os.path.realpath(__file__))
 if _LAUNCH_DIR not in sys.path:
     sys.path.insert(0, _LAUNCH_DIR)
 from _common_launch_args import common_launch_arguments  # pyright: ignore[reportMissingImports]
+from _system1_launch import system1_local_server_actions  # pyright: ignore[reportMissingImports]
 
 
 def _safe_int(value, default=0):
@@ -791,6 +792,8 @@ def _launch_setup(context, *args, **kwargs):
         launch_nodes.append(gripper_vision_node)
     if use_moveit_manipulator:
         launch_nodes.append(manipulator_node)
+    # SYSTEM1_LOCAL_SERVER=true 이면 같은 컨테이너에서 Laya 서버를 함께 띄운다(docs/SYSTEM1_FAST_ROUTER.md).
+    launch_nodes.extend(system1_local_server_actions(os.environ))
     return launch_nodes
 
 

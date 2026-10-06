@@ -48,9 +48,6 @@ def _import_routers():
     if "robo_claw_agent.agent_node" not in sys.modules:
         import robo_claw_agent  # noqa: F401  (상위 패키지는 ROS 의존 없음)
 
-        # pytest가 src/robo_claw_agent 디렉터리를 namespace package 경로로 먼저
-        # 캐시했을 수 있으므로, 실제 패키지 루트를 명시해 올바른 sibling 모듈을 찾는다.
-        robo_claw_agent.__path__ = [str(AGENT_SRC / "robo_claw_agent")]
         pkg = types.ModuleType("robo_claw_agent.agent_node")
         pkg.__path__ = [str(AGENT_SRC / "robo_claw_agent" / "agent_node")]
         sys.modules["robo_claw_agent.agent_node"] = pkg

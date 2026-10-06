@@ -115,9 +115,6 @@
 | File | `write_text_file` | Public | action | 공통 | 텍스트 파일 생성·쓰기 |
 | Butler | `list_butler_scripts` | Public | action | 공통 | Butler 스크립트 목록 조회 |
 | Butler | `run_butler_script` | Public | dangerous | 공통 | 허용된 Butler 스크립트 실행 |
-| CLOi Motion | `list_cloid_motions` | Public | read | cloid | CLOi motion_map에 등록된 모션 이름·ID·설명 조회 |
-| CLOi Motion | `execute_cloid_motion` | Public | dangerous | cloid | 사용자 확인 후 등록 ID의 MotionCmd START 발행 |
-| CLOi Motion | `stop_cloid_motion` | Public | dangerous | cloid | 사용자 확인 후 CLOi Motion Player STOP 발행 |
 | HRI | `send_message` | Public | action | 공통 | 텍스트·파일 메시지 전송 |
 
 읽기 전용 스킬은 [태스크 큐](OPERATIONS.md#태스크-큐-순차-실행)를 우회해 즉시 실행될 수 있습니다. 위험 스킬은 HTTP API에서 기본 차단되며 `skill_allowed_json`과 `skill_blocked_json`으로 조정합니다. 상세 파라미터와 안전 조건은 시스템 프롬프트의 schema 요약, 각 기능 문서, 그리고 실제 `input_schema`를 기준으로 합니다.

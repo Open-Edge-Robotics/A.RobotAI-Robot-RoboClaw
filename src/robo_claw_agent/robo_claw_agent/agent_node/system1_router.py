@@ -24,6 +24,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..system1_local_server import local_server_enabled, local_server_endpoint
 from .fast_router import (
     ROUTE_DIRECT_SKILL,
     ROUTE_SIMPLE_REPLY,
@@ -97,6 +98,10 @@ class System1Config:
     breaker_failures: int = 3
     breaker_cooldown_sec: float = 30.0
     shadow_log: str = ""
+    # 같은 컨테이너에서 launch 가 laya-serve 를 함께 띄우는지(SYSTEM1_LOCAL_SERVER)
+    local_server: bool = False
+    # 기동 시 health check 가 서버 준비를 기다리는 최대 시간(초). 모델 로딩 시간을 흡수한다.
+    health_wait_sec: float = 0.0
 
     @classmethod
     def from_env(cls, env: Any = None) -> System1Config:
@@ -129,6 +134,14 @@ class System1Config:
         cfg.skills = [s.strip() for s in (env.get("SYSTEM1_SKILLS") or "").split(",") if s.strip()]
         cfg.max_options = max(2, int(_env_float(env.get("SYSTEM1_MAX_OPTIONS"), cfg.max_options)))
         cfg.shadow_log = (env.get("SYSTEM1_SHADOW_LOG") or "").strip()
+        cfg.local_server = local_server_enabled(env)
+        if cfg.local_server and not cfg.endpoint:
+            # 내장 서버를 쓰면 endpoint 를 비워 둬도 loopback 주소로 접속한다.
+            cfg.endpoint = local_server_endpoint(env)
+        cfg.health_wait_sec = max(
+            0.0,
+            _env_float(env.get("SYSTEM1_HEALTH_WAIT_SEC"), 120.0 if cfg.local_server else 0.0),
+        )
         return cfg
 
 
@@ -410,18 +423,33 @@ class SystemOneRouter:
         decision.latency_ms = (time.perf_counter() - start) * 1000.0
         return decision
 
-    def health_check(self, log: Any = None) -> bool:
+    def health_check(
+        self, log: Any = None, *, sleep=time.sleep, clock=time.monotonic, interval_sec: float = 3.0
+    ) -> bool:
+        """서버 응답을 확인한다. ``health_wait_sec`` 동안은 준비될 때까지 재시도한다.
+
+        기다리는 동안의 실패는 circuit breaker 에 반영하지 않는다(모델 로딩 중은 장애가 아님).
+        그동안 들어온 요청은 평소처럼 실패 시 RuleRouter 로 대체된다.
+        """
         log = log or logger
-        try:
-            self._client.predict_sync(
-                {"instruction": "안녕"},
-                {"intent": build_questions({}, [])["intent"]},
-            )
-        except System1Unavailable as exc:
-            log.warning(f"System1 health check failed ({self.cfg.endpoint}): {exc}")
-            self.breaker.record_failure()
-            return False
-        return True
+        deadline = clock() + self.cfg.health_wait_sec
+        start = clock()
+        while True:
+            try:
+                self._client.predict_sync(
+                    {"instruction": "안녕"},
+                    {"intent": build_questions({}, [])["intent"]},
+                )
+            except System1Unavailable as exc:
+                if clock() + interval_sec <= deadline:
+                    sleep(interval_sec)
+                    continue
+                log.warning(f"System1 health check failed ({self.cfg.endpoint}): {exc}")
+                self.breaker.record_failure()
+                return False
+            if self.cfg.health_wait_sec > 0:
+                log.info(f"System1 server ready ({self.cfg.endpoint}) after {clock() - start:.0f}s")
+            return True
 
 
 class SelectedRouter:
@@ -530,6 +558,6 @@ def build_router(
 
     log.info(
         f"System1 router: router={cfg.router} shadow={cfg.shadow} "
-        f"scope={cfg.scope} endpoint={cfg.endpoint or '-'}"
+        f"scope={cfg.scope} endpoint={cfg.endpoint or '-'} local_server={cfg.local_server}"
     )
     return router

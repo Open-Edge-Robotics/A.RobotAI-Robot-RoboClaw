@@ -232,8 +232,8 @@ class SelectedRouter:
 
 | 항목 | 방침 |
 |---|---|
-| 실행 형태 | `laya-serve` 컨테이너(`LAYA_DEVICE=cuda LAYA_PRELOAD=1`) |
-| 위치 | 1순위: 사내 GPU 서버 (여러 로봇이 공유)<br>2순위: GPU가 있는 로봇 본체<br>CPU-only 로봇은 원격 서버를 사용 |
+| 실행 형태 | `laya-serve` HTTP 서버. 엣지 서버용 단독 이미지(`docker/laya/`) 또는 robo-claw 이미지 내장(`INSTALL_LAYA=true` + `SYSTEM1_LOCAL_SERVER=true`, launch가 함께 실행). 두 방식 모두 `docker/laya/install_laya.sh`로 설치하고 torch 인덱스로 CPU/CUDA를 고릅니다 |
+| 위치 | 1순위: 엣지 GPU 서버(여러 로봇이 공유, 로봇 제어 자원과 분리)<br>2순위: 로봇 본체(Thor) 내장 — GPU가 없으면 CPU로 자동 전환, nice·스레드 상한으로 주행·모션 제어 보호<br>상세 절차: [SYSTEM1_FAST_ROUTER.md](SYSTEM1_FAST_ROUTER.md) 3장 |
 | 모델 버전 | fine-tune 체크포인트를 사내 레지스트리에 버전 태그로 관리 |
 | 설정 주입 | 에이전트 프로세스 환경변수(아래 표). 현재 AI Config Server는 `SYSTEM1_*`를 `.env`로 내려주지 않으므로, 실행 방식별 전달 방법은 [SYSTEM1_FAST_ROUTER.md](SYSTEM1_FAST_ROUTER.md) 4.5절을 따릅니다. 중앙 관리는 서버 필드 추가가 필요합니다 |
 | 헬스체크 | 기동 시 `/v1/systemone` dry 질의. 실패하면 경고만 남기고 RuleRouter로 동작(장애 롤백과 같음) |

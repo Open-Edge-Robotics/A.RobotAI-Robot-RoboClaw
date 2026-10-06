@@ -50,17 +50,6 @@ Schema version: `2.0`
 | `diagnostics.imu_topic` | `RC_IMU_TOPIC` | `imu_topic` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `debug.enabled` | `RC_DEBUG` | `debug` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `langsmith.workspace_id` | `LANGSMITH_WORKSPACE_ID` | `langsmith_workspace_id` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.router` | `SYSTEM1_ROUTER` | `system1_router` | `string` | `rule` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.shadow` | `SYSTEM1_SHADOW` | `system1_shadow` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.shadow_log` | `SYSTEM1_SHADOW_LOG` | `system1_shadow_log` | `path` | `` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.scope` | `SYSTEM1_SCOPE` | `system1_scope` | `string` | `readonly` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.endpoint` | `SYSTEM1_ENDPOINT` | `system1_endpoint` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.provider` | `SYSTEM1_PROVIDER` | `system1_provider` | `string` | `laya` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.timeout_ms` | `SYSTEM1_TIMEOUT_MS` | `system1_timeout_ms` | `number` | `300` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.conf_thresholds` | `SYSTEM1_CONF_THRESHOLDS_JSON` | `system1_conf_thresholds_json` | `object` | `map[ambiguous:0.5 single_skill:0.85 skill:0.8 smalltalk:0.9 target_place:0.8]` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.skills` | `SYSTEM1_SKILLS` | `system1_skills` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.max_options` | `SYSTEM1_MAX_OPTIONS` | `system1_max_options` | `integer` | `12` | `runtime` | `false` | local, docker, simulation, config_server |
-| `system1.api_key` | `SYSTEM1_API_KEY` | `system1_api_key` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
 | `fleet.maestro_ip` | `MAESTRO_IP` | `maestro_ip` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.robot_port` | `ROBOT_PORT` | `robot_port` | `integer` | `50053` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.robot_id` | `ROBOT_ID` | `robot_id` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -254,50 +243,6 @@ Enable verbose ROS logging.
 ### `langsmith.workspace_id`
 
 LangSmith workspace identifier for API keys with access to multiple workspaces.
-
-### `system1.router`
-
-Select the pre-routing implementation used before the LLM planner.
-
-### `system1.shadow`
-
-Run the non-selected router in the background for comparison only.
-
-### `system1.shadow_log`
-
-Optional JSONL output path for System 1 shadow decisions.
-
-### `system1.scope`
-
-Actions System 1 may select directly when Laya is the active router.
-
-### `system1.endpoint`
-
-HTTP endpoint of the System 1 /v1/systemone service.
-
-### `system1.provider`
-
-Name of the configured System 1 provider.
-
-### `system1.timeout_ms`
-
-Timeout in milliseconds for each System 1 provider request.
-
-### `system1.conf_thresholds`
-
-Optional per-intent confidence thresholds encoded as JSON in the environment.
-
-### `system1.skills`
-
-Optional comma-separated list of candidate direct skills for System 1.
-
-### `system1.max_options`
-
-Maximum number of candidate skills or places shown to System 1.
-
-### `system1.api_key`
-
-Optional bearer API key for a hosted System 1 provider.
 
 ### `fleet.maestro_ip`
 

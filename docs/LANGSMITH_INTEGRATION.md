@@ -11,8 +11,8 @@ robo_claw의 모든 LLM 동작(계획 수립, RAG 쿼리 재작성, 임베딩, �
 - **단일 진입점**: 모든 LLM 호출이 `llm_bridge` 계층을 통과하므로, 벤더 SDK 클라이언트를
   이 계층에서 한 번만 감싸 토큰 사용량·모델·지연시간을 자동 캡처합니다.
 - **환경변수 구동**: LangSmith SDK 표준 환경변수(`LANGSMITH_*`)만으로 켜고 끈다. 별도의
-  ROS 파라미터/launch 인자 배선이 필요 없다(`./rclaw run`이 `.env`를 읽어 환경변수로
-  전달하고, `ros2 launch`로 실행되는 노드가 이를 상속).
+  ROS 파라미터/launch 인자 배선이 필요 없다. 에이전트 노드 프로세스가 환경변수를 직접 읽으므로,
+  실행 방식에 따라 값을 넣는 위치가 다르다(아래 "2. 환경변수 설정" 참고).
 
 ## 활성화 방법
 
@@ -24,9 +24,23 @@ task setup-deps   # 또는: uv sync
 
 `pyproject.toml`에 `langsmith`가 추가되어 있으므로 위 명령으로 함께 설치됩니다.
 
-### 2. `.env`에 환경변수 추가
+### 2. 환경변수 설정
 
-저장소 루트의 `.env` 파일에 아래 항목을 추가한다(예시):
+실행 방식에 따라 `LANGSMITH_*` 값을 넣는 위치가 다릅니다.
+
+| 실행 방식 | 설정 위치 |
+| --- | --- |
+| `./rclaw launch <robot> <env>` (로컬, `--docker` 모두) | AI Config Server 프로필의 LangSmith 설정 섹션. 서버가 캐시 `.env`(`~/.robo_claw/config_cache/<robot>_<env>/.env`)로 내려주며, 이 파일은 동기화 때마다 다시 생성되므로 직접 수정하지 않습니다. |
+| `scripts/run_robo_claw_docker.sh` | 저장소 루트 `.env`(또는 `RC_ENV_FILE`로 지정한 파일). `--env-file`로 컨테이너에 전달됩니다. |
+| `./rclaw run` / `./rclaw sim` | **셸에서 `export`합니다.** 이 명령은 저장소 `.env`를 launch 인자를 만드는 데만 쓰고 프로세스 환경변수로 넘기지 않으므로, `.env`에 넣은 `LANGSMITH_*`는 에이전트에 전달되지 않습니다. |
+| `ros2 launch` 직접 실행 | 셸에서 `export`합니다. |
+
+서버 프로필이 제공하는 항목은 `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`,
+`LANGSMITH_ENDPOINT`입니다. `LANGSMITH_TRACING_SAMPLING_RATE`, `LANGSMITH_HIDE_INPUTS` 같은 그 밖의
+SDK 변수는 `./rclaw launch`(로컬)에서는 셸 `export`로, Docker에서는 `scripts/run_robo_claw_docker.sh`의
+`.env`로 지정합니다.
+
+`.env`(Docker 스크립트) 또는 셸 `export`로 지정하는 값의 예시입니다.
 
 ```dotenv
 # LangSmith 트레이싱
@@ -42,6 +56,9 @@ LANGSMITH_PROJECT=robo-claw         # (선택) 프로젝트 이름, 기본값 "d
 
 ```bash
 task build         # 소스 변경 반영
+
+# ./rclaw run 은 .env 의 LANGSMITH_* 를 전달하지 않으므로 export 한 뒤 실행
+set -a; source <(grep -E '^LANGSMITH_' .env); set +a
 ./rclaw run
 ```
 
@@ -121,7 +138,7 @@ LangSmith 실행 그래프는 자동으로 Python call graph나 ROS graph를 만
 
 ### 1. 모든 trace를 수집하도록 환경변수 설정
 
-`.env`에 다음 값을 설정합니다.
+실행 방식별 위치("활성화 방법 > 2. 환경변수 설정")에 다음 값을 설정합니다. `./rclaw launch --docker`는 서버 프로필의 네 항목(`TRACING`/`API_KEY`/`PROJECT`/`ENDPOINT`)만 전달하므로, sampling·hide 값까지 쓰려면 `scripts/run_robo_claw_docker.sh`와 `.env`를 사용합니다.
 
 ```dotenv
 LANGSMITH_TRACING=true
@@ -152,7 +169,7 @@ redaction을 적용해야 합니다.
 
 ### 2. Docker/launch process에 환경변수가 전달됐는지 확인
 
-`.env`를 변경한 뒤 기존 container/process를 완전히 재시작합니다.
+설정을 변경한 뒤 기존 container/process를 완전히 재시작합니다. `./rclaw launch`는 서버 프로필을 다시 동기화해 반영합니다.
 
 ```bash
 ./rclaw kill
@@ -172,7 +189,7 @@ docker exec <container-name-or-id> env | grep -E '^(LANGSMITH|LANGCHAIN)_'
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=...
 LANGSMITH_PROJECT=robo-claw-detailed
-LANGSMITH_TRACING_SAMPLING_RATE=1.0
+LANGSMITH_TRACING_SAMPLING_RATE=1.0   # scripts/run_robo_claw_docker.sh 의 .env 로 지정한 경우에만
 ```
 
 API key 원문을 운영 로그나 화면 캡처에 노출하지 않습니다.
@@ -458,7 +475,8 @@ PY
 
 ## 안전성 / 롤백
 
-- 트레이싱을 끄려면 `.env`에서 `LANGSMITH_TRACING=false`로 설정하거나 해당 줄을 삭제합니다.
+- 트레이싱을 끄려면 `LANGSMITH_TRACING=false`로 설정하거나 해당 값을 제거합니다(`./rclaw launch`는 서버
+  프로필, Docker 스크립트는 `.env`, `./rclaw run`은 셸 환경).
 - 비활성 상태에서 `traceable` wrapper는 LangSmith run/client를 만들지 않고 원래 함수를 직접
   호출합니다.
 - 원래 반환 객체, 예외, sync/async 실행 방식은 그대로 유지됩니다.
@@ -466,8 +484,8 @@ PY
 - tracing 비활성 경로는 sync 반환값, async 반환값과 원래 예외 보존 테스트로 검증합니다.
 - redaction은 LangSmith에 전달할 복사본에만 적용하며 실제 Skill parameter/result를 변경하지
   않습니다.
-- 트레이싱 계층은 설정 파일(`agent.yaml`, launch 인자)이 아닌 환경변수만 읽으므로 `.env`
-  변경 후 container/node를 재시작하면 반영됩니다.
+- 트레이싱 계층은 설정 파일(`agent.yaml`, launch 인자)이 아닌 환경변수만 읽습니다. 값을 바꾼 뒤
+  container/node를 재시작하면 반영되며, 값을 넣는 위치는 실행 방식에 따릅니다("2. 환경변수 설정" 참고).
 
 ```dotenv
 LANGSMITH_TRACING=false

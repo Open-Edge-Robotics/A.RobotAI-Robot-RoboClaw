@@ -100,6 +100,40 @@ def _decide(router, instruction):
     return asyncio.run(router.decide(_Node(), instruction))
 
 
+class TestLocalServerConfig:
+    def test_local_server_fills_loopback_endpoint(self):
+        cfg = System1Config.from_env({"SYSTEM1_ROUTER": "laya", "SYSTEM1_LOCAL_SERVER": "true"})
+        assert cfg.local_server is True
+        assert cfg.endpoint == "http://127.0.0.1:8000"
+        assert cfg.health_wait_sec == 120.0
+
+    def test_local_server_port(self):
+        cfg = System1Config.from_env({"SYSTEM1_LOCAL_SERVER": "true", "SYSTEM1_LOCAL_PORT": "8100"})
+        assert cfg.endpoint == "http://127.0.0.1:8100"
+
+    def test_explicit_endpoint_wins(self):
+        cfg = System1Config.from_env(
+            {"SYSTEM1_LOCAL_SERVER": "true", "SYSTEM1_ENDPOINT": "http://edge:8000"}
+        )
+        assert cfg.endpoint == "http://edge:8000"
+
+    def test_remote_endpoint_has_no_health_wait(self):
+        cfg = System1Config.from_env({"SYSTEM1_ENDPOINT": "http://edge:8000"})
+        assert cfg.local_server is False
+        assert cfg.health_wait_sec == 0.0
+
+    def test_health_wait_override(self):
+        cfg = System1Config.from_env(
+            {"SYSTEM1_LOCAL_SERVER": "true", "SYSTEM1_HEALTH_WAIT_SEC": "30"}
+        )
+        assert cfg.health_wait_sec == 30.0
+
+    def test_laya_with_local_server_is_not_downgraded_to_rule(self):
+        cfg = System1Config.from_env({"SYSTEM1_ROUTER": "laya", "SYSTEM1_LOCAL_SERVER": "true"})
+        router = build_router(cfg, health_check=False)
+        assert isinstance(router.primary, SystemOneRouter)
+
+
 class TestConfig:
     def test_defaults_keep_rule_router(self):
         cfg = System1Config.from_env({})
@@ -186,7 +220,9 @@ class TestRouterLogging:
     def test_build_router_reports_config_to_node_logger(self):
         log = _RecordingLog()
         build_router(System1Config.from_env({}), health_check=False, log=log)
-        assert log.infos == ["System1 router: router=rule shadow=False scope=readonly endpoint=-"]
+        assert log.infos == [
+            "System1 router: router=rule shadow=False scope=readonly endpoint=- local_server=False"
+        ]
 
     def test_misconfiguration_warns_on_node_logger(self):
         log = _RecordingLog()
@@ -200,6 +236,49 @@ class TestRouterLogging:
         router, _ = _laya()
         router._client = SystemOneClient("http://127.0.0.1:9", timeout_ms=200)
         assert router.health_check(log) is False
+        assert log.warnings and "health check failed" in log.warnings[0]
+
+    def test_health_check_waits_for_local_server_to_load(self):
+        """모델 로딩 중 실패는 장애로 세지 않고, 준비되면 ready 로그를 남긴다."""
+        log = _RecordingLog()
+        router, _ = _laya(health_wait_sec=30)
+        attempts = {"n": 0}
+
+        class _SlowClient:
+            def predict_sync(self, state, questions):
+                attempts["n"] += 1
+                if attempts["n"] < 3:
+                    raise System1Unavailable("Connection refused")
+                return _resp("smalltalk")
+
+        router._client = _SlowClient()
+        now = [0.0]
+
+        def _sleep(sec):
+            now[0] += sec
+
+        assert router.health_check(log, sleep=_sleep, clock=lambda: now[0]) is True
+        assert attempts["n"] == 3
+        assert log.warnings == []
+        assert log.infos and "System1 server ready" in log.infos[0]
+        assert not router.breaker.is_open
+
+    def test_health_check_gives_up_after_wait(self):
+        log = _RecordingLog()
+        router, _ = _laya(health_wait_sec=10)
+
+        class _DownClient:
+            def predict_sync(self, state, questions):
+                raise System1Unavailable("Connection refused")
+
+        router._client = _DownClient()
+        now = [0.0]
+
+        def _sleep(sec):
+            now[0] += sec
+
+        assert router.health_check(log, sleep=_sleep, clock=lambda: now[0]) is False
+        assert now[0] <= 10
         assert log.warnings and "health check failed" in log.warnings[0]
 
 

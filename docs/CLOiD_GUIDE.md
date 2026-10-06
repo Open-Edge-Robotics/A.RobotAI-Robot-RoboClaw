@@ -127,38 +127,8 @@ CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 
 - AMCL이 없어 `/amcl_pose` 와 `/reinitialize_global_localization` 이 없습니다
   (`self_localize` 사용 불가).
 - RGB 카메라는 `sensor_msgs/CompressedImage` 만 발행합니다.
-- 팔/hand의 MoveIt 조작 백엔드가 아직 없어 `manipulation_enabled=false` 로 기동하며,
-  `move_joints`, `grasp` 같은 일반 조작 스킬은 실행 단계에서 차단됩니다. 별도의 CLOi 모션 스킬은
-  `/task_manager/motion_map`의 실제 등록 이름·ID를 조회하고, 사용자가 명시적으로 확인한 모션 ID를
-  `/task_manager/motion_cmd` (`task_manager_msgs/msg/MotionCmd`, `command_type=0`)로 한 번 발행합니다.
-  이름이 중복되거나 `pre_id` 선행 동작이 필요한 항목은 모호하거나 선행조건을 보장할 수 있어 실행을
-  거부합니다. `stop_cloid_motion`은 사용자 확인을 받아 STOP 명령을 발행합니다. 해당 토픽은 실행·정지
-  완료 결과를 제공하지 않으므로 스킬 성공은 명령 발행만 뜻합니다. `/task_manager/motion_map`이
-  값을 발행하지 않는 배포에서는 RoboClaw 컨테이너에 모션 맵 파일을
-  읽기 전용으로 마운트하고 `cloid_motion_catalog_file` 파라미터를 설정해야 합니다. 이 모션 경로는
-  MoveIt 조작 백엔드나 임의 관절 명령을 활성화하지 않습니다.
-
-### 실제 모션 목록 사용을 위한 파일 fallback
-
-현재 CLOi 런타임 조사에서 `/task_manager/motion_map`은 publisher가 광고되지만 읽을 수 있는
-payload가 오지 않았습니다. 확인 시점의 호스트 모션 맵은
-`/home/cloi/ws/data/motion_player/motion_list/motion_map.json`에 있었습니다. 토픽 publisher가
-목록을 발행하도록 고치기 전에는 RoboClaw 컨테이너에 해당 디렉터리를 읽기 전용으로 마운트하고,
-`cloid_config.yaml`에서 다음 경로를 지정해야 목록 조회가 동작합니다.
-
-```yaml
-cloid_motion_catalog_file: "/ws/motion_list/motion_map.json"
-```
-
-RoboClaw 컨테이너의 배포 설정에는 다음과 같은 bind mount가 필요합니다.
-
-```yaml
-volumes:
-  - /home/cloi/ws/data/motion_player/motion_list:/ws/motion_list:ro
-```
-
-실제 모션 호출은 목록에서 확인한 ID만 사용하며, 실행 완료가 ROS 토픽으로 확인되지 않는다는 점에
-유의합니다.
+- 팔/hand 제어 백엔드가 아직 없어 `manipulation_enabled=false` 로 기동하며,
+  조작 계열 스킬은 실행 단에서 차단됩니다.
 
 ## x64 DevBox SIL
 

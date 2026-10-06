@@ -156,17 +156,21 @@ tasks:
           -t {{.DOCKER_IMAGE}}:{{.TAG}} .
 
   docker-build-native:
-    desc: arm64 네이티브 빌드 (QEMU 세그폴트 발생 시 로봇에서 직접 실행, push 없음)
+    desc: arm64 네이티브 빌드 (QEMU 세그폴트 발생 시 로봇에서 직접 실행, push 없음). Laya 포함은 INSTALL_LAYA=true
     vars:
       TAG:
         sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+      INSTALL_LAYA: '{{.INSTALL_LAYA | default "false"}}'
+      LAYA_TORCH_INDEX_URL: '{{.LAYA_TORCH_INDEX_URL | default "https://download.pytorch.org/whl/cpu"}}'
     cmds:
       - |
-        echo "Building native image {{.DOCKER_IMAGE}}:{{.TAG}}..."
+        echo "Building native image {{.DOCKER_IMAGE}}:{{.TAG}} (INSTALL_LAYA={{.INSTALL_LAYA}})..."
         docker build \
           --build-arg BUILD_DATE="$(date +'%Y-%m-%d %H:%M:%S %Z')" \
           --build-arg GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
           --build-arg IMAGE_TAG="{{.TAG}}" \
+          --build-arg INSTALL_LAYA="{{.INSTALL_LAYA}}" \
+          --build-arg LAYA_TORCH_INDEX_URL="{{.LAYA_TORCH_INDEX_URL}}" \
           -t {{.DOCKER_IMAGE}}:latest \
           -t {{.DOCKER_IMAGE}}:{{.TAG}} .
 

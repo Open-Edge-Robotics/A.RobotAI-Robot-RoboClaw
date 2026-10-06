@@ -112,6 +112,24 @@ RUN pip3 install \
     "aiosqlite>=0.19.0" \
     "psutil>=5.9.0"
 
+# 6-1. (선택) Laya System 1 서버 — INSTALL_LAYA=true 일 때만 설치한다(기본 이미지 크기 유지).
+# SYSTEM1_LOCAL_SERVER=true 로 기동하면 launch 가 같은 컨테이너에서 laya-serve 를 실행한다.
+# GPU 사용 시 LAYA_TORCH_INDEX_URL 로 CUDA torch 인덱스를 지정하고 컨테이너를 GPU 옵션으로 실행한다
+# (scripts/run_robo_claw_docker.sh --gpu). 상세: docs/SYSTEM1_FAST_ROUTER.md
+ARG INSTALL_LAYA=false
+ARG LAYA_VERSION=0.3.28
+ARG LAYA_TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG LAYA_PREFETCH_REPOS=""
+ENV HF_HOME=/opt/hf
+COPY docker/laya/install_laya.sh /tmp/install_laya.sh
+RUN if [ "${INSTALL_LAYA}" = "true" ]; then \
+      LAYA_VERSION="${LAYA_VERSION}" \
+      LAYA_TORCH_INDEX_URL="${LAYA_TORCH_INDEX_URL}" \
+      LAYA_EXTRA_CONSTRAINTS="numpy>=1.24.0,<2.0.0" \
+      LAYA_PREFETCH_REPOS="${LAYA_PREFETCH_REPOS}" \
+      bash /tmp/install_laya.sh; \
+    fi && rm -f /tmp/install_laya.sh
+
 # 7. ROS 패키지 manifest 선 복사 (rosdep 레이어 캐시)
 COPY src/robo_claw_agent/package.xml src/robo_claw_agent/package.xml
 COPY src/robo_claw_bringup/package.xml src/robo_claw_bringup/package.xml

@@ -43,6 +43,12 @@ BUTLER_SOURCE_DIR_ARG="${RC_BUTLER_SOURCE_DIR:-}"
 AGENT_WORKSPACE_DIR_ARG="${RC_AGENT_WORKSPACE_DIR:-}"
 CONFIG_DIR_ARG="${RC_CONFIG_DIR:-}"
 LAUNCH_DIR_ARG="${RC_LAUNCH_DIR:-}"
+# GPU 사용 (Laya 내장 서버 등). auto: nvidia 런타임이 있으면 --runtime nvidia(Jetson/Thor),
+# 없으면 --gpus all(x86 + NVIDIA Container Toolkit). runtime / gpus 로 강제할 수 있다.
+USE_GPU="${RC_DOCKER_GPU:-false}"
+GPU_MODE="${RC_DOCKER_GPU_MODE:-auto}"
+# Laya 모델(Hugging Face) 캐시를 호스트에 보존할 디렉터리. 비우면 마운트하지 않는다.
+HF_CACHE_DIR_ARG="${RC_HF_CACHE_DIR:-}"
 USER_CMD=()
 
 usage() {
@@ -61,6 +67,8 @@ usage() {
   printf '  --agent-workspace <path>   Host path to agent workspace.\n'
   printf '  --config-dir <path>        Host path to robo_claw_bringup config dir.\n'
   printf '  --launch-dir <path>        Host path to robo_claw_bringup launch dir.\n'
+  printf '  --gpu                      Expose NVIDIA GPU to the container (RC_DOCKER_GPU=true).\n'
+  printf '  --hf-cache <path>          Host dir for Laya model cache, mounted at /opt/hf (RC_HF_CACHE_DIR).\n'
   printf '  --help, -h                 Show this help message.\n'
 }
 
@@ -114,6 +122,14 @@ while [[ $# -gt 0 ]]; do
   --use-grpc | --grpc)
     USE_GRPC="true"
     shift
+    ;;
+  --gpu)
+    USE_GPU="true"
+    shift
+    ;;
+  --hf-cache)
+    HF_CACHE_DIR_ARG="${2:-}"
+    shift 2
     ;;
   --use-vision | --vision)
     USE_VISION="true"
@@ -454,12 +470,42 @@ if [[ -z "$(docker images -q "$IMAGE_NAME:$TAG" 2>/dev/null)" ]]; then
     --build-arg BUILD_DATE="$(date +'%Y-%m-%d %H:%M:%S %Z')" \
     --build-arg GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
     --build-arg IMAGE_TAG="$TAG" \
+    --build-arg INSTALL_LAYA="${RC_INSTALL_LAYA:-false}" \
+    --build-arg LAYA_TORCH_INDEX_URL="${RC_LAYA_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}" \
     -t "$IMAGE_NAME:$TAG" .
 fi
 
 # X11 포워딩 설정
 if command -v xhost >/dev/null 2>&1; then
   xhost +local:docker >/dev/null 2>&1 || true
+fi
+
+# GPU 옵션
+GPU_ARGS=()
+if [[ "${USE_GPU}" == "true" ]]; then
+  if [[ "${GPU_MODE}" == "auto" ]]; then
+    if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'; then
+      GPU_MODE="runtime"
+    else
+      GPU_MODE="gpus"
+    fi
+  fi
+  case "${GPU_MODE}" in
+  runtime) GPU_ARGS=(--runtime nvidia) ;;
+  gpus) GPU_ARGS=(--gpus all) ;;
+  *)
+    echo "Error: RC_DOCKER_GPU_MODE must be auto, runtime or gpus (got '${GPU_MODE}')" >&2
+    exit 1
+    ;;
+  esac
+  GPU_ARGS+=(-e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility)
+  echo "GPU enabled: ${GPU_ARGS[*]}"
+fi
+
+# Laya 모델 캐시 (이미지 HF_HOME=/opt/hf)
+if [[ -n "${HF_CACHE_DIR_ARG}" ]]; then
+  mkdir -p "${HF_CACHE_DIR_ARG}"
+  DOCKER_VOLUMES+=("-v" "$(realpath "${HF_CACHE_DIR_ARG}"):/opt/hf:rw")
 fi
 
 # 환경 변수 파일 확인
@@ -481,6 +527,7 @@ docker run -it --rm \
   -v /sys/class/power_supply:/sys/class/power_supply:ro \
   -v /etc/localtime:/etc/localtime:ro \
   "${DOCKER_VOLUMES[@]}" \
+  "${GPU_ARGS[@]}" \
   "${ENV_ARGS[@]}" \
   "$IMAGE_NAME:$TAG" \
   "${CONTAINER_CMD[@]}"
