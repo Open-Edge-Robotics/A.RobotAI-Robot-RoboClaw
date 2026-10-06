@@ -1,0 +1,19 @@
+{
+    "cmake.ignoreCMakeListsMissing": true,
+    "python.autoComplete.extraPaths": [
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "ruff.lint.ignore": [
+        "E402"
+    ],
+    "ROS2.distro": "jazzy",
+    "python.analysis.extraPaths": [
+        "/home/seoyc/Workspace/rcf/robo_claw/install/robo_claw_dashboard/lib/python3.12/site-packages",
+        "/home/seoyc/Workspace/rcf/robo_claw/install/robo_claw_discovery/lib/python3.12/site-packages",
+        "/home/seoyc/Workspace/rcf/robo_claw/install/robo_claw_channel/lib/python3.12/site-packages",
+        "/home/seoyc/Workspace/rcf/robo_claw/install/robo_claw_grpc/lib/python3.12/site-packages",
+        "/home/seoyc/Workspace/rcf/robo_claw/install/robo_claw_agent/lib/python3.12/site-packages",
+        "/home/seoyc/Workspace/rcf/robo_claw/install/robo_claw_msgs/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
+}

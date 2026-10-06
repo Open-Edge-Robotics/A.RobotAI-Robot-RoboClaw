@@ -5,107 +5,50 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-06**
 
-## 2026-10-06 — System 1 Fast Router 사용 가이드 (브랜치 `jev-laya`)
+## 2026-10-06 — 소스 최신화 (runtime contract 2.4.0)
 
-- **조치**: `docs/SYSTEM1_FAST_ROUTER.md`를 추가했다. Laya 서버 실행·확인, 필수/선택 `SYSTEM1_*` 환경변수 표, 단계별 `.env`
-  블록(그림자 → readonly → navigation → 롤백), 실행 방식별 환경변수 전달 방법, 적용 전 평가, 로그 확인, 문제 해결을 정리했다.
-- **정정**: 2026-10-02 README 절의 "`.env` 또는 AI Config Server의 `.env`에 넣고 `./rclaw run`으로 재기동"은 사실과 달랐다.
-  - `./rclaw run`/`sim`은 저장소 `.env`를 launch 인자 구성에만 쓰고 프로세스 환경변수로 넘기지 않는다(`cmd/run.go`의
-    `env := os.Environ()`).
-  - `./rclaw launch`의 캐시 `.env`는 동기화 때마다 서버가 다시 생성하며, AI Config Server(`handler/config_files.go`)는
-    고정 필드만 출력해 `SYSTEM1_*`를 내려주지 않는다.
-  - `./rclaw launch --docker`는 캐시 `.env`와 DISPLAY/TZ/ROS_DOMAIN_ID만 컨테이너에 전달한다.
-  - `.env`가 그대로 전달되는 경로는 `scripts/run_robo_claw_docker.sh`(및 워크스페이스 `run_robo_claw_docker.sh`)의
-    `--env-file`뿐이다. 나머지는 셸 `export`가 필요하다.
-  README 절을 요약과 가이드 링크로 줄이고, `.env.example` 주석과 설계 문서의 "설정 주입" 항목을 같은 내용으로 고쳤다.
-- **LangSmith 문서 정정**: 같은 이유로 `./rclaw run`은 `.env`의 `LANGSMITH_*`도 전달하지 않는다. `tracing.py` docstring,
-  `docs/LANGSMITH_INTEGRATION.md`("`./rclaw run`이 `.env`를 읽어 환경변수로 전달"), `.env.example` 주석을 실행 방식별 전달
-  경로(`./rclaw launch` = 서버 프로필, Docker 스크립트 = `.env`, `./rclaw run` = 셸 `export`)로 고쳤다. `./rclaw launch --docker`는
-  서버 프로필의 네 항목만 전달해 `LANGSMITH_TRACING_SAMPLING_RATE` 등은 Docker 스크립트의 `.env`로 지정해야 함을 명시했다.
-- **남은 과제**: `./rclaw run`의 `.env` 전달과 AI Config Server의 `SYSTEM1_*` 필드는 코드 변경이 필요하다.
+- **동기화 범위**: `rcf/robo_claw` master(7c9caa1)를 기준으로 공유 runtime contract를 **2.4.0**으로 갱신하고, System 1 런타임 설정(`system1_*`), LangSmith 환경변수 전달 수정, graphify 규칙, CLOi Motion 스킬 카탈로그를 반영했습니다.
+- **생성 아티팩트**: `contracts/`, `config-schema/generated/`, `robo_claw_cli/contract/runtime_config_generated.go`, `src/robo_claw_bringup/launch/_generated_runtime_config.py`를 계약 생성기 출력과 일치시켰습니다.
+- **CLI·Python**: `system1_*` 유효 설정 노출, LangSmith workspace 전파, `system1_eval.py` 패키지 경로 보정, tracing 전달 경로 문서를 최신화했습니다.
+- **검증**: `task contract-check`, `go test ./...`, `task lint-skills`, `task deps-check`를 통과했습니다.
 
-## 2026-10-02 — System 1 Fast Router(Laya) 도입 (브랜치 `jev-laya`)
+## 2026-10-02 — System 1 Fast Router (Laya)
 
-설계: [`docs/SYSTEM1_FAST_ROUTER_DESIGN.md`](docs/SYSTEM1_FAST_ROUTER_DESIGN.md). LLM 호출 전 사전 라우팅을
-규칙(RuleRouter)과 Laya System 1 모델 중 **하나만** 쓰도록 배타 선택하고, 성능이 나쁘면 규칙으로 롤백한다.
-
-### Step 1 — 설계 문서 작성
-
-- **배경**: 약한 로컬 LLM의 오라우팅을 정규식으로 교정하는 규칙이 계속 늘어났다. TypeSafe AI Jev(System One
-  모델)를 검토했으나 유료 billing이 필요해 보류하고, Apache 2.0 오픈 웨이트 모델 Laya(`convaiinnovations/laya`)를
-  자체 호스팅하는 방향으로 정했다.
-- **조치**: 기존 규칙을 그룹 A(LLM 전 사전 라우팅: `check_direct_skill`, `_SIMPLE_QUERY_PATTERNS`)와
-  그룹 B/B'(LLM 출력 교정·가드: `_force_navigation_if_misrouted`, `_route_location_query`, `_extract_save_place`,
-  `nav_safety` 등)로 나눴다. 그룹 A만 Laya와 배타적으로 교체하고 그룹 B/B'는 항상 유지한다.
-
-### Step 2 — 사전 라우팅 규칙을 RuleRouter로 분리 (동작 변화 없음)
-
-- **조치**: `agent_node/fast_router.py`를 추가했다. 라우팅 결과 타입 `RouteDecision`(`direct_skill` /
-  `simple_reply` / `llm`)과 `RuleRouter`를 정의하고, `ExecutionMixin._execute_task_inner`에 인라인으로 있던
-  그룹 A 규칙(복합 명령 선점 방지, `check_direct_skill`, `_SIMPLE_QUERY_PATTERNS`)을 `RuleRouter`로 옮겼다.
-- **실행 경로**: `execution.py`는 `self._router`(없으면 `RuleRouter`)의 결정만 소비한다. 라우팅 결과는
-  LangSmith metadata(`route.kind`, `route.source`, `route.fallback` 등)로 기록한다.
-- **유지**: 그룹 B/B'(planner의 출력 교정·가드)는 변경하지 않았다.
-- **검증**: 신규 `tests/test_fast_router.py` 5건을 포함해 관련 테스트 47 passed / 1 skipped
-  (`test_execution_routing.py`는 rclpy가 없는 로컬 환경에서 skip — ROS 2 환경에서 재확인 필요). Ruff 통과.
-
-### Step 5 — Laya 사전 라우터 구현 (배타 선택 + 장애 롤백 + 그림자 기록)
-
-> 설계 문서의 Step 3(PoC), Step 4(fine-tune)는 Laya 서버/GPU가 필요해 구현 코드(Step 5)를 먼저 넣었다.
-
-- **조치**: `agent_node/system1_router.py`를 추가했다.
-  - `SystemOneClient`: `POST {SYSTEM1_ENDPOINT}/v1/systemone` 호출(표준 라이브러리 `urllib`, 신규 의존성 없음). Laya와
-    Jev가 같은 스키마라 endpoint만 바꾸면 provider를 교체할 수 있다.
-  - `SystemOneRouter`: `intent`(choice), `ambiguous`(noul), `skill`(choice), `target_place`(choice)를 한 번에 질의한다.
-    확신이 낮거나 모호하면 항상 System 2로 넘긴다. 복합 명령은 모델을 호출하지 않는다.
-  - `SelectedRouter` / `build_router`: `SYSTEM1_ROUTER=rule|laya` 중 하나만 판단한다(배타). Laya가 timeout, HTTP 오류,
-    circuit open이면 해당 요청만 RuleRouter로 대체하고 `route.fallback=true`를 기록한다.
-  - `SYSTEM1_SHADOW=true`: 선택되지 않은 라우터를 백그라운드 스레드로 실행해 로그와 `SYSTEM1_SHADOW_LOG`(JSONL)에만 기록한다.
-  - `CircuitBreaker`: 연속 3회 실패 시 30초 동안 Laya 호출을 막고(half-open 재시도), 기동 시 health check를 수행한다.
-- **범위**: `SYSTEM1_SCOPE=readonly`(인자 없는 read 스킬) / `navigation`(+ 기억된 장소로 `navigate_to`). Laya는 숫자·자유
-  텍스트 인자를 추출할 수 없어 `move_relative` 같은 규칙 지름길은 Laya 모드에서 System 2가 처리한다.
-- **로그**: 라우터 구성 결과(`System1 router: router=... shadow=... scope=...`), 설정 오류, health check 실패를 ROS 노드
-  로거로 출력한다. ROS 노드에서는 Python 모듈 로거의 INFO가 출력되지 않기 때문이다.
-- **설정**: `.env.example`에 `SYSTEM1_*` 항목을 추가했다. `rclaw config-effective`가 `SYSTEM1_API_KEY`를 마스킹하도록 했다.
-  기본값 `SYSTEM1_ROUTER=rule`이므로 설정하지 않으면 기존 동작과 같다.
-- **검증**: 신규 `tests/test_system1_router.py` 28건(설정 파싱, 배타 선택, 장애 대체, 그림자 기록, circuit breaker, 로컬
-  HTTP 서버 왕복) 통과. `robo_claw_agent` 전체 테스트(로컬, ROS 미설치)는 467 passed / 54 skipped이며, 실패 14건과
-  수집 오류 10건은 변경 전과 목록이 동일한 ROS 의존 항목이다. Go 툴체인이 없는 환경이라 `effective.go` 변경은 빌드
-  확인을 하지 못했다.
-
-### Step 3 — Laya PoC 평가 도구와 시드 데이터셋
-
-- **조치**: `scripts/system1_eval.py`를 추가했다. 같은 케이스 셋으로 RuleRouter와 Laya를 각각(또는 `--router both`로
-  함께) 돌린다. ROS 2 없이 실행되며 결과를 correct / escalated(System 2로 넘긴 안전한 놓침) / wrong(오실행)으로
-  집계하고 p50/p95 지연을 낸다.
-- **데이터**: `validation/system1/router_cases.jsonl`(시드 32건: 인사, 상태/위치/시간 조회, 이동, 복합, 질문, 저장, 모호,
-  조작)과 `validation/system1/router_eval_context.json`(평가용 스킬·장소 목록). `expected_navigation`으로
-  `SYSTEM1_SCOPE=navigation`의 기대값을 따로 둔다.
-- **규칙 기준선**(readonly scope): 32건 중 correct 18 / escalated 14 / wrong 0. 인사 변형("안녕하세요 반가워요")과 조회
-  명령("배터리 얼마나 남았어?") 14건이 규칙에 걸리지 않고 LLM으로 넘어간다. 이 14건이 Laya로 줄일 수 있는 대상이다.
-- **미실행**: 실제 Laya(`laya-serve`) 측정은 GPU/모델 다운로드가 필요해 이 브랜치에서는 실행하지 않았다. 서버를 띄운 뒤
-  `--router both --endpoint ...`로 측정한다.
-- **검증**: `tests/test_system1_eval_script.py` 2건(규칙 기준선 오실행 0, Laya 미기동 시 크래시 없이 error 집계) 통과.
-
-### README — System 1 Fast Router 사용법
-
-- **조치**: `README.md`에 "System 1 Fast Router (Laya, 선택)" 절을 추가했다. Laya 서버 실행과 확인, 적용 전 평가
-  (`scripts/system1_eval.py`), 단계별 적용(그림자 → readonly → navigation → 롤백)의 `.env` 예시, 설정 항목 표,
-  기동/장애/그림자 로그 확인 방법, Laya 모드에서 꺼지는 규칙 지름길을 정리했다.
-- **문서 표**: "상세 가이드" 표에 `docs/SYSTEM1_FAST_ROUTER_DESIGN.md`를 추가하고, 주요 특징에 항목을 추가했다.
-- **남은 단계**: Step 1(LangSmith 기준선 — 403 해결 필요), Step 4(fine-tune), Step 6~8(운영 중 그림자 → 전환 → 확대)은
-  Laya 서버와 운영 데이터가 필요해 이 브랜치에서 수행하지 않았다.
+- **사전 라우팅**: 기존 규칙 라우터와 Laya 기반 System 1 라우터를 `SYSTEM1_ROUTER=rule|laya`로 배타 선택합니다. 기본값은 `rule`이며 Laya 장애 시 요청별 규칙 라우터 대체와 선택적 shadow 기록을 지원합니다.
+- **안전 범위**: 모호하거나 확신이 낮은 요청, 복합 명령은 LLM planner로 넘깁니다. Laya 직접 실행은 조회 스킬과 설정된 경우 기억된 장소로의 이동으로 제한합니다.
+- **평가·설정**: ROS 2 없이 실행하는 평가 도구와 기준 데이터셋을 추가하고, `.env.example` 및 README에 설정과 단계별 적용 방법을 기록합니다. CLI에서 `SYSTEM1_API_KEY`를 마스킹합니다.
 
 ## 2026-10-02 — LangSmith API 키 마스킹 우선순위 보정
 
 - **환경변수 병합**: 원격 `.env` artifact에 유효한 `LANGSMITH_API_KEY`가 있으면 JSON 설정의 값을 덮어쓰지 않습니다. JSON 응답의 마스킹 값(`********`)은 런타임 키로 주입하지 않으며, artifact에 키가 없을 때만 유효한 JSON 키를 fallback으로 사용합니다.
-- **회귀 테스트**: artifact 키 보존, 마스킹 값 제외, JSON 키 fallback을 검증합니다.
+- **회귀 테스트**: artifact 키 보존, 마스킹 값 제외, JSON 키 fallback을 검증합니다. `go test ./...`를 통과했습니다.
 
 ## 2026-10-02 — LangSmith workspace ID 런타임 설정
 
 - **설정 배포**: 공유 runtime contract v2.3.0에 `LANGSMITH_WORKSPACE_ID`를 등록하고, AI Config Server 프로필 입력란 및 `.env` 생성에 연결했다.
 - **로컬 런치**: 서버 API/cache에서 workspace ID를 받아 local launch 환경에 주입하고, `.env.example` 및 LangSmith 통합 가이드를 갱신했다.
 - **검증**: contract 호환성 검사와 contract/서버/CLI 설정 회귀 테스트를 추가했다.
+
+## 2026-09-30 — CLOi 등록 모션 이름 조회·실행
+
+- **목록·실행**: `list_cloid_motions`는 `/task_manager/motion_map`에서 실제 등록 모션을 읽고,
+  `execute_cloid_motion`은 확인된 이름을 등록 ID로 변환해 `/task_manager/motion_cmd`에 START를 발행한다.
+  명시적 사용자 확인, 최신 목록 재검증, 중복 이름의 ID 선택, 선행 모션(`pre_id`) 차단,
+  Motion Player 구독자 확인을 적용한다. `stop_cloid_motion`은 같은 MotionCmd 인터페이스로 명시적
+  사용자 확인 후 STOP을 발행한다. 성공 결과는 명령 발행만 의미하며 실행·정지 완료를 보증하지 않는다.
+- **인터페이스**: CLOi Motion Player의 `task_manager_msgs/msg/MotionCmd` wire 필드
+  (`motion_id`, `command_type`)을 읽기 전용으로 확인하고 RoboClaw 빌드용 최소 메시지 정의를 추가했다.
+  이 단방향 토픽은 완료 결과·취소 확인을 제공하지 않는다. 실제 모션 명령은 보내지 않았다.
+- **검증**: 모션 스킬 단위 테스트 17건과 변경 Python 파일 Ruff/format 검사를 통과했다. 전체
+  `ruff check .`은 변경 범위 밖 기존 진단으로 통과하지 못했다. 로컬 개발 환경에 ROS 2 CLI가 없어
+  colcon 빌드는 수행하지 못했다. 조사 시 `/task_manager/motion_map` publisher에서 payload를 받지
+  못했으며, CLOi 호스트 모션 맵 파일에는 137개 항목이 있었다.
+- **실기 설정**: 두 CLOi 호스트의 RoboClaw Compose 서비스에 각 호스트의 모션 맵 파일을
+  `/ws/motion_list/motion_map.json`으로 읽기 전용 마운트하고, CLOi 설정의
+  `cloid_motion_catalog_file` 경로를 지정했다. 확인된 카탈로그는 각 79개/137개 항목이며,
+  설정은 기록했지만 서비스는 재시작하지 않았다.
+- **문서**: CLOi 런타임 가이드, `docs/CLOiD_GUIDE.md`, `docs/SKILLS.md`를 새 목록·명령 계약에
+  맞춰 갱신했다.
 
 ## 2026-09-22 — Robo-Claw Maestro FleetControl outbound connector
 

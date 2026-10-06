@@ -1,9 +1,50 @@
 package launcher
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestBuildMergedEnvPreservesSystem1SettingsFromEnvArtifact(t *testing.T) {
+	values := map[string]string{
+		"SYSTEM1_ROUTER":               "laya",
+		"SYSTEM1_SHADOW":               "true",
+		"SYSTEM1_SHADOW_LOG":           "/tmp/system1.jsonl",
+		"SYSTEM1_SCOPE":                "navigation",
+		"SYSTEM1_ENDPOINT":             "http://laya:8000",
+		"SYSTEM1_PROVIDER":             "laya",
+		"SYSTEM1_TIMEOUT_MS":           "450",
+		"SYSTEM1_CONF_THRESHOLDS_JSON": `{"smalltalk":0.95}`,
+		"SYSTEM1_SKILLS":               "get_status,identify_location",
+		"SYSTEM1_MAX_OPTIONS":          "8",
+		"SYSTEM1_API_KEY":              "system1-secret",
+	}
+	lines := make([]string, 0, len(values))
+	for key, value := range values {
+		lines = append(lines, key+"="+value)
+	}
+	envFile := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(envFile, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	envSlice, envMap, err := ParseEnvFile(envFile)
+	if err != nil {
+		t.Fatalf("parse .env artifact: %v", err)
+	}
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot: t.TempDir(),
+		EnvSlice:    envSlice,
+		EnvMap:      envMap,
+	})
+
+	for key, value := range values {
+		if got := lastEnvValue(t, env, key); got != value {
+			t.Errorf("expected env artifact value %s=%q to reach runtime, got %q", key, value, got)
+		}
+	}
+}
 
 func TestBuildMergedEnvAddsLangsmithWorkspaceIDFromActiveConfig(t *testing.T) {
 	t.Setenv("LANGSMITH_WORKSPACE_ID", "")

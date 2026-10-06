@@ -24,14 +24,9 @@ robo_claw 의 LLM 호출을 `LangSmith <https://smith.langchain.com>`_ 로
 * ``LANGSMITH_PROJECT``  : 프로젝트 이름 (기본: ``default``)
 * ``LANGSMITH_ENDPOINT`` : 커스텀 엔드포인트 (기본: 공식 SaaS)
 
-에이전트 노드 프로세스의 환경변수로만 읽는다(launch 인자/ROS 파라미터 배선 없음).
-실행 방식별 전달 경로는 다음과 같다(``docs/LANGSMITH_INTEGRATION.md`` 참고).
-
-* ``./rclaw launch <robot> <env>`` (로컬/``--docker``): AI Config Server 프로필의
-  LangSmith 설정이 캐시 ``.env`` 로 내려와 전달된다.
-* ``scripts/run_robo_claw_docker.sh``: 저장소 루트 ``.env`` 가 ``--env-file`` 로 전달된다.
-* ``./rclaw run`` / ``./rclaw sim``: 저장소 ``.env`` 는 launch 인자 구성에만 쓰이고
-  환경변수로 전달되지 않는다. 실행 전에 셸에서 ``export`` 해야 한다.
+이 값들은 저장소 루트 ``.env`` 에 추가하면 ``./rclaw run`` 이 환경변수로
+전달하고, ``ros2 launch`` 로 실행되는 에이전트 노드 프로세스가 그대로
+상속받는다. 별도 launch 인자/ROS 파라미터 배선이 필요 없다.
 """
 
 from __future__ import annotations

@@ -21,7 +21,18 @@ var effectiveKeys = map[string]string{
 	"enable_rag":    "RC_ENABLE_RAG",
 	"http_port":     "RC_HTTP_PORT",
 	"use_vision":    "RC_USE_VISION",
-	"grpc_port":     "ROBO_CLAW_GRPC_PORT",
+	"grpc_port":                    "ROBO_CLAW_GRPC_PORT",
+	"system1_router":                "SYSTEM1_ROUTER",
+	"system1_shadow":                "SYSTEM1_SHADOW",
+	"system1_shadow_log":            "SYSTEM1_SHADOW_LOG",
+	"system1_scope":                 "SYSTEM1_SCOPE",
+	"system1_endpoint":              "SYSTEM1_ENDPOINT",
+	"system1_provider":              "SYSTEM1_PROVIDER",
+	"system1_timeout_ms":            "SYSTEM1_TIMEOUT_MS",
+	"system1_conf_thresholds_json":  "SYSTEM1_CONF_THRESHOLDS_JSON",
+	"system1_skills":                "SYSTEM1_SKILLS",
+	"system1_max_options":           "SYSTEM1_MAX_OPTIONS",
+	"system1_api_key":               "SYSTEM1_API_KEY",
 }
 
 var secretKeys = map[string]bool{
@@ -31,7 +42,7 @@ var secretKeys = map[string]bool{
 	"QDRANT_API_KEY":       true,
 	"LANGSMITH_API_KEY":    true,
 	"GRPC_PEER_TOKEN":      true,
-	"SYSTEM1_API_KEY":      true,
+	"SYSTEM1_API_KEY":       true,
 }
 
 // EffectiveCmd displays the values that the cached launcher will consume.

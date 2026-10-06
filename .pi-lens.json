@@ -1,0 +1,6 @@
+{
+  "ignore": [
+    "scripts/generated_runtime_env.sh",
+    "config-schema/generated/**"
+  ]
+}

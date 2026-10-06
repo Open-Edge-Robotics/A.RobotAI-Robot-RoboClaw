@@ -211,29 +211,79 @@ curl -X POST http://127.0.0.1:8080/skill \
 
 ## 🧠 System 1 Fast Router (Laya, 선택)
 
-LLM planner를 부르기 전에 빠른 분류 모델(System 1)이 요청을 먼저 판단합니다. 인사나 단순 조회처럼 LLM이 필요 없는 요청은 바로 처리하고, 나머지는 기존 LLM planner(System 2)로 넘깁니다. 모델은 자체 호스팅하는 오픈 웨이트 [Laya](https://huggingface.co/convaiinnovations/laya)(Apache 2.0)를 사용합니다.
+LLM planner를 부르기 전에 빠른 분류 모델(System 1)이 요청을 먼저 판단합니다. 인사나 단순 조회처럼 LLM이 필요 없는 요청은 바로 처리하고, 나머지는 기존 LLM planner(System 2)로 넘깁니다. 모델은 자체 호스팅하는 오픈 웨이트 [Laya](https://huggingface.co/convaiinnovations/laya)(Apache 2.0)를 사용합니다. 이 문서에서 서버 실행, 평가, 단계별 적용 방법을 설명합니다.
 
 - **배타 선택**: 사전 라우팅은 `SYSTEM1_ROUTER=rule`(기존 규칙)과 `laya` 중 **하나만** 동작합니다. 기본값은 `rule`이라 설정하지 않으면 기존 동작과 같습니다.
-- **롤백**: `SYSTEM1_ROUTER=rule`로 되돌립니다. Laya 서버 장애(timeout, HTTP 오류)가 나면 해당 요청만 자동으로 규칙 라우터가 처리합니다.
-- **필수 환경변수**(`laya` 모드): `SYSTEM1_ROUTER=laya`, `SYSTEM1_ENDPOINT=http://<laya-host>:8000`
+- **롤백**: Laya 성능이 나쁘면 `SYSTEM1_ROUTER=rule`로 되돌립니다. Laya 서버 장애(timeout, HTTP 오류, 연속 3회 실패)가 나면 해당 요청만 자동으로 규칙 라우터가 처리합니다.
+- **항상 유지**: LLM 출력 교정(`_force_navigation_if_misrouted`, `_route_location_query`)과 가드(`_extract_save_place`, `nav_safety` 등)는 어떤 모드에서든 동작합니다.
+
+### 1. Laya 서버 실행
+
+GPU 서버(T4 이상 권장, CPU는 느림)에서 실행합니다. 아래 명령은 Laya 모델 카드 기준입니다.
 
 ```bash
-# Laya 서버 (GPU 호스트)
 pip install "laya[serve]"
-LAYA_DEVICE=cuda LAYA_PRELOAD=1 laya-serve
-
-# 적용 전 평가 (로봇 불필요)
-python3 scripts/system1_eval.py --router both --endpoint http://<laya-host>:8000
-
-# robo-claw 기동 (rclaw run / launch 는 .env 가 아니라 셸 export 로 전달해야 함)
-export SYSTEM1_ROUTER=laya
-export SYSTEM1_ENDPOINT=http://<laya-host>:8000
-./rclaw run
+LAYA_DEVICE=cuda LAYA_PRELOAD=1 laya-serve        # 기본 포트 8000, POST /v1/systemone
 ```
 
-> `SYSTEM1_*`는 에이전트가 환경변수로 직접 읽습니다. `scripts/run_robo_claw_docker.sh`는 `.env`에 넣으면 전달됩니다. 반면 `./rclaw run`은 `.env`를 launch 인자를 만드는 데만 쓰고, `./rclaw launch`의 캐시 `.env`는 설정 동기화 때마다 AI Config Server 값으로 다시 생성됩니다(서버는 `SYSTEM1_*`를 제공하지 않음). 그래서 두 경우 모두 셸에서 `export`해야 합니다. `./rclaw launch --docker`로는 현재 전달할 수 없습니다.
+한국어 명령을 쓰므로 응답의 `routing.model`이 multilingual 체크포인트로 선택되는지 확인하세요. 루트(영어) 체크포인트는 한국어를 지원하지 않습니다.
 
-전체 환경변수, 실행 방식별 설정 위치, 단계별 적용(그림자 → readonly → navigation), 동작 확인, 문제 해결은 **[docs/SYSTEM1_FAST_ROUTER.md](docs/SYSTEM1_FAST_ROUTER.md)**를 참고하세요. 설계 배경: [docs/SYSTEM1_FAST_ROUTER_DESIGN.md](docs/SYSTEM1_FAST_ROUTER_DESIGN.md)
+```bash
+curl -s http://<laya-host>:8000/v1/systemone -H 'Content-Type: application/json' -d '{
+  "state": {"instruction": "지금 배터리 얼마나 남았어?"},
+  "questions": {"intent": {"type": "choice", "instructions": "사용자가 로봇에게 한 말의 종류는?",
+    "criteria": {"smalltalk": "인사/잡담", "single_skill": "기능 하나로 처리", "multi_step": "여러 단계"}}}
+}'
+```
+
+### 2. 적용 전 평가 (로봇 불필요)
+
+```bash
+# 규칙 라우터 기준선 (Laya 서버 불필요)
+python3 scripts/system1_eval.py --router rule
+
+# 규칙 vs Laya 비교 (navigation scope까지 보려면 --scope navigation)
+python3 scripts/system1_eval.py --router both --endpoint http://<laya-host>:8000 --json-out /tmp/system1_eval.json
+```
+
+결과는 `correct` / `escalated`(LLM으로 넘김, 안전) / `wrong`(**오실행**)으로 집계됩니다. `wrong`이 0에 가까워질 때까지 `--thresholds '{"single_skill":0.9}'`로 임계값을 조정하세요. 케이스는 `validation/system1/router_cases.jsonl`에 추가합니다.
+
+> 모델 카드 기준으로 Laya 기본 체크포인트는 zero-shot 정확도가 낮습니다(typed-decisions 0.362). 실제 운영 전에는 robo-claw 데이터로 fine-tune한 체크포인트를 쓰는 것을 전제로 합니다(설계 문서 3.5절).
+
+### 3. 단계별 적용 (`.env` 또는 AI Config Server의 `.env`)
+
+| 단계 | 설정 | 동작 |
+|---|---|---|
+| ① 그림자 | `SYSTEM1_ROUTER=rule`<br>`SYSTEM1_SHADOW=true`<br>`SYSTEM1_ENDPOINT=http://<laya-host>:8000`<br>`SYSTEM1_SHADOW_LOG=/tmp/system1_shadow.jsonl` | 실행은 규칙 라우터가 합니다. Laya 판단은 로그와 JSONL에만 기록합니다 |
+| ② Laya (readonly) | `SYSTEM1_ROUTER=laya`<br>`SYSTEM1_SCOPE=readonly`<br>`SYSTEM1_SHADOW=true` | Laya가 인사와 인자 없는 조회 스킬(`get_status`, `identify_location`, `get_datetime` 등)을 직접 처리합니다. 나머지는 LLM이 처리합니다. 규칙 판단은 그림자로 계속 기록합니다 |
+| ③ Laya (navigation) | `SYSTEM1_SCOPE=navigation` | ②에 더해, 기억된 장소로의 `navigate_to`를 Laya가 직접 실행합니다(nav_safety 적용) |
+| 롤백 | `SYSTEM1_ROUTER=rule` | 기존 동작으로 복귀합니다 |
+
+설정을 바꾼 뒤에는 에이전트를 재기동해야 반영됩니다(`./rclaw run` 또는 `./rclaw launch <robot> <env>`).
+
+**Laya 모드에서 달라지는 점**: 규칙 라우터의 지름길(`앞으로 2미터` → `move_relative`, 컵 집기, 카메라/지도 캡처 직접 실행)은 동작하지 않습니다. 이 요청들은 LLM planner가 처리합니다. Laya는 숫자나 자유 텍스트 인자를 추출하지 못하기 때문입니다.
+
+### 4. 설정 항목
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `SYSTEM1_ROUTER` | `rule` | `rule` / `laya` (배타 선택) |
+| `SYSTEM1_SHADOW` | `false` | 선택되지 않은 라우터의 판단을 기록만 함 |
+| `SYSTEM1_SHADOW_LOG` | — | 그림자 기록 JSONL 경로 |
+| `SYSTEM1_SCOPE` | `readonly` | `readonly` / `navigation` |
+| `SYSTEM1_ENDPOINT` | — | `laya-serve` 주소. `laya` 모드인데 비어 있으면 `rule`로 동작 |
+| `SYSTEM1_TIMEOUT_MS` | `300` | 초과 시 해당 요청은 규칙 라우터로 대체 |
+| `SYSTEM1_CONF_THRESHOLDS_JSON` | `{"smalltalk":0.9,"single_skill":0.85,"skill":0.8,"target_place":0.8,"ambiguous":0.5}` | 직접 처리에 필요한 confidence 하한(ambiguous는 상한) |
+| `SYSTEM1_SKILLS` | — | Laya 후보 스킬 지정(쉼표 구분). 미설정 시 인자 없는 read 스킬 전체 |
+| `SYSTEM1_MAX_OPTIONS` | `12` | 선택지 상한 |
+| `SYSTEM1_PROVIDER` / `SYSTEM1_API_KEY` | `laya` / — | 같은 `/v1/systemone` 스키마의 외부 provider(Jev 등)를 쓸 때만 |
+
+### 5. 동작 확인
+
+- 기동 로그: `System1 router: router=laya shadow=True scope=readonly endpoint=http://...`
+- 장애 대체: `System1 router 'laya' unavailable (...) — using rule router`
+- 그림자 비교: `System1 shadow: {"primary": {...}, "shadow": {...}, "agree": true}`
+- LangSmith trace metadata: `route.kind`, `route.source`, `route.fallback`, `route.intent`, `route.confidence`, `route.hint`
 
 ## 🔍 ONNX 객체 인식 (`robo_claw_vision`)
 
@@ -339,8 +389,6 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/MESSENGER_GUIDE.md](docs/MESSENGER_GUIDE.md)                           | Discord/Slack/Telegram 연동 가이드                                        |
 | [docs/DASHBOARD.md](docs/DASHBOARD.md)                                       | 웹 대시보드(`robo_claw_dashboard`) 상태 조회·메시지 전송                  |
 | [docs/LANGSMITH_INTEGRATION.md](docs/LANGSMITH_INTEGRATION.md)               | LangSmith LLM 트레이싱/모니터링 활성화                                    |
-| [docs/SYSTEM1_FAST_ROUTER.md](docs/SYSTEM1_FAST_ROUTER.md)                   | System 1 Fast Router(Laya) 설정·환경변수·운영 가이드                      |
-| [docs/SYSTEM1_FAST_ROUTER_DESIGN.md](docs/SYSTEM1_FAST_ROUTER_DESIGN.md)     | System 1 Fast Router(Laya) 설계·단계별 도입 계획                          |
 | [docs/DOCKER_GUIDE.md](docs/DOCKER_GUIDE.md)                                 | Docker 실행(`run_robo_claw_docker.sh`) 및 이미지 빌드(`task docker-*`)    |
 | [docs/BUILD_TROUBLESHOOTING.md](docs/BUILD_TROUBLESHOOTING.md)               | 빌드/설치/실행 오류 해결                                                  |
 | [docs/STRETCH3_TEST_GUIDE.md](docs/STRETCH3_TEST_GUIDE.md)                   | Stretch3 실기 매니퓰레이션 테스트 절차                                    |

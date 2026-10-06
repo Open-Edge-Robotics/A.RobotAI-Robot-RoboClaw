@@ -367,6 +367,11 @@ $RECYCLE.BIN/
 .claude/launch.json
 # .claude/routines/   # 개인 루틴이면 주석 해제
 
+.codex
+graphify-out
+.graphifyignore
+onnxruntime-linux-aarch64-1.19.2
+
 # config 서버 라운드트립 백업 (apply_rag_params.py / apply_skills_guide.py)
 # 설정 레코드 전문이라 커밋 대상이 아니다(롤백용 로컬 산출물).
 validation/talk/config-*.bak.json

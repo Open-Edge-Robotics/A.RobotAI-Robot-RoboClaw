@@ -186,12 +186,12 @@ func buildMergedEnv(ctx *wcli.Context, lctx *LaunchContext) []string {
 	return env
 }
 
-// applyVenv .venv 가상환경의 PATH 및 PYTHONPATH를 환경변수에 주입합니다.
 func isRedactedSecret(value string) bool {
 	value = strings.TrimSpace(value)
 	return value != "" && strings.Trim(value, "*") == ""
 }
 
+// applyVenv .venv 가상환경의 PATH 및 PYTHONPATH를 환경변수에 주입합니다.
 func applyVenv(ctx *wcli.Context, projectRoot string, env []string) []string {
 	venvBin := filepath.Join(projectRoot, ".venv", "bin")
 	if !PathExists(venvBin) {
