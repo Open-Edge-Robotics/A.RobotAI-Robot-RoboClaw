@@ -33,7 +33,9 @@ def _compose_result_answer(skill_results: list[Any]) -> str:
             parts.append(f"{message} ({rendered})" if message else rendered)
         elif message:
             parts.append(message)
-    return "\n".join(parts)
+    from ..answer import _clip_text_length
+
+    return _clip_text_length("\n".join(parts))
 
 
 # 자동 RAG 검색에서 제외할 운영/메타 항목 타입.

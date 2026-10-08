@@ -9,6 +9,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 from robo_claw_agent.answer import (
+    MAX_FINAL_ANSWER_CHARS,
     UNRENDERABLE_ANSWER,
     extract_text_answer,
     render_result_data,
@@ -156,3 +157,17 @@ def test_render_result_data_skips_empty_and_internal_fields():
 
 def test_render_result_data_handles_non_dict():
     assert render_result_data(None) == ""
+
+
+def test_sanitize_final_answer_caps_excessive_length():
+    huge_text = "이것은 매우 긴 답변입니다. " * 500  # 약 8,000자
+    sanitized = sanitize_final_answer(huge_text)
+    assert len(sanitized) <= MAX_FINAL_ANSWER_CHARS + 100
+    assert "생략" in sanitized
+
+
+def test_render_result_data_caps_excessive_length():
+    huge_data = {"key": "매우 긴 결과 내용입니다. " * 500}
+    rendered = render_result_data(huge_data)
+    assert len(rendered) <= MAX_FINAL_ANSWER_CHARS + 100
+    assert "생략" in rendered

@@ -39,19 +39,33 @@ logger = logging.getLogger(__name__)
 # Discord accepts at most 2,000 UTF-16 code units per message. Keep headroom for
 # platform-side length accounting and do not split a Unicode code point.
 DISCORD_MESSAGE_SAFE_LIMIT = 1900
+DISCORD_MAX_CHUNKS = 10
+DISCORD_TRUNCATION_NOTICE = "\n... (메시지가 너무 길어 일부가 생략되었습니다)"
 
 
-def _split_discord_message(text: str) -> list[str]:
-    """텍스트를 Discord 제한보다 짧은 조각으로 나누며 내용을 보존합니다."""
+def _split_discord_message(text: str, max_chunks: int = DISCORD_MAX_CHUNKS) -> list[str]:
+    """텍스트를 Discord 제한보다 짧은 조각으로 나누며 내용을 보존합니다.
+
+    단일 응답이 과도하게 길 때 채널 도배와 Rate Limit을 방지하기 위해 최대 청크 수를 제한합니다.
+    """
     chunks: list[str] = []
     remaining = text
 
+    notice_units = len(DISCORD_TRUNCATION_NOTICE.encode("utf-16-le")) // 2
+
     while remaining:
+        is_last_allowed_chunk = len(chunks) == max_chunks - 1
+        limit = (
+            DISCORD_MESSAGE_SAFE_LIMIT - notice_units
+            if is_last_allowed_chunk
+            else DISCORD_MESSAGE_SAFE_LIMIT
+        )
+
         used_units = 0
         end = 0
         for end, character in enumerate(remaining, start=1):
             character_units = 2 if ord(character) > 0xFFFF else 1
-            if used_units + character_units > DISCORD_MESSAGE_SAFE_LIMIT:
+            if used_units + character_units > limit:
                 end -= 1
                 break
             used_units += character_units
@@ -61,6 +75,13 @@ def _split_discord_message(text: str) -> list[str]:
         if end == 0:
             # The fixed safe limit always fits at least one Unicode code point.
             raise ValueError("Discord message limit is too small for a Unicode character")
+
+        if is_last_allowed_chunk:
+            if end < len(remaining):
+                chunks.append(remaining[:end] + DISCORD_TRUNCATION_NOTICE)
+            else:
+                chunks.append(remaining[:end])
+            break
 
         if end < len(remaining):
             # Prefer a nearby line or word boundary without creating tiny chunks.
@@ -91,9 +112,7 @@ class BaseMessengerChannel(ABC):
 
     def __init__(self, name: str, on_message_cb: Callable[[str], str]):
         self.name = name
-        self.on_message = (
-            on_message_cb  # 메시지 수신 시 호출할 콜백 (instruction -> response_text)
-        )
+        self.on_message = on_message_cb  # 메시지 수신 시 호출할 콜백 (instruction -> response_text)
         self._thread: threading.Thread | None = None
         self._running = False
 
@@ -198,9 +217,7 @@ class TelegramChannel(BaseMessengerChannel):
 
 
 class SlackChannel(BaseMessengerChannel):
-    def __init__(
-        self, app_token: str, bot_token: str, on_message_cb: Callable[[str], str]
-    ):
+    def __init__(self, app_token: str, bot_token: str, on_message_cb: Callable[[str], str]):
         super().__init__("Slack", on_message_cb)
         self.app_token = app_token
         self.bot_token = bot_token
@@ -229,9 +246,7 @@ class SlackChannel(BaseMessengerChannel):
                         client.send_socket_mode_response(response)
 
                         res_text = self.on_message(text)
-                        client.web_client.chat_postMessage(
-                            channel=channel, text=res_text
-                        )
+                        client.web_client.chat_postMessage(channel=channel, text=res_text)
 
             self.client.socket_mode_request_listeners.append(process)
             self.client.connect()
@@ -301,9 +316,7 @@ class DiscordChannel(BaseMessengerChannel):
                 if message.author == self.client.user:
                     return
                 self._last_channel = message.channel
-                await _handle_discord_message(
-                    message.channel, self.on_message, message.content
-                )
+                await _handle_discord_message(message.channel, self.on_message, message.content)
 
             self.client.run(self.token)
         except Exception as e:
@@ -317,9 +330,7 @@ class DiscordChannel(BaseMessengerChannel):
         try:
             import asyncio
 
-            asyncio.run_coroutine_threadsafe(
-                self._last_channel.send(text), self.client.loop
-            )
+            asyncio.run_coroutine_threadsafe(self._last_channel.send(text), self.client.loop)
             return True
         except Exception as e:
             logger.error("[Discord] Failed to send message: %s", e)

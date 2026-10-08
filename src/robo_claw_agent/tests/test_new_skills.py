@@ -84,9 +84,7 @@ def _make_map_message():
 class TestDetectObjectSkill:
     def test_basic_detection(self):
         skill = DetectObjectSkill()
-        skill.wait_for_message = MagicMock(
-            return_value=_make_image(640, 480, "rgb8")
-        )
+        skill.wait_for_message = MagicMock(return_value=_make_image(640, 480, "rgb8"))
         result = skill.execute({"object_class": "cup"})
         assert result["success"] is True
         assert result["resolution"] == "640x480"
@@ -95,9 +93,7 @@ class TestDetectObjectSkill:
 
     def test_no_class_filter(self):
         skill = DetectObjectSkill()
-        skill.wait_for_message = MagicMock(
-            return_value=_make_image(320, 240, "bgr8")
-        )
+        skill.wait_for_message = MagicMock(return_value=_make_image(320, 240, "bgr8"))
         result = skill.execute({})
         assert result["success"] is True
         assert "이미지 수신 성공" in result["message"]
@@ -133,11 +129,14 @@ class TestGetDistanceSkill:
 def test_get_status_skill():
     skill = GetStatusSkill()
     assert skill.name == "get_status"
+    assert skill.input_schema.get("properties", {}).get("include_image") is not None
 
     result = skill.execute({})
     assert result["success"] is True
     assert "로봇 상태" in result["message"]
     assert "status_details" in result
+    # 기본값으로 대용량 카메라 이미지 base64는 포함되지 않아야 함
+    assert "camera_scene_base64" not in result["status_details"]
 
 
 def test_ros_command_skill():
@@ -166,9 +165,7 @@ def test_analyze_scene_skill(monkeypatch):
         )
     )
     skill.set_node(_make_dummy_node(_llm=dummy_llm, _memory=dummy_memory))
-    skill.get_map_pose = MagicMock(
-        return_value={"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-    )
+    skill.get_map_pose = MagicMock(return_value={"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"})
     skill.wait_for_message = MagicMock(return_value=_make_image(16, 16, "bgr8"))
     skill._bridge = SimpleNamespace(
         imgmsg_to_cv2=MagicMock(return_value=np.zeros((16, 16, 3), dtype=np.uint8))

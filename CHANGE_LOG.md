@@ -5,6 +5,31 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-08**
 
+## 2026-10-08 — CLOiD 개체별 스킬 가이드 분리 (1호/2호)
+
+- **배경**: CLOiD 1호는 이동과 CLOi 등록 상체 모션을 모두 사용할 수 있지만, 2호는 팔·waist·neck 구동 오류로 상체를 움직이는 경로를 사용할 수 없다. 단일 `SKILLS.cloid.md` 문서가 두 개체 상태를 구분하지 못해 2호에서 상체 모션·조작·정리 표시 모션이 계획될 위험이 있었다.
+- **조치**:
+  - `src/robo_claw_bringup/config/SKILLS.cloid.1.md` 추가 — 1호 전용 가이드(이동 + CLOi 등록 상체 모션 사용 가능, 공통 CLOiD 제약 포함).
+  - `src/robo_claw_bringup/config/SKILLS.cloid.2.md` 추가 — 2호 전용 가이드(상체 구동 오류, `execute_cloid_motion`·조작 스킬·정리 표시 모션 사용 불가, 주행·인지·조회·정지 전용, `cloid_cleanup_indicator_enabled=false` 안내).
+  - `src/robo_claw_bringup/config/SKILLS.cloid.md` 제거.
+  - `robo_claw.launch.py`: `SKILLS.<robot_config>.md` 가 없으면 `SKILLS.<robot_config>.1.md` 를 개체 기본값으로 사용하고, 개체 번호 미지정 경고를 출력하도록 개체 fallback 추가.
+  - `test_cloid_robot_config.py`: 두 개체 문서 존재·차이 검증과 `skills_guide_file` 로 2호 문서를 선택하는 launch 배선 테스트를 추가.
+  - `docs/CLOiD_GUIDE.md`, `.env.example`: 개체별 가이드 선택 방법과 2호 배포 설정을 문서화.
+- **검증**: `src/robo_claw_bringup/tests/test_cloid_robot_config.py` 12건 통과, `robo_claw_bringup` colcon build(symlink-install) 성공, `scripts/check_prompt_tone.py` 합계 10/10 유지.
+
+## 2026-10-08 — Discord 분할 전송 폭주 방지 및 get_status 경량화
+
+- **증상**: 실기(CLOiD)에서 "주방에 갔다가 안방으로 와줘" 실행 중 `follow_waypoints` 실패 후 `get_status`를 거쳐 요약 라운드 폴백으로 넘어간 뒤, Discord로 base64 바이트코드 문자열이 끊임없이 분할 전송되는 현상 발생.
+- **원인**:
+  - `get_status` 스킬이 `include_image=True` 기본값으로 카메라 base64 이미지를 `status_details`에 주입함.
+  - 요약 라운드 실패 시 결정론적 폴백 답변(`_compose_result_answer`)으로 풀린 대용량 텍스트가 Discord 분할 전송 루프(`_split_discord_message`)에서 상한 없이 1,900자 단위로 수백 개로 쪼개져 연속 전송됨.
+- **조치**:
+  - `channels.py`: `DISCORD_MAX_CHUNKS = 10` 상한을 두고 초과 시 생략 안내문(`... (메시지가 너무 길어 일부가 생략되었습니다)`)을 붙여 전송 폭주 차단.
+  - `status.py`: `GetStatusSkill`의 `include_image` 기본값을 `False`로 변경하고 `input_schema`에 선언하여 텔레메트리 조회 본연의 목적에 맞게 경량화.
+  - `answer.py` / `planner.py`: `MAX_FINAL_ANSWER_CHARS = 4000` 상한 및 `_clip_text_length` 헬퍼를 적용하여 최종 사용자 답변이 비정상적으로 비대해지는 것을 방어.
+  - `scripts/system1_skill_catalog.py`로 `skill_catalog.json` 갱신.
+- **검증**: `test_discord_channel.py` (5 passed), `test_final_answer_sanitize.py` (24 passed), `test_result_binary_omission.py` (5 passed), `test_new_skills.py::test_get_status_skill` (1 passed), `test_catalog_is_up_to_date` (1 passed), Ruff 및 format 검사 통과.
+
 ## 2026-10-08 — 단회 `tidy_home` 정리 작업
 
 - `tidy_home`을 추가해 특정 기억 장소 또는 집 전체의 기억된 시맨틱/RAG 장소를 한 번씩 확인하도록 구성했습니다. 미기억 장소 탐험, 중복 방문, 자동 위임 재시도는 수행하지 않습니다.

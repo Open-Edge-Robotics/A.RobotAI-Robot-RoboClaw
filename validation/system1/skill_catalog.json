@@ -668,7 +668,10 @@
       "risk_level": "read",
       "internal": false,
       "required": [],
-      "properties": [],
+      "properties": [
+        "include_image",
+        "camera_topic"
+      ],
       "description": "로봇의 실시간 배터리 잔량, 현재 좌표(map 기준) 등 하드웨어 텔레메트리 정보를 조회합니다. 주의: 이 도구는 주변에 장애물이 있는지, 문이 열려 있는지 등 '공간 인지' 정보는 제공하지 않습니다. 공간 정보가 필요하면 반드시 get_map_visual 또는 analyze_scene 스킬을 사용하세요.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/system_skill/status.py"
     },

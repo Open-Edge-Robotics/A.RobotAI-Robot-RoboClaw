@@ -68,6 +68,18 @@ _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 # 구조체를 텍스트로 바꿀 수 없을 때 사용자에게 보여줄 안내 문구.
 UNRENDERABLE_ANSWER = "요청한 정보를 정리하지 못했습니다. 다시 요청해 주세요."
 
+# 최종 사용자 답변 및 렌더링 텍스트 최대 길이 (비정상 대용량 페이로드/바이너리 유출 방어)
+MAX_FINAL_ANSWER_CHARS = 4000
+FINAL_ANSWER_TRUNCATION_NOTICE = "\n... (답변이 너무 길어 일부가 생략되었습니다)"
+
+
+def _clip_text_length(text: str, max_chars: int = MAX_FINAL_ANSWER_CHARS) -> str:
+    """텍스트가 최대 길이를 초과하면 안내 문구를 붙여 자른다."""
+    if not text or len(text) <= max_chars:
+        return text
+    cut_point = max(0, max_chars - len(FINAL_ANSWER_TRUNCATION_NOTICE))
+    return text[:cut_point] + FINAL_ANSWER_TRUNCATION_NOTICE
+
 
 def strip_think(text: str) -> str:
     """모델 사고 과정(think) 블록을 제거한다(닫는 태그가 잘린 경우 포함)."""
@@ -205,17 +217,17 @@ def sanitize_final_answer(text: Any) -> str:
     if not candidate:
         return ""
     if not looks_like_json(candidate):
-        return candidate
+        return _clip_text_length(candidate)
 
     parsed = loads_lenient(candidate)
     if parsed is None:
         return UNRENDERABLE_ANSWER
     if isinstance(parsed, dict):
         if "response" in parsed:
-            return _render_payload(parsed["response"])
+            return _clip_text_length(_render_payload(parsed["response"]))
         if any(key in parsed for key in _PLAN_ENVELOPE_KEYS):
             return UNRENDERABLE_ANSWER
-    return _render_payload(parsed)
+    return _clip_text_length(_render_payload(parsed))
 
 
 def render_result_data(data: Any) -> str:
@@ -227,5 +239,7 @@ def render_result_data(data: Any) -> str:
     if isinstance(data, dict):
         if not data:
             return ""
-        return flatten_to_text(data, exclude_keys=_EXCLUDED_RESULT_KEYS)
-    return flatten_to_text(data)
+        rendered = flatten_to_text(data, exclude_keys=_EXCLUDED_RESULT_KEYS)
+    else:
+        rendered = flatten_to_text(data)
+    return _clip_text_length(rendered)

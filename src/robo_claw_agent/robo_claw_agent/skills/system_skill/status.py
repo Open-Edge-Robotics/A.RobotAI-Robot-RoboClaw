@@ -14,7 +14,21 @@ class GetStatusSkill(BaseSkill):
 
     name = "get_status"
     answer_mode = "informational"
-    input_schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "include_image": {
+                "type": "boolean",
+                "default": False,
+                "description": "실시간 카메라 이미지 포함 여부 (VLM 분석용). 기본값은 false입니다.",
+            },
+            "camera_topic": {
+                "type": "string",
+                "description": "카메라 ROS 토픽명 (선택)",
+            },
+        },
+        "additionalProperties": False,
+    }
     risk_level = "read"
     description = (
         "로봇의 실시간 배터리 잔량, 현재 좌표(map 기준) 등 하드웨어 텔레메트리 정보를 조회합니다. "
@@ -104,8 +118,8 @@ class GetStatusSkill(BaseSkill):
         logger.info("Starting comprehensive robot status query")
         summary = self.get_robot_summary()
 
-        # 실시간 카메라 이미지 포함 여부 결정 (VLM 분석용)
-        include_image = params.get("include_image", True)
+        # 실시간 카메라 이미지 포함 여부 결정 (VLM 분석용, 기본값 False)
+        include_image = bool(params.get("include_image", False))
 
         if include_image:
             import base64

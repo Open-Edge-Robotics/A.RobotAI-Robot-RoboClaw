@@ -2,6 +2,7 @@
 
 import pytest
 from robo_claw_channel.channels import (
+    DISCORD_MAX_CHUNKS,
     DISCORD_MESSAGE_SAFE_LIMIT,
     _handle_discord_message,
     _split_discord_message,
@@ -22,6 +23,16 @@ def test_split_discord_message_preserves_text_and_respects_safe_limit():
     assert len(chunks) > 1
     assert "".join(chunks) == response
     assert all(0 < _utf16_length(chunk) <= DISCORD_MESSAGE_SAFE_LIMIT for chunk in chunks)
+
+
+def test_split_discord_message_caps_to_max_chunks():
+    # 5개 청크를 훨씬 초과하는 거대한 메시지 (약 75,000자)
+    huge_response = "엄청나게 긴 메시지 내용입니다. " * 4000
+    chunks = _split_discord_message(huge_response)
+
+    assert len(chunks) <= DISCORD_MAX_CHUNKS
+    assert all(0 < _utf16_length(chunk) <= DISCORD_MESSAGE_SAFE_LIMIT for chunk in chunks)
+    assert "생략" in chunks[-1]
 
 
 def test_split_discord_message_keeps_short_response_unchanged():
@@ -74,3 +85,31 @@ async def test_discord_response_shows_typing_while_generating_and_sending():
     assert channel.sent_during_typing and all(channel.sent_during_typing)
     assert "".join(channel.sent) == response
     assert all(_utf16_length(chunk) <= DISCORD_MESSAGE_SAFE_LIMIT for chunk in channel.sent)
+
+
+@pytest.mark.asyncio
+async def test_discord_handle_caps_sending_on_huge_payload():
+    class FakeTyping:
+        async def __aenter__(self):
+            pass
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            pass
+
+    class FakeChannel:
+        def __init__(self):
+            self.sent = []
+
+        def typing(self):
+            return FakeTyping()
+
+        async def send(self, content):
+            self.sent.append(content)
+
+    channel = FakeChannel()
+    huge_response = "Base64 payload or huge output " * 5000  # 150,000자
+
+    await _handle_discord_message(channel, lambda req: huge_response, "상태 확인")
+
+    assert len(channel.sent) <= DISCORD_MAX_CHUNKS
+    assert "생략" in channel.sent[-1]
