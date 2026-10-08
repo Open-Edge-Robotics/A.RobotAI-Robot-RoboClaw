@@ -29,16 +29,23 @@ echo "== report dir    : ${REPORT_DIR}"
 
 status=0
 echo
-echo "== 1/2 live tests (validation/system1/test_laya_live.py)"
+echo "== 1/3 live tests (validation/system1/test_laya_live.py, test_laya_tools_live.py)"
 "${PYTHON}" -m pytest -s -rA -p no:cacheprovider -o addopts="" \
-  validation/system1/test_laya_live.py "$@" || status=$?
+  validation/system1/test_laya_live.py validation/system1/test_laya_tools_live.py "$@" || status=$?
 
 echo
-echo "== 2/2 router evaluation (rule vs laya, readonly)"
+echo "== 2/3 router evaluation, seed cases (rule vs laya, readonly)"
 "${PYTHON}" scripts/system1_eval.py --router both \
   --endpoint "${LAYA_ENDPOINT}" --env-file "${LAYA_ENV_FILE}" \
   --timeout-ms "${LAYA_TIMEOUT_MS:-5000}" \
   --json-out "${REPORT_DIR}/system1_eval.json" || status=$?
+
+echo
+echo "== 3/3 tool + compound evaluation (rule vs laya, ${LAYA_SCOPE:-readonly})"
+"${PYTHON}" scripts/system1_tool_eval.py --router both \
+  --endpoint "${LAYA_ENDPOINT}" --env-file "${LAYA_ENV_FILE}" \
+  --scope "${LAYA_SCOPE:-readonly}" --timeout-ms "${LAYA_TIMEOUT_MS:-5000}" \
+  --json-out "${REPORT_DIR}/system1_tool_eval.json" || status=$?
 
 echo
 echo "reports: ${REPORT_DIR}"

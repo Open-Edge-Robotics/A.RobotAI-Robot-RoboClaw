@@ -62,6 +62,12 @@ DEFAULT_THRESHOLDS: dict[str, float] = {
     "target_place": 0.80,
     # ambiguous(noul) 확률이 이 값 이상이면 System 2 로 넘긴다.
     "ambiguous": 0.50,
+    # needs_motion(noul) 확률이 이 값 이상이면 읽기 전용 스킬을 직접 실행하지 않는다.
+    # 동작 요청("손 흔드는 모션 해줘", "팔 움직여")에 조회 스킬 결과로 답하는 오응답을 막는다.
+    "needs_motion": 0.50,
+    # 인사(smalltalk) 고정 응답을 막는 needs_motion 기준. Laya 는 평범한 인사에도 0.65~0.84 를 주고
+    # 제스처 인사("손 흔들어 인사해", "고개 숙여 인사해")에는 0.93~0.96 을 준다(2026-10-08 실측).
+    "needs_motion_smalltalk": 0.90,
 }
 
 
@@ -294,6 +300,10 @@ def build_questions(skills: dict[str, str], places: list[str]) -> dict[str, Any]
             "instructions": "이 말을 처리할 로봇 기능은?",
             "criteria": {**skills, NONE_OPTION: "위 기능 중 해당 없음"},
         }
+        questions["needs_motion"] = {
+            "type": "noul",
+            "instructions": "사용자가 로봇에게 이동하거나 몸·팔·손·머리를 움직이는 동작을 요청했는가?",
+        }
     if places:
         questions["target_place"] = {
             "type": "choice",
@@ -335,6 +345,14 @@ def interpret_response(
         ambiguous = 0.0
     hint["ambiguous"] = ambiguous
 
+    # 질문하지 않았거나(후보 스킬 없음) 답이 없으면 0 으로 본다(차단하지 않음).
+    try:
+        needs_motion = float(_answer(resp, "needs_motion").get("noul", 0.0))
+    except (TypeError, ValueError):
+        needs_motion = 0.0
+    hint["needs_motion"] = needs_motion
+    motion_requested = needs_motion >= th["needs_motion"]
+
     skill_ans = _answer(resp, "skill")
     skill = str(skill_ans.get("choice") or "")
     skill_conf = _conf(skill_ans)
@@ -353,6 +371,9 @@ def interpret_response(
         return _llm()
 
     if intent == "smalltalk" and intent_conf >= th["smalltalk"]:
+        if needs_motion >= th["needs_motion_smalltalk"]:  # 예: "손 흔들어 인사해" — 모션이 필요하다
+            hint["blocked_by"] = "needs_motion"
+            return _llm()
         return RouteDecision(
             kind=ROUTE_SIMPLE_REPLY,
             reply=SIMPLE_REPLY_MESSAGE,
@@ -373,6 +394,10 @@ def interpret_response(
             if place not in places or place_conf < th["target_place"]:
                 return _llm()
             params = {"target_name": place}
+        elif motion_requested:
+            # 동작을 요청했는데 고른 스킬은 조회 스킬이다 → 직접 실행하지 않고 System 2 로 넘긴다.
+            hint["blocked_by"] = "needs_motion"
+            return _llm()
         return RouteDecision(
             kind=ROUTE_DIRECT_SKILL,
             skill=skill,

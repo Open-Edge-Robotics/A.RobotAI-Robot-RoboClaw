@@ -207,7 +207,7 @@ Thor 내장 방식(3.2절)은 `SYSTEM1_ENDPOINT` 대신 `SYSTEM1_LOCAL_SERVER=tr
 | `SYSTEM1_SHADOW_LOG` | (없음) | 그림자 기록을 남길 JSONL 파일 경로입니다. 없으면 노드 로그에만 남습니다. |
 | `SYSTEM1_SCOPE` | `readonly` | `laya` 모드에서 Laya가 직접 실행할 수 있는 범위입니다. `readonly`는 인자 없는 read 스킬, `navigation`은 여기에 기억된 장소로의 `navigate_to`를 더합니다. 그 외 값은 `readonly`로 동작합니다. |
 | `SYSTEM1_TIMEOUT_MS` | `300` | Laya 응답 대기 시간(ms)입니다. 초과하면 해당 요청은 규칙 라우터가 처리합니다. CPU 서버라면 늘립니다. |
-| `SYSTEM1_CONF_THRESHOLDS_JSON` | `{"smalltalk":0.9,"single_skill":0.85,"skill":0.8,"target_place":0.8,"ambiguous":0.5}` | 직접 처리에 필요한 confidence 하한입니다. `ambiguous`만 상한이며, 이 값 이상이면 LLM으로 넘깁니다. 일부 키만 지정하면 나머지는 기본값을 씁니다. 형식이 잘못되면 무시합니다. |
+| `SYSTEM1_CONF_THRESHOLDS_JSON` | `{"smalltalk":0.9,"single_skill":0.85,"skill":0.8,"target_place":0.8,"ambiguous":0.5,"needs_motion":0.5,"needs_motion_smalltalk":0.9}` | 직접 처리에 필요한 confidence 하한입니다. `ambiguous`, `needs_motion`, `needs_motion_smalltalk`는 상한이며, 이 값 이상이면 LLM으로 넘깁니다. `needs_motion`은 동작 요청("손 흔드는 모션 해줘")에 읽기 전용 스킬을 직접 실행하지 않게 하고, `needs_motion_smalltalk`는 제스처 인사("손 흔들어 인사해")에 고정 인사말로 답하지 않게 합니다. 일부 키만 지정하면 나머지는 기본값을 씁니다. 형식이 잘못되면 무시합니다. |
 | `SYSTEM1_SKILLS` | (없음) | Laya 후보 스킬 목록(쉼표 구분)입니다. 비어 있으면 `risk_level=read`이고 필수 인자가 없는 공개 스킬 전체를 씁니다. 선택지가 적을수록 정확합니다. |
 | `SYSTEM1_MAX_OPTIONS` | `12` | 스킬과 장소 선택지 상한입니다. 초과하면 경고 후 잘라냅니다. 장소는 지시문에 이름이 들어간 장소 하나로 좁힙니다. |
 | `SYSTEM1_PROVIDER` | `laya` | 로그와 trace에 표시되는 provider 이름입니다(`route.source`). |

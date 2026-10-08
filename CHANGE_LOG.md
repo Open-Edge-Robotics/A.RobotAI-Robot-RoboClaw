@@ -5,6 +5,52 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-08**
 
+## 2026-10-08 — System 1 needs_motion 가드 (동작 요청 오응답 차단)
+
+- **배경**: 툴 단위 실서버 평가에서 Laya가 "손 흔드는 모션 해줘", "손목 롤 조인트를 0.5 라디안으로 움직여"를
+  `list_cloid_motions`(read)로 직접 실행했다. 동작 요청에 모션 목록만 답하는 오응답이다.
+- **조치 (`agent_node/system1_router.py`)**:
+  - 후보 스킬이 있을 때 `needs_motion`(noul, "이동하거나 몸·팔·손·머리를 움직이는 동작을 요청했는가?") 질문을 함께 보낸다.
+  - `needs_motion` ≥ 0.5(`needs_motion`)이면 읽기 전용 스킬을 직접 실행하지 않고 LLM으로 넘긴다(`route.hint.blocked_by`).
+    기억된 장소로의 `navigate_to`는 동작이 정상이므로 막지 않는다.
+  - 인사 고정 응답은 별도 기준 `needs_motion_smalltalk`(0.9)를 쓴다. 실측에서 Laya가 평범한 인사("안녕" 0.65, "안녕하세요
+    반가워요" 0.84)에도 높은 값을 주고, 제스처 인사("손 흔들어 인사해" 0.93, "고개 숙여 인사해" 0.96)에는 더 높은 값을 줬다.
+    0.5를 공통으로 쓰면 "안녕"이 LLM으로 넘어가는 회귀가 생겨 분리했다.
+  - 답이 없으면(다른 provider, 후보 스킬 없음) 차단하지 않는다.
+- **테스트**: `test_system1_router.py`에 가드 테스트 8건(실측 값 회귀 포함), `tool_cases.jsonl`에 제스처 명령 3건을 추가했다.
+  System 1 단위 테스트 81건 통과.
+- **실서버 재측정** (`http://192.168.50.212:8000`, readonly):
+  - 툴·복합 133건: Laya correct 119 / escalated 14 / **wrong 0**(가드 전 2) / 복합 명령 직접 실행 0. 규칙 라우터 correct 112 /
+    direct_ok 5 / wrong 1.
+  - 시드 32건: Laya correct 17 / wrong 0(가드 전과 같음). 라이브 테스트 14건 통과. 지연 p50 98ms.
+- **남은 과제**: 0.9 기준은 시드 측정 몇 건에서 정한 값으로 여유가 크지 않다(평범한 인사 최대 0.84, 제스처 인사 최소 0.93).
+  그림자 기록으로 실제 인사 명령의 분포를 확인해 조정한다. AI Config Server 웹 설정의 임계값 기본값도 새 키를 포함하도록
+  맞춰야 한다.
+
+## 2026-10-08 — System 1 툴 단위·복합 명령 테스트
+
+- **조치**:
+  - `scripts/system1_skill_catalog.py`: 스킬 클래스를 AST로 정적 분석해 `validation/system1/skill_catalog.json`(스킬 100개,
+    공개 95개, 카테고리 14개)을 만든다. `--check`로 소스와의 일치를 검사한다.
+  - `validation/system1/tool_cases.jsonl`: 모든 공개 스킬마다 1개 이상의 명령(인자는 `params`)과 인사·질문, 총 110건.
+  - `validation/system1/compound_cases.jsonl`: 복합 명령 20건과 기대 스킬 순서.
+  - `scripts/system1_tool_eval.py`: robo-claw와 같은 라우터 코드로 경로를 판정한다. 맞는 스킬·인자의 직접 실행은 `direct_ok`로
+    구분하고, 복합 명령 직접 실행 수를 센다. 카테고리 → 스킬 2단계 툴 식별과 복합 명령 인식(multi_step, 가드 적중)도 평가한다.
+  - `validation/system1/test_laya_tools_live.py`(라이브 3건), `src/robo_claw_agent/tests/test_system1_tool_cases.py`(오프라인
+    8건: 카탈로그 최신 여부, 모든 공개 스킬 케이스 존재, 케이스 스킬 유효성, 직접 실행 후보, 규칙 라우터 복합 명령 비실행 등).
+  - `run_laya_tests.sh`에 3단계(툴·복합 평가)를 추가하고 `docs/SYSTEM1_LAYA_DOCKER.md` 4.1절을 갱신했다.
+- **실서버 결과** (`http://192.168.50.212:8000`, readonly, 130건 = 툴 110 + 복합 20):
+  - 라이브 테스트 14건 통과(기존 11 + 툴 3).
+  - 라우터: Laya correct 114 / escalated 14 / **wrong 2** / error 0, 복합 명령 직접 실행 0, 지연 p50 94.5ms·p95 116.2ms.
+    규칙 라우터 correct 109 / direct_ok 5 / escalated 15 / wrong 1.
+  - Laya 오실행 2건: "손목 롤 조인트를 0.5 라디안으로 움직여", "손 흔드는 모션 해줘"를 둘 다 `list_cloid_motions`(read)로 직접
+    실행했다. 동작 요청에 목록만 답하는 오응답이다(물리 동작은 없음).
+  - 규칙 라우터 오실행 1건: "비전 피드백으로 정면 컵을 집어"를 `adaptive_pick_object`로 직접 실행했다(`vla_pick_front_object` 기대).
+  - 툴 식별(103건): 카테고리 48.5%, 스킬 24.3%, 정답 카테고리가 주어졌을 때 스킬 52.4%. 주요 혼동: navigation→autonomous,
+    manipulation→autonomous, cooperation→butler, info→communication. 직접 실행 범위를 동작 스킬로 넓힐 수준은 아니다.
+  - 복합 명령 20건: Laya가 multi_step으로 분류한 비율 5%. 그러나 robo-claw 복합 명령 가드가 20건 모두 모델 호출 전에 잡아
+    LLM으로 보낸다.
+
 ## 2026-10-08 — Laya 단독 검증 환경과 테스트 케이스
 
 - **조치**:

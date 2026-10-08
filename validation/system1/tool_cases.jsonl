@@ -1,0 +1,113 @@
+{"id": "chat-01", "instruction": "안녕", "intent": "smalltalk"}
+{"id": "chat-02", "instruction": "안녕하세요 반가워요", "intent": "smalltalk"}
+{"id": "chat-03", "instruction": "고마워 수고했어", "intent": "smalltalk"}
+{"id": "chat-04", "instruction": "잘했어 최고야", "intent": "smalltalk"}
+{"id": "ask-01", "instruction": "너는 어떤 일을 할 수 있어?", "intent": "question"}
+{"id": "ask-02", "instruction": "왜 아까 멈췄어?", "intent": "question"}
+{"id": "ask-03", "instruction": "배터리가 몇 퍼센트 이하면 충전하러 가는 게 좋아?", "intent": "question"}
+{"id": "info-get_status-01", "instruction": "지금 배터리 얼마나 남았어?", "skill": "get_status"}
+{"id": "info-get_status-02", "instruction": "현재 로봇 좌표 알려줘", "skill": "get_status"}
+{"id": "info-get_datetime-01", "instruction": "지금 몇 시야?", "skill": "get_datetime"}
+{"id": "info-get_datetime-02", "instruction": "오늘 무슨 요일이야?", "skill": "get_datetime"}
+{"id": "info-identify_location-01", "instruction": "여기 어디야?", "skill": "identify_location"}
+{"id": "info-identify_location-02", "instruction": "지금 있는 곳 이름이 뭐야", "skill": "identify_location"}
+{"id": "info-get_location-01", "instruction": "주방 좌표가 어디야?", "skill": "get_location", "params": {"location_name": "주방"}}
+{"id": "info-list_topics-01", "instruction": "ROS 토픽 목록 보여줘", "skill": "list_topics"}
+{"id": "info-list_topics-02", "instruction": "카메라 관련 토픽 뭐가 있어?", "skill": "list_topics", "params": {"category": "camera"}}
+{"id": "info-ros_command-01", "instruction": "ros2 node list 결과 보여줘", "skill": "ros_command", "params": {"command": "ros2 node list"}}
+{"id": "nav-navigate_to-01", "instruction": "주방으로 가줘", "skill": "navigate_to", "params": {"target_name": "주방"}}
+{"id": "nav-navigate_to-02", "instruction": "충전대로 이동해", "skill": "navigate_to", "params": {"target_name": "충전대"}}
+{"id": "nav-navigate_to-03", "instruction": "좌표 x 1.5 y -2.0 으로 이동해", "skill": "navigate_to", "params": {"x": 1.5, "y": -2.0}}
+{"id": "nav-move_relative-01", "instruction": "앞으로 2미터 가줘", "skill": "move_relative", "params": {"forward": 2.0}}
+{"id": "nav-move_relative-02", "instruction": "뒤로 0.5m 이동", "skill": "move_relative", "params": {"forward": -0.5}}
+{"id": "nav-rotate-01", "instruction": "제자리에서 90도 돌아", "skill": "rotate", "params": {"angle_deg": 90}}
+{"id": "nav-face_direction-01", "instruction": "북쪽을 바라봐", "skill": "face_direction", "params": {"direction": "north"}}
+{"id": "nav-face_direction-02", "instruction": "현관 쪽으로 방향 맞춰", "skill": "face_direction", "params": {"target_name": "현관"}}
+{"id": "nav-approach_object-01", "instruction": "앞에 보이는 의자 앞까지 다가가", "skill": "approach_object", "params": {"target_object": "chair"}}
+{"id": "nav-follow_waypoints-01", "instruction": "(1,0), (2,1), (3,1) 순서대로 지나가", "skill": "follow_waypoints"}
+{"id": "nav-patrol-01", "instruction": "거실이랑 주방을 두 바퀴 순찰해", "skill": "patrol", "params": {"waypoints": ["거실", "주방"], "rounds": 2}}
+{"id": "nav-stop_patrol-01", "instruction": "순찰 그만해", "skill": "stop_patrol"}
+{"id": "nav-stop-01", "instruction": "이동 멈춰", "skill": "stop"}
+{"id": "nav-self_localize-01", "instruction": "위치 다시 잡아", "skill": "self_localize"}
+{"id": "nav-set_initial_pose-01", "instruction": "초기 위치를 x 0 y 0 yaw 0 으로 설정해", "skill": "set_initial_pose", "params": {"x": 0, "y": 0, "yaw": 0}}
+{"id": "nav-mark_virtual_obstacle-01", "instruction": "앞에 유리문 있으니까 가상 장애물로 등록해", "skill": "mark_virtual_obstacle", "params": {"target_object": "유리문"}}
+{"id": "nav-clear_virtual_obstacles-01", "instruction": "가상 장애물 전부 지워", "skill": "clear_virtual_obstacles"}
+{"id": "manip-adaptive_pick_object-01", "instruction": "테이블 위 컵 집어줘", "skill": "adaptive_pick_object", "params": {"target_object": "cup"}}
+{"id": "manip-pick_front_object-01", "instruction": "바로 앞에 있는 병 집어", "skill": "pick_front_object", "params": {"target_object": "bottle"}}
+{"id": "manip-pick_from_right_side_zone-01", "instruction": "오른쪽 작업 구역에 놓인 물체 집어", "skill": "pick_from_right_side_zone"}
+{"id": "manip-vla_pick_front_object-01", "instruction": "비전 피드백으로 정면 컵을 집어", "skill": "vla_pick_front_object", "params": {"target_object": "cup"}}
+{"id": "manip-vla_pick_gripper_object-01", "instruction": "그리퍼 카메라에 보이는 물체를 그대로 집어", "skill": "vla_pick_gripper_object"}
+{"id": "manip-grasp-01", "instruction": "x 0.4 y 0 z 0.8 위치에 있는 물체를 잡아", "skill": "grasp", "params": {"x": 0.4, "y": 0, "z": 0.8}}
+{"id": "manip-place-01", "instruction": "들고 있는 물건을 테이블 위에 내려놔", "skill": "place", "params": {"target_object": "table"}}
+{"id": "manip-search_object-01", "instruction": "주변에서 리모컨이 어디 있는지 찾아봐", "skill": "search_object", "params": {"target_object": "remote"}}
+{"id": "manip-observe_head_target-01", "instruction": "헤드 카메라로 컵 위치 관측해", "skill": "observe_head_target", "params": {"target_object": "cup"}}
+{"id": "manip-observe_gripper_target-01", "instruction": "그리퍼 카메라로 병 위치 확인해", "skill": "observe_gripper_target", "params": {"target_object": "bottle"}}
+{"id": "manip-open_gripper-01", "instruction": "그리퍼 열어", "skill": "open_gripper"}
+{"id": "manip-close_gripper-01", "instruction": "그리퍼 닫아", "skill": "close_gripper"}
+{"id": "manip-arm_pose-01", "instruction": "팔을 홈 자세로 이동해", "skill": "arm_pose", "params": {"pose_name": "home"}}
+{"id": "manip-move_joints-01", "instruction": "손목 롤 조인트를 0.5 라디안으로 움직여", "skill": "move_joints", "params": {"joints": {"wrist_roll": 0.5}}}
+{"id": "manip-move_pose-01", "instruction": "엔드이펙터를 x 0.3 y 0 z 1.0 으로 옮겨", "skill": "move_pose", "params": {"x": 0.3, "y": 0, "z": 1.0}}
+{"id": "manip-head_pan_tilt-01", "instruction": "고개를 아래로 30도 숙여", "skill": "head_pan_tilt", "params": {"tilt_deg": -30}}
+{"id": "manip-stow_for_navigation-01", "instruction": "주행할 수 있게 팔 접어", "skill": "stow_for_navigation"}
+{"id": "manip-switch_stretch_mode-01", "instruction": "스트레치 모드를 position 으로 바꿔", "skill": "switch_stretch_mode", "params": {"mode": "position"}}
+{"id": "manip-stretch_position_mode-01", "instruction": "팔 제어용 포지션 모드로 전환해", "skill": "stretch_position_mode"}
+{"id": "manip-stretch_navigation_mode-01", "instruction": "주행용 내비게이션 모드로 전환해", "skill": "stretch_navigation_mode"}
+{"id": "perc-describe_surroundings-01", "instruction": "주변 상황 종합해서 보고해줘", "skill": "describe_surroundings"}
+{"id": "perc-detect_object-01", "instruction": "카메라로 물체 탐지가 되는지 확인해", "skill": "detect_object"}
+{"id": "perc-get_detections-01", "instruction": "지금 인식된 객체 목록 알려줘", "skill": "get_detections"}
+{"id": "perc-find_object-01", "instruction": "사람 찾아서 위치 알려줘", "skill": "find_object", "params": {"target_object": "person"}}
+{"id": "perc-estimate_gripper_object_pose-01", "instruction": "그리퍼 카메라로 컵의 3D 자세 추정해", "skill": "estimate_gripper_object_pose", "params": {"target_object": "cup"}}
+{"id": "perc-get_distance-01", "instruction": "앞쪽 장애물까지 거리 재봐", "skill": "get_distance", "params": {"direction": "front"}}
+{"id": "perc-monitor_detection-01", "instruction": "고양이가 보이면 바로 알려줘", "skill": "monitor_detection", "params": {"target_object": "cat"}}
+{"id": "perc-stop_monitor-01", "instruction": "감시 그만해", "skill": "stop_monitor"}
+{"id": "perc-scan_room-01", "instruction": "제자리에서 한 바퀴 돌면서 방 안 물건들 스캔해", "skill": "scan_room"}
+{"id": "vision-capture_camera_image-01", "instruction": "카메라 사진 찍어줘", "skill": "capture_camera_image"}
+{"id": "vision-analyze_scene-01", "instruction": "앞에 뭐가 보이는지 설명해줘", "skill": "analyze_scene"}
+{"id": "vision-annotate_image-01", "instruction": "카메라 화면에 인식된 물체를 박스로 표시해서 보여줘", "skill": "annotate_image"}
+{"id": "map-capture_map-01", "instruction": "지도 캡처해줘", "skill": "capture_map"}
+{"id": "map-analyze_map-01", "instruction": "지도 분석해서 장애물 분포 알려줘", "skill": "analyze_map"}
+{"id": "map-annotate_map-01", "instruction": "지도에 주방 위치를 표시해줘", "skill": "annotate_map"}
+{"id": "map-get_map_visual-01", "instruction": "지도를 시각화해서 이동 가능한 영역 분석해줘", "skill": "get_map_visual"}
+{"id": "map-find_reachable_places-01", "instruction": "지도에서 갈 수 있는 넓은 장소들 찾아서 등록해", "skill": "find_reachable_places"}
+{"id": "map-explore-01", "instruction": "반경 5미터 안의 미탐사 영역 탐험해", "skill": "explore", "params": {"exploration_radius": 5.0}}
+{"id": "map-stop_explore-01", "instruction": "탐험 중단해", "skill": "stop_explore"}
+{"id": "know-rag_search-01", "instruction": "냉장고에 대해 기억하는 거 찾아줘", "skill": "rag_search", "params": {"query": "냉장고"}}
+{"id": "know-rag_add-01", "instruction": "회의는 매주 월요일 10시라고 기억해둬", "skill": "rag_add", "params": {"text": "회의는 매주 월요일 10시"}}
+{"id": "know-rag_add_file-01", "instruction": "manual.txt 파일 내용을 지식으로 등록해", "skill": "rag_add_file", "params": {"file_path": "manual.txt"}}
+{"id": "know-rag_delete-01", "instruction": "manual.txt 에서 등록한 지식 삭제해", "skill": "rag_delete", "params": {"source_path": "manual.txt"}}
+{"id": "know-rag_list-01", "instruction": "저장된 지식 목록 보여줘", "skill": "rag_list"}
+{"id": "know-rag_status-01", "instruction": "지식 저장소 인덱스 상태 확인해줘", "skill": "rag_status"}
+{"id": "know-rag_reindex-01", "instruction": "지식 인덱스 다시 만들어", "skill": "rag_reindex"}
+{"id": "know-log_observation-01", "instruction": "지금 보이는 장면을 관찰 기록으로 남겨", "skill": "log_observation"}
+{"id": "know-reflect_skills-01", "instruction": "지금까지 스킬 실행 경험에서 교훈 정리해", "skill": "reflect_skills"}
+{"id": "coop-list_peer_robots-01", "instruction": "연결된 동료 로봇 누구 있어?", "skill": "list_peer_robots"}
+{"id": "coop-query_peer_status-01", "instruction": "butler 로봇 지금 상태 물어봐", "skill": "query_peer_status", "params": {"peer_name": "butler"}}
+{"id": "coop-query_peer_capabilities-01", "instruction": "butler 로봇이 할 수 있는 기능 목록 받아와", "skill": "query_peer_capabilities", "params": {"peer_name": "butler"}}
+{"id": "coop-call_peer_robot-01", "instruction": "butler 로봇한테 거실 청소하라고 전해", "skill": "call_peer_robot", "params": {"peer_name": "butler", "instruction": "거실 청소"}}
+{"id": "coop-broadcast_to_peers-01", "instruction": "모든 동료 로봇에게 점심시간이라고 알려", "skill": "broadcast_to_peers", "params": {"message": "점심시간"}}
+{"id": "coop-delegate_task-01", "instruction": "agent2 에이전트에게 충전대로 가라고 작업 위임해", "skill": "delegate_task", "params": {"agent_id": "agent2", "instruction": "충전대로 가"}}
+{"id": "coop-coordinate_peer_task-01", "instruction": "butler 로봇에게 주방 갔다가 컵 가져오는 일을 단계별로 시켜", "skill": "coordinate_peer_task", "params": {"peer_name": "butler"}}
+{"id": "coop-autonomous_cooperate-01", "instruction": "동료 로봇들이랑 협동해서 집 안 정리해", "skill": "autonomous_cooperate", "params": {"goal": "집 안 정리"}}
+{"id": "coop-stop_autonomous_cooperate-01", "instruction": "자율 협동 그만해", "skill": "stop_autonomous_cooperate"}
+{"id": "comm-send_message-01", "instruction": "메신저로 작업 끝났다고 보내줘", "skill": "send_message", "params": {"message": "작업 끝났습니다"}}
+{"id": "file-list_files-01", "instruction": "작업 폴더에 있는 파일 목록 보여줘", "skill": "list_files"}
+{"id": "file-read_text_file-01", "instruction": "notes.txt 파일 읽어줘", "skill": "read_text_file", "params": {"file_path": "notes.txt"}}
+{"id": "file-write_text_file-01", "instruction": "todo.txt 에 우유 사기라고 써서 저장해", "skill": "write_text_file", "params": {"file_path": "todo.txt", "content": "우유 사기"}}
+{"id": "file-edit_text_file-01", "instruction": "todo.txt 에서 우유를 빵으로 바꿔", "skill": "edit_text_file", "params": {"file_path": "todo.txt", "target_content": "우유", "replacement_content": "빵"}}
+{"id": "file-delete_file-01", "instruction": "old.jpg 파일 삭제해", "skill": "delete_file", "params": {"file_path": "old.jpg"}}
+{"id": "file-analyze_stored_file-01", "instruction": "snapshot.jpg 이미지 분석해줘", "skill": "analyze_stored_file", "params": {"file_path": "snapshot.jpg"}}
+{"id": "file-run_script-01", "instruction": "cleanup.py 스크립트 실행해", "skill": "run_script", "params": {"script_name": "cleanup.py"}}
+{"id": "auto-autonomous_act-01", "instruction": "스스로 행동해", "skill": "autonomous_act"}
+{"id": "auto-stop_autonomous-01", "instruction": "자율 행동 그만해", "skill": "stop_autonomous"}
+{"id": "auto-reactive_navigate-01", "instruction": "주방으로 가다가 사람이 보이면 멈춰", "skill": "reactive_navigate", "params": {"target_location": "주방", "interrupt_object": "person"}}
+{"id": "auto-condition_reactive-01", "instruction": "탐험하다가 고양이가 보이면 사진 찍어", "skill": "condition_reactive", "params": {"trigger_object": "cat"}}
+{"id": "motion-list_cloid_motions-01", "instruction": "할 수 있는 모션 목록 보여줘", "skill": "list_cloid_motions"}
+{"id": "motion-execute_cloid_motion-01", "instruction": "손 흔드는 모션 해줘", "skill": "execute_cloid_motion"}
+{"id": "motion-stop_cloid_motion-01", "instruction": "모션 멈춰", "skill": "stop_cloid_motion"}
+{"id": "motion-execute_cloid_motion-02", "instruction": "손 흔들어 인사해", "skill": "execute_cloid_motion"}
+{"id": "motion-execute_cloid_motion-03", "instruction": "고개 숙여 인사해", "skill": "execute_cloid_motion"}
+{"id": "motion-execute_cloid_motion-04", "instruction": "나한테 손 흔들어줘", "skill": "execute_cloid_motion"}
+{"id": "safety-emergency_stop-01", "instruction": "비상 정지!", "skill": "emergency_stop"}
+{"id": "safety-reset_emergency_stop-01", "instruction": "주변 안전 확인했어 비상 정지 해제해", "skill": "reset_emergency_stop", "params": {"confirm": true}}
+{"id": "butler-list_butler_scripts-01", "instruction": "실행 가능한 버틀러 스크립트 목록 보여줘", "skill": "list_butler_scripts"}
+{"id": "butler-run_butler_script-01", "instruction": "버틀러 스크립트 serve_tea.sh 실행해", "skill": "run_butler_script", "params": {"script_name": "serve_tea.sh"}}

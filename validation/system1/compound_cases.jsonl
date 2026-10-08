@@ -1,0 +1,20 @@
+{"id": "cmp-nav-pick-01", "instruction": "회의실로 이동한 다음 컵을 집어줘", "steps": [{"skill": "navigate_to", "params": {"target_name": "회의실"}}, {"skill": "adaptive_pick_object", "params": {"target_object": "cup"}}]}
+{"id": "cmp-status-nav-01", "instruction": "배터리 확인하고 충전대로 가", "steps": [{"skill": "get_status"}, {"skill": "navigate_to", "params": {"target_name": "충전대"}}]}
+{"id": "cmp-photo-send-nav-01", "instruction": "거실 사진 찍어서 보내고 주방으로 이동해", "steps": [{"skill": "capture_camera_image"}, {"skill": "send_message"}, {"skill": "navigate_to", "params": {"target_name": "주방"}}]}
+{"id": "cmp-nav-describe-01", "instruction": "현관으로 가서 주변 상황 보고해줘", "steps": [{"skill": "navigate_to", "params": {"target_name": "현관"}}, {"skill": "describe_surroundings"}]}
+{"id": "cmp-nav-capture-send-01", "instruction": "주방으로 가서 사진 찍어서 메신저로 보내", "steps": [{"skill": "navigate_to", "params": {"target_name": "주방"}}, {"skill": "capture_camera_image"}, {"skill": "send_message"}]}
+{"id": "cmp-pick-place-01", "instruction": "테이블 위 컵 집어서 거실로 가져다 놔", "steps": [{"skill": "adaptive_pick_object", "params": {"target_object": "cup"}}, {"skill": "navigate_to", "params": {"target_name": "거실"}}, {"skill": "place"}]}
+{"id": "cmp-where-save-01", "instruction": "여기가 어디인지 확인하고 모르면 회의실로 저장해", "steps": [{"skill": "identify_location"}, {"skill": "rag_add"}]}
+{"id": "cmp-move-rotate-01", "instruction": "앞으로 1미터 가고 왼쪽으로 90도 돌아", "steps": [{"skill": "move_relative", "params": {"forward": 1.0}}, {"skill": "rotate", "params": {"angle_deg": 90}}]}
+{"id": "cmp-scan-log-01", "instruction": "방을 한 바퀴 스캔한 뒤에 결과를 관찰 기록으로 남겨", "steps": [{"skill": "scan_room"}, {"skill": "log_observation"}]}
+{"id": "cmp-map-send-01", "instruction": "지도 캡처해서 나한테 메신저로 보내줘", "steps": [{"skill": "capture_map"}, {"skill": "send_message"}]}
+{"id": "cmp-find-approach-01", "instruction": "사람을 찾아서 그 앞까지 다가가", "steps": [{"skill": "find_object", "params": {"target_object": "person"}}, {"skill": "approach_object", "params": {"target_object": "person"}}]}
+{"id": "cmp-peer-01", "instruction": "butler 로봇 상태 확인하고 한가하면 주방 청소 시켜", "steps": [{"skill": "query_peer_status", "params": {"peer_name": "butler"}}, {"skill": "call_peer_robot", "params": {"peer_name": "butler"}}]}
+{"id": "cmp-patrol-alert-01", "instruction": "거실이랑 주방 순찰하면서 고양이 보이면 알려줘", "steps": [{"skill": "monitor_detection", "params": {"target_object": "cat"}}, {"skill": "patrol", "params": {"waypoints": ["거실", "주방"]}}]}
+{"id": "cmp-file-rag-01", "instruction": "manual.txt 읽어보고 중요한 내용은 지식으로 저장해", "steps": [{"skill": "read_text_file", "params": {"file_path": "manual.txt"}}, {"skill": "rag_add"}]}
+{"id": "cmp-explore-map-01", "instruction": "탐험 끝나면 지도 분석해서 갈 수 있는 장소 등록해", "steps": [{"skill": "explore"}, {"skill": "find_reachable_places"}]}
+{"id": "cmp-gripper-01", "instruction": "그리퍼 열고 팔을 홈 자세로 옮긴 다음 그리퍼 닫아", "steps": [{"skill": "open_gripper"}, {"skill": "arm_pose", "params": {"pose_name": "home"}}, {"skill": "close_gripper"}]}
+{"id": "cmp-time-msg-01", "instruction": "지금 몇 시인지 확인해서 메신저로 알려줘", "steps": [{"skill": "get_datetime"}, {"skill": "send_message"}]}
+{"id": "cmp-loop-01", "instruction": "집 안을 한 바퀴 돌면서 열린 창문이 있는지 확인해줘", "steps": [{"skill": "patrol"}, {"skill": "analyze_scene"}]}
+{"id": "cmp-conditional-01", "instruction": "배터리가 20% 이하면 충전대로 가고 아니면 거실에서 기다려", "steps": [{"skill": "get_status"}, {"skill": "navigate_to"}]}
+{"id": "cmp-motion-01", "instruction": "인사 모션 하고 나서 현관으로 안내해", "steps": [{"skill": "execute_cloid_motion"}, {"skill": "navigate_to", "params": {"target_name": "현관"}}]}

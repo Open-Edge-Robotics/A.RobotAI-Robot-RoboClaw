@@ -261,12 +261,36 @@ LAYA_ENDPOINT=http://127.0.0.1:8000 ./validation/system1/run_laya_tests.sh
 ./validation/system1/run_laya_tests.sh -k latency                        # 일부만 실행 (pytest 인자 전달)
 ```
 
-스크립트는 두 단계를 실행하고 결과 JSON을 `${TMPDIR:-/tmp}/laya_reports/<시각>/`에 저장합니다.
+스크립트는 세 단계를 실행하고 결과 JSON을 `${TMPDIR:-/tmp}/laya_reports/<시각>/`에 저장합니다.
 
 | 단계 | 내용 |
 |---|---|
 | 1. `validation/system1/test_laya_live.py` | 연결(`/health`), 인증(키 없음·틀린 키 → 401), 응답 스키마(choice/noul), 한국어 → multilingual 체크포인트, robo-claw 질문 세트 응답, 선택지 상한(101개 → 413), warm 지연 p95, 질문 단위 정확도(`laya_cases.jsonl`), 라우터 오실행률(`router_cases.jsonl`) |
-| 2. `scripts/system1_eval.py --router both` | 같은 케이스로 규칙 라우터와 Laya를 비교합니다. |
+| 1. `validation/system1/test_laya_tools_live.py` | robo-claw 전체 스킬 기준 툴·복합 명령 평가(아래 "툴 단위·복합 명령 평가") |
+| 2. `scripts/system1_eval.py --router both` | 시드 케이스로 규칙 라우터와 Laya를 비교합니다. |
+| 3. `scripts/system1_tool_eval.py --router both` | 툴·복합 명령 케이스로 규칙 라우터와 Laya를 비교합니다(`LAYA_SCOPE`로 scope 지정). |
+
+#### 툴 단위·복합 명령 평가
+
+robo-claw의 스킬 정의에서 추출한 카탈로그(`validation/system1/skill_catalog.json`)를 기준으로 평가합니다. 카탈로그는 `python3 scripts/system1_skill_catalog.py`로 갱신합니다. 스킬을 추가하면 단위 테스트(`test_system1_tool_cases.py`)가 카탈로그 갱신과 테스트 케이스 추가를 요구합니다.
+
+| 데이터 | 내용 |
+|---|---|
+| `tool_cases.jsonl` | 모든 공개 스킬(95개)마다 1개 이상의 자연어 명령, 인사·질문 케이스. 필요한 인자는 `params`에 적습니다. |
+| `compound_cases.jsonl` | 여러 스킬이 필요한 명령 20건과 기대 스킬 순서(`steps`) |
+
+| 평가 | 판정 |
+|---|---|
+| 라우터 결정 | robo-claw와 같은 코드로 경로(direct_skill / simple_reply / llm)를 판정합니다. 기대 경로는 카탈로그에서 자동으로 정합니다. read이면서 필수 인자가 없는 스킬은 direct_skill, 기억된 장소로의 `navigate_to`는 navigation scope에서만 direct_skill, 그 외는 llm입니다. 맞는 스킬을 맞는 인자로 직접 실행한 경우(규칙 라우터의 지름길)는 `direct_ok`, 다른 스킬·다른 인자로 실행하면 `wrong`입니다. |
+| 복합 명령 안전 | 복합 명령이 직접 실행되면(`compound_unsafe_direct` > 0) 기준과 무관하게 실패입니다. |
+| 툴 식별 | Laya가 카테고리(14개) → 그 카테고리의 스킬 순서로 맞히는지 봅니다. 직접 실행 범위와 무관한 판단 능력 지표이며, 범위를 넓힐 수 있는지 판단하는 근거입니다. |
+| 복합 명령 인식 | intent가 multi_step인지와 robo-claw 복합 명령 가드(`looks_compound`)가 잡는지를 함께 봅니다. |
+
+```bash
+python3 scripts/system1_tool_eval.py --router rule                                     # 규칙 라우터만 (서버 불필요)
+python3 scripts/system1_tool_eval.py --endpoint http://192.168.50.212:8000 --env-file .env -v
+python3 scripts/system1_tool_eval.py --endpoint ... --env-file .env --scope navigation --skip-tools
+```
 
 | 환경변수 | 기본값 | 설명 |
 |---|---|---|
@@ -276,6 +300,8 @@ LAYA_ENDPOINT=http://127.0.0.1:8000 ./validation/system1/run_laya_tests.sh
 | `LAYA_LATENCY_BUDGET_MS` | `1000` | warm p95 상한 |
 | `LAYA_MAX_FALSE_ACT` | `0.10` | 라우터 오실행률 상한 |
 | `LAYA_MIN_INTENT_ACC`, `LAYA_MIN_SKILL_ACC`, `LAYA_MIN_AMBIGUOUS_ACC` | (없음) | 지정하면 질문 단위 정확도 하한을 검사하고, 없으면 보고만 합니다. |
+| `LAYA_SCOPE` | `readonly` | 툴 평가의 라우터 scope(`readonly` / `navigation`) |
+| `LAYA_MIN_CATEGORY_ACC`, `LAYA_MIN_TOOL_ACC`, `LAYA_MIN_MULTI_STEP_ACC` | (없음) | 지정하면 툴 식별·복합 명령 인식 하한을 검사하고, 없으면 보고만 합니다. |
 | `PYTHON` | `python3` | pytest가 설치된 Python |
 
 - 질문 단위 정확도는 라우터 임계값과 무관한 Laya 자체 판단의 정확도입니다. intent는 smalltalk/question/single_skill/multi_step, skill은 인자 없는 read 스킬, ambiguous는 noul ≥ 0.5 기준으로 봅니다. 케이스는 `validation/system1/laya_cases.jsonl`에 추가합니다.

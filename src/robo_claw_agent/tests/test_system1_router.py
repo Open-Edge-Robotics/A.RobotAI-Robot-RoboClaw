@@ -364,6 +364,71 @@ class TestInterpret:
         assert d.kind == ROUTE_SIMPLE_REPLY
 
 
+def _with_motion(resp, prob):
+    resp["answers"]["needs_motion"] = {"noul": prob, "confidence": 0.9}
+    return resp
+
+
+class TestNeedsMotionGuard:
+    """동작 요청에 조회 스킬·고정 응답으로 답하지 않는다.
+
+    실서버 회귀(2026-10-08): "손 흔드는 모션 해줘", "손목 롤 조인트를 0.5 라디안으로 움직여" 가
+    list_cloid_motions(read)로 직접 실행됐다.
+    """
+
+    skills = {"list_cloid_motions": "", "get_status": "", "navigate_to": ""}
+
+    def test_questions_ask_needs_motion_when_skills_are_offered(self):
+        questions = build_questions({"get_status": "상태"}, [])
+        assert questions["needs_motion"]["type"] == "noul"
+        assert "needs_motion" not in build_questions({}, [])
+
+    def test_motion_request_blocks_readonly_skill(self):
+        resp = _with_motion(_resp("single_skill", skill="list_cloid_motions"), 0.9)
+        d = interpret_response(resp, self.skills, [], {})
+        assert d.kind == ROUTE_LLM
+        assert d.hint["blocked_by"] == "needs_motion"
+        assert d.hint["needs_motion"] == 0.9
+
+    def test_no_motion_keeps_readonly_direct(self):
+        resp = _with_motion(_resp("single_skill", skill="list_cloid_motions"), 0.1)
+        d = interpret_response(resp, self.skills, [], {})
+        assert d.kind == ROUTE_DIRECT_SKILL
+        assert d.skill == "list_cloid_motions"
+
+    def test_motion_does_not_block_navigation_to_known_place(self):
+        resp = _with_motion(_resp("single_skill", skill="navigate_to", place="주방"), 0.95)
+        d = interpret_response(resp, self.skills, ["주방"], {})
+        assert d.kind == ROUTE_DIRECT_SKILL
+        assert d.params == {"target_name": "주방"}
+
+    def test_gesture_greeting_blocks_smalltalk_reply(self):
+        """'손 흔들어 인사해'(실측 0.93)는 고정 인사말이 아니라 LLM 으로 넘긴다."""
+        resp = _with_motion(_resp("smalltalk"), 0.93)
+        d = interpret_response(resp, self.skills, [], {})
+        assert d.kind == ROUTE_LLM
+        assert d.hint["blocked_by"] == "needs_motion"
+
+    def test_plain_greeting_keeps_smalltalk_reply(self):
+        """평범한 인사도 Laya 는 needs_motion 0.65~0.84 를 준다(실측). 고정 응답을 유지해야 한다."""
+        for prob in (0.65, 0.84):
+            d = interpret_response(_with_motion(_resp("smalltalk"), prob), self.skills, [], {})
+            assert d.kind == ROUTE_SIMPLE_REPLY, prob
+
+    def test_missing_answer_does_not_block(self):
+        d = interpret_response(_resp("single_skill", skill="get_status"), self.skills, [], {})
+        assert d.kind == ROUTE_DIRECT_SKILL
+        assert d.hint["needs_motion"] == 0.0
+
+    def test_threshold_override(self):
+        resp = _with_motion(_resp("single_skill", skill="get_status"), 0.6)
+        assert interpret_response(resp, self.skills, [], {}).kind == ROUTE_LLM
+        assert (
+            interpret_response(resp, self.skills, [], {"needs_motion": 0.7}).kind
+            == ROUTE_DIRECT_SKILL
+        )
+
+
 class TestSystemOneRouter:
     def test_compound_instruction_never_calls_model(self):
         router, client = _laya(_resp("single_skill", skill="get_status"))
