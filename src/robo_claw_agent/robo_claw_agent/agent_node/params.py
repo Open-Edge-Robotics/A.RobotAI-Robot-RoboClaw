@@ -154,6 +154,8 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("troubleshooting_guide_file", "")
     node.declare_parameter("skill_modules", ["robo_claw_agent.skills.navigation_skill"])
     node.declare_parameter("cloid_motion_catalog_file", "")
+    node.declare_parameter("cloid_cleanup_indicator_enabled", False)
+    node.declare_parameter("cloid_cleanup_indicator_motion_ids_json", "[]")
     node.declare_parameter("butler_script_dir", "/ros2_ws/butler_scripts")
     node.declare_parameter("agent_workspace_dir", "/ros2_ws/agent_workspace")
 
@@ -309,7 +311,5 @@ def read_agent_parameters(node) -> AgentParams:
         enable_task_decomposition=_b(node, "enable_task_decomposition"),
         task_decomposition_max_steps=_i(node, "task_decomposition_max_steps"),
         task_step_max_retries=_i(node, "task_step_max_retries"),
-        task_decomposition_wait_margin_cap_sec=_d(
-            node, "task_decomposition_wait_margin_cap_sec"
-        ),
+        task_decomposition_wait_margin_cap_sec=_d(node, "task_decomposition_wait_margin_cap_sec"),
     )

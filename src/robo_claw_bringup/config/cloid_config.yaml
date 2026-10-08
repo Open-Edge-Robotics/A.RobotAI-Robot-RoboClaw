@@ -60,6 +60,10 @@ robo_claw_agent_node:
     # 실제 모션 목록은 /task_manager/motion_map 토픽에서 읽는다. 토픽이 비어 있을 때만
     # 읽기 전용 파일 fallback을 사용하며, 파일은 RoboClaw 컨테이너 내부에 마운트되어야 한다.
     cloid_motion_catalog_file: "/ws/motion_list/motion_map.json"
+    # VLA 조작 백엔드 구현 전, 승인된 상태 표시 모션 하나를 정리 작업 마지막에 실행한다.
+    # 이 모션은 물체 파지/정리 완료를 의미하지 않으며, 작업 동작 중에는 반복 발행하지 않는다.
+    cloid_cleanup_indicator_enabled: true
+    cloid_cleanup_indicator_motion_ids_json: '[22, 128]'
 
     # manipulation — CLOiD 팔/hand 제어 백엔드는 아직 구현되지 않았다.
     # manipulation_enabled=false 로 조작 계열 스킬을 실행 단에서 차단한다.

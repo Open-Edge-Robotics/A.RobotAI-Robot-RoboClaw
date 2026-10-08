@@ -193,7 +193,7 @@
         "max_cycles",
         "has_map"
       ],
-      "description": "로봇이 스스로 상황을 판단하고 자율적으로 행동합니다. mode='patrol'(기본): 기억된 시맨틱 맵/RAG 장소만 순찰하고, 장소가 없으면 제자리에서 주변을 관찰합니다. 자율 행동 중 프론티어 탐험은 하지 않습니다. 특이 장면에는 LLM이 대응하며, 필요한 능력이 없으면 동료 로봇에게 위임할 수 있습니다. mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행하며, 자신이 수행할 수 없는 단계는 동료에게 위임합니다. 배터리 신호가 없거나 부족해도 기본적으로 체크만 수행하며 루프를 종료하지 않습니다. 파라미터: mode(str, 'patrol'|'goal', 기본 'patrol'), goal(str, mode='goal' 시 필수 — 자연어 목표), min_battery_pct(float, 기본 20.0), allow_unknown_battery(bool, 기본 True), check_only_battery(bool, 기본 True), cycle_interval_sec(float, 기본 3.0), max_cycles(int, 기본 0=무제한). min_coverage_pct, exploration_radius, has_map은 호환성을 위해 수용하지만 사용하지 않습니다. 탐험은 별도 explore 스킬을 명시적으로 요청하세요. 중단: stop_autonomous 스킬을 사용하세요.",
+      "description": "로봇이 스스로 상황을 판단하고 자율적으로 행동합니다. mode='patrol'(기본): 지속적인 자율 순찰 요청에 사용합니다. '집안 정리해줘'와 같은 한 번의 정리 요청은 tidy_home을 사용하세요. 순찰 중 명확한 폐기물을 우연히 발견하면 정책에 따라 처리하거나 단발 위임할 수 있습니다. 기억된 시맨틱 맵/RAG 장소를 순찰하고 장소가 없으면 제자리에서 주변을 관찰합니다. 자율 행동 중 프론티어 탐험은 하지 않습니다. 조작 능력이 있으면 직접 정리하고, 조작 능력이 없으면 연결과 매니퓰레이션 능력이 확인된 동료 한 대에게 해당 작업만 요청해 결과를 확인합니다. mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행하며, 자신이 수행할 수 없는 단계는 동료에게 위임합니다. 배터리 신호가 없거나 부족해도 기본적으로 체크만 수행하며 루프를 종료하지 않습니다. 파라미터: mode(str, 'patrol'|'goal', 기본 'patrol'), goal(str, mode='goal' 시 필수 — 자연어 목표), min_battery_pct(float, 기본 20.0), allow_unknown_battery(bool, 기본 True), check_only_battery(bool, 기본 True), cycle_interval_sec(float, 기본 3.0), max_cycles(int, 기본 0=무제한). min_coverage_pct, exploration_radius, has_map은 호환성을 위해 수용하지만 사용하지 않습니다. 탐험은 별도 explore 스킬을 명시적으로 요청하세요. 중단: stop_autonomous 스킬을 사용하세요.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/autonomous_skill/skill.py"
     },
     {
@@ -1516,6 +1516,20 @@
       ],
       "description": "Stretch3 driver 모드를 전환합니다. mode 파라미터는 'position' 또는 'navigation' 입니다. 팔/그리퍼 제어 전에는 position, 주행 전에는 navigation 모드를 사용하세요.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/manipulation_skill/stretch_mode.py"
+    },
+    {
+      "name": "tidy_home",
+      "category": "autonomous",
+      "module": "tidy_home_skill",
+      "risk_level": "action",
+      "internal": false,
+      "required": [],
+      "properties": [
+        "scope",
+        "target_location"
+      ],
+      "description": "한 번의 정리 작업을 수행하고 종료합니다. 지정 방은 기억된 시맨틱 맵/RAG 좌표로 먼저 이동합니다. 집 전체는 기억된 장소만 한 차례씩 방문하며 탐험하지 않습니다. 명확한 폐기물만 후보로 삼고, 로컬 집기/배치는 승인된 비추정 3D 폐기 pose가 있을 때만 계획합니다. 모호한 항목은 이동하지 않으며, 처리 능력이 부족하면 연결과 능력이 확인된 동료 한 대에게 단발 위임합니다. CLOiD는 VLA 구현 전까지 검토된 상태 표시 모션 하나를 임의 선택해 실행할 수 있으나, 이 임시 모션은 물체를 정리하지 않으며 완료로 보고하지 않습니다. 중단: stop_autonomous를 사용하세요.",
+      "source": "src/robo_claw_agent/robo_claw_agent/skills/tidy_home_skill.py"
     },
     {
       "name": "vla_pick_front_object",

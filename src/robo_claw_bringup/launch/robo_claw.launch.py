@@ -472,6 +472,7 @@ def _launch_setup(context, *args, **kwargs):
         "robo_claw_agent.skills.file_skill",
         "robo_claw_agent.skills.explore_skill",
         "robo_claw_agent.skills.autonomous_skill",
+        "robo_claw_agent.skills.tidy_home_skill",
     ]
     if robot_config == "butler":
         skill_modules.append("robo_claw_agent.skills.butler_skill")

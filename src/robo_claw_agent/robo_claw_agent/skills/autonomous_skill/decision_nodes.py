@@ -31,6 +31,17 @@ _AUTONOMOUS_EXCLUDED_SKILLS = frozenset(
         "stop_patrol",
     }
 )
+_CLEANUP_ACTION_SKILLS = frozenset(
+    {
+        "adaptive_pick_object",
+        "vla_pick_gripper_object",
+        "vla_pick_front_object",
+        "pick_front_object",
+        "pick_from_right_side_zone",
+        "grasp",
+        "place",
+    }
+)
 _LOCAL_OBSERVATION_SKILLS = frozenset(
     {
         "analyze_scene",
@@ -132,7 +143,9 @@ class LLMDecideAction(BTNode):
 
         invalid_reason = self._blackboard.pop("decision_invalid_reason", "")
         if invalid_reason:
-            history_str += f"\n  - [경고] 직전 결정이 무효하여 실행하지 않고 폐기됨: {invalid_reason}"
+            history_str += (
+                f"\n  - [경고] 직전 결정이 무효하여 실행하지 않고 폐기됨: {invalid_reason}"
+            )
 
         if self._blackboard.get("repeat_failure_count", 0) >= 2:
             history_str += (
@@ -200,6 +213,11 @@ class LLMDecideAction(BTNode):
             self._blackboard.get("patrol_has_destination") is False
         )
         available_skills = _available_autonomous_skills(node, local_only=local_only)
+        cleanup_task_mode = bool(self._blackboard.get("cleanup_task_mode"))
+        if cleanup_task_mode:
+            available_skills = [
+                skill for skill in available_skills if skill.get("name") in _CLEANUP_ACTION_SKILLS
+            ]
         skill_list = "\n".join(
             f"  - {s['name']}: {s.get('description', '')}" for s in available_skills
         )
@@ -253,8 +271,29 @@ class LLMDecideAction(BTNode):
                     "대상을 관찰·기록하고 처리할 수 없음을 사용자에게 보고하세요."
                 )
 
+        cleanup_disposal_targets = self._blackboard.get("cleanup_disposal_targets", [])
+        cleanup_disposal_targets_str = (
+            ", ".join(str(target.get("name", "")) for target in cleanup_disposal_targets)
+            if isinstance(cleanup_disposal_targets, list) and cleanup_disposal_targets
+            else "없음 — 이 경우 집기/배치를 계획하지 마세요"
+        )
+        cleanup_disposal_targets_section = (
+            f"\n[승인된 안전 폐기 장소]\n{cleanup_disposal_targets_str}\n"
+            if cleanup_task_mode
+            else ""
+        )
+        cleanup_mode_rule = (
+            "\n[일회성 정리 작업]\n"
+            "현재 장소에서 명확히 폐기물로 확인된 대상만 처리하세요. 컵·병·옷·개인 소지품·위험물·액체는 "
+            "임의로 옮기거나 동료에게 위임하지 마세요. 목록에 있는 집기·배치 스킬만 사용하고 다른 장소로 "
+            "내비게이션하거나 탐험하지 마세요. 집기 계획에는 유효한 안전 배치 장소로의 place 단계를 반드시 포함하세요. "
+            "대상이 모호하거나 안전한 지정 배치 장소가 없으면 물리 동작을 계획하지 말고 사용자 확인을 요청하세요.\n"
+            if cleanup_task_mode
+            else ""
+        )
         system_prompt = f"""{soul_prefix}당신은 자율 행동 중인 로봇 에이전트입니다.
 현재까지 수집한 정보를 바탕으로 다음에 실행할 행동을 결정하세요.
+{cleanup_mode_rule}
 
 [사용 가능한 스킬]
 {skill_list}
@@ -285,8 +324,8 @@ class LLMDecideAction(BTNode):
 [자신의 능력]
 {self_caps_str}
 [정리 작업 능력]
-{'정리 대상을 집어 옮길 등록 스킬이 있습니다.' if cleanup_capable else '정리 대상을 집어 옮길 등록 스킬이 없습니다.'}
-{delegate_force_hint}
+{"정리 대상을 집어 옮길 등록 스킬이 있습니다." if cleanup_capable else "정리 대상을 집어 옮길 등록 스킬이 없습니다."}
+{cleanup_disposal_targets_section}{delegate_force_hint}
 
 [응답 형식 — 반드시 JSON만 출력]
 
@@ -396,8 +435,7 @@ class ValidateDecidedAction(BTNode):
         return NodeStatus.FAILURE
 
     _DISALLOWED_AUTONOMOUS_SKILLS = frozenset(
-        set(_AUTONOMOUS_EXCLUDED_SKILLS)
-        | {"emergency_stop", "ros_command", "run_script"}
+        set(_AUTONOMOUS_EXCLUDED_SKILLS) | {"emergency_stop", "ros_command", "run_script"}
     )
 
     def _validate(self, node: Any, skill_name: str, params: dict[str, Any]) -> str | None:
@@ -414,13 +452,21 @@ class ValidateDecidedAction(BTNode):
             and params == self._blackboard.get("decided_params")
         )
         if (
+            self._blackboard.get("cleanup_task_mode")
+            and skill_name not in _CLEANUP_ACTION_SKILLS
+            and not authorized_cleanup_handoff
+        ):
+            return f"정리 작업에 허용되지 않은 스킬입니다 ({skill_name})"
+        if (
             local_only
             and skill_name not in _LOCAL_OBSERVATION_SKILLS
             and not authorized_cleanup_handoff
         ):
             return f"기억된 이동 목적지가 없어 제자리 관찰 스킬만 허용됩니다 ({skill_name})"
-        if local_only and skill_name == "describe_surroundings" and bool(
-            params.get("capture_4way", False)
+        if (
+            local_only
+            and skill_name == "describe_surroundings"
+            and bool(params.get("capture_4way", False))
         ):
             return "제자리 관찰 중에는 베이스 회전을 수반하는 capture_4way를 사용할 수 없습니다."
 
@@ -445,21 +491,27 @@ class ValidateDecidedAction(BTNode):
 
         side_effects = set(getattr(skill_obj, "side_effects", ()) or ())
         if "base_motion" in side_effects:
-            if skill_name != "navigate_to":
-                return "자율 행동의 베이스 이동은 기억된 장소를 향한 navigate_to만 허용됩니다."
-            memory = getattr(node, "_memory", None)
-            if memory is None:
-                return "기억된 목적지를 확인할 메모리가 없습니다."
-            has_location_name = any(params.get(key) for key in _LOCATION_PARAM_KEYS)
-            has_x, has_y = params.get("x") is not None, params.get("y") is not None
-            if not has_location_name:
-                if not (has_x and has_y):
-                    return "navigate_to 목적지는 기억된 장소 이름 또는 기억 좌표여야 합니다."
-                if not _matches_remembered_coordinate(memory, params["x"], params["y"]):
-                    return "요청한 좌표가 기억된 순찰 장소와 일치하지 않습니다."
-                return None
-            if has_x != has_y or (has_x and not _matches_remembered_coordinate(memory, params["x"], params["y"])):
-                return "navigate_to 좌표가 기억된 장소 이름과 일치하지 않습니다."
+            cleanup_composite_pick = (
+                self._blackboard.get("cleanup_task_mode") and skill_name == "adaptive_pick_object"
+            )
+            if skill_name == "navigate_to":
+                memory = getattr(node, "_memory", None)
+                if memory is None:
+                    return "기억된 목적지를 확인할 메모리가 없습니다."
+                has_location_name = any(params.get(key) for key in _LOCATION_PARAM_KEYS)
+                has_x, has_y = params.get("x") is not None, params.get("y") is not None
+                if not has_location_name:
+                    if not (has_x and has_y):
+                        return "navigate_to 목적지는 기억된 장소 이름 또는 기억 좌표여야 합니다."
+                    if not _matches_remembered_coordinate(memory, params["x"], params["y"]):
+                        return "요청한 좌표가 기억된 순찰 장소와 일치하지 않습니다."
+                    return None
+                if has_x != has_y or (
+                    has_x and not _matches_remembered_coordinate(memory, params["x"], params["y"])
+                ):
+                    return "navigate_to 좌표가 기억된 장소 이름과 일치하지 않습니다."
+            elif not cleanup_composite_pick:
+                return "자율 행동의 베이스 이동은 기억된 장소 이동 또는 정리용 복합 파지 스킬만 허용됩니다."
 
         location_value = None
         for key in _LOCATION_PARAM_KEYS:
@@ -612,8 +664,7 @@ class GoalPlannerNode(BTNode):
                     "planner returned an empty plan without explicit goal_achieved"
                 )
                 logger.warning(
-                    "[BT] GoalPlannerNode: empty plan did not prove goal completion "
-                    "(attempt %d)",
+                    "[BT] GoalPlannerNode: empty plan did not prove goal completion (attempt %d)",
                     planning_failures,
                 )
                 return NodeStatus.FAILURE

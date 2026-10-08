@@ -98,6 +98,7 @@
 {"id": "file-analyze_stored_file-01", "instruction": "snapshot.jpg 이미지 분석해줘", "skill": "analyze_stored_file", "params": {"file_path": "snapshot.jpg"}}
 {"id": "file-run_script-01", "instruction": "cleanup.py 스크립트 실행해", "skill": "run_script", "params": {"script_name": "cleanup.py"}}
 {"id": "auto-autonomous_act-01", "instruction": "스스로 행동해", "skill": "autonomous_act"}
+{"id": "auto-tidy_home-01", "instruction": "안방 정리해줘", "skill": "tidy_home", "params": {"scope": "room", "target_location": "안방"}}
 {"id": "auto-stop_autonomous-01", "instruction": "자율 행동 그만해", "skill": "stop_autonomous"}
 {"id": "auto-reactive_navigate-01", "instruction": "주방으로 가다가 사람이 보이면 멈춰", "skill": "reactive_navigate", "params": {"target_location": "주방", "interrupt_object": "person"}}
 {"id": "auto-condition_reactive-01", "instruction": "탐험하다가 고양이가 보이면 사진 찍어", "skill": "condition_reactive", "params": {"trigger_object": "cat"}}

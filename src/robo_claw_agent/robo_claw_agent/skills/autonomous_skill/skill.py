@@ -328,8 +328,9 @@ class AutonomousActSkill(BaseSkill):
     terminal_behavior = "background"
     description = (
         "로봇이 스스로 상황을 판단하고 자율적으로 행동합니다. "
-        "mode='patrol'(기본): '집안 정리해줘'와 같은 요청에서 기억된 시맨틱 맵/RAG 장소를 순찰하고 "
-        "장소가 없으면 제자리에서 주변을 관찰하며 발견한 정리 대상을 처리합니다. 자율 행동 중 프론티어 "
+        "mode='patrol'(기본): 지속적인 자율 순찰 요청에 사용합니다. '집안 정리해줘'와 같은 한 번의 정리 요청은 "
+        "tidy_home을 사용하세요. 순찰 중 명확한 폐기물을 우연히 발견하면 정책에 따라 처리하거나 단발 위임할 수 있습니다. "
+        "기억된 시맨틱 맵/RAG 장소를 순찰하고 장소가 없으면 제자리에서 주변을 관찰합니다. 자율 행동 중 프론티어 "
         "탐험은 하지 않습니다. 조작 능력이 있으면 직접 정리하고, 조작 능력이 없으면 연결과 매니퓰레이션 "
         "능력이 확인된 동료 한 대에게 해당 작업만 요청해 결과를 확인합니다. "
         "mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행하며, "
@@ -694,9 +695,7 @@ class AutonomousActSkill(BaseSkill):
                         break
                     if blackboard.get("planning_failure_count", 0) >= 2:
                         reason = blackboard.get("planning_failure_reason", "계획 수립 실패")
-                        self.send_user_message(
-                            f"목표 계획을 안전하게 중단했습니다: {reason}"
-                        )
+                        self.send_user_message(f"목표 계획을 안전하게 중단했습니다: {reason}")
                         logger.warning(
                             "[AutonomousAct] Planning failed repeatedly; stopping goal loop"
                         )

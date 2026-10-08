@@ -112,7 +112,7 @@ RC_AGENT_ID=cloi02
 
 | 파일 | 역할 |
 | :--- | :--- |
-| `cloid_config.yaml` | core/agent 센서·토픽, agent 카메라, 조작 활성화 설정 |
+| `cloid_config.yaml` | core/agent 센서·토픽, agent 카메라, 조작 활성화 및 정리 표시 모션 설정 |
 | `ROBOT_LIMITS.cloid.json` | 주행 한계와 URDF(hmc_v2_hand) 기준 팔·waist·neck 조인트 하드 한계 |
 | `SKILLS.cloid.md` | CLOiD 전용 스킬 가이드(런타임 주입) |
 
@@ -128,7 +128,15 @@ CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 
   (`self_localize` 사용 불가).
 - RGB 카메라는 `sensor_msgs/CompressedImage` 만 발행합니다.
 - 팔/hand 제어 백엔드가 아직 없어 `manipulation_enabled=false` 로 기동하며,
-  조작 계열 스킬은 실행 단에서 차단됩니다.
+  일반 조작 계열 스킬은 실행 단에서 차단됩니다.
+
+### VLA 구현 전 정리 작업 표시 모션
+
+`tidy_home`은 기억된 장소를 한 번 순회하고 관찰한 뒤, 정리 대상을 발견하면 현재 연결된 조작 가능 피어에 실제 처리를 요청합니다. CLOiD에는 VLA 기반 조작이 없으므로, 이 경로가 실제 물체 파지·이동을 수행하지는 않습니다.
+
+관찰과 위임 시도가 끝난 뒤 작업 표시용으로 승인된 모션을 하나 무작위 선택할 수 있습니다. 기본 후보는 `scan`(ID 22)과 `task ready pose`(ID 128)이며, 이름과 ID가 현재 카탈로그와 일치하고 `pre_id`가 없는 경우에만 허용합니다. `wipe_1`(ID 59)은 천을 집는 실제 조작 모션이므로 표시용 풀에서 제외합니다. 식탁 닦기 동작 `wipe_2`(ID 60)도 `wipe_1`을 선행 조건으로 요구하므로 제외합니다.
+
+이 모션은 작업 중임을 표현할 뿐 정리 동작이나 완료 증거가 아닙니다. CLOi의 `MotionCmd`는 완료 응답을 제공하지 않으므로 작업당 한 번만 발행하며, 응답에는 VLA 미구현 및 실제 정리 미확인을 표시합니다. `cloid_config.yaml`의 `cloid_cleanup_indicator_enabled`와 `cloid_cleanup_indicator_motion_ids_json`으로 기능과 후보 ID를 제한합니다. 일반 관절 조작을 활성화하기 위해 `manipulation_enabled`를 변경하지 않습니다.
 
 ## x64 DevBox SIL
 

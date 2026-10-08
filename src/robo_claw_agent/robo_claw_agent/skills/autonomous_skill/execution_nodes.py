@@ -5,6 +5,7 @@ import numpy as np
 
 from robo_claw_agent.skill_manager import BaseSkill
 
+from ..cleanup_policy import _has_cleanup_indication, _safe_cleanup_disposal_targets
 from .core import BTNode, NodeStatus
 from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE
 from .helpers import _find_connected_peer_with_capability, _has_cleanup_capability
@@ -126,9 +127,7 @@ class LocalObservationNode(BTNode):
         if node is None:
             return NodeStatus.SUCCESS
 
-        self._skill.send_user_message(
-            "기억된 순찰 장소가 없어 제자리에서 주변을 관찰합니다."
-        )
+        self._skill.send_user_message("기억된 순찰 장소가 없어 제자리에서 주변을 관찰합니다.")
         try:
             from robo_claw_agent.agent_node.nav_safety import prepare_stretch_navigation
 
@@ -164,31 +163,6 @@ class LocalObservationNode(BTNode):
         return NodeStatus.SUCCESS
 
 
-_CLEANUP_TARGET_KEYWORDS = (
-    "trash",
-    "garbage",
-    "waste",
-    "litter",
-    "bottle",
-    "can",
-    "cup",
-    "wrapper",
-    "cigarette",
-    "spill",
-    "mess",
-    "쓰레기",
-    "어질러",
-    "컵",
-    "병",
-    "캔",
-    "비닐",
-    "포장지",
-    "담배꽁초",
-    "쏟아",
-    "흘린",
-)
-
-
 class ResolveCleanupHandoff(BTNode):
     """조작 불가능한 로봇이 발견한 정리 대상을 연결된 조작 가능 동료에게 한 번 위임한다."""
 
@@ -204,41 +178,30 @@ class ResolveCleanupHandoff(BTNode):
         blackboard.pop("cleanup_handoff_status", None)
 
         node = self._skill.node
-        if node is None or _has_cleanup_capability(node):
+        if node is None:
+            return NodeStatus.SUCCESS
+        local_cleanup_capable = _has_cleanup_capability(node)
+        missing_local_disposal_target = False
+        if blackboard.get("cleanup_task_mode") and local_cleanup_capable:
+            local_cleanup_capable = bool(
+                _safe_cleanup_disposal_targets(getattr(node, "_memory", None))
+            )
+            missing_local_disposal_target = not local_cleanup_capable
+        if local_cleanup_capable:
             return NodeStatus.SUCCESS
 
         objects = blackboard.get("detected_objects", []) or []
         scene = str(blackboard.get("scene_analysis", "") or "")
-        cleanup_targets = [
-            str(obj)
-            for obj in objects
-            if any(keyword in str(obj).casefold() for keyword in _CLEANUP_TARGET_KEYWORDS)
-        ]
-        scene_lower = scene.casefold()
-        scene_indicates_cleanup = any(
-            keyword in scene_lower
-            for keyword in (
-                "쓰레기",
-                "어질러",
-                "컵",
-                "병",
-                "캔",
-                "비닐",
-                "치워야",
-                "정리해야",
-                "쏟아",
-                "흘린",
-                "trash",
-                "garbage",
-                "litter",
-                "spill",
-                "mess",
-            )
-        )
-        if not cleanup_targets and not scene_indicates_cleanup:
+        cleanup_targets = []
+        if isinstance(objects, (list, tuple)):
+            for obj in objects:
+                if _has_cleanup_indication([obj], ""):
+                    label = obj.get("name", "") if isinstance(obj, dict) else str(obj)
+                    cleanup_targets.append(str(label))
+        if not _has_cleanup_indication(objects, scene):
             return NodeStatus.SUCCESS
 
-        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 정리 대상"
+        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 폐기물 후보"
         place = str(blackboard.get("patrol_last_place", "") or "").strip()
         pose_text = ""
         try:
@@ -252,8 +215,13 @@ class ResolveCleanupHandoff(BTNode):
 
         peer = _find_connected_peer_with_capability(node, "manipulation")
         if peer is None:
+            local_reason = (
+                "로컬 메모리에 승인된 비추정 3D 폐기 장소가 없습니다. "
+                if missing_local_disposal_target
+                else ""
+            )
             blackboard["cleanup_handoff_status"] = (
-                "연결 상태와 매니퓰레이션 능력을 확인할 수 있는 동료 로봇이 없습니다. "
+                f"{local_reason}연결 상태와 매니퓰레이션 능력을 확인할 수 있는 동료 로봇이 없습니다. "
                 "정리를 완료했다고 말하지 말고 발견 내용만 보고하세요."
             )
             blackboard["cleanup_handoff_blocked"] = True
@@ -261,16 +229,17 @@ class ResolveCleanupHandoff(BTNode):
             blackboard["decided_params"] = {}
             blackboard["decided_reason"] = blackboard["cleanup_handoff_status"]
             self._skill.send_user_message(
-                f"정리 대상 '{target_description}'을 발견했지만 연결되고 조작 능력이 확인된 "
-                "동료가 없어 처리하지 않았습니다."
+                f"정리 대상 '{target_description}'을 처리하지 않았습니다. "
+                f"{blackboard['cleanup_handoff_status']}"
             )
             return NodeStatus.SUCCESS
 
         instruction = (
-            f"자율 순찰 중 정리 대상 '{target_description}'을 발견했습니다. 위치: {location}. "
-            f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. "
-            "해당 위치에서 대상을 다시 확인하고 안전하게 정리할 수 있으면 정리 작업만 수행한 뒤, "
-            "완료 여부와 실패 사유를 반환해 주세요. 다른 구역 순찰이나 지속적인 자율협동은 시작하지 마세요."
+            f"정리 작업 요청: 명확한 폐기물 후보 '{target_description}'입니다. 위치: {location}. "
+            f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 대상을 다시 확인하세요. "
+            "명확한 폐기물로 확인되고 안전한 지정 폐기 장소가 알려져 있는 경우에만 한 건을 처리하세요. "
+            "컵·병·가방·의류·개인 소지품·위험물·액체 유출 등은 임의로 이동하지 말고 사용자 확인을 요청하세요. "
+            "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
         )
         skill_name = "delegate_task" if peer["transport"] == "ros2" else "call_peer_robot"
         params = (

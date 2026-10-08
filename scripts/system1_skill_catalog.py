@@ -42,6 +42,7 @@ CATEGORIES: dict[str, str] = {
 
 _MODULE_CATEGORY = {
     "autonomous_skill": "autonomous",
+    "tidy_home_skill": "autonomous",
     "butler_skill": "butler",
     "cloid_motion_skill": "motion",
     "cooperate_skill": "cooperation",
