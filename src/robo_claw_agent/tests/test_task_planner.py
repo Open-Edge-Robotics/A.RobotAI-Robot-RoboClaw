@@ -200,6 +200,40 @@ class TestRun:
                 for m in step_messages
             ), f"단계 메시지에 원본 명령이 없음: {step_messages}"
 
+    async def test_large_step_message_is_clipped_in_next_step_context(self):
+        """이전 단계 메시지가 아무리 커도 다음 단계 프롬프트에는 잘린 요약만 들어간다.
+
+        실기 회귀(2026-10-08): '카메라 이미지 보내고 분석해줘' 1단계 폴백 답변에 이미지 base64 가
+        섞여 2단계 LLM 요청이 267만 토큰(한도 92.2만)으로 거부됐다.
+        """
+        from robo_claw_agent.agent_node.task_planner import _STEP_RESULT_SUMMARY_CHARS
+
+        node = _make_node()
+        node._llm.chat = MagicMock(return_value=json.dumps({
+            "steps": [{"instruction": "카메라로 촬영해"}, {"instruction": "이미지를 전송해"}]
+        }))
+        huge = "카메라 이미지를 캡처했습니다. (" + "A" * 3_000_000 + ")"
+        node._planner.run_llm_planning_loop = AsyncMock(side_effect=[
+            (huge, [SimpleNamespace(success=True)], True, []),
+            ("전송 완료", [SimpleNamespace(success=True)], True, []),
+        ])
+
+        await TaskDecomposer(node).run(
+            goal_handle=MagicMock(),
+            instruction="카메라 이미지 보내고 분석해줘",
+            messages=_messages("카메라 이미지 보내고 분석해줘"),
+            robot_summary={},
+            timeout=60.0,
+            send_fb=MagicMock(),
+        )
+
+        step2_messages = node._planner.run_llm_planning_loop.await_args_list[1].args[2]
+        summaries = [m["content"] for m in step2_messages if "[이전 단계 요약]" in m.get("content", "")]
+        assert summaries, "2단계에 이전 단계 요약이 없음"
+        assert len(summaries[0]) < _STEP_RESULT_SUMMARY_CHARS + 200
+        assert "…(생략)" in summaries[0]
+        assert sum(len(m.get("content", "")) for m in step2_messages) < 20_000
+
     async def test_decompose_failure_falls_back_to_single_step(self):
         node = _make_node()
         node._llm.chat = MagicMock(return_value="invalid")

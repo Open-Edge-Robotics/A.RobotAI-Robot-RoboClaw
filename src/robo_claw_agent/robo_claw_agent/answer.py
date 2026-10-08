@@ -34,6 +34,17 @@ _EXCLUDED_RESULT_KEYS = frozenset(
     }
 )
 
+
+def _is_binary_key(key: Any) -> bool:
+    """이미지 등 base64 인코딩 데이터 키(예: ``image_base64``)인지.
+
+    사람이 읽을 수 없고 수 MB 에 이르므로 텍스트로 풀면 사용자 메시지와 다음 LLM 프롬프트가
+    폭주한다(실측: 카메라 이미지 1장이 다음 단계 프롬프트를 267만 토큰으로 만들었다).
+    ``utils._omit_base64_data`` 와 같은 기준(키 이름에 ``base64`` 포함)을 쓴다.
+    """
+    return isinstance(key, str) and "base64" in key.lower()
+
+
 # 답변 본문으로 우선 사용할 텍스트 키(우선순위 순).
 _TEXT_ANSWER_KEYS = (
     "response",
@@ -120,7 +131,7 @@ def flatten_to_text(value: Any, *, exclude_keys: frozenset[str] = frozenset()) -
     if isinstance(value, dict):
         parts = []
         for key, item in value.items():
-            if str(key) in exclude_keys:
+            if str(key) in exclude_keys or _is_binary_key(key):
                 continue
             rendered = flatten_to_text(item, exclude_keys=exclude_keys)
             if rendered:

@@ -5,6 +5,20 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-08**
 
+## 2026-10-08 — 폴백 답변·단계 요약의 이미지 base64 유입 차단
+
+- **증상**: 실기에서 "카메라 이미지 보내고 분석해줘"를 실행하자 TaskDecomposer 2단계 LLM 요청이 2,672,002 토큰(한도 922,000)으로
+  거부되어(`context_length_exceeded`) 작업이 중단됐다.
+- **원인**: `capture_camera_image`(`capture_map`, `get_map_visual`도 같음) 결과의 `image_base64`가 결정론적 폴백 답변
+  (`planner._compose_result_answer` → `answer.render_result_data`)에 그대로 풀려 들어갔다. TaskDecomposer는 이 단계 메시지를 길이
+  제한 없이 다음 단계 "[이전 단계 요약]"에 넣었다. 같은 폴백 답변이 단일 명령의 최종 답변으로도 쓰여 사용자 메시지에도 섞일 수 있었다.
+- **조치**:
+  - `answer.flatten_to_text`: 키 이름에 `base64`가 포함된 항목(중첩·대소문자 무관)을 건너뛴다. 기준은 `utils._omit_base64_data`와 같다.
+  - `task_planner._clip_step_message`: 이전 단계 요약의 단계 메시지를 `_STEP_RESULT_SUMMARY_CHARS`(800자)로 자른다.
+- **검증**: 신규 회귀 테스트 6건(`test_result_binary_omission.py` 5, `test_task_planner.py` 1)은 수정 전 5건 실패, 수정 후 통과했다.
+  `robo_claw_agent` 전체(로컬)는 548 passed이며, 실패·수집 오류 목록은 수정 전과 같은 ROS 의존 항목이다.
+- **범위 밖**: 같은 로그에서 1단계 LLM이 3단계 스킬(`analyze_scene`)까지 미리 실행했고, 요약 라운드가 답변 대신 스킬 계획을 반환했다.
+
 ## 2026-10-08 — System 1 needs_motion 가드 (동작 요청 오응답 차단)
 
 - **배경**: 툴 단위 실서버 평가에서 Laya가 "손 흔드는 모션 해줘", "손목 롤 조인트를 0.5 라디안으로 움직여"를

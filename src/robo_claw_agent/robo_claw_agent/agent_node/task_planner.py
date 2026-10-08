@@ -122,6 +122,18 @@ def _summarize_step_results(results: list[Any]) -> str:
     return text
 
 
+def _clip_step_message(message: Any) -> str:
+    """이전 단계 요약에 넣을 단계 결과 메시지를 ``_STEP_RESULT_SUMMARY_CHARS`` 로 자른다.
+
+    단계 메시지는 결정론적 폴백 답변처럼 결과 데이터를 풀어 쓴 긴 텍스트일 수 있다. 자르지 않으면
+    다음 단계의 모든 LLM 요청에 그대로 실려 컨텍스트 한도를 넘길 수 있다(실측 267만 토큰).
+    """
+    text = str(message or "")
+    if len(text) > _STEP_RESULT_SUMMARY_CHARS:
+        return text[:_STEP_RESULT_SUMMARY_CHARS] + " …(생략)"
+    return text
+
+
 class TaskDecomposer:
     """복합 명령을 하위 지시문으로 분해하고 순차 실행하는 오케스트레이터."""
 
@@ -236,7 +248,10 @@ class TaskDecomposer:
                     )
 
             all_skill_results.extend(step_results)
-            summary = f"{i + 1}. '{step}' -> {'성공' if step_success else '실패'}: {step_msg}"
+            summary = (
+                f"{i + 1}. '{step}' -> {'성공' if step_success else '실패'}: "
+                f"{_clip_step_message(step_msg)}"
+            )
             # 다음 단계의 판단 근거가 되는 실제 결과 데이터를 함께 넘긴다.
             # 문자열 한 줄만 넘기면 "가서 보고 있으면 정리해" 류 조건부 명령에서
             # 관측 결과(감지 객체·좌표·분석 내용)가 유실돼 분해가 오히려 불리해진다.

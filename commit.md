@@ -72,3 +72,50 @@ multi-robot 브랜치의 기존 작업 이력을 유지하면서 최신 원격 �
 {"smalltalk":0.9,"single_skill":0.85,"skill":0.8,"target_place":0.8,"ambiguous":0.5,"needs_motion":0.5,"needs_motion_smalltalk":0.9}
 - 작업본 미반영: 이번 변경은 OpenEdge 저장소에만 했고, ~/workspace-roboclaw/robo-claw 작업본에는 반영하지 않았습니다.
 - 규칙 라우터 오실행 1건 그대로: "비전 피드백으로 정면 컵을 집어"를 adaptive_pick_object로 바로 실행하는 문제는 Laya와 무관한 기존 규칙(direct_cup_pick_skill)의 문제입니다. 이번에는 손대지 않았습니다.
+
+
+# 2026.10.08 (2)
+
+fix(agent): 폴백 답변·단계 요약에서 이미지 base64 제외 및 단계 메시지 길이 제한
+
+'카메라 이미지 보내고 분석해줘' 실행 중 1단계 폴백 답변에 카메라 이미지의 base64 원본이
+그대로 들어가, TaskDecomposer 2단계 LLM 요청이 2,672,002 토큰(한도 922,000)으로 거부되고
+작업 전체가 중단됐다.
+
+원인:
+- capture_camera_image / capture_map / get_map_visual 결과의 image_base64 가
+  planner._compose_result_answer → answer.render_result_data 에서 그대로 텍스트로 풀렸다.
+  (_EXCLUDED_RESULT_KEYS 에 base64 키가 없음)
+- TaskDecomposer 는 단계 결과 메시지(step_msg)를 길이 제한 없이 다음 단계의
+  "[이전 단계 요약]"에 넣었다. ([결과 데이터]는 이미 base64 생략 + 800자 제한)
+- 같은 폴백 답변은 단일 명령에서 사용자에게 보내는 최종 답변으로도 쓰여,
+  사용자 메시지에도 base64 가 섞일 수 있었다.
+
+주요 변경사항:
+- answer.flatten_to_text: 키 이름에 base64 가 포함된 항목(중첩·대소문자 무관)을 건너뛴다.
+  render_result_data, render_structured_answer 가 모두 이 경로를 쓴다.
+  기준은 utils._omit_base64_data 와 같다.
+- task_planner: 이전 단계 요약의 단계 메시지를 _STEP_RESULT_SUMMARY_CHARS(800자)로 자른다
+  (_clip_step_message).
+- 회귀 테스트 추가
+  - tests/test_result_binary_omission.py (5건): 폴백 답변·중첩 키·구조화 답변의 base64 제외,
+    image_path 같은 일반 키는 유지
+  - tests/test_task_planner.py (1건): 3MB 단계 메시지가 다음 단계 프롬프트에서 잘리는지
+
+검증:
+- 신규 테스트 6건: 수정 전 5 failed → 수정 후 통과
+- answer/task_planner 관련 테스트 56 passed, 2 skipped
+- robo_claw_agent 전체(로컬, ROS 미설치): 548 passed / 54 skipped,
+  실패 14건·수집 오류 10건은 수정 전과 목록이 같은 ROS 의존 항목
+- Ruff check 통과
+
+변경 파일:
+- src/robo_claw_agent/robo_claw_agent/answer.py
+- src/robo_claw_agent/robo_claw_agent/agent_node/task_planner.py
+- src/robo_claw_agent/tests/test_result_binary_omission.py (신규)
+- src/robo_claw_agent/tests/test_task_planner.py
+- CHANGE_LOG.md
+
+참고(이번 범위 밖):
+- 같은 로그에서 1단계 LLM이 3단계(analyze_scene)까지 미리 실행했고, 요약 라운드가 답변 대신
+  스킬 계획을 반환했다(planner 동작). 로봇에 map 프레임이 없어 /odom 으로 대체 중이다.
