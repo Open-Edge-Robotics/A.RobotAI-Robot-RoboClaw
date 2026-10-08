@@ -1,4 +1,4 @@
-"""CLOiD 로봇 기본 프로필(cloid_config.yaml / ROBOT_LIMITS.cloid.json / SKILLS.cloid.md) 검증.
+"""CLOiD 로봇 기본 프로필(cloid_config.yaml / ROBOT_LIMITS.cloid.json / SKILLS.cloid.<개체>.md) 검증.
 
 CLOiD 는 ROS 2 토픽 이름과 제어 경로가 기존 stretch3/former/butler 프로필과 다르다.
 프로필 파일은 로봇마다 손으로 관리되므로, 오탈자나 launch 배선 누락이 실제 로봇에서
@@ -35,7 +35,9 @@ _LAUNCH_FILE = _PKG_DIR / "launch" / "robo_claw.launch.py"
 
 _CLOID_CONFIG = _CONFIG_DIR / "cloid_config.yaml"
 _CLOID_LIMITS = _CONFIG_DIR / "ROBOT_LIMITS.cloid.json"
-_CLOID_SKILLS = _CONFIG_DIR / "SKILLS.cloid.md"
+# CLOiD 는 개체 상태가 달라 스킬 가이드를 1호/2호로 분리한다.
+_CLOID_SKILLS_UNIT_1 = _CONFIG_DIR / "SKILLS.cloid.1.md"
+_CLOID_SKILLS_UNIT_2 = _CONFIG_DIR / "SKILLS.cloid.2.md"
 
 
 def _load_launch_module():
@@ -98,10 +100,35 @@ def _run_launch_cloid() -> tuple[LaunchContext, list]:
 # ── 프로필 파일 자체 검증 ──
 
 
-@pytest.mark.parametrize("path", [_CLOID_CONFIG, _CLOID_LIMITS, _CLOID_SKILLS])
+@pytest.mark.parametrize(
+    "path",
+    [_CLOID_CONFIG, _CLOID_LIMITS, _CLOID_SKILLS_UNIT_1, _CLOID_SKILLS_UNIT_2],
+)
 def test_cloid_profile_files_exist(path: Path) -> None:
     assert path.is_file(), f"CLOiD 프로필 파일이 없습니다: {path}"
     assert path.read_text(encoding="utf-8").strip(), f"CLOiD 프로필 파일이 비어 있습니다: {path}"
+
+
+def test_cloid_unit_skill_guides_differ_by_upper_body_state() -> None:
+    """1호는 상체 모션 사용 가능, 2호는 팔·상체 사용 불가로 구분되어야 한다."""
+    unit_1 = _CLOID_SKILLS_UNIT_1.read_text(encoding="utf-8")
+    unit_2 = _CLOID_SKILLS_UNIT_2.read_text(encoding="utf-8")
+
+    # 1호: 주행과 상체(팔·waist·neck) 모션을 모두 사용할 수 있다.
+    assert "1호" in unit_1
+    assert "execute_cloid_motion" in unit_1
+    assert "사용할 수 있으며" in unit_1 or "모두 사용 가능" in unit_1
+
+    # 2호: 상체 구동 오류로 팔·상체 동작 경로를 사용할 수 없다.
+    assert "2호" in unit_2
+    assert "상체 구동 오류" in unit_2
+    assert "execute_cloid_motion" in unit_2
+    assert "사용할 수 없는 동작" in unit_2
+    # 2호 배포에서 정리 표시 모션을 끄도록 안내해야 한다.
+    assert "cloid_cleanup_indicator_enabled=false" in unit_2
+
+    # 두 문서는 서로 다른 개체 전용이므로 동일 문서를 공유하지 않는다.
+    assert unit_1 != unit_2
 
 
 def test_cloid_config_sensor_mapping_is_consistent() -> None:
@@ -159,7 +186,7 @@ def test_launch_binds_cloid_profiles_to_agent_node() -> None:
     context, entities = _run_launch_cloid()
     agent = _evaluated_params(context, _find_node(entities, "agent_node"))
 
-    assert str(agent["skills_guide_file"]).endswith("SKILLS.cloid.md")
+    assert str(agent["skills_guide_file"]).endswith("SKILLS.cloid.1.md")
     assert str(agent["robot_limits_file"]).endswith("ROBOT_LIMITS.cloid.json")
 
     # cloid_config.yaml 의 카메라/IMU 토픽을 launch 가 덮어쓰지 않아야 한다.
@@ -170,6 +197,23 @@ def test_launch_binds_cloid_profiles_to_agent_node() -> None:
     # 로봇 전용 모션 스킬은 CLOi 프로필에만 주입하며 Butler 스크립트 스킬은 제외한다.
     assert "robo_claw_agent.skills.cloid_motion_skill" in agent["skill_modules"]
     assert "robo_claw_agent.skills.butler_skill" not in agent["skill_modules"]
+
+
+def test_launch_explicit_skills_guide_selects_unit_2() -> None:
+    """2호 개체는 skills_guide_file 로 개체 전용 가이드를 명시해야 한다."""
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+    context = _build_context(
+        launch_description,
+        {
+            "robot_config": "cloid",
+            "skills_guide_file": str(_CLOID_SKILLS_UNIT_2),
+        },
+    )
+    entities = module._launch_setup(context)  # noqa: SLF001
+    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+
+    assert str(agent["skills_guide_file"]).endswith("SKILLS.cloid.2.md")
 
 
 def test_launch_explicit_topic_override_wins() -> None:

@@ -114,7 +114,30 @@ RC_AGENT_ID=cloi02
 | :--- | :--- |
 | `cloid_config.yaml` | core/agent 센서·토픽, agent 카메라, 조작 활성화 및 정리 표시 모션 설정 |
 | `ROBOT_LIMITS.cloid.json` | 주행 한계와 URDF(hmc_v2_hand) 기준 팔·waist·neck 조인트 하드 한계 |
-| `SKILLS.cloid.md` | CLOiD 전용 스킬 가이드(런타임 주입) |
+| `SKILLS.cloid.1.md` | CLOiD 1호 전용 스킬 가이드(주행과 CLOi 등록 상체 모션 사용 가능) |
+| `SKILLS.cloid.2.md` | CLOiD 2호 전용 스킬 가이드(팔·상체 구동 오류, 주행·인지·조회·정지 전용) |
+
+### 개체별 스킬 가이드 선택
+
+CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체 상태가 달라 스킬 가이드를 1호/2호로
+분리했습니다. 하드웨어·토픽 설정(`cloid_config.yaml`, `ROBOT_LIMITS.cloid.json`)은 두
+개체가 공유하고, 런타임에 주입되는 스킬 가이드만 개체별로 지정합니다.
+
+- `skills_guide_file`(또는 `RC_SKILLS_GUIDE_FILE`)을 지정하지 않고 `robot_config:=cloid`
+  로 기동하면 launch 는 `SKILLS.cloid.md` 를 먼저 찾고, 없으면 `SKILLS.cloid.1.md` 를
+  1호 기본값으로 사용하며 개체 번호 미지정 경고를 출력합니다.
+- 2호는 `RC_SKILLS_GUIDE_FILE` 로 2호 문서를 명시합니다.
+
+```dotenv
+RC_ROBOT_CONFIG=cloid
+RC_AGENT_ID=cloi02
+RC_SKILLS_GUIDE_FILE=/ros2_ws/src/robo_claw_bringup/config/SKILLS.cloid.2.md
+```
+
+- 설정서버로 기동하는 배포는 서버가 내려주는 `SKILLS.md` 내용이 우선하므로, 2호
+  디바이스 설정에는 `SKILLS.cloid.2.md` 내용을 등록합니다.
+- 2호 배포에서는 상체 표시 모션이 발행되지 않도록 `cloid_cleanup_indicator_enabled` 를
+  `false` 로 두고 `cloid_cleanup_indicator_motion_ids_json` allowlist 를 비웁니다.
 
 CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 전제).
 
@@ -137,6 +160,10 @@ CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 
 관찰과 위임 시도가 끝난 뒤 작업 표시용으로 승인된 모션을 하나 무작위 선택할 수 있습니다. 기본 후보는 `scan`(ID 22)과 `task ready pose`(ID 128)이며, 이름과 ID가 현재 카탈로그와 일치하고 `pre_id`가 없는 경우에만 허용합니다. `wipe_1`(ID 59)은 천을 집는 실제 조작 모션이므로 표시용 풀에서 제외합니다. 식탁 닦기 동작 `wipe_2`(ID 60)도 `wipe_1`을 선행 조건으로 요구하므로 제외합니다.
 
 이 모션은 작업 중임을 표현할 뿐 정리 동작이나 완료 증거가 아닙니다. CLOi의 `MotionCmd`는 완료 응답을 제공하지 않으므로 작업당 한 번만 발행하며, 응답에는 VLA 미구현 및 실제 정리 미확인을 표시합니다. `cloid_config.yaml`의 `cloid_cleanup_indicator_enabled`와 `cloid_cleanup_indicator_motion_ids_json`으로 기능과 후보 ID를 제한합니다. 일반 관절 조작을 활성화하기 위해 `manipulation_enabled`를 변경하지 않습니다.
+
+2호는 팔·상체 구동 오류로 표시 모션(`scan` ID 22, `task ready pose` ID 128)도 상체를
+움직이므로 이 기능을 사용하지 않습니다. 2호의 `tidy_home`은 정리 대상 관찰과 동료 위임까지만
+수행하며, 자세한 제약은 `SKILLS.cloid.2.md`에 정리되어 있습니다.
 
 ## x64 DevBox SIL
 

@@ -216,10 +216,26 @@ def _launch_setup(context, *args, **kwargs):
     skills_guide_file = LaunchConfiguration("skills_guide_file").perform(context)
     # robot_config 전용 스킬 가이드 기본값 (예: stretch3 → SKILLS.stretch3.md)
     # 명시적으로 skills_guide_file 이 지정되지 않은 경우에만 per-robot 가이드를 사용한다.
+    # CLOiD 처럼 같은 기종의 개체별 문서(SKILLS.<robot_config>.<개체번호>.md)를 두는
+    # 프로필은 개체 번호를 기동 인자로 지정할 수 없으므로, 기본값은 1호 문서로 둔다.
+    # 다른 개체는 skills_guide_file(또는 RC_SKILLS_GUIDE_FILE)로 명시한다.
     if not skills_guide_file:
-        config_skills_guide = os.path.join(bringup_share, "config", f"SKILLS.{robot_config}.md")
-        if os.path.exists(config_skills_guide):
+        for guide_name in (
+            f"SKILLS.{robot_config}.md",
+            f"SKILLS.{robot_config}.1.md",
+        ):
+            config_skills_guide = os.path.join(bringup_share, "config", guide_name)
+            if not os.path.exists(config_skills_guide):
+                continue
             skills_guide_file = config_skills_guide
+            if guide_name.endswith(".1.md"):
+                print(
+                    "[RoboClaw][WARN] 개체 번호가 지정되지 않아 "
+                    f"{guide_name} 을(를) 스킬 가이드 기본값으로 사용합니다. "
+                    "다른 개체는 skills_guide_file:=<개체 가이드 경로> 로 지정하세요.",
+                    file=sys.stderr,
+                )
+            break
     robot_limits_file = LaunchConfiguration("robot_limits_file").perform(context)
     # robot_config 전용 limits 파일 기본값 (예: stretch3 → ROBOT_LIMITS.stretch3.json)
     if not robot_limits_file:
