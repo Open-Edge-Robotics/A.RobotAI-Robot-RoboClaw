@@ -119,12 +119,14 @@ RUN pip3 install \
 ARG INSTALL_LAYA=false
 ARG LAYA_VERSION=0.3.28
 ARG LAYA_TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG LAYA_TORCH_SPEC="torch>=2.0"
 ARG LAYA_PREFETCH_REPOS=""
 ENV HF_HOME=/opt/hf
 COPY docker/laya/install_laya.sh /tmp/install_laya.sh
 RUN if [ "${INSTALL_LAYA}" = "true" ]; then \
       LAYA_VERSION="${LAYA_VERSION}" \
       LAYA_TORCH_INDEX_URL="${LAYA_TORCH_INDEX_URL}" \
+      LAYA_TORCH_SPEC="${LAYA_TORCH_SPEC}" \
       LAYA_EXTRA_CONSTRAINTS="numpy>=1.24.0,<2.0.0" \
       LAYA_PREFETCH_REPOS="${LAYA_PREFETCH_REPOS}" \
       bash /tmp/install_laya.sh; \

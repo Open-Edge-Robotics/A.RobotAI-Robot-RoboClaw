@@ -9,9 +9,12 @@
 #   LAYA_TORCH_INDEX_URL    torch 휠 인덱스. 기본은 CPU 전용 인덱스.
 #                           - CPU (amd64/arm64)        : https://download.pytorch.org/whl/cpu
 #                           - CUDA (x86 엣지 서버 등)   : https://download.pytorch.org/whl/cu128 등
-#                           - CUDA (Thor, aarch64 SBSA) : JetPack 의 CUDA 버전에 맞는 aarch64 CUDA 인덱스
+#                           - Jetson JetPack 6 (L4T R36, Python 3.10) : https://pypi.jetson-ai-lab.io/jp6/cu126
+#                             (CUDA 12.8/12.9 설치 시 jp6/cu128, jp6/cu129)
+#                           - Jetson JetPack 7 (L4T R38+, SBSA, Python 3.12) : https://pypi.jetson-ai-lab.io/sbsa/cu130
 #                           - pypi                      : PyPI 기본 torch (amd64 에서는 CUDA 라이브러리 포함)
-#   LAYA_TORCH_SPEC         torch 요구사항 (기본 "torch>=2.0")
+#                           Jetson 인덱스는 --index-url 로만 사용한다. PyPI 와 섞으면 CPU 용 torch 가 설치될 수 있다.
+#   LAYA_TORCH_SPEC         torch 요구사항 (기본 "torch>=2.0", 예: "torch==2.8.0")
 #   LAYA_EXTRA_CONSTRAINTS  laya 설치 시 함께 지킬 요구사항 (예: robo-claw 이미지의 "numpy>=1.24.0,<2.0.0")
 #   LAYA_PREFETCH_REPOS     빌드 시 미리 받을 Hugging Face 저장소 ID(공백 구분). 폐쇄망 배포용. 기본 없음.
 #                           HF_HOME 아래에 저장된다.

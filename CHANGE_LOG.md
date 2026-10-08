@@ -3,7 +3,48 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
-기간: **2026-02-24 ~ 2026-10-06**
+기간: **2026-02-24 ~ 2026-10-08**
+
+## 2026-10-08 — Laya 단독 검증 환경과 테스트 케이스
+
+- **조치**:
+  - `scripts/system1_eval.py`: 인증 서버를 지원한다. `--api-key`, `--env-file`(dotenv의 `SYSTEM1_API_KEY`/`LAYA_API_KEY`,
+    `SYSTEM1_ENDPOINT`/`LAYA_ENDPOINT`)을 추가했고, endpoint는 `LAYA_ENDPOINT`도 인식한다. 키 값은 출력하지 않고 출처만 표시한다.
+  - `validation/system1/test_laya_live.py`: robo-claw 없이 실제 Laya 서버를 검증하는 라이브 테스트 11건(연결, 인증 401,
+    choice/noul 스키마, 한국어 → multilingual, robo-claw 질문 세트, 선택지 상한 413, warm 지연 p95, 질문 단위 정확도, 라우터
+    오실행률). 엔드포인트가 없으면 전체 skip한다.
+  - `validation/system1/laya_cases.jsonl`: 질문 단위 정답 33건(intent 27, skill 13, ambiguous 6 판정).
+  - `validation/system1/run_laya_tests.sh`: 라이브 테스트 + 규칙/Laya 비교 평가를 한 번에 실행하고 JSON 리포트를 남긴다.
+  - `docs/SYSTEM1_LAYA_DOCKER.md` 4.1절에 사용법을 추가했다.
+- **검증**: `test_system1_eval_script.py`에 dotenv 파싱, 키 우선순위, "키는 Bearer로 보내고 출력하지 않음" 테스트 3건을 추가했다
+  (System 1 관련 단위 테스트 60건 통과). 가짜 Laya 서버로 라이브 테스트 11건 통과를 확인했다.
+- **실서버 결과** (`http://192.168.50.212:8000`, 2026-10-08, robo-claw 질문 세트 readonly):
+  - 서버: `device=cuda`, multilingual 체크포인트, 인증 정상(키 없음/틀린 키 401), 라이브 테스트 11건 통과
+  - 지연(네트워크 포함, warm): p50 98.6ms, p95 128.2ms → `SYSTEM1_TIMEOUT_MS` 약 200ms 이상 권장
+  - 질문 단위 정확도: intent 66.7%(18/27), skill 84.6%(11/13), ambiguous 66.7%(4/6)
+  - 라우터(기본 임계값): correct 17 / escalated 15 / wrong 0 / error 0. 규칙 라우터(correct 18)와 비슷하다. 조회 명령의 intent
+    confidence가 0.04~0.57로 낮아(`single_skill` 기준 0.85) 대부분 LLM으로 넘어가고, 인사 2건은 0.86~0.87로 기준(0.90)에
+    조금 못 미친다. 오실행은 없었다.
+  - 주요 오답: 조회 명령을 `question`/`smalltalk`로 분류, `get_status`↔`rag_status` 혼동("상태"), 일부 복합 명령을 `single_skill`로
+    분류(robo-claw는 복합 명령 가드로 모델 호출 전에 LLM으로 보냄), "그거 좀 해줘"를 모호하지 않다고 판단.
+
+## 2026-10-08 — Laya Jetson GPU 이미지: torch 인덱스와 베이스 이미지 정리
+
+- **조치 (`docker/laya/Dockerfile`)**:
+  - 베이스 이미지에 `python3`/`pip`이 없으면 apt로 설치하는 단계를 추가했다(`l4t-jetpack`, `nvidia/cuda` 베이스 대응).
+  - torch 버전을 고정하는 빌드 인자 `LAYA_TORCH_SPEC`(기본 `torch>=2.0`, 예: `torch==2.8.0`)을 추가했다. 루트 `Dockerfile`의
+    `INSTALL_LAYA` 경로에도 같은 인자를 전달한다.
+  - 헤더 주석에 CPU, x86 GPU, JetPack 6, JetPack 7 빌드 예시를 넣었다.
+- **조치 (`docker/laya/install_laya.sh`)**: 인덱스 주석에 Jetson AI Lab 인덱스(`jp6/cu126` 등, `sbsa/cu130`)와 `--index-url` 전용
+  사용 이유를 추가했다.
+- **문서 (`docs/SYSTEM1_LAYA_DOCKER.md`)**: 2.1절 확인 명령을 정리했다. 2.3절에 L4T → JetPack → CUDA → Python → torch 인덱스 →
+  베이스 이미지 대응표를 추가했다(JetPack 6.x: `https://pypi.jetson-ai-lab.io/jp6/cu126`, cp310 / JetPack 7: `.../sbsa/cu130`,
+  cp312 / JetPack 6.0: 대응 인덱스 없음). JetPack 6/7별 빌드 명령, GPU 확인 절차, 관련 문제 해결 항목, 참고 링크를 추가했다.
+  예전 주소 `pypi.jetson-ai-lab.dev`는 쓸 수 없음을 명시했다.
+- **확인**: 인덱스 목록과 torch 휠(`jp6/cu126`: 2.8.0~2.11.0 cp310, `sbsa/cu130`: 2.9.0~2.11.0 cp312)은 2026-10-08에
+  인덱스 페이지에서 확인했다.
+- **미검증**: 이미지 빌드와 Jetson에서의 GPU 추론은 실행하지 못했다. 베이스 이미지 태그(`l4t-jetpack` r36.4, JetPack 7용
+  CUDA 13 이미지)는 NGC 카탈로그에서 호스트에 맞게 골라야 한다.
 
 ## 2026-10-06 — Laya 서버 Docker 실행 가이드
 

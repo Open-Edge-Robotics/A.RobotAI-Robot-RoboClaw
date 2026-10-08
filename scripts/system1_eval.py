@@ -14,6 +14,13 @@ ROS 2 없이 실행된다.
     python3 scripts/system1_eval.py --router both --endpoint http://localhost:8000 \\
         --scope navigation --json-out /tmp/system1_eval.json
 
+    # 인증을 켠 서버(LAYA_API_KEY). 키는 .env 에서 읽고 화면에 출력하지 않는다.
+    python3 scripts/system1_eval.py --router laya --endpoint http://192.168.50.212:8000 --env-file .env
+
+API 키 우선순위: ``--api-key`` > 환경변수 ``SYSTEM1_API_KEY`` > ``LAYA_API_KEY`` >
+``--env-file`` 의 ``SYSTEM1_API_KEY`` > ``LAYA_API_KEY``.
+endpoint 우선순위: ``--endpoint`` > ``SYSTEM1_ENDPOINT`` > ``LAYA_ENDPOINT`` > ``--env-file`` 의 같은 키.
+
 판정 기준(케이스의 ``expected`` 와 비교):
 
 * correct   : kind/skill/params 가 기대와 일치
@@ -40,6 +47,46 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENT_SRC = ROOT / "src" / "robo_claw_agent"
 DEFAULT_CASES = ROOT / "validation" / "system1" / "router_cases.jsonl"
 DEFAULT_CONTEXT = ROOT / "validation" / "system1" / "router_eval_context.json"
+
+
+API_KEY_NAMES = ("SYSTEM1_API_KEY", "LAYA_API_KEY")
+ENDPOINT_NAMES = ("SYSTEM1_ENDPOINT", "LAYA_ENDPOINT")
+
+
+def read_env_file(path: Path | None) -> dict[str, str]:
+    """dotenv 형식(KEY=VALUE) 파일을 읽는다. 없는 파일이면 빈 dict. 값은 출력하지 않는다."""
+    if path is None or not Path(path).is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw in Path(path).read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        values[key.strip()] = value
+    return values
+
+
+def resolve_setting(
+    explicit: str | None, names: tuple[str, ...], env: Any, env_file: dict[str, str]
+) -> tuple[str, str]:
+    """(값, 출처)를 돌려준다. 출처는 로그용이며 값 자체는 출력하지 않는다."""
+    if explicit:
+        return explicit, "argument"
+    for name in names:
+        if env.get(name):
+            return env[name], f"env {name}"
+    for name in names:
+        if env_file.get(name):
+            return env_file[name], f"env-file {name}"
+    return "", ""
 
 
 def _import_routers():
@@ -195,7 +242,15 @@ def _print_report(result: dict[str, Any], verbose: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="System 1 사전 라우터 평가")
     parser.add_argument("--router", choices=["rule", "laya", "both"], default="rule")
-    parser.add_argument("--endpoint", default=os.environ.get("SYSTEM1_ENDPOINT", ""))
+    parser.add_argument(
+        "--endpoint", default="", help="Laya 서버 주소 (예: http://192.168.50.212:8000)"
+    )
+    parser.add_argument(
+        "--api-key", default="", help="Laya API 키. 가능하면 --env-file 이나 환경변수를 사용"
+    )
+    parser.add_argument(
+        "--env-file", type=Path, help="SYSTEM1_/LAYA_ API_KEY·ENDPOINT 를 읽을 dotenv 파일"
+    )
     parser.add_argument("--scope", choices=["readonly", "navigation"], default="readonly")
     parser.add_argument(
         "--timeout-ms", type=float, default=3000.0, help="평가 시에는 여유 있게(기본 3000)"
@@ -217,11 +272,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.router in ("rule", "both"):
         routers.append(fast_router.RuleRouter())
     if args.router in ("laya", "both"):
-        if not args.endpoint:
-            parser.error("--router laya/both 에는 --endpoint 또는 SYSTEM1_ENDPOINT 가 필요합니다")
+        file_env = read_env_file(args.env_file)
+        endpoint, _ = resolve_setting(args.endpoint, ENDPOINT_NAMES, os.environ, file_env)
+        api_key, key_source = resolve_setting(args.api_key, API_KEY_NAMES, os.environ, file_env)
+        if not endpoint:
+            parser.error(
+                "--router laya/both 에는 --endpoint, SYSTEM1_ENDPOINT 또는 LAYA_ENDPOINT 가 필요합니다"
+            )
+        print(f"Laya endpoint: {endpoint}  auth: {'on (' + key_source + ')' if api_key else 'off'}")
         env = {
             "SYSTEM1_ROUTER": "laya",
-            "SYSTEM1_ENDPOINT": args.endpoint,
+            "SYSTEM1_ENDPOINT": endpoint,
+            "SYSTEM1_API_KEY": api_key,
             "SYSTEM1_SCOPE": args.scope,
             "SYSTEM1_TIMEOUT_MS": str(args.timeout_ms),
         }

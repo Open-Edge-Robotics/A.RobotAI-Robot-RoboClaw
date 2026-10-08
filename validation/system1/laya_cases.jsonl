@@ -1,0 +1,33 @@
+{"id": "intent-smalltalk-01", "instruction": "안녕", "intent": "smalltalk"}
+{"id": "intent-smalltalk-02", "instruction": "안녕하세요 반가워요", "intent": "smalltalk"}
+{"id": "intent-smalltalk-03", "instruction": "고마워요 수고했어", "intent": "smalltalk"}
+{"id": "intent-smalltalk-04", "instruction": "잘했어 최고야", "intent": "smalltalk"}
+{"id": "intent-smalltalk-05", "instruction": "thanks a lot", "intent": "smalltalk"}
+{"id": "intent-smalltalk-06", "instruction": "오늘 하루도 화이팅", "intent": "smalltalk"}
+{"id": "intent-question-01", "instruction": "너는 어떤 일을 할 수 있어?", "intent": "question"}
+{"id": "intent-question-02", "instruction": "왜 아까 멈췄어?", "intent": "question"}
+{"id": "intent-question-03", "instruction": "로봇 청소기와 너는 뭐가 달라?", "intent": "question"}
+{"id": "intent-question-04", "instruction": "배터리가 몇 퍼센트 이하면 충전하러 가는 게 좋아?", "intent": "question"}
+{"id": "skill-status-01", "instruction": "지금 배터리 얼마나 남았어?", "intent": "single_skill", "skill": "get_status"}
+{"id": "skill-status-02", "instruction": "로봇 상태 알려줘", "intent": "single_skill", "skill": "get_status"}
+{"id": "skill-status-03", "instruction": "현재 좌표 알려줘", "intent": "single_skill", "skill": "get_status"}
+{"id": "skill-where-01", "instruction": "여기 어디야?", "intent": "single_skill", "skill": "identify_location"}
+{"id": "skill-where-02", "instruction": "지금 있는 곳 이름이 뭐야", "intent": "single_skill", "skill": "identify_location"}
+{"id": "skill-time-01", "instruction": "지금 몇 시야?", "intent": "single_skill", "skill": "get_datetime"}
+{"id": "skill-time-02", "instruction": "오늘 날짜 알려줘", "intent": "single_skill", "skill": "get_datetime"}
+{"id": "skill-rag-01", "instruction": "저장된 지식 목록 보여줘", "intent": "single_skill", "skill": "rag_list"}
+{"id": "skill-rag-02", "instruction": "벡터 DB 상태 확인해줘", "intent": "single_skill", "skill": "rag_status"}
+{"id": "skill-peer-01", "instruction": "연결된 동료 로봇 누구 있어?", "intent": "single_skill", "skill": "list_peer_robots"}
+{"id": "skill-topic-01", "instruction": "ROS 토픽 목록 보여줘", "intent": "single_skill", "skill": "list_topics"}
+{"id": "skill-none-01", "instruction": "주방으로 가줘", "intent": "single_skill", "skill": "none"}
+{"id": "skill-none-02", "instruction": "테이블 위 컵 집어줘", "intent": "single_skill", "skill": "none"}
+{"id": "multi-01", "instruction": "회의실로 이동한 다음 컵을 집어줘", "intent": "multi_step"}
+{"id": "multi-02", "instruction": "배터리 확인하고 충전대로 가", "intent": "multi_step"}
+{"id": "multi-03", "instruction": "거실 사진 찍어서 보내고 주방으로 이동해", "intent": "multi_step"}
+{"id": "multi-04", "instruction": "집 안을 한 바퀴 돌면서 열린 창문이 있는지 확인해줘", "intent": "multi_step"}
+{"id": "ambiguous-01", "instruction": "그거 좀 해줘", "ambiguous": true}
+{"id": "ambiguous-02", "instruction": "저기로 가", "ambiguous": true}
+{"id": "ambiguous-03", "instruction": "아까 그거 다시", "ambiguous": true}
+{"id": "clear-01", "instruction": "지금 배터리 얼마나 남았어?", "ambiguous": false}
+{"id": "clear-02", "instruction": "지금 몇 시야?", "ambiguous": false}
+{"id": "clear-03", "instruction": "ROS 토픽 목록 보여줘", "ambiguous": false}
