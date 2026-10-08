@@ -196,7 +196,7 @@ class InitializeMapStatus(BTNode):
 
 
 class EnsurePlacesRegistered(BTNode):
-    """맵이 준비되었을 때, 로봇이 돌아다닐 수 있는 지점을 발굴하여 메모리에 등록."""
+    """시맨틱 맵/RAG에 이미 기억된 순찰 장소를 메모리에서 사용할 수 있게 준비한다."""
 
     def __init__(self, skill: BaseSkill) -> None:
         super().__init__("EnsurePlacesRegistered")
@@ -210,94 +210,80 @@ class EnsurePlacesRegistered(BTNode):
         if not node:
             return NodeStatus.FAILURE
 
-        has_semantic_places = False
-        has_map_generated_places = False
-        if hasattr(node, "_memory"):
+        now = time.monotonic()
+        if now < self._blackboard.get("place_retry_after", 0.0):
+            return NodeStatus.SUCCESS
+
+        memory = getattr(node, "_memory", None)
+        semantic_places: list[dict[str, Any]] = []
+        map_generated_places: list[dict[str, Any]] = []
+        if memory is not None:
             try:
-                all_objs = node._memory.get_all_objects()
-                semantic_places, map_generated_places = _split_semantic_places(all_objs)
-                has_semantic_places = bool(semantic_places)
-                has_map_generated_places = bool(map_generated_places)
-            except Exception as e:
-                logger.warning("[BT] Failed to query existing registered locations: %s", e)
+                semantic_places, map_generated_places = _split_semantic_places(
+                    memory.get_all_objects()
+                )
+            except Exception as exc:
+                logger.warning("[BT] Failed to query remembered locations: %s", exc)
 
-        if has_semantic_places:
-            logger.info("[BT] Semantic map locations already exist — skipping automatic map-based waypoint discovery.")
+        known_names = {
+            str(place.get("name", "")).strip().casefold()
+            for place in semantic_places + map_generated_places
+        }
+        known_coordinates = {
+            (round(float(place["position"]["x"]), 3), round(float(place["position"]["y"]), 3))
+            for place in semantic_places + map_generated_places
+        }
+        rag_candidates = (
+            _extract_rag_location_candidates(memory, limit=5) if memory is not None else []
+        )
+        new_rag_candidates = []
+        for candidate in rag_candidates:
+            name = str(candidate.get("name", "")).strip()
+            pos = candidate["position"]
+            coordinate = (round(float(pos["x"]), 3), round(float(pos["y"]), 3))
+            if name.casefold() in known_names or coordinate in known_coordinates:
+                continue
+            new_rag_candidates.append(candidate)
+            known_names.add(name.casefold())
+            known_coordinates.add(coordinate)
+
+        if memory is not None:
+            for candidate in new_rag_candidates:
+                pos = candidate["position"]
+                source_metadata = candidate.get("metadata", {})
+                memory.add_object_location(
+                    candidate["name"],
+                    float(pos["x"]),
+                    float(pos["y"]),
+                    metadata={
+                        **source_metadata,
+                        "source": "autonomous_rag_location",
+                        "frame_id": source_metadata.get("frame_id", "map"),
+                        "kind": "place",
+                    },
+                )
+
+        if semantic_places or new_rag_candidates or map_generated_places:
             self._blackboard["places_registered"] = True
-            self._blackboard["place_source_priority"] = "semantic_map"
-            return NodeStatus.SUCCESS
-
-        if hasattr(node, "_memory"):
-            rag_candidates = _extract_rag_location_candidates(node._memory, limit=5)
-            if rag_candidates:
-                for candidate in rag_candidates:
-                    pos = candidate["position"]
-                    node._memory.add_object_location(
-                        candidate["name"],
-                        float(pos["x"]),
-                        float(pos["y"]),
-                        metadata={
-                            **candidate.get("metadata", {}),
-                            "source": "autonomous_rag_location",
-                            "frame_id": candidate.get("metadata", {}).get("frame_id", "map"),
-                            "kind": "place",
-                        },
-                    )
-                logger.info("[BT] Synced %d RAG location candidates to the semantic map.", len(rag_candidates))
-                self._blackboard["places_registered"] = True
-                self._blackboard["place_source_priority"] = "rag"
-                return NodeStatus.SUCCESS
-
-        if has_map_generated_places:
-            logger.info("[BT] Reusing existing auto-discovered map waypoints.")
-            self._blackboard["places_registered"] = True
-            self._blackboard["place_source_priority"] = "map_generated"
-            return NodeStatus.SUCCESS
-
-        if not self._blackboard.get("has_map", False):
-            # RAG/시맨틱 장소는 OccupancyGrid 없이도 navigate_to에 사용할 수 있다.
-            logger.debug("[BT] No map available and no semantic/RAG places — skipping place discovery.")
-            return NodeStatus.SUCCESS
-
-        try:
-            logger.info("[BT] No semantic/RAG location candidates found — starting automatic map-based waypoint discovery.")
-            from nav_msgs.msg import OccupancyGrid
-
-            from .place_discovery import find_reachable_places
-
-            map_msg = self._skill.wait_for_message(
-                OccupancyGrid, "/map", timeout_sec=5.0, use_transient_local=True
+            sources = []
+            if semantic_places:
+                sources.append("semantic_map")
+            if new_rag_candidates:
+                sources.append("rag")
+            if map_generated_places:
+                sources.append("previously_saved_map_points")
+            self._blackboard["place_source_priority"] = "+".join(sources)
+            logger.info(
+                "[BT] Remembered patrol locations ready: semantic=%d rag=%d saved_map=%d",
+                len(semantic_places),
+                len(new_rag_candidates),
+                len(map_generated_places),
             )
-            if not map_msg:
-                logger.warning("[BT] Failed to acquire /map — cannot register location.")
-                return NodeStatus.SUCCESS
+            return NodeStatus.SUCCESS
 
-            pose = self._skill.get_map_pose()
-            selected = find_reachable_places(map_msg, pose)
-
-            if not selected:
-                logger.warning("[BT] No suitable navigable point found to register on the map.")
-            elif hasattr(node, "_memory"):
-                for i, (wx, wy, openness) in enumerate(selected, start=1):
-                    place_name = f"이동가능지점{i}"
-                    node._memory.add_object_location(
-                        place_name,
-                        wx,
-                        wy,
-                        metadata={
-                            "source": "autonomous_ensure_places",
-                            "frame_id": "map",
-                            "openness_m": round(openness, 2),
-                            "kind": "place",
-                        },
-                        aliases=[str(i), f"Place {i}", f"이동지점{i}"],
-                    )
-                self._skill.send_user_message(f"📍 지도를 바탕으로 이동 가능한 대표 장소 {len(selected)}곳을 자동으로 메모리에 등록했습니다.")
-
-            self._blackboard["places_registered"] = True
-            self._blackboard["place_source_priority"] = "map_generated"
-        except Exception as exc:
-            logger.exception("[BT] Failed to discover navigable point: %s", exc)
-            self._blackboard["places_registered"] = True
-
+        # Retry at a bounded rate because RAG may be large and new places can appear later.
+        self._blackboard["places_registered"] = False
+        self._blackboard["place_source_priority"] = ""
+        self._blackboard["place_retry_after"] = now + 30.0
+        logger.info("[BT] No remembered patrol locations available; using local observation.")
         return NodeStatus.SUCCESS

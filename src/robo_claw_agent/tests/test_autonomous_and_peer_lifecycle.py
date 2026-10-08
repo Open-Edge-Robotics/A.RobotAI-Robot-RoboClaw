@@ -185,6 +185,160 @@ def test_validate_decided_action_blocks_dangerous_and_recursive_skills():
 
 
 @pytest.mark.unit
+def test_validate_decided_action_always_rejects_explore():
+    skill = DummySkill()
+    skill.set_node(
+        SimpleNamespace(
+            _skills=SimpleNamespace(
+                has_skill=lambda name: True,
+                get_skill=lambda name: SimpleNamespace(terminal_behavior="sync"),
+            )
+        )
+    )
+    validator = ValidateDecidedAction(skill)
+    blackboard = {"decided_skill": "explore", "decided_params": {}}
+    validator._blackboard = blackboard
+
+    assert validator.tick() == NodeStatus.FAILURE
+    assert "explore" in blackboard["decision_invalid_reason"]
+
+
+@pytest.mark.unit
+def test_validate_decided_action_blocks_motion_without_patrol_destination():
+    skill = DummySkill()
+    skill.set_node(
+        SimpleNamespace(
+            _skills=SimpleNamespace(
+                has_skill=lambda name: True,
+                get_skill=lambda name: SimpleNamespace(
+                    terminal_behavior="sync",
+                    side_effects=("base_motion",),
+                ),
+            )
+        )
+    )
+    validator = ValidateDecidedAction(skill)
+    blackboard = {
+        "patrol_has_destination": False,
+        "decided_skill": "navigate_to",
+        "decided_params": {"x": 1.0, "y": 2.0},
+    }
+    validator._blackboard = blackboard
+
+    assert validator.tick() == NodeStatus.FAILURE
+    assert "제자리" in blackboard["decision_invalid_reason"]
+
+
+@pytest.mark.unit
+def test_validate_decided_action_accepts_local_safe_skill_without_destination():
+    skill = DummySkill()
+    skill.set_node(
+        SimpleNamespace(
+            _skills=SimpleNamespace(
+                has_skill=lambda name: True,
+                get_skill=lambda name: SimpleNamespace(
+                    terminal_behavior="sync",
+                    side_effects=(),
+                ),
+            )
+        )
+    )
+    validator = ValidateDecidedAction(skill)
+    blackboard = {
+        "patrol_has_destination": False,
+        "decided_skill": "say",
+        "decided_params": {"text": "주변을 관찰하고 있습니다."},
+    }
+    validator._blackboard = blackboard
+
+    assert validator.tick() == NodeStatus.SUCCESS
+
+
+@pytest.mark.unit
+def test_validate_decided_action_rejects_unremembered_motion_coordinate():
+    skill = DummySkill()
+    skill.set_node(
+        SimpleNamespace(
+            _memory=SimpleNamespace(get_all_objects=lambda: []),
+            _skills=SimpleNamespace(
+                has_skill=lambda name: name == "navigate_to",
+                get_skill=lambda name: SimpleNamespace(
+                    terminal_behavior="sync", side_effects=("base_motion",)
+                ),
+            ),
+        )
+    )
+    validator = ValidateDecidedAction(skill)
+    blackboard = {
+        "decided_skill": "navigate_to",
+        "decided_params": {"x": 20.0, "y": -10.0},
+    }
+    validator._blackboard = blackboard
+
+    assert validator.tick() == NodeStatus.FAILURE
+    assert "기억된 순찰 장소" in blackboard["decision_invalid_reason"]
+
+
+@pytest.mark.unit
+def test_validate_decided_action_accepts_remembered_motion_coordinate():
+    skill = DummySkill()
+    memory = SimpleNamespace(
+        get_all_objects=lambda: [
+            {
+                "name": "거실",
+                "position": {"x": 1.0, "y": 2.0},
+                "metadata": {"kind": "place"},
+            }
+        ]
+    )
+    skill.set_node(
+        SimpleNamespace(
+            _memory=memory,
+            _skills=SimpleNamespace(
+                has_skill=lambda name: name == "navigate_to",
+                get_skill=lambda name: SimpleNamespace(
+                    terminal_behavior="sync", side_effects=("base_motion",)
+                ),
+            ),
+        )
+    )
+    validator = ValidateDecidedAction(skill)
+    blackboard = {
+        "decided_skill": "navigate_to",
+        "decided_params": {"x": 1.05, "y": 1.98},
+    }
+    validator._blackboard = blackboard
+
+    assert validator.tick() == NodeStatus.SUCCESS
+
+
+@pytest.mark.unit
+def test_execute_decided_action_treats_none_as_explicit_noop():
+    skill = DummySkill()
+    called = []
+    skill.set_node(SimpleNamespace(_skills=SimpleNamespace(execute=lambda *a, **k: called.append(a))))
+    node = ExecuteDecidedAction(skill)
+    blackboard = {"decided_skill": "none", "decided_params": {}, "decided_reason": "새 작업 없음"}
+    node._blackboard = blackboard
+
+    assert node.tick() == NodeStatus.SUCCESS
+    assert called == []
+    assert blackboard["last_action_result"] == {"noop": True}
+
+
+@pytest.mark.unit
+def test_invalid_autonomous_request_does_not_claim_execution_slot():
+    skill = AutonomousActSkill()
+    skill.set_node(SimpleNamespace())
+    _AUTONOMOUS_ACTIVE.clear()
+
+    result = skill.execute({"mode": "unsupported"})
+
+    assert result["success"] is False
+    assert _AUTONOMOUS_ACTIVE.is_set() is False
+
+
+@pytest.mark.unit
 def test_validate_decided_action_validates_params():
     skill = DummySkill()
     dummy_target_skill = SimpleNamespace(

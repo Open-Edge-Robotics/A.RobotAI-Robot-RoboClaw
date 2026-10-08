@@ -37,7 +37,7 @@ def test_location_prompt_distinguishes_reverse_lookup_from_scene_description():
 
     rules = prompt.split("[파라미터 규칙]", 1)[1].split("[자동 전송 규칙]", 1)[0]
     numbers = [int(value) for value in re.findall(r"^([0-9]+)\. ", rules, re.MULTILINE)]
-    assert numbers == list(range(1, 52))
+    assert numbers == list(range(1, 53))
 
 
 class _Param:

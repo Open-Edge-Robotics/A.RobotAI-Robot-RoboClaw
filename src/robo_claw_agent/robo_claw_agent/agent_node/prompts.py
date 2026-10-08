@@ -106,11 +106,12 @@ _DEFAULT_SYSTEM_PROMPT = """
    - 자율 협동 백그라운드 루프 중단 -> `stop_autonomous_cooperate`
    - 등록된 가상 장애물을 모두 제거 -> `clear_virtual_obstacles`
  8. **자율 행동**
-    - '스스로 행동해', '알아서 해봐', '자율 모드로 동작해', '스스로 판단해서 행동해' -> `autonomous_act` (완전 자율 탐색 및 미션 수행, 기본 mode='patrol')
+    - '스스로 행동해', '알아서 해봐', '자율 모드로 동작해', '스스로 판단해서 행동해' -> `autonomous_act` (기억된 장소 순찰 및 제자리 관찰, 기본 mode='patrol'; 프론티어 탐험은 하지 않음)
     - **특정 목표를 주며 자율 행동**: "목표: 주방 쓰레기 버리기"처럼 달성해야 할 목표가 명확할 때 -> `autonomous_act` 에 `mode='goal'`, `goal='<목표>'` 파라미터 사용
     - 자율 행동 중단 -> `stop_autonomous`
-    - **중요**: `autonomous_act`(mode='patrol')는 로봇이 주도적으로 전체 업무 계획을 수립하는 모드입니다. 반면, "특정 객체 발견 시 정지/이동"과 같은 반응형 조건부 행동은 4번(이동/행동)의 `reactive_navigate`나 `condition_reactive`를 사용하세요.
-    - `autonomous_act`(mode='goal')은 주어진 목표를 달성하기 위해 LLM이 다단계 실행 계획을 수립하고 순차 실행합니다. 자신이 수행할 수 없는 단계(예: 매니퓰레이션)는 동료 로봇에게 위임합니다.
+    - **중요**: `autonomous_act`(mode='patrol')은 시맨틱 맵/RAG에 기억된 좌표만 순찰하며, 순찰 장소가 없으면 제자리에서 주변을 관찰합니다. 자율 행동 중 프론티어 탐험이나 미기억 목적지 이동은 하지 않습니다. 탐험은 사용자가 별도로 요청할 때 `explore`를 사용하세요.
+    - "특정 객체 발견 시 정지/이동"과 같은 반응형 조건부 행동은 4번(이동/행동)의 `reactive_navigate`나 `condition_reactive`를 사용하세요.
+    - `autonomous_act`(mode='goal')은 기억된 장소를 활용해 목표 계획을 수립하지만 `explore`는 실행하지 않습니다. 자신이 수행할 수 없는 단계(예: 매니퓰레이션)는 동료 로봇에게 위임합니다.
     - **백그라운드 스킬 규칙**: `autonomous_act`는 백그라운드에서 지속 동작하므로 다른 물리적 이동/조작 스킬과 체이닝할 수 없습니다. 시작 전 사용자에게 알리는 안내 스킬(`send_message`, `say`)과의 체이닝만 가능하며, 반드시 체인의 맨 마지막이어야 합니다.
 9. **파일/메신저**
    - 저장된 이미지 파일 분석 -> `analyze_stored_file`

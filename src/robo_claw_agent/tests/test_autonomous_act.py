@@ -1,12 +1,11 @@
 import json
+import threading
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytest.importorskip("rclpy")
-
-from unittest.mock import MagicMock, patch
-
-import pytest
 from robo_claw_agent.skills.autonomous_skill.actions import (
     EnsurePlacesRegistered,
     ExecuteDecidedAction,
@@ -23,7 +22,11 @@ from robo_claw_agent.skills.autonomous_skill.actions import (
 )
 from robo_claw_agent.skills.autonomous_skill.conditions import CheckHasMap
 from robo_claw_agent.skills.autonomous_skill.core import NodeStatus
-from robo_claw_agent.skills.autonomous_skill.patrol_nodes import PatrolNextPlaceNode
+from robo_claw_agent.skills.autonomous_skill.execution_nodes import LocalObservationNode
+from robo_claw_agent.skills.autonomous_skill.patrol_nodes import (
+    InterestingSceneGate,
+    PatrolNextPlaceNode,
+)
 
 
 @pytest.fixture
@@ -102,7 +105,7 @@ def test_ensure_places_registered_skips_when_no_map():
 
     status = node.tick()
     assert status == NodeStatus.SUCCESS
-    assert "places_registered" not in blackboard
+    assert blackboard["places_registered"] is False
 
 
 def test_ensure_places_registered_skips_when_already_exists(mock_node):
@@ -174,22 +177,22 @@ def test_ensure_places_registered_uses_rag_without_map():
     memory.add_object_location.assert_called_once()
 
 
-def test_ensure_places_registered_map_discovery_is_last_priority(mock_node):
+def test_ensure_places_registered_does_not_generate_waypoints_from_map(mock_node):
     mock_node._memory.get_all_objects.return_value = []
     mock_node._memory._vector_store.list_entries.return_value = []
     skill = MagicMock()
     skill.node = mock_node
-    skill.wait_for_message.return_value = None
 
     node = EnsurePlacesRegistered(skill)
-    blackboard = {"has_map": True, "places_registered": False}
+    blackboard = {"places_registered": False}
     node._blackboard = blackboard
 
     status = node.tick()
 
     assert status == NodeStatus.SUCCESS
-    assert blackboard.get("place_source_priority") is None
-    skill.wait_for_message.assert_called_once()
+    assert blackboard["places_registered"] is False
+    assert blackboard.get("place_source_priority") == ""
+    skill.wait_for_message.assert_not_called()
 
 
 def test_llm_decide_action_injects_history_and_places(mock_node):
@@ -244,6 +247,38 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
 
 
 
+def test_llm_decide_action_excludes_explore_and_motion_without_destination(mock_node):
+    mock_node._skills.list_skills.return_value = [
+        {"name": "explore", "description": "탐험"},
+        {"name": "navigate_to", "description": "이동"},
+        {"name": "say", "description": "음성 안내"},
+    ]
+    mock_node._llm.chat.return_value = (
+        '{"skill": "none", "params": {}, "reason": "제자리 관찰 유지"}'
+    )
+    mock_node._robot_soul = ""
+    skill = MagicMock()
+    skill.node = mock_node
+
+    node = LLMDecideAction(skill)
+    node._blackboard = {
+        "cycle_count": 1,
+        "task_queue": [],
+        "task_history": [],
+        "patrol_has_destination": False,
+        "scene_analysis": "사람이 보입니다.",
+        "detected_objects": ["person"],
+    }
+
+    assert node.tick() == NodeStatus.SUCCESS
+    system_prompt = mock_node._llm.chat.call_args[1]["system_prompt"]
+    skill_section = system_prompt.split("[사용 가능한 스킬]", 1)[1].split("[이동 후보", 1)[0]
+    assert "explore" not in skill_section
+    assert "navigate_to" not in skill_section
+    assert "say" in skill_section
+    assert node._blackboard["decided_skill"] == "none"
+
+
 def test_execute_decided_action_records_history(mock_node):
     skill = MagicMock()
     skill.node = mock_node
@@ -275,6 +310,7 @@ def test_split_semantic_places_excludes_vlm_detected_objects():
     objects = [
         {"name": "주방", "position": {"x": 1.0, "y": 2.0}, "metadata": {"source": "annotate_map", "kind": "place"}},
         {"name": "cup", "position": {"x": 1.3, "y": 2.1}, "metadata": {"source": "vlm", "kind": "object", "estimated": True}},
+        {"name": "가상장애물", "position": {"x": 2.0, "y": 2.0}, "metadata": {"source": "mark_virtual_obstacle", "type": "virtual_obstacle"}},
         {"name": "이동가능지점1", "position": {"x": 3.0, "y": 4.0}, "metadata": {"source": "autonomous_ensure_places", "kind": "place"}},
     ]
 
@@ -283,12 +319,13 @@ def test_split_semantic_places_excludes_vlm_detected_objects():
     semantic_names = [o["name"] for o in semantic_places]
     assert "주방" in semantic_names
     assert "cup" not in semantic_names
-    assert all(o["name"] != "cup" for o in map_generated_places)
+    assert "가상장애물" not in semantic_names
+    assert all(o["name"] not in {"cup", "가상장애물"} for o in map_generated_places)
     assert [o["name"] for o in map_generated_places] == ["이동가능지점1"]
 
 
 def test_extract_rag_location_candidates_excludes_blocked_coordinates():
-    """navigate_to 실패 시 저장되는 blocked_coordinate는 RAG 위치 후보에서 제외되어야 한다."""
+    """실패 좌표와 가상 장애물은 RAG 순찰 목적지 후보에서 제외해야 한다."""
     memory = MagicMock()
     memory._vector_store.list_entries.return_value = [
         {
@@ -299,6 +336,10 @@ def test_extract_rag_location_candidates_excludes_blocked_coordinates():
             "text": "이동 실패 좌표",
             "metadata": {"type": "blocked_coordinate", "kind": "blocked", "x": 9.0, "y": 9.0, "name": "실패지점"},
         },
+        {
+            "text": "가상 장애물 위치",
+            "metadata": {"type": "virtual_obstacle", "source": "mark_virtual_obstacle", "x": 8.0, "y": 8.0, "name": "장애물"},
+        },
     ]
 
     candidates = _extract_rag_location_candidates(memory, limit=5)
@@ -306,6 +347,7 @@ def test_extract_rag_location_candidates_excludes_blocked_coordinates():
     names = [c["name"] for c in candidates]
     assert "성공지점" in names
     assert "실패지점" not in names
+    assert "장애물" not in names
 
 
 def test_validate_decided_action_rejects_unregistered_skill():
@@ -352,7 +394,15 @@ def test_validate_decided_action_rejects_unresolvable_target():
 def test_validate_decided_action_accepts_resolvable_target():
     node = MagicMock()
     node._skills.has_skill.return_value = True
+    node._skills.get_skill.return_value.side_effects = ("base_motion",)
     node._memory = MagicMock()
+    node._memory.get_all_objects.return_value = [
+        {
+            "name": "주방",
+            "position": {"x": 1.0, "y": 2.0},
+            "metadata": {"kind": "place"},
+        }
+    ]
     skill = MagicMock()
     skill.node = node
 
@@ -371,6 +421,32 @@ def test_validate_decided_action_accepts_resolvable_target():
 
     assert status == NodeStatus.SUCCESS
     assert blackboard["decided_skill"] == "navigate_to"
+
+
+def test_validate_decided_action_rejects_resolvable_but_unremembered_target():
+    node = MagicMock()
+    node._skills.has_skill.return_value = True
+    node._skills.get_skill.return_value.side_effects = ("base_motion",)
+    node._memory = MagicMock()
+    node._memory.get_all_objects.return_value = []
+    skill = MagicMock()
+    skill.node = node
+
+    validate = ValidateDecidedAction(skill)
+    blackboard = {
+        "decided_skill": "navigate_to",
+        "decided_params": {"target_name": "가상장애물"},
+    }
+    validate._blackboard = blackboard
+
+    with patch(
+        "robo_claw_agent.skills.navigation_skill.core._resolve_target_coordinates",
+        return_value={"position": {"x": 8.0, "y": 8.0}, "metadata": {}},
+    ):
+        status = validate.tick()
+
+    assert status == NodeStatus.FAILURE
+    assert "기억된 순찰 장소" in blackboard["decision_invalid_reason"]
 
 
 def test_patrol_next_place_node_picks_oldest_last_seen():
@@ -430,6 +506,194 @@ def test_patrol_next_place_node_no_candidates_returns_success():
     assert status == NodeStatus.SUCCESS
     assert blackboard["patrol_last_place"] == ""
     assert blackboard["patrol_last_success"] is False
+    assert blackboard["patrol_has_destination"] is False
+    assert blackboard["stationary_observation_only"] is True
+
+
+def test_patrol_next_place_node_uses_remembered_rag_coordinates():
+    node = MagicMock()
+    memory = MagicMock()
+    places = []
+    memory.get_all_objects.side_effect = lambda: places
+    memory._vector_store.list_entries.return_value = [
+        {
+            "text": "거실 위치",
+            "metadata": {
+                "name": "거실",
+                "x": 1.5,
+                "y": -2.0,
+                "kind": "place",
+                "frame_id": "map",
+            },
+        }
+    ]
+
+    def save_place(name, x, y, metadata=None, **_kwargs):
+        places.append(
+            {
+                "name": name,
+                "position": {"x": x, "y": y},
+                "metadata": metadata or {},
+            }
+        )
+
+    memory.add_object_location.side_effect = save_place
+    node._memory = memory
+    skill = MagicMock()
+    skill.node = node
+    blackboard = {"places_registered": False}
+
+    ensure_places = EnsurePlacesRegistered(skill)
+    ensure_places._blackboard = blackboard
+    assert ensure_places.tick() == NodeStatus.SUCCESS
+
+    patrol_node = PatrolNextPlaceNode(skill)
+    patrol_node._blackboard = blackboard
+    with patch(
+        "robo_claw_agent.skills.navigation_skill.patrol.visit_place",
+        return_value=(True, "도착"),
+    ) as mock_visit:
+        status = patrol_node.tick()
+
+    assert status == NodeStatus.SUCCESS
+    mock_visit.assert_called_once_with(node, "거실")
+    assert blackboard["patrol_has_destination"] is True
+    assert blackboard["stationary_observation_only"] is False
+
+
+def test_patrol_next_place_node_cools_down_failed_destination():
+    node = MagicMock()
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {
+            "name": "거실",
+            "position": {"x": 1.0, "y": 2.0},
+            "metadata": {"kind": "place", "source": "annotate_map"},
+        }
+    ]
+    node._memory = memory
+    skill = MagicMock()
+    skill.node = node
+
+    patrol_node = PatrolNextPlaceNode(skill)
+    blackboard = {}
+    patrol_node._blackboard = blackboard
+
+    with patch(
+        "robo_claw_agent.skills.navigation_skill.patrol.visit_place",
+        return_value=(False, "Nav2 goal rejected"),
+    ) as mock_visit:
+        assert patrol_node.tick() == NodeStatus.SUCCESS
+        assert patrol_node.tick() == NodeStatus.SUCCESS
+
+    mock_visit.assert_called_once_with(node, "거실")
+    assert blackboard["patrol_has_destination"] is False
+    assert blackboard["stationary_observation_only"] is True
+
+
+def test_interesting_scene_gate_suppresses_repeated_scene_events():
+    node = InterestingSceneGate(MagicMock())
+    blackboard = {"detected_objects": ["person"], "scene_analysis": "사람이 보입니다."}
+    node._blackboard = blackboard
+
+    assert node.tick() == NodeStatus.SUCCESS
+    assert node.tick() == NodeStatus.FAILURE
+
+    blackboard["detected_objects"] = []
+    blackboard["scene_analysis"] = "특이사항이 없습니다."
+    assert node.tick() == NodeStatus.FAILURE
+    blackboard["detected_objects"] = ["trash"]
+    assert node.tick() == NodeStatus.SUCCESS
+
+
+def test_local_observation_scans_once_until_patrol_destination_returns():
+    scan_skill = MagicMock()
+    scan_skill.execute.return_value = {"success": True, "message": "스캔 완료"}
+    skill = MagicMock()
+    skill.node = SimpleNamespace()
+    node = LocalObservationNode(skill, scan_factory=lambda cancel_event: scan_skill)
+    blackboard = {"patrol_has_destination": False}
+    node._blackboard = blackboard
+
+    assert node.tick() == NodeStatus.SUCCESS
+    assert node.tick() == NodeStatus.SUCCESS
+    scan_skill.execute.assert_called_once()
+    assert blackboard["stationary_scan_done"] is True
+    assert blackboard["stationary_observation_only"] is True
+
+    blackboard["patrol_has_destination"] = True
+    assert node.tick() == NodeStatus.SUCCESS
+    assert blackboard["stationary_scan_done"] is False
+    assert blackboard["stationary_observation_only"] is False
+
+
+def test_scan_room_does_not_send_goal_when_cancelled_before_start(monkeypatch):
+    from robo_claw_agent.skills.perception_skill import scan as scan_module
+    from robo_claw_agent.skills.perception_skill.scan import ScanRoomSkill
+
+    monkeypatch.setattr(scan_module.globals, "_VISION_MSGS_AVAILABLE", True)
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill._get_nav2_dependency_error",
+        lambda: None,
+    )
+    sent_goals = []
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill._send_spin_goal",
+        lambda *args, **kwargs: sent_goals.append(args) or (False, "should not run", None),
+    )
+
+    scanner = ScanRoomSkill(cancel_event=threading.Event())
+    scanner.set_node(SimpleNamespace(has_parameter=lambda _name: False))
+    scanner.send_user_message = lambda _message: None
+
+    result = scanner.execute({"step_deg": 90.0})
+
+    assert result["success"] is False
+    assert "취소" in result["message"]
+    assert sent_goals == []
+
+
+def test_scan_room_stops_after_current_goal_is_cancelled(monkeypatch):
+    from robo_claw_agent.skills.perception_skill import scan as scan_module
+    from robo_claw_agent.skills.perception_skill.scan import ScanRoomSkill
+
+    monkeypatch.setattr(scan_module.globals, "_VISION_MSGS_AVAILABLE", True)
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill._get_nav2_dependency_error",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill._spin_time_allowance_sec",
+        lambda _angle: 1.0,
+    )
+    cancel_event = threading.Event()
+    cancel_event.set()
+    sent_goals = []
+
+    def send_goal(*_args, **_kwargs):
+        sent_goals.append(True)
+        return True, "accepted", object()
+
+    def wait_for_goal(*_args, **_kwargs):
+        cancel_event.clear()
+        return False, "취소되었습니다."
+
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill._send_spin_goal", send_goal
+    )
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill._wait_for_goal_result", wait_for_goal
+    )
+
+    scanner = ScanRoomSkill(cancel_event=cancel_event)
+    scanner.set_node(SimpleNamespace(has_parameter=lambda _name: False))
+    scanner.send_user_message = lambda _message: None
+
+    result = scanner.execute({"step_deg": 90.0})
+
+    assert result["success"] is False
+    assert len(sent_goals) == 1
+    assert "취소" in result["message"]
 
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ from .execution_nodes import (
     CheckGoalAchieved,
     EmergencyLowBattery,
     ExecuteDecidedAction,
+    LocalObservationNode,
     RunExploreOnce,
     SleepBetweenCycles,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "GoalPlannerNode",
     "EmergencyLowBattery",
     "RunExploreOnce",
+    "LocalObservationNode",
     "ExecuteDecidedAction",
     "SleepBetweenCycles",
     "CheckGoalAchieved",
