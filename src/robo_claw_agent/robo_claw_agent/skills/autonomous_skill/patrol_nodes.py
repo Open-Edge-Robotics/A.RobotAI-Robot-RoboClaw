@@ -10,7 +10,11 @@ from typing import Any
 
 from robo_claw_agent.skill_manager import BaseSkill
 
-from .actions import _last_seen_epoch, _split_semantic_places
+from .actions import (
+    _extract_rag_location_candidates,
+    _last_seen_epoch,
+    _split_semantic_places,
+)
 from .core import BTNode, NodeStatus
 
 logger = logging.getLogger(__name__)
@@ -47,9 +51,10 @@ _INTERESTING_TEXT_KEYWORDS = (
 
 def _gather_place_candidates(memory: Any) -> list[dict[str, Any]]:
     """기억된 시맨틱/RAG 장소와 과거 저장된 맵 지점을 모은다."""
-    all_objs = memory.get_all_objects()
+    all_objs = memory.get_all_objects() if hasattr(memory, "get_all_objects") else []
     semantic_places, map_generated_places = _split_semantic_places(all_objs)
-    return semantic_places + map_generated_places
+    rag_places = _extract_rag_location_candidates(memory, limit=20)
+    return semantic_places + map_generated_places + rag_places
 
 
 class PatrolNextPlaceNode(BTNode):

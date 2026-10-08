@@ -5,6 +5,20 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-08**
 
+## 2026-10-08 — 정리 요청(tidy_home / 자율 순찰)의 RAG 및 시맨틱 맵 장소 좌표 해석 강화
+
+- **증상**: 실기(CLOiD 2호)에서 이동 요청("주방으로 가줘")은 RAG/시맨틱 맵 좌표를 정상 조회해 이동하지만, 정리 요청("주방 정리해줘", "정리해줘")은 기억된 장소 좌표를 찾지 못해 작업이 시작되지 않는 문제 발생.
+- **원인**:
+  - `helpers.py`: `_extract_rag_location_candidates`가 `metadata` 내 `x`, `y` 필드 부재 시 텍스트 파싱을 시도하지 않고 제외했으며, 주행 성공 자동 기록(`navigated_coordinate`)처럼 본문 텍스트 괄호에 장소명이 들어간 경우 메타데이터 키 부재로 `RAG위치N`으로 치환되어 이름 매칭이 실패함.
+  - `tidy_home_skill.py`: 방 범위(`scope="room"`) 정리 시 `navigate_to`의 검증된 다계층 좌표 해석 경로(`_resolve_target_coordinates`)를 거치지 않아, 시맨틱 맵 직접 조회 및 RAG 임베딩 검색이 누락됨.
+  - `patrol_nodes.py`: `_gather_place_candidates`가 로컬 시맨틱 맵만 조회하고 RAG 후보(`_extract_rag_location_candidates`) 호출이 누락되어 있었음.
+- **조치**:
+  - `helpers.py`: `_extract_rag_location_candidates`에 텍스트 정규식(`(x, y)`, `x: ..., y: ...`) 좌표 파싱과 텍스트 끝 괄호/`_entry_all_names` 장소명 복원 로직 추가.
+  - `tidy_home_skill.py`: `scope="room"` 정리 장소 조회 실패 시 `_resolve_target_coordinates`를 fallback으로 연동하여 이동 스킬과 동일한 기준으로 좌표 복원.
+  - `patrol_nodes.py`: `_gather_place_candidates`에 `_extract_rag_location_candidates` 결합.
+  - `test_tidy_home_skill.py` 및 `test_autonomous_act.py`에 회귀 방지 단위 테스트 추가.
+- **검증**: `test_tidy_home_skill.py` 16건 통과, `test_autonomous_act.py` 관련 테스트 통과, Ruff 정적 검사 통과, `task build-fast` 빌드 성공.
+
 ## 2026-10-08 — CLOiD 개체별 소울 프로필 분리 (1호/2호)
 
 - **배경**: 스킬 가이드에 이어 소울(개성)도 개체 상태를 반영해야 했다. 1호는 팔·상체 모션을 쓰는 정상 개체이고, 2호는 팔·상체 구동 오류 상태라 자기 소개와 말투에서 가능/불가능을 담담하게 전달할 필요가 있다.

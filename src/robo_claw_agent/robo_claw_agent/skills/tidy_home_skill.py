@@ -165,6 +165,24 @@ class TidyHomeSkill(BaseSkill):
             return [], "no_remembered_places"
 
         places, error = _resolve_cleanup_places(scope, target_location, candidates)
+        if error and scope == "room" and target_location:
+            try:
+                from .navigation_skill.core import _resolve_target_coordinates
+
+                resolved = _resolve_target_coordinates(memory, target_location)
+                if resolved and isinstance(resolved.get("position"), dict):
+                    pos = resolved["position"]
+                    if "x" in pos and "y" in pos:
+                        place_name = str(resolved.get("name") or target_location).strip()
+                        return [
+                            {
+                                "name": place_name,
+                                "position": {"x": float(pos["x"]), "y": float(pos["y"])},
+                            }
+                        ], None
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[TidyHome] Fallback to _resolve_target_coordinates failed: %s", exc)
+
         self._places_truncated = scope == "home" and len(places) > _MAX_HOME_PLACES
         if self._places_truncated:
             logger.warning(

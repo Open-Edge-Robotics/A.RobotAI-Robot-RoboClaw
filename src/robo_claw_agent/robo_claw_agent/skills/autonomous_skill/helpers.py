@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -109,33 +110,87 @@ def _extract_rag_location_candidates(memory: Any, limit: int = 5) -> list[dict[s
         meta = entry.get("metadata", {}) if isinstance(entry, dict) else {}
         text = str(entry.get("text", "")) if isinstance(entry, dict) else ""
         if not isinstance(meta, dict):
-            continue
-        if "x" not in meta or "y" not in meta:
-            continue
+            meta = {}
         if (
             meta.get("type") in {"blocked_coordinate", "virtual_obstacle"}
             or meta.get("kind") in {"blocked", "object"}
             or meta.get("source") in {"vlm", "scan_room", "mark_virtual_obstacle"}
         ):
             continue
-        try:
-            x = float(meta["x"])
-            y = float(meta["y"])
-        except (TypeError, ValueError):
+
+        # 1. 좌표 파싱: 메타데이터 우선 -> 순서쌍 (x, y) -> x:, y: 형식
+        x: float | None = None
+        y: float | None = None
+        if "x" in meta and "y" in meta:
+            try:
+                x, y = float(meta["x"]), float(meta["y"])
+            except (TypeError, ValueError):
+                x, y = None, None
+
+        if x is None or y is None:
+            pair_match = re.search(r"\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)", text)
+            if pair_match:
+                try:
+                    x, y = float(pair_match.group(1)), float(pair_match.group(2))
+                except (TypeError, ValueError):
+                    pass
+
+        if x is None or y is None:
+            x_match = re.search(r"x\s*[:=]\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE)
+            y_match = re.search(r"y\s*[:=]\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE)
+            if x_match and y_match:
+                try:
+                    x, y = float(x_match.group(1)), float(y_match.group(1))
+                except (TypeError, ValueError):
+                    pass
+
+        if x is None or y is None:
             continue
+
+        # 2. 장소명 파싱: 메타데이터 우선 -> 텍스트 내 괄호 및 키워드 파싱
         name = ""
-        for key in ("target_name", "name", "object_name", "place_name", "location_name"):
+        for key in (
+            "target_name",
+            "name",
+            "object_name",
+            "place_name",
+            "location_name",
+            "location_type",
+            "category",
+        ):
             value = str(meta.get(key) or "").strip()
             if value:
                 name = value
                 break
+
+        if not name and text:
+            # "이동 성공 좌표: x=1.50, y=2.00 (주방)" 처럼 끝에 괄호로 명시된 장소명
+            paren_match = re.search(r"\(([^)]+)\)\s*$", text)
+            if paren_match:
+                candidate_name = paren_match.group(1).strip()
+                if candidate_name and not re.search(r"^\s*-?\d+", candidate_name):
+                    name = candidate_name
+
+            if not name:
+                try:
+                    from robo_claw_agent.memory_manager.semantic import _entry_all_names
+
+                    names = _entry_all_names(entry)
+                    if names:
+                        name = names[0]
+                except Exception:
+                    pass
+
         if not name:
             name = f"RAG위치{len(candidates) + 1}"
+
         dedupe_key = (name, round(x, 3), round(y, 3))
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
-        candidates.append({"name": name, "position": {"x": x, "y": y}, "text": text, "metadata": meta})
+        candidates.append(
+            {"name": name, "position": {"x": x, "y": y}, "text": text, "metadata": meta}
+        )
         if len(candidates) >= limit:
             break
     return candidates
@@ -195,16 +250,43 @@ def _self_capabilities(node: Any) -> list[str]:
         return []
     names = {s["name"] for s in all_skills}
     caps: list[str] = []
-    if names & {"grasp", "place", "move_joints", "move_pose", "arm_pose", "open_gripper", "close_gripper",
-                "adaptive_pick_object", "vla_pick_gripper_object", "vla_pick_front_object",
-                "pick_front_object", "pick_from_right_side_zone", "estimate_gripper_object_pose",
-                "servo_gripper_to_object", "observe_gripper_target"}:
+    if names & {
+        "grasp",
+        "place",
+        "move_joints",
+        "move_pose",
+        "arm_pose",
+        "open_gripper",
+        "close_gripper",
+        "adaptive_pick_object",
+        "vla_pick_gripper_object",
+        "vla_pick_front_object",
+        "pick_front_object",
+        "pick_from_right_side_zone",
+        "estimate_gripper_object_pose",
+        "servo_gripper_to_object",
+        "observe_gripper_target",
+    }:
         caps.append("manipulation")
-    if names & {"navigate_to", "move_relative", "rotate", "face_direction", "follow_waypoints",
-                "patrol", "explore", "approach_object"}:
+    if names & {
+        "navigate_to",
+        "move_relative",
+        "rotate",
+        "face_direction",
+        "follow_waypoints",
+        "patrol",
+        "explore",
+        "approach_object",
+    }:
         caps.append("navigation")
-    if names & {"analyze_scene", "get_detections", "find_object", "scan_room",
-                "describe_surroundings", "detect_object"}:
+    if names & {
+        "analyze_scene",
+        "get_detections",
+        "find_object",
+        "scan_room",
+        "describe_surroundings",
+        "detect_object",
+    }:
         caps.append("perception")
     if "say" in names or "listen" in names:
         caps.append("hri")

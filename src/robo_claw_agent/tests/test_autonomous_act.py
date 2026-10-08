@@ -350,6 +350,62 @@ def test_extract_rag_location_candidates_excludes_blocked_coordinates():
     assert "장애물" not in names
 
 
+def test_extract_rag_location_candidates_parses_name_and_coords_from_text():
+    """메타데이터에 이름이나 x,y가 없어도 RAG 텍스트에서 장소명과 좌표를 복원해야 한다."""
+    memory = MagicMock()
+    memory._vector_store.list_entries.return_value = [
+        {
+            "text": "이동 성공 좌표: x=1.50, y=2.00 (주방)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "x": 1.5,
+                "y": 2.0,
+                "source": "navigate_to",
+            },
+        },
+        {
+            "text": "거실의 위치는 x: -2.3, y: 4.1 입니다.",
+            "metadata": {"type": "manual_note"},
+        },
+    ]
+
+    candidates = _extract_rag_location_candidates(memory, limit=5)
+
+    assert len(candidates) == 2
+    names = [c["name"] for c in candidates]
+    assert "주방" in names
+    assert "거실" in names
+    living_room = next(c for c in candidates if c["name"] == "거실")
+    assert living_room["position"] == {"x": -2.3, "y": 4.1}
+
+
+def test_patrol_gather_place_candidates_includes_rag():
+    """순찰 지점 수집(_gather_place_candidates)에 시맨틱 맵뿐만 아니라 RAG 후보도 포함되어야 한다."""
+    from robo_claw_agent.skills.autonomous_skill.patrol_nodes import _gather_place_candidates
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = []
+    memory._vector_store.list_entries.return_value = [
+        {
+            "text": "이동 성공 좌표: x=3.0, y=1.0 (충전소)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "x": 3.0,
+                "y": 1.0,
+                "source": "navigate_to",
+            },
+        }
+    ]
+
+    candidates = _gather_place_candidates(memory)
+
+    names = [c["name"] for c in candidates]
+    assert "충전소" in names
+
+
+
 def test_validate_decided_action_rejects_unregistered_skill():
     node = MagicMock()
     node._skills.has_skill.return_value = False

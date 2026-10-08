@@ -276,3 +276,57 @@ def test_tidy_home_skill_requires_a_target_for_room_scope():
 
     assert result["success"] is False
     assert result["failure_reason"] == "target_location_required"
+
+
+def test_tidy_home_resolves_room_via_target_coordinates():
+    from types import SimpleNamespace
+
+    memory = SimpleNamespace(
+        get_all_objects=lambda: [],
+        get_object_location=lambda name: (
+            {"name": "주방", "position": {"x": 2.5, "y": -1.5}} if name == "주방" else None
+        ),
+        _vector_store=SimpleNamespace(list_entries=lambda: []),
+    )
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=memory, _skills=None)
+
+    places, error = skill._collect_places("room", "주방")
+
+    assert error is None
+    assert len(places) == 1
+    assert places[0]["name"] == "주방"
+    assert places[0]["position"] == {"x": 2.5, "y": -1.5}
+
+
+def test_tidy_home_resolves_room_via_rag_navigated_coordinate():
+    from types import SimpleNamespace
+
+    entries = [
+        {
+            "text": "이동 성공 좌표: x=1.50, y=2.00 (주방)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "x": 1.5,
+                "y": 2.0,
+                "source": "navigate_to",
+            },
+        }
+    ]
+    memory = SimpleNamespace(
+        get_all_objects=lambda: [],
+        get_object_location=lambda _name: None,
+        search_knowledge=lambda _q, **_kw: entries,
+        _vector_store=SimpleNamespace(list_entries=lambda: entries),
+    )
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=memory, _skills=None)
+
+    places, error = skill._collect_places("room", "주방")
+
+    assert error is None
+    assert len(places) == 1
+    assert places[0]["name"] == "주방"
+    assert places[0]["position"]["x"] == 1.5
+    assert places[0]["position"]["y"] == 2.0
