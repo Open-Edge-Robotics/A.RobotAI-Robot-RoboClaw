@@ -16,6 +16,7 @@ from .actions import (
     LocalObservationNode,
     LogObservationNode,
     RefreshPeerStatusCache,
+    ResolveCleanupHandoff,
     SleepBetweenCycles,
     ValidateDecidedAction,
 )
@@ -327,9 +328,10 @@ class AutonomousActSkill(BaseSkill):
     terminal_behavior = "background"
     description = (
         "로봇이 스스로 상황을 판단하고 자율적으로 행동합니다. "
-        "mode='patrol'(기본): 기억된 시맨틱 맵/RAG 장소만 순찰하고, 장소가 없으면 제자리에서 "
-        "주변을 관찰합니다. 자율 행동 중 프론티어 탐험은 하지 않습니다. 특이 장면에는 LLM이 대응하며, "
-        "필요한 능력이 없으면 동료 로봇에게 위임할 수 있습니다. "
+        "mode='patrol'(기본): '집안 정리해줘'와 같은 요청에서 기억된 시맨틱 맵/RAG 장소를 순찰하고 "
+        "장소가 없으면 제자리에서 주변을 관찰하며 발견한 정리 대상을 처리합니다. 자율 행동 중 프론티어 "
+        "탐험은 하지 않습니다. 조작 능력이 있으면 직접 정리하고, 조작 능력이 없으면 연결과 매니퓰레이션 "
+        "능력이 확인된 동료 한 대에게 해당 작업만 요청해 결과를 확인합니다. "
         "mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행하며, "
         "자신이 수행할 수 없는 단계는 동료에게 위임합니다. "
         "배터리 신호가 없거나 부족해도 기본적으로 체크만 수행하며 루프를 종료하지 않습니다. "
@@ -477,6 +479,7 @@ class AutonomousActSkill(BaseSkill):
             analyze_scene = AnalyzeCurrentScene(self)
             log_obs_node = LogObservationNode(self)
             interesting_gate = InterestingSceneGate(self)
+            resolve_cleanup_handoff = ResolveCleanupHandoff(self)
             llm_decide = LLMDecideAction(self)
             validate_decision = ValidateDecidedAction(self)
             execute_action = ExecuteDecidedAction(self)
@@ -495,7 +498,13 @@ class AutonomousActSkill(BaseSkill):
             done_node.tick = lambda: NodeStatus.SUCCESS
             decide_and_act = SequenceNode(
                 "DecideAndAct",
-                [interesting_gate, llm_decide, validate_decision, execute_action],
+                [
+                    interesting_gate,
+                    resolve_cleanup_handoff,
+                    llm_decide,
+                    validate_decision,
+                    execute_action,
+                ],
             )
             act_on_interesting = FallbackNode("ActOnInteresting", [decide_and_act, done_node])
 
@@ -533,6 +542,7 @@ class AutonomousActSkill(BaseSkill):
                 analyze_scene,
                 log_obs_node,
                 interesting_gate,
+                resolve_cleanup_handoff,
                 llm_decide,
                 validate_decision,
                 execute_action,

@@ -9,9 +9,9 @@ from .core import BTNode, NodeStatus
 from .helpers import (
     _discover_peer_agents,
     _extract_rag_location_candidates,
-    _find_peer_with_capability,
+    _find_connected_peer_with_capability,
     _format_place,
-    _has_manipulation_capability,
+    _has_cleanup_capability,
     _self_capabilities,
     _split_semantic_places,
 )
@@ -102,6 +102,12 @@ class LLMDecideAction(BTNode):
         self._skill = skill
 
     def tick(self) -> NodeStatus:
+        if self._blackboard.get("cleanup_handoff_prepared") or self._blackboard.get(
+            "cleanup_handoff_blocked"
+        ):
+            # 정리 위임/불가 판정은 코드에서 확정하며 LLM 재계획으로 덮어쓰지 않는다.
+            return NodeStatus.SUCCESS
+
         node = self._skill.node
         if not node or not getattr(node, "_llm", None):
             return NodeStatus.FAILURE
@@ -226,20 +232,25 @@ class LLMDecideAction(BTNode):
         self_caps = _self_capabilities(node)
         self_caps_str = ", ".join(self_caps) if self_caps else "없음"
         delegate_force_hint = ""
-        if not _has_manipulation_capability(node):
-            manipulation_peer = _find_peer_with_capability(node, "manipulation")
+        handoff_status = str(self._blackboard.get("cleanup_handoff_status", "") or "")
+        cleanup_capable = _has_cleanup_capability(node)
+        if not cleanup_capable:
+            manipulation_peer = (
+                None
+                if handoff_status
+                else _find_connected_peer_with_capability(node, "manipulation")
+            )
             if manipulation_peer:
                 delegate_force_hint = (
                     f"\n- [위임 필수] 당신에게 매니퓰레이션(파지/배치) 능력이 없습니다. "
-                    f"쓰레기/컵/물체 줍기 등 파지가 필요한 행동은 반드시 동료 "
-                    f"'{manipulation_peer}'에게 `delegate_task` 또는 `call_peer_robot`로 위임하세요. "
-                    "직접 grasp/place를 시도하지 마세요."
+                    f"정리 대상은 연결된 조작 가능 동료 '{manipulation_peer['peer_name']}'에게만 "
+                    "단발 작업으로 위임하세요. 직접 grasp/place를 시도하거나 자율협동을 시작하지 마세요."
                 )
             else:
                 delegate_force_hint = (
-                    "\n- [주의] 당신에게 매니퓰레이션 능력이 없으며, 매니퓰레이션 가능 동료도 "
-                    "현재 발견되지 않았습니다. 파지가 필요한 물체를 발견한 경우, "
-                    "`query_peer_status`로 동료 상태를 확인하거나 사용자에게 보고하세요."
+                    "\n- [위임 제한] 자신에게 매니퓰레이션 능력이 없습니다. 연결 여부와 조작 능력이 "
+                    "확인되지 않은 동료에게 요청하지 말고, 정리를 완료했다고 주장하지 마세요. "
+                    "대상을 관찰·기록하고 처리할 수 없음을 사용자에게 보고하세요."
                 )
 
         system_prompt = f"""{soul_prefix}당신은 자율 행동 중인 로봇 에이전트입니다.
@@ -268,8 +279,13 @@ class LLMDecideAction(BTNode):
 [동료와의 최근 대화]
 {peer_conversation_ctx}
 
+[정리 위임 상태]
+{handoff_status or "자동 위임 판단 대상 아님"}
+
 [자신의 능력]
 {self_caps_str}
+[정리 작업 능력]
+{'정리 대상을 집어 옮길 등록 스킬이 있습니다.' if cleanup_capable else '정리 대상을 집어 옮길 등록 스킬이 없습니다.'}
 {delegate_force_hint}
 
 [응답 형식 — 반드시 JSON만 출력]
@@ -293,6 +309,9 @@ class LLMDecideAction(BTNode):
 - 과거 이력을 적극 활용하세요. 특히 [경고]로 표시된 반복 실패나 무효 결정이 있다면 동일한 장소/행동을 다시 선택하지 마세요.
 - 다음 경우 [주변의 다른 로봇 에이전트 목록]을 참고해 `delegate_task`(같은 ROS 네트워크) 또는 `call_peer_robot`(gRPC 원격)로 위임을 우선 고려하세요: (1) 자신의 역할/스킬 목록에 없는 작업(예: 자신에게 매니퓰레이션 스킬이 없는데 물건을 집어야 하는 경우)을 동료의 역할(role)이나 능력(capabilities)이 커버하는 경우, (2) 동료의 상태(캐시된 배터리/위치)가 확인되고 자신보다 목적지에 훨씬 가깝거나 배터리가 더 충분한 경우. 상태가 "상태 불명"인 동료에게는 위임 전에 `query_peer_status`로 먼저 확인하세요.
 - [동료와의 최근 대화]에 동료가 보낸 메시지가 있다면, 그 요청/지시/도움 요청에 대응하는 행동을 우선 고려하세요. 동료가 도움을 요청했고 자신이 처리할 수 있으면 해당 행동을, 처리할 수 없으면 `call_peer_robot`으로 다른 동료에게 재요청하거나 처리 불가를 알리세요.
+- 정리 대상이 확인되고 [정리 작업 능력]이 있다고 표시되면 자신의 등록된 조작 스킬로 직접 처리하세요.
+- [정리 작업 능력]이 없으면 연결 및 조작 능력이 확인된 동료 한 대에게 `delegate_task`(같은 ROS 네트워크) 또는 `call_peer_robot`(gRPC)으로 해당 대상만 단발 요청하세요. `autonomous_cooperate`를 시작하지 마세요.
+- [정리 위임 상태]에 연결된 조작 가능 동료가 없다고 표시되면 다른 피어를 추측하거나 직접 조작하지 말고, 관찰 결과와 미처리 사유를 보고하세요.
 - 쓰레기 줍기나 정리처럼 여러 단계가 필요하면 plan 형식을 사용하세요.
 - JSON 외의 텍스트를 출력하지 마세요.
 """
@@ -388,7 +407,17 @@ class ValidateDecidedAction(BTNode):
         local_only = bool(self._blackboard.get("stationary_observation_only")) or (
             self._blackboard.get("patrol_has_destination") is False
         )
-        if local_only and skill_name not in _LOCAL_OBSERVATION_SKILLS:
+        authorized_cleanup_handoff = (
+            bool(self._blackboard.get("cleanup_handoff_prepared"))
+            and skill_name in {"delegate_task", "call_peer_robot"}
+            and skill_name == self._blackboard.get("decided_skill")
+            and params == self._blackboard.get("decided_params")
+        )
+        if (
+            local_only
+            and skill_name not in _LOCAL_OBSERVATION_SKILLS
+            and not authorized_cleanup_handoff
+        ):
             return f"기억된 이동 목적지가 없어 제자리 관찰 스킬만 허용됩니다 ({skill_name})"
         if local_only and skill_name == "describe_surroundings" and bool(
             params.get("capture_4way", False)

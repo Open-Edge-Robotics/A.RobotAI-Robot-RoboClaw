@@ -7,6 +7,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 
 from .core import BTNode, NodeStatus
 from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE
+from .helpers import _find_connected_peer_with_capability, _has_cleanup_capability
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,151 @@ class LocalObservationNode(BTNode):
         return NodeStatus.SUCCESS
 
 
+_CLEANUP_TARGET_KEYWORDS = (
+    "trash",
+    "garbage",
+    "waste",
+    "litter",
+    "bottle",
+    "can",
+    "cup",
+    "wrapper",
+    "cigarette",
+    "spill",
+    "mess",
+    "쓰레기",
+    "어질러",
+    "컵",
+    "병",
+    "캔",
+    "비닐",
+    "포장지",
+    "담배꽁초",
+    "쏟아",
+    "흘린",
+)
+
+
+class ResolveCleanupHandoff(BTNode):
+    """조작 불가능한 로봇이 발견한 정리 대상을 연결된 조작 가능 동료에게 한 번 위임한다."""
+
+    def __init__(self, skill: BaseSkill) -> None:
+        super().__init__("ResolveCleanupHandoff")
+        self._skill = skill
+
+    def tick(self) -> NodeStatus:
+        blackboard = self._blackboard
+        blackboard.pop("cleanup_handoff_prepared", None)
+        blackboard.pop("cleanup_handoff_blocked", None)
+        blackboard.pop("cleanup_handoff_target", None)
+        blackboard.pop("cleanup_handoff_status", None)
+
+        node = self._skill.node
+        if node is None or _has_cleanup_capability(node):
+            return NodeStatus.SUCCESS
+
+        objects = blackboard.get("detected_objects", []) or []
+        scene = str(blackboard.get("scene_analysis", "") or "")
+        cleanup_targets = [
+            str(obj)
+            for obj in objects
+            if any(keyword in str(obj).casefold() for keyword in _CLEANUP_TARGET_KEYWORDS)
+        ]
+        scene_lower = scene.casefold()
+        scene_indicates_cleanup = any(
+            keyword in scene_lower
+            for keyword in (
+                "쓰레기",
+                "어질러",
+                "컵",
+                "병",
+                "캔",
+                "비닐",
+                "치워야",
+                "정리해야",
+                "쏟아",
+                "흘린",
+                "trash",
+                "garbage",
+                "litter",
+                "spill",
+                "mess",
+            )
+        )
+        if not cleanup_targets and not scene_indicates_cleanup:
+            return NodeStatus.SUCCESS
+
+        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 정리 대상"
+        place = str(blackboard.get("patrol_last_place", "") or "").strip()
+        pose_text = ""
+        try:
+            pose = self._skill.get_map_pose()
+            if pose:
+                pose_text = f"지도 위치 x={float(pose['x']):.2f}, y={float(pose['y']):.2f}"
+        except (AttributeError, KeyError, TypeError, ValueError):
+            pass
+        location_parts = [value for value in (place, pose_text) if value]
+        location = "; ".join(location_parts) or "정확한 위치는 알 수 없음"
+
+        peer = _find_connected_peer_with_capability(node, "manipulation")
+        if peer is None:
+            blackboard["cleanup_handoff_status"] = (
+                "연결 상태와 매니퓰레이션 능력을 확인할 수 있는 동료 로봇이 없습니다. "
+                "정리를 완료했다고 말하지 말고 발견 내용만 보고하세요."
+            )
+            blackboard["cleanup_handoff_blocked"] = True
+            blackboard["decided_skill"] = "none"
+            blackboard["decided_params"] = {}
+            blackboard["decided_reason"] = blackboard["cleanup_handoff_status"]
+            self._skill.send_user_message(
+                f"정리 대상 '{target_description}'을 발견했지만 연결되고 조작 능력이 확인된 "
+                "동료가 없어 처리하지 않았습니다."
+            )
+            return NodeStatus.SUCCESS
+
+        instruction = (
+            f"자율 순찰 중 정리 대상 '{target_description}'을 발견했습니다. 위치: {location}. "
+            f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. "
+            "해당 위치에서 대상을 다시 확인하고 안전하게 정리할 수 있으면 정리 작업만 수행한 뒤, "
+            "완료 여부와 실패 사유를 반환해 주세요. 다른 구역 순찰이나 지속적인 자율협동은 시작하지 마세요."
+        )
+        skill_name = "delegate_task" if peer["transport"] == "ros2" else "call_peer_robot"
+        params = (
+            {"agent_id": peer["peer_name"], "instruction": instruction}
+            if skill_name == "delegate_task"
+            else {
+                "peer_name": peer["peer_name"],
+                "instruction": instruction,
+                "wait_for_result": True,
+                "timeout_sec": 110.0,
+            }
+        )
+        skills = getattr(node, "_skills", None)
+        if skills is None or not skills.has_skill(skill_name):
+            blackboard["cleanup_handoff_status"] = (
+                f"동료 {peer['peer_name']}는 연결되어 있지만 요청 경로 {skill_name}을 사용할 수 없습니다."
+            )
+            blackboard["cleanup_handoff_blocked"] = True
+            blackboard["decided_skill"] = "none"
+            blackboard["decided_params"] = {}
+            blackboard["decided_reason"] = blackboard["cleanup_handoff_status"]
+            self._skill.send_user_message(
+                f"정리 대상 '{target_description}'을 발견했지만 동료에게 작업을 전달할 수 없어 처리하지 않았습니다."
+            )
+            return NodeStatus.SUCCESS
+
+        blackboard["decided_skill"] = skill_name
+        blackboard["decided_params"] = params
+        blackboard["decided_reason"] = (
+            f"자신에게 매니퓰레이션 능력이 없어 연결된 조작 가능 동료 {peer['peer_name']}에게 위임"
+        )
+        blackboard["cleanup_handoff_prepared"] = True
+        blackboard["cleanup_handoff_target"] = target_description
+        blackboard["cleanup_handoff_status"] = f"{peer['peer_name']}에게 정리 작업을 요청합니다."
+        logger.info("[BT] Prepared cleanup handoff to %s via %s", peer["peer_name"], skill_name)
+        return NodeStatus.SUCCESS
+
+
 class ExecuteDecidedAction(BTNode):
     """task_queue에서 꺼내거나 단일 decided_skill을 실행한다."""
 
@@ -202,7 +348,9 @@ class ExecuteDecidedAction(BTNode):
             else f"[자율 행동] {skill_name} 실행 중..."
         )
 
+        cleanup_handoff = bool(self._blackboard.get("cleanup_handoff_prepared"))
         success = False
+        result = None
         try:
             from robo_claw_agent.agent_node.nav_safety import (
                 _uses_stretch_backend,
@@ -241,6 +389,33 @@ class ExecuteDecidedAction(BTNode):
         except Exception as exc:
             logger.error("[BT] Skill execution error (%s): %s", skill_name, exc)
             self._blackboard["queue_execution_failed"] = True
+
+        if cleanup_handoff:
+            peer_name = params.get("peer_name") or params.get("agent_id") or "동료 로봇"
+            result_message = str(getattr(result, "message", "") or "")
+            if success:
+                self._blackboard["cleanup_handoff_status"] = (
+                    f"{peer_name}의 정리 작업 완료를 확인했습니다."
+                )
+                self._skill.send_user_message(
+                    f"정리 대상 '{self._blackboard.get('cleanup_handoff_target', '')}'을 "
+                    f"{peer_name}에게 요청했고 완료 응답을 받았습니다. {result_message}".strip()
+                )
+            else:
+                uncertain = any(
+                    marker in result_message.lower()
+                    for marker in ("timeout", "시간 초과", "응답 없음", "결과 확인")
+                )
+                status = (
+                    "결과를 확인하지 못했습니다. 중복 실행을 피하기 위해 자동 재요청하지 않습니다."
+                    if uncertain
+                    else "요청이 실패하거나 거절되었습니다."
+                )
+                self._blackboard["cleanup_handoff_status"] = status
+                self._skill.send_user_message(
+                    f"{peer_name}에게 정리 요청을 보냈지만 {status} {result_message}".strip()
+                )
+            self._blackboard["cleanup_handoff_prepared"] = False
 
         task_history = self._blackboard.setdefault("task_history", [])
         task_history.append(

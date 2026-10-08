@@ -215,15 +215,154 @@ def _has_manipulation_capability(node: Any) -> bool:
     return "manipulation" in _self_capabilities(node)
 
 
+def _has_cleanup_capability(node: Any) -> bool:
+    """정리 대상을 집고 옮길 수 있는 등록 스킬이 있는지 판단한다."""
+    skills = getattr(node, "_skills", None)
+    if not skills or not hasattr(skills, "list_skills"):
+        return False
+    try:
+        names = {str(skill.get("name", "")) for skill in skills.list_skills()}
+    except Exception:
+        return False
+    pick_skills = {
+        "adaptive_pick_object",
+        "vla_pick_gripper_object",
+        "vla_pick_front_object",
+        "pick_front_object",
+        "pick_from_right_side_zone",
+    }
+    return bool(names & pick_skills) or {"grasp", "place"}.issubset(names)
+
+
+def _peer_has_capability(info: dict[str, Any], capability: str) -> bool:
+    caps = info.get("capabilities") or []
+    if isinstance(caps, list) and capability in caps:
+        return True
+    role = str(info.get("role", "")).lower()
+    if capability == "manipulation" and any(
+        kw in role
+        for kw in (
+            "매니퓰레이션",
+            "manipulation",
+            "팔",
+            "arm",
+            "그리퍼",
+            "gripper",
+            "파지",
+            "grasp",
+            "manipulator",
+        )
+    ):
+        return True
+    return False
+
+
 def _find_peer_with_capability(node: Any, capability: str) -> str | None:
-    peers = _discover_peer_agents(node)
-    for peer_id, info in peers.items():
-        caps = info.get("capabilities") or []
-        if isinstance(caps, list) and capability in caps:
+    for peer_id, info in _discover_peer_agents(node).items():
+        if _peer_has_capability(info, capability):
             return peer_id
-        role = str(info.get("role", "")).lower()
-        if capability == "manipulation" and any(
-            kw in role for kw in ("매니퓰레이션", "manipulation", "팔", "arm", "그리퍼", "gripper", "파지", "grasp")
+    return None
+
+
+def _connected_grpc_peer_names(node: Any) -> set[str]:
+    """ListPeers 서비스에서 현재 연결된 gRPC 피어 이름을 가져온다."""
+    if node is None or not hasattr(node, "_list_peers_client"):
+        return set()
+    try:
+        from robo_claw_agent.skills.cooperate_skill import ListPeerRobotsSkill
+
+        skill = ListPeerRobotsSkill()
+        skill.set_node(node)
+        result = skill.execute({})
+        if not result.get("success"):
+            return set()
+        return {
+            str(peer.get("peer_name", "")).strip()
+            for peer in result.get("peers", [])
+            if peer.get("connected") and peer.get("peer_name")
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[BT] Could not query connected gRPC peers: %s", exc)
+        return set()
+
+
+def _is_connected_ros_peer(node: Any, peer_id: str) -> bool:
+    """ROS 그래프에서 해당 동료의 agent 노드가 실제로 발견되는지 확인한다."""
+    try:
+        named_nodes = node.get_node_names_and_namespaces()
+        if any(
+            str(name) == "robo_claw_agent_node" and str(namespace).strip("/") == peer_id.strip("/")
+            for name, namespace in named_nodes
         ):
-            return peer_id
+            return True
+    except Exception:
+        pass
+    try:
+        node_names = node.get_node_names()
+    except Exception:
+        return False
+    expected = f"{peer_id}_robo_claw_agent_node"
+    return any(
+        str(name) == expected
+        or str(name).endswith(f"/{expected}")
+        or (
+            str(name).endswith("/robo_claw_agent_node")
+            and f"/{peer_id}/" in f"{str(name).rstrip('/')}/"
+        )
+        for name in node_names
+    )
+
+
+def _query_grpc_peer_capability(node: Any, peer_name: str, capability: str) -> bool:
+    """설정 메타데이터가 없는 연결된 gRPC 피어의 실제 스킬 목록을 확인한다."""
+    try:
+        from robo_claw_agent.skills.cooperate_skill import QueryPeerCapabilitiesSkill
+
+        skill = QueryPeerCapabilitiesSkill()
+        skill.set_node(node)
+        result = skill.execute({"peer_name": peer_name, "timeout_sec": 10.0})
+        if not result.get("success"):
+            return False
+        skill_names = set(result.get("capabilities", []))
+        if capability == "manipulation":
+            pick_skills = {
+                "adaptive_pick_object",
+                "vla_pick_gripper_object",
+                "vla_pick_front_object",
+                "pick_front_object",
+                "pick_from_right_side_zone",
+            }
+            return bool(skill_names & pick_skills) or {"grasp", "place"}.issubset(skill_names)
+        return capability in skill_names
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[BT] Could not query capabilities for %s: %s", peer_name, exc)
+        return False
+
+
+def _find_connected_peer_with_capability(node: Any, capability: str) -> dict[str, str] | None:
+    """실제로 연결된 피어 중 선언된 능력을 가진 동료와 전송 경로를 반환한다.
+
+    ROS 그래프에서 발견된 피어는 delegate_task, 현재 gRPC 연결이 확인된 피어는
+    call_peer_robot으로 보낸다. 설정만 되어 있고 연결되지 않은 피어는 선택하지 않는다.
+    """
+    peers = _discover_peer_agents(node)
+    grpc_names = _connected_grpc_peer_names(node)
+    grpc_names_normalized = {name.casefold() for name in grpc_names}
+
+    for peer_id, info in peers.items():
+        if _is_connected_ros_peer(node, peer_id) and _peer_has_capability(info, capability):
+            return {"peer_name": peer_id, "transport": "ros2"}
+        if peer_id.casefold() in grpc_names_normalized:
+            if _peer_has_capability(info, capability) or _query_grpc_peer_capability(
+                node, peer_id, capability
+            ):
+                return {"peer_name": peer_id, "transport": "grpc"}
+
+    # launch 파라미터로만 등록된 원격 피어는 환경 설정 목록에 메타데이터가 없을 수 있다.
+    # 현재 연결이 확인된 피어만 대상으로 실제 스킬 목록을 조회한다.
+    for peer_name in sorted(grpc_names):
+        if peer_name.casefold() not in {
+            name.casefold() for name in peers
+        } and _query_grpc_peer_capability(node, peer_name, capability):
+            return {"peer_name": peer_name, "transport": "grpc"}
     return None
