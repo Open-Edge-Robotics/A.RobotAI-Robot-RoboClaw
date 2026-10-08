@@ -73,6 +73,30 @@ nano /path/to/ROBOT.md
 - 보고 시 핵심 결과를 먼저 말하고 세부 사항을 이어서 설명한다.
 ```
 
+### 개체별 소울 프로필
+
+같은 기종을 여러 대 운용하면서 개체별 성격·상태를 다르게 전달하려면 소울 파일을 개체별로
+나누고 `RC_ROBOT_SOUL_FILE` 로 선택합니다. CLOiD 는 이 방식을 사용합니다.
+
+| 파일 | 대상 |
+| :--- | :--- |
+| `src/robo_claw_bringup/config/ROBOT.md` | 공통 기본 소울(다른 로봇 프로필과 공유) |
+| `src/robo_claw_bringup/config/ROBOT.cloid.1.md` | CLOiD 1호. 팔·상체 모션을 쓰는 정상 개체의 개성 |
+| `src/robo_claw_bringup/config/ROBOT.cloid.2.md` | CLOiD 2호. 팔·상체 구동 오류 상태를 담담히 알리는 개성 |
+
+`robot_config:=cloid` 로 기동하면서 `robot_soul_file`/`RC_ROBOT_SOUL_FILE` 을 지정하지 않으면,
+launch 가 `ROBOT.cloid.md` 를 먼저 찾고 없으면 `ROBOT.cloid.1.md` 를 씁니다. 2호는 소울 파일
+경로를 명시합니다.
+
+```bash
+RC_ROBOT_CONFIG=cloid \
+RC_ROBOT_SOUL_FILE=$(pwd)/src/robo_claw_bringup/config/ROBOT.cloid.2.md \
+ros2 launch robo_claw_bringup robo_claw.launch.py
+```
+
+> 소울 파일은 개성·말투·가치관만 담고, 어떤 스킬을 쓸지·무엇을 할 수 없는지 같은 기능 규칙은
+> SKILLS 가이드와 ROBOT_LIMITS 로 분리해 둔니다([CLOiD_GUIDE.md](CLOiD_GUIDE.md) 의 개체별 가이드 선택 참고).
+
 ---
 
 ## 2. 물리 제약 스펙 (`ROBOT_LIMITS.json`)

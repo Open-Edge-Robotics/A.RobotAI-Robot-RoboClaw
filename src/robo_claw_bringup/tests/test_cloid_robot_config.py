@@ -35,9 +35,11 @@ _LAUNCH_FILE = _PKG_DIR / "launch" / "robo_claw.launch.py"
 
 _CLOID_CONFIG = _CONFIG_DIR / "cloid_config.yaml"
 _CLOID_LIMITS = _CONFIG_DIR / "ROBOT_LIMITS.cloid.json"
-# CLOiD 는 개체 상태가 달라 스킬 가이드를 1호/2호로 분리한다.
+# CLOiD 는 개체 상태가 달라 스킬 가이드와 소울 프로필을 1호/2호로 분리한다.
 _CLOID_SKILLS_UNIT_1 = _CONFIG_DIR / "SKILLS.cloid.1.md"
 _CLOID_SKILLS_UNIT_2 = _CONFIG_DIR / "SKILLS.cloid.2.md"
+_CLOID_SOUL_UNIT_1 = _CONFIG_DIR / "ROBOT.cloid.1.md"
+_CLOID_SOUL_UNIT_2 = _CONFIG_DIR / "ROBOT.cloid.2.md"
 
 
 def _load_launch_module():
@@ -102,7 +104,14 @@ def _run_launch_cloid() -> tuple[LaunchContext, list]:
 
 @pytest.mark.parametrize(
     "path",
-    [_CLOID_CONFIG, _CLOID_LIMITS, _CLOID_SKILLS_UNIT_1, _CLOID_SKILLS_UNIT_2],
+    [
+        _CLOID_CONFIG,
+        _CLOID_LIMITS,
+        _CLOID_SKILLS_UNIT_1,
+        _CLOID_SKILLS_UNIT_2,
+        _CLOID_SOUL_UNIT_1,
+        _CLOID_SOUL_UNIT_2,
+    ],
 )
 def test_cloid_profile_files_exist(path: Path) -> None:
     assert path.is_file(), f"CLOiD 프로필 파일이 없습니다: {path}"
@@ -128,6 +137,29 @@ def test_cloid_unit_skill_guides_differ_by_upper_body_state() -> None:
     assert "cloid_cleanup_indicator_enabled=false" in unit_2
 
     # 두 문서는 서로 다른 개체 전용이므로 동일 문서를 공유하지 않는다.
+    assert unit_1 != unit_2
+
+
+def test_cloid_unit_soul_profiles_differ_by_upper_body_state() -> None:
+    """소울 프로필도 1호/2호 몸 상태를 구분해 개성을 정의해야 한다."""
+    unit_1 = _CLOID_SOUL_UNIT_1.read_text(encoding="utf-8")
+    unit_2 = _CLOID_SOUL_UNIT_2.read_text(encoding="utf-8")
+
+    # 소울은 기능 규칙을 반복하지 않고 개성만 정의한다.
+    for soul in (unit_1, unit_2):
+        assert "나는 누구인가 (Identity)" in soul
+        assert "커뮤니케이션 스타일 (Communication Style)" in soul
+        assert "SKILLS.md" in soul
+
+    # 1호: 상체 모션까지 온전히 쓰는 개체로 자신을 소개한다.
+    assert "CLOiD 휴머노이드 1호" in unit_1
+    assert "정상적으로 쓸 수 있는 상태" in unit_1
+
+    # 2호: 상체 오류를 숨기지 않고 담담하게 알리는 개체로 소개한다.
+    assert "CLOiD 휴머노이드 2호" in unit_2
+    assert "오류가 있어" in unit_2
+    assert "실행하지 않은 동작을 완료했다고 말하지 않는다" in unit_2
+
     assert unit_1 != unit_2
 
 
@@ -187,6 +219,7 @@ def test_launch_binds_cloid_profiles_to_agent_node() -> None:
     agent = _evaluated_params(context, _find_node(entities, "agent_node"))
 
     assert str(agent["skills_guide_file"]).endswith("SKILLS.cloid.1.md")
+    assert str(agent["robot_soul_file"]).endswith("ROBOT.cloid.1.md")
     assert str(agent["robot_limits_file"]).endswith("ROBOT_LIMITS.cloid.json")
 
     # cloid_config.yaml 의 카메라/IMU 토픽을 launch 가 덮어쓰지 않아야 한다.
@@ -214,6 +247,23 @@ def test_launch_explicit_skills_guide_selects_unit_2() -> None:
     agent = _evaluated_params(context, _find_node(entities, "agent_node"))
 
     assert str(agent["skills_guide_file"]).endswith("SKILLS.cloid.2.md")
+
+
+def test_launch_explicit_soul_file_selects_unit_2() -> None:
+    """2호 개체는 robot_soul_file 로 개체 전용 소울 프로필을 명시해야 한다."""
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+    context = _build_context(
+        launch_description,
+        {
+            "robot_config": "cloid",
+            "robot_soul_file": str(_CLOID_SOUL_UNIT_2),
+        },
+    )
+    entities = module._launch_setup(context)  # noqa: SLF001
+    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+
+    assert str(agent["robot_soul_file"]).endswith("ROBOT.cloid.2.md")
 
 
 def test_launch_explicit_topic_override_wins() -> None:

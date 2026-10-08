@@ -116,26 +116,31 @@ RC_AGENT_ID=cloi02
 | `ROBOT_LIMITS.cloid.json` | 주행 한계와 URDF(hmc_v2_hand) 기준 팔·waist·neck 조인트 하드 한계 |
 | `SKILLS.cloid.1.md` | CLOiD 1호 전용 스킬 가이드(주행과 CLOi 등록 상체 모션 사용 가능) |
 | `SKILLS.cloid.2.md` | CLOiD 2호 전용 스킬 가이드(팔·상체 구동 오류, 주행·인지·조회·정지 전용) |
+| `ROBOT.cloid.1.md` | CLOiD 1호 전용 소울 프로필(팔·상체 모션을 쓰는 정상 개체의 개성) |
+| `ROBOT.cloid.2.md` | CLOiD 2호 전용 소울 프로필(팔·상체 오류 상태를 담담히 알리는 개성) |
 
-### 개체별 스킬 가이드 선택
+### 개체별 스킬·소울 가이드 선택
 
-CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체 상태가 달라 스킬 가이드를 1호/2호로
-분리했습니다. 하드웨어·토픽 설정(`cloid_config.yaml`, `ROBOT_LIMITS.cloid.json`)은 두
-개체가 공유하고, 런타임에 주입되는 스킬 가이드만 개체별로 지정합니다.
+CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체 상태가 달라 스킬 가이드와 소울 프로필을
+1호/2호로 분리했습니다. 하드웨어·토픽 설정(`cloid_config.yaml`, `ROBOT_LIMITS.cloid.json`)은
+두 개체가 공유하고, 런타임에 주입되는 문서만 개체별로 지정합니다.
 
 - `skills_guide_file`(또는 `RC_SKILLS_GUIDE_FILE`)을 지정하지 않고 `robot_config:=cloid`
   로 기동하면 launch 는 `SKILLS.cloid.md` 를 먼저 찾고, 없으면 `SKILLS.cloid.1.md` 를
   1호 기본값으로 사용하며 개체 번호 미지정 경고를 출력합니다.
-- 2호는 `RC_SKILLS_GUIDE_FILE` 로 2호 문서를 명시합니다.
+- 같은 방식으로 `robot_soul_file`(또는 `RC_ROBOT_SOUL_FILE`)을 지정하지 않으면
+  `ROBOT.cloid.1.md` 가 1호 소울 기본값이 됩니다.
+- 2호는 두 문서 경로를 모두 명시합니다.
 
 ```dotenv
 RC_ROBOT_CONFIG=cloid
 RC_AGENT_ID=cloi02
 RC_SKILLS_GUIDE_FILE=/ros2_ws/src/robo_claw_bringup/config/SKILLS.cloid.2.md
+RC_ROBOT_SOUL_FILE=/ros2_ws/src/robo_claw_bringup/config/ROBOT.cloid.2.md
 ```
 
-- 설정서버로 기동하는 배포는 서버가 내려주는 `SKILLS.md` 내용이 우선하므로, 2호
-  디바이스 설정에는 `SKILLS.cloid.2.md` 내용을 등록합니다.
+- 설정서버로 기동하는 배포는 서버가 내려주는 `SKILLS.md`·`ROBOT.md` 내용이 우선하므로,
+  2호 디바이스 설정에는 `SKILLS.cloid.2.md`·`ROBOT.cloid.2.md` 내용을 등록합니다.
 - 2호 배포에서는 상체 표시 모션이 발행되지 않도록 `cloid_cleanup_indicator_enabled` 를
   `false` 로 두고 `cloid_cleanup_indicator_motion_ids_json` allowlist 를 비웁니다.
 

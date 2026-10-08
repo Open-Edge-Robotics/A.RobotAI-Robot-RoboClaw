@@ -56,6 +56,9 @@ def main() -> int:
         for c in candidates:
             if c.is_dir():
                 files += sorted(c.glob("SKILLS.*.md"))
+                # 개체별 소울 프로필(ROBOT.<robot>.<개체>.md)도 프롬프트에 주입되므로 함께 점검한다.
+                # ROBOT.example.md 는 주석 처리된 배포용 템플릿이므로 제외한다.
+                files += sorted(p for p in c.glob("ROBOT.*.md") if p.name != "ROBOT.example.md")
                 files += [
                     c / "ROBOT.md",
                     c / "TROUBLESHOOTING.md",

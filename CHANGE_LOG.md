@@ -5,6 +5,17 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-08**
 
+## 2026-10-08 — CLOiD 개체별 소울 프로필 분리 (1호/2호)
+
+- **배경**: 스킬 가이드에 이어 소울(개성)도 개체 상태를 반영해야 했다. 1호는 팔·상체 모션을 쓰는 정상 개체이고, 2호는 팔·상체 구동 오류 상태라 자기 소개와 말투에서 가능/불가능을 담담하게 전달할 필요가 있다.
+- **조치**:
+  - `src/robo_claw_bringup/config/ROBOT.cloid.1.md`, `ROBOT.cloid.2.md` 추가 — 공통 성격·가치관 위에 개체 상태를 반영한 개성·말투를 정의.
+  - `robo_claw.launch.py`: 스킬 가이드/소울 기본값 해석을 `_resolve_config_file_default()` 로 통합. `robot_soul_file` 미지정 시 `ROBOT.<robot_config>.md` → `ROBOT.<robot_config>.1.md` 순서로 찾고 개체 번호 미지정 경고를 출력.
+  - `test_cloid_robot_config.py`: 두 소울 문서 존재·차이 검증과 `robot_soul_file` 로 2호 소울을 선택하는 launch 배선 테스트 추가.
+  - `docs/ROBOT_CONFIG.md`, `docs/CLOiD_GUIDE.md`, `.env.example`: 개체별 소울 선택 방법 문서화.
+  - `scripts/check_prompt_tone.py`: 개체별 소울 파일(`ROBOT.*.md`)도 강제어 점검 대상에 포함.
+- **검증**: `test_cloid_robot_config.py` 16건 통과, `robo_claw_bringup` colcon build(symlink-install) 성공, `scripts/check_prompt_tone.py` 합계 10/10 유지, Ruff 검사 통과.
+
 ## 2026-10-08 — CLOiD 개체별 스킬 가이드 분리 (1호/2호)
 
 - **배경**: CLOiD 1호는 이동과 CLOi 등록 상체 모션을 모두 사용할 수 있지만, 2호는 팔·waist·neck 구동 오류로 상체를 움직이는 경로를 사용할 수 없다. 단일 `SKILLS.cloid.md` 문서가 두 개체 상태를 구분하지 못해 2호에서 상체 모션·조작·정리 표시 모션이 계획될 위험이 있었다.
