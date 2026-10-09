@@ -229,7 +229,7 @@ robo-claw 컨테이너 안에서도 응답해야 합니다. 토큰이 틀리면 
     -d '{"state":{"instruction":"지금 배터리 얼마 남았어?"},"questions":{"intent":{"type":"choice","instructions":"말의 종류?","criteria":{"smalltalk":"인사","single_skill":"기능 하나","multi_step":"여러 단계"}}}}'
   ```
   ```bash
-  curl -s -H "Authorization: Bearer 8d03e7b58db15b3e8d444aff6a15e8b4438084ecae8cba83" http://192.168.50.212:8000/v1/  systemone -H 'Content-Type: application/json' \
+  curl -s -H "Authorization: Bearer <System 1 Token | Laya_Token>" http://192.168.50.212:8000/v1/  systemone -H 'Content-Type: application/json' \
     -d '{"state":{"instruction":"지금 배터리 얼마 남았어?"},"questions":{"intent":{"type":"choice","instructions":"말의 종류?","criteria":{"smalltalk":"인사","single_skill":"기능 하나","multi_step":"여러 단계"}}}}'
   ```
    정상 응답에는 `answers.intent.choice`, `answers.intent.confidence`, `routing.model`(multilingual)이 들어 있습니다.
