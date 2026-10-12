@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 
 import pytest
+import robo_claw_agent.skills.tidy_home_skill as tidy_home_module
 from robo_claw_agent.skills.cleanup_policy import (
     _cleanup_target_category,
     _safe_cleanup_storage_targets,
@@ -546,6 +547,152 @@ def test_cloid_activity_indicator_executes_one_allowlisted_motion_and_avoids_rep
     assert executed[0][1]["motion_id"] != executed[1][1]["motion_id"]
     assert all(call[1]["confirm"] is True for call in executed)
     assert all("실제 정리 완료는 확인되지 않았습니다" in message for message in messages)
+
+
+def test_tidy_home_multiview_analysis_uses_only_confirmed_direction_observations(monkeypatch):
+    calls = []
+
+    class FakeObserver:
+        def set_node(self, _node):
+            pass
+
+        def execute(self, params):
+            calls.append(params)
+            return {
+                "success": True,
+                "partial": True,
+                "detected_objects": ["towel"],
+                "per_direction": {
+                    "정면": "바닥에 수건이 보입니다.",
+                    "우측": "회전 실패 후 잘못 촬영된 이미지입니다.",
+                    "후방": "정리 후보가 보이지 않습니다.",
+                    "좌측": "VLM 분석 실패",
+                },
+                "per_direction_meta": {
+                    "정면": {"rotate_ok": True, "image_received": True, "analysis_ok": True},
+                    "우측": {"rotate_ok": False, "image_received": True, "analysis_ok": True},
+                    "후방": {"rotate_ok": True, "image_received": True, "analysis_ok": True},
+                    "좌측": {"rotate_ok": True, "image_received": True, "analysis_ok": False},
+                },
+                "return_to_start": {"success": True},
+            }
+
+    monkeypatch.setattr(
+        tidy_home_module,
+        "_create_surroundings_observer",
+        lambda active_event: FakeObserver(),
+        raising=False,
+    )
+    skill = TidyHomeSkill()
+    skill.node = object()
+
+    result = skill._analyze_current_scene("주방")
+
+    assert result["success"] is True
+    assert result["partial"] is True
+    assert result["detected_objects"] == ["towel"]
+    assert "정면 방향: 바닥에 수건이 보입니다." in result["analysis"]
+    assert "후방 방향: 정리 후보가 보이지 않습니다." in result["analysis"]
+    assert "회전 실패 후 잘못 촬영된 이미지" not in result["analysis"]
+    assert "VLM 분석 실패" not in result["analysis"]
+    assert calls[0]["capture_4way"] is True
+    assert calls[0]["return_to_start"] is True
+    assert "일반 옷" in calls[0]["observation_prompt"]
+
+
+def test_tidy_home_multiview_analysis_fails_closed_without_valid_directions(monkeypatch):
+    class FakeObserver:
+        def set_node(self, _node):
+            pass
+
+        def execute(self, _params):
+            return {
+                "success": False,
+                "message": "모든 방향에서 회전 또는 이미지 분석에 실패했습니다.",
+                "per_direction": {"정면": "회전 실패"},
+                "per_direction_meta": {
+                    "정면": {"rotate_ok": False, "image_received": True, "analysis_ok": True}
+                },
+            }
+
+    monkeypatch.setattr(
+        tidy_home_module,
+        "_create_surroundings_observer",
+        lambda active_event: FakeObserver(),
+        raising=False,
+    )
+    skill = TidyHomeSkill()
+    skill.node = object()
+
+    result = skill._analyze_current_scene("거실")
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "surroundings_observation_failed"
+    assert result["analysis"] == ""
+
+
+def test_tidy_home_summary_does_not_claim_unobserved_area_was_clear():
+    messages = []
+    skill = TidyHomeSkill()
+    skill.send_user_message = messages.append
+
+    skill._report_summary(
+        "room",
+        [{"place": "안방", "status": "partial_observation", "partial_observation": True}],
+        False,
+    )
+
+    assert "정리 대상 유무" in messages[0]
+    assert "확정할 수 없습니다" in messages[0]
+
+
+def test_tidy_home_withholds_actions_when_start_orientation_is_not_restored():
+    from robo_claw_agent.skills.autonomous_skill.globals import _AUTONOMOUS_ACTIVE
+
+    messages = []
+    cleanup_calls = []
+    skill = TidyHomeSkill()
+    skill.send_user_message = messages.append
+    skill._visit_place = lambda _place: (True, "arrived")
+    skill._analyze_current_scene = lambda _place: {
+        "success": True,
+        "partial": False,
+        "orientation_restored": False,
+        "analysis": "정면 방향 바닥에 수건이 있습니다.",
+        "detected_objects": ["towel"],
+    }
+    skill._handle_cleanup_target = lambda **kwargs: cleanup_calls.append(kwargs) or "handled"
+    _AUTONOMOUS_ACTIVE.set()
+
+    skill._run_cleanup("room", [_place("안방", 1.0, 2.0)])
+
+    assert cleanup_calls == []
+    assert "안방: orientation_unrestored" in messages[-1]
+    assert any("후속 정리 동작은 실행하지 않았습니다" in message for message in messages)
+
+
+def test_tidy_home_marks_no_candidate_as_partial_when_some_views_failed():
+    from robo_claw_agent.skills.autonomous_skill.globals import _AUTONOMOUS_ACTIVE
+
+    messages = []
+    skill = TidyHomeSkill()
+    skill.send_user_message = messages.append
+    skill._visit_place = lambda _place: (True, "arrived")
+    skill._analyze_current_scene = lambda _place: {
+        "success": True,
+        "partial": True,
+        "failed_directions": ["좌측"],
+        "analysis": "정리 대상이 보이지 않습니다.",
+        "detected_objects": [],
+    }
+    _AUTONOMOUS_ACTIVE.set()
+
+    skill._run_cleanup("room", [_place("안방", 1.0, 2.0)])
+
+    summary = messages[-1]
+    assert "안방: partial_observation" in summary
+    assert "미관찰" in summary
+    assert "정리 대상 유무" in summary
 
 
 def test_tidy_home_skill_requires_a_target_for_room_scope():

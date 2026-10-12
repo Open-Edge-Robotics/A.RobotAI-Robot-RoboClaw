@@ -57,7 +57,7 @@
 | Navigation | `set_initial_pose` | Public | action | 공통 | AMCL 초기 x/y/yaw 지정 |
 | Navigation | `stop` | Public | action | 공통 | 현재 이동·회전 작업 취소 |
 | Navigation | `stop_patrol` | Public | action | 공통 | 순찰 중단 |
-| Perception | `describe_surroundings` | Public | action | 공통 | 센서와 VLM 기반 주변 상황 종합 설명 |
+| Perception | `describe_surroundings` | Public | action | 공통 | 센서/VLM 주변 설명, 선택적 4방향 회전 관찰 및 시작 방향 복귀 요청 |
 | Perception | `detect_object` | Public | action | 공통 | 카메라 객체 감지 상태 확인 |
 | Perception | `estimate_gripper_object_pose` | Public | action | 공통 | 그리퍼 물체 3D pose 추정 및 저장 |
 | Perception | `find_object` | Public | action | 공통 | 특정 물체 탐지 및 위치 추정 |
@@ -75,7 +75,7 @@
 | Map | `find_reachable_places` | Public | action | 공통 | 도달 가능한 개방 공간 후보 계산 |
 | Map | `get_map_visual` | Public | action | 공통 | 현재 지도 시각화 및 전송 |
 | Autonomous | `autonomous_act` | Public | action | 공통 | 기억된 좌표 순찰·제자리 관찰(프론티어 탐험 미수행) |
-| Autonomous | `tidy_home` | Public | action | 공통 | 폐기물·수건·쿠션·명확한 빨래 후보 정리, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연 |
+| Autonomous | `tidy_home` | Public | action | 공통 | 각 장소 4방향 관찰 후 폐기물·수건·쿠션·명확한 빨래 후보 확인, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연 |
 | Autonomous | `condition_reactive` | Public | action | 공통 | 조건 감지 시 foreground 중단 및 후속 체인 실행 |
 | Autonomous | `explore` | Public | action | 공통 | 미탐사 영역 자율 탐험 |
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |

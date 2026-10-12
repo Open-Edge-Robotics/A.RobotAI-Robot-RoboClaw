@@ -30,6 +30,20 @@ logger = logging.getLogger(__name__)
 _MAX_HOME_PLACES = 20
 _MAX_CLEANUP_ACTIONS_PER_PLACE = 4
 _CLEANUP_DEMO_HANDOFF_LATERAL_M = 0.30
+_CLEANUP_OBSERVATION_PROMPT = (
+    "이 장소에서 실제로 정리할 필요가 있는 대상으로 명확히 보이는 폐기물, 수건, 쿠션/방석, "
+    "명확한 빨래/세탁물만 관찰하세요. 일반 옷을 빨래로 추정하거나, 컵·병·개인 소지품·위험물을 "
+    "정리 대상으로 추정하지 마세요. 보이는 항목의 종류와 이 방향 화면 안의 대략적인 상대 위치만 설명하고, "
+    "보관 장소·폐기 장소·3D 좌표는 추측하지 마세요. 후보가 없다면 이 방향에서 후보가 보이지 않는다고 "
+    "말하고, 촬영되지 않은 다른 방향의 상태는 추측하지 마세요."
+)
+
+
+def _create_surroundings_observer(active_event: threading.Event) -> Any:
+    """Create the existing multi-view observer with the cleanup run's active flag."""
+    from .perception_skill.scan import DescribeSurroundingsSkill
+
+    return DescribeSurroundingsSkill(active_event=active_event)
 
 
 class TidyHomeSkill(BaseSkill):
@@ -59,8 +73,9 @@ class TidyHomeSkill(BaseSkill):
         "additionalProperties": False,
     }
     description = (
-        "한 번의 정리 작업을 수행하고 종료합니다. 지정 방은 기억된 시맨틱 맵/RAG 좌표로 먼저 이동합니다. "
-        "집 전체는 기억된 장소만 한 차례씩 방문하며 탐험하지 않습니다. 명확한 폐기물뿐 아니라 수건, 쿠션/방석, "
+        "한 번의 정리 작업을 수행하고 종료합니다. 지정 방은 기억된 시맨틱 맵/RAG 좌표로 먼저 이동한 뒤 "
+        "제자리에서 4방향을 관찰합니다. 집 전체는 기억된 장소만 한 차례씩 방문하며 탐험하지 않습니다. "
+        "명확한 폐기물뿐 아니라 수건, 쿠션/방석, "
         "명확한 빨래/세탁물도 정리 후보로 구분합니다. 생활용품은 유형별로 명시 승인된 비추정 3D 보관 pose가 있을 "
         "때만 집기/배치하며, 옷·개인 소지품·위험물이나 목적지가 모호한 항목은 이동하지 않습니다. 처리 능력이 "
         "부족하면 실제 조작 능력이 확인된 동료 한 대에게 단발 위임할 수 있습니다. CLOiD의 cleanup_demo는 고정된 "
@@ -244,7 +259,7 @@ class TidyHomeSkill(BaseSkill):
             release_autonomous()
 
     def _run_cleanup(self, scope: str, places: list[dict[str, Any]]) -> None:
-        results: list[dict[str, str]] = []
+        results: list[dict[str, Any]] = []
         found_cleanup_target = False
         try:
             start_message = (
@@ -275,22 +290,60 @@ class TidyHomeSkill(BaseSkill):
                     continue
 
                 scene_result = self._analyze_current_scene(place_name)
+                if not _AUTONOMOUS_ACTIVE.is_set():
+                    results.append({"place": place_name, "status": "cancelled"})
+                    break
                 if not scene_result.get("success"):
                     results.append({"place": place_name, "status": "observation_failed"})
                     self.send_user_message(
-                        f"'{place_name}'에서 장면을 분석하지 못해 정리 작업을 보류합니다. "
+                        f"'{place_name}'에서 주변을 관찰하지 못해 정리 작업을 보류합니다. "
                         f"{scene_result.get('message', '')}"
+                    )
+                    continue
+
+                if scene_result.get("orientation_restored") is False:
+                    results.append(
+                        {
+                            "place": place_name,
+                            "status": "orientation_unrestored",
+                            "partial_observation": bool(scene_result.get("partial")),
+                        }
+                    )
+                    self.send_user_message(
+                        f"'{place_name}'의 다방향 관찰은 끝났지만 시작 방향 복귀에 실패했습니다. "
+                        "방향을 확인할 수 없어 후속 정리 동작은 실행하지 않았습니다."
                     )
                     continue
 
                 scene = str(scene_result.get("analysis", "") or "")
                 objects = scene_result.get("detected_objects", []) or []
+                partial_observation = bool(scene_result.get("partial"))
                 if not _has_cleanup_indication(objects, scene):
                     if _has_ambiguous_cleanup_indication(objects, scene):
-                        results.append({"place": place_name, "status": "needs_clarification"})
+                        results.append(
+                            {
+                                "place": place_name,
+                                "status": "needs_clarification",
+                                "partial_observation": partial_observation,
+                            }
+                        )
                         self.send_user_message(
                             f"'{place_name}'에서 컵·병·개인 소지품 또는 위험 물품처럼 보이는 항목을 발견했지만, "
                             "폐기물인지 확실하지 않아 이동하거나 동료에게 위임하지 않았습니다. 어떤 항목을 정리할지 지정해 주세요."
+                        )
+                    elif partial_observation:
+                        results.append(
+                            {
+                                "place": place_name,
+                                "status": "partial_observation",
+                                "partial_observation": True,
+                            }
+                        )
+                        missed = ", ".join(scene_result.get("failed_directions", []))
+                        detail = f" 미관찰 방향: {missed}." if missed else ""
+                        self.send_user_message(
+                            f"'{place_name}'에서 일부 방향의 관찰이 실패했습니다.{detail} "
+                            "관찰하지 못한 영역에 정리 대상이 없는지는 확인되지 않았습니다."
                         )
                     else:
                         results.append({"place": place_name, "status": "no_target"})
@@ -303,7 +356,13 @@ class TidyHomeSkill(BaseSkill):
                     objects=objects,
                     cycle=index,
                 )
-                results.append({"place": place_name, "status": status})
+                results.append(
+                    {
+                        "place": place_name,
+                        "status": status,
+                        "partial_observation": partial_observation,
+                    }
+                )
 
             if found_cleanup_target and self._cloid_indicator_enabled():
                 self._run_cloid_activity_indicator()
@@ -320,20 +379,97 @@ class TidyHomeSkill(BaseSkill):
         return visit_place(self.node, place_name)
 
     def _analyze_current_scene(self, place_name: str) -> dict[str, Any]:
-        from robo_claw_agent.skills.vision_skill import AnalyzeSceneSkill
-
-        scene_skill = AnalyzeSceneSkill()
-        scene_skill.set_node(self.node)
-        return scene_skill.execute(
-            {
-                "prompt": (
-                    f"'{place_name}'에서 정리 대상으로 보이는 폐기물과 제자리에 없는 생활용품을 찾아주세요. "
-                    "수건, 쿠션/방석, 명확한 빨래/세탁물도 후보로 구분하되, 일반 옷·개인 소지품·컵·병·위험물은 "
-                    "사용자 허가 없이 정리 대상으로 추정하지 마세요. 실제로 보이는 대상과 현재 위치만 설명하고, "
-                    "대상의 권장 보관 장소나 3D 좌표를 추측하지 마세요. 정리 대상이 없으면 없다고 명시하세요."
-                )
+        try:
+            observer = _create_surroundings_observer(_AUTONOMOUS_ACTIVE)
+            observer.set_node(self.node)
+            observation = observer.execute(
+                {
+                    "capture_4way": True,
+                    "return_to_start": True,
+                    "observation_prompt": _CLEANUP_OBSERVATION_PROMPT,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[TidyHome] Surroundings observation failed for %s", place_name)
+            return {
+                "success": False,
+                "failure_reason": "surroundings_observation_failed",
+                "message": f"주변 관찰을 실행하지 못했습니다: {exc}",
+                "analysis": "",
             }
+        if not isinstance(observation, dict):
+            return {
+                "success": False,
+                "failure_reason": "surroundings_observation_failed",
+                "message": "주변 관찰 스킬에서 유효한 결과를 받지 못했습니다.",
+                "analysis": "",
+            }
+
+        per_direction = observation.get("per_direction", {})
+        per_direction_meta = observation.get("per_direction_meta", {})
+        if not isinstance(per_direction, dict) or not isinstance(per_direction_meta, dict):
+            per_direction = {}
+            per_direction_meta = {}
+        successful_directions = [
+            direction
+            for direction in ("정면", "우측", "후방", "좌측")
+            if isinstance(per_direction.get(direction), str)
+            and per_direction.get(direction, "").strip()
+            and isinstance(per_direction_meta.get(direction), dict)
+            and per_direction_meta[direction].get("rotate_ok") is True
+            and per_direction_meta[direction].get("image_received") is True
+            and per_direction_meta[direction].get("analysis_ok") is True
+        ]
+        if not observation.get("success") or not successful_directions:
+            return {
+                "success": False,
+                "failure_reason": "surroundings_observation_failed",
+                "message": (
+                    observation.get("message", "주변 관찰에 실패했습니다.")
+                    if not observation.get("success")
+                    else "회전·촬영·분석을 모두 마친 방향이 없습니다."
+                ),
+                "analysis": "",
+                "partial": True,
+                "failed_directions": observation.get(
+                    "failed_directions", ["정면", "우측", "후방", "좌측"]
+                ),
+                "cancelled": bool(observation.get("cancelled")),
+            }
+
+        direction_notes = "\n".join(
+            f"- {direction} 방향: {per_direction[direction].strip()}"
+            for direction in successful_directions
         )
+        analysis = f"'{place_name}' 다방향 정리 관찰 결과:\n{direction_notes}"
+        return_to_start = observation.get("return_to_start")
+        return_to_start_ok = isinstance(return_to_start, dict) and bool(
+            return_to_start.get("success")
+        )
+        failed_directions = observation.get("failed_directions")
+        if not isinstance(failed_directions, list):
+            failed_directions = [
+                direction
+                for direction in ("정면", "우측", "후방", "좌측")
+                if direction not in successful_directions
+            ]
+        partial = bool(observation.get("partial"))
+        if partial and failed_directions:
+            analysis += f"\n관찰 실패 방향: {', '.join(map(str, failed_directions))}."
+
+        return {
+            "success": True,
+            "message": observation.get("message", "다방향 관찰을 완료했습니다."),
+            "analysis": analysis,
+            # ONNX detections는 회전 전 시작 방향에서 얻은 결과이며, 방향별 VLM 서술과 구분합니다.
+            "detected_objects": observation.get("detected_objects", []) or [],
+            "partial": partial,
+            "failed_directions": failed_directions,
+            "successful_directions": successful_directions,
+            "return_to_start_success": return_to_start_ok,
+            "orientation_restored": return_to_start_ok,
+            "cancelled": bool(observation.get("cancelled")),
+        }
 
     def _handle_cleanup_target(
         self, *, place_name: str, scene: str, objects: list[Any], cycle: int
@@ -543,7 +679,7 @@ class TidyHomeSkill(BaseSkill):
             )
 
     def _report_summary(
-        self, scope: str, results: list[dict[str, str]], found_cleanup_target: bool
+        self, scope: str, results: list[dict[str, Any]], found_cleanup_target: bool
     ) -> None:
         counts: dict[str, int] = {}
         for result in results:
@@ -556,7 +692,13 @@ class TidyHomeSkill(BaseSkill):
                 f"{result['place']}: {result['status']}" for result in results
             )
         if not found_cleanup_target:
-            incomplete_states = {"unreachable", "observation_failed", "cancelled"}
+            incomplete_states = {
+                "unreachable",
+                "observation_failed",
+                "orientation_unrestored",
+                "partial_observation",
+                "cancelled",
+            }
             if any(result["status"] in incomplete_states for result in results):
                 ending = "일부 장소를 확인하지 못해 정리 대상 유무와 작업 완료 여부를 확정할 수 없습니다."
             elif counts.get("needs_clarification"):
@@ -567,6 +709,16 @@ class TidyHomeSkill(BaseSkill):
             ending = "CLOiD 임시 표시 모션은 실제 물체 정리나 완료를 의미하지 않습니다."
         else:
             ending = "장소별 처리 결과를 확인해 주세요. 실패·위임·관찰 결과를 구분했습니다."
+        partial_places = [
+            str(result.get("place", ""))
+            for result in results
+            if result.get("partial_observation") and result.get("place")
+        ]
+        if partial_places:
+            ending += (
+                f" 다방향 관찰 일부가 실패한 장소({', '.join(partial_places)})의 "
+                "미관찰 영역에 정리 대상이 없는지는 확인되지 않았습니다."
+            )
         if self._places_truncated:
             ending += f" 기억 장소가 {_MAX_HOME_PLACES}곳을 초과해 나머지는 이번 실행에서 확인하지 않았습니다."
         self.send_user_message(f"정리 작업이 종료됐습니다(scope={scope}). {summary}. {ending}")

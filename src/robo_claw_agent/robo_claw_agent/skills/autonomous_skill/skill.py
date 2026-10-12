@@ -742,7 +742,16 @@ class StopAutonomousSkill(BaseSkill):
 
             _cancel_active_goal()
         except Exception as exc:
-            logger.warning("[AutonomousAct] Error while cancelling goal: %s", exc)
+            logger.warning("[AutonomousAct] Error while cancelling navigation goal: %s", exc)
+
+        try:
+            from robo_claw_agent.skills.navigation_skill.core import (
+                _cancel_cmd_vel_rotation,  # type: ignore[import]
+            )
+
+            _cancel_cmd_vel_rotation()
+        except Exception as exc:
+            logger.warning("[AutonomousAct] Error while cancelling direct rotation: %s", exc)
 
         logger.info("[AutonomousAct] stop_autonomous called — loop stop requested")
         return {"success": True, "message": "자율 행동을 중단했습니다."}

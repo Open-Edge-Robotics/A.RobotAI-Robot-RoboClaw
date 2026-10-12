@@ -255,12 +255,24 @@ class DescribeSurroundingsSkill(BaseSkill):
 
     name = "describe_surroundings"
     answer_mode = "informational"
+    side_effects = ("base_motion",)
+    exclusive_resources = ("base_control",)
     input_schema = {
         "type": "object",
         "properties": {
             "use_vlm": {"type": "boolean", "default": True},
             "min_score": {"type": "number", "default": 0.4},
             "capture_4way": {"type": "boolean", "default": False},
+            "observation_prompt": {
+                "type": "string",
+                "maxLength": 1200,
+                "description": "4방향 이미지별 분석에 사용할 관찰 지침입니다.",
+            },
+            "return_to_start": {
+                "type": "boolean",
+                "default": False,
+                "description": "4방향 관찰 후 시작 방향으로 복귀합니다.",
+            },
         },
         "additionalProperties": True,
     }
@@ -270,9 +282,20 @@ class DescribeSurroundingsSkill(BaseSkill):
         "현재 위치(map 좌표)도 함께 보고합니다. "
         "capture_4way:=true 로 호출하면 제자리에서 4방향(정면/우/후/좌)을 90°씩 회전·촬영하며 "
         "각 방향을 VLM으로 분석하고, 종합하여 '여기가 어디인지' 위치를 판단합니다. "
+        "이 모드는 로봇 베이스를 회전하며, observation_prompt로 이미지별 관찰 지침을 지정하고 "
+        "return_to_start:=true로 시작 방향 복귀를 요청할 수 있습니다. 회전 실패 방향의 이미지는 분석에 사용하지 않습니다. "
         '("로봇이 어디 있어?", "사방 둘러보고 위치 알려줘" 류 명령에 사용) '
-        "파라미터: use_vlm(true), min_score(0.4), capture_4way(false)."
+        "파라미터: use_vlm(true), min_score(0.4), capture_4way(false), "
+        "observation_prompt(선택), return_to_start(false)."
     )
+
+    def __init__(self, active_event: threading.Event | None = None) -> None:
+        super().__init__()
+        # 이벤트가 set이면 바깥 자율 작업이 활성 상태이며, clear이면 중단 요청입니다.
+        self._active_event = active_event
+
+    def _is_active(self) -> bool:
+        return self._active_event is None or self._active_event.is_set()
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         lidar_topic = self.get_string_param(params, "lidar_topic", "/scan")
@@ -494,7 +517,13 @@ class DescribeSurroundingsSkill(BaseSkill):
         ts = int(time.time())
         t_start = time.monotonic()
 
+        cancelled = False
+        observation_prompt = str(params.get("observation_prompt", "")).strip()[:1200]
         for ko_label, en_label, target_yaw in directions:
+            if not self._is_active():
+                cancelled = True
+                break
+
             t_step = time.monotonic()
             rot_ok, rot_msg, delta_deg = self._rotate_to_target_yaw(
                 target_yaw, f"방향 전환({ko_label})"
@@ -503,15 +532,30 @@ class DescribeSurroundingsSkill(BaseSkill):
                 "delta_deg": delta_deg,
                 "rotate_ok": rot_ok,
                 "rotate_msg": rot_msg,
+                "image_received": False,
+                "analysis_ok": False,
             }
-            if not rot_ok and rot_msg and rot_msg != "이미 목표 방향을 바라보고 있습니다.":
+            if not rot_ok:
+                per_direction[ko_label] = f"방향 회전 실패: {rot_msg}"
+                per_direction_meta[ko_label] = step_meta
                 logger.warning(
-                    "[describe_surroundings] %s rotation incomplete: %s",
+                    "[describe_surroundings] %s rotation incomplete; skipping image: %s",
                     ko_label,
                     rot_msg,
                 )
+                continue
+
             if abs(delta_deg) >= 1.0:
-                time.sleep(settle_sec)  # 흔들림 안정화
+                settle_deadline = time.monotonic() + max(0.0, settle_sec)
+                while time.monotonic() < settle_deadline:
+                    if not self._is_active():
+                        cancelled = True
+                        break
+                    time.sleep(min(0.1, settle_deadline - time.monotonic()))
+            if cancelled or not self._is_active():
+                cancelled = True
+                per_direction_meta[ko_label] = step_meta
+                break
 
             cv_img, _topic, _comp = self.get_opencv_image(params, timeout_sec=10.0)
             if cv_img is None:
@@ -523,6 +567,7 @@ class DescribeSurroundingsSkill(BaseSkill):
                     time.monotonic() - t_step,
                 )
                 continue
+            step_meta["image_received"] = True
 
             try:
                 cv2.imwrite(f"/tmp/surroundings_{en_label}_{ts}.png", cv_img)
@@ -534,11 +579,13 @@ class DescribeSurroundingsSkill(BaseSkill):
                 continue
 
             try:
-                vlm_prompt = (
-                    f"이것은 로봇 {ko_label} 방향의 카메라 이미지야. "
+                base_prompt = observation_prompt or (
                     "보이는 공간/사물/구조를 한국어로 2~3문장으로 간결히 설명해줘."
                 )
-                per_direction[ko_label] = self.node._llm.analyze_image(vlm_prompt, img_b64)
+                vlm_prompt = f"이것은 로봇 {ko_label} 방향의 카메라 이미지야. {base_prompt}"
+                description = str(self.node._llm.analyze_image(vlm_prompt, img_b64) or "").strip()
+                per_direction[ko_label] = description or "VLM 분석 결과가 비어 있습니다."
+                step_meta["analysis_ok"] = bool(description)
             except Exception as exc:
                 per_direction[ko_label] = f"VLM 분석 실패: {exc}"
             images.append((en_label, cv_img.copy()))
@@ -550,16 +597,27 @@ class DescribeSurroundingsSkill(BaseSkill):
                 time.monotonic() - t_step,
             )
 
-        # 원위치 복귀 (옵션). 위치 파악 목적이면 생략해 시간 절약.
+        # 원위치 복귀는 중단 요청이 없는 경우에만 시도합니다.
+        return_to_start_result: dict[str, Any] | None = None
         if return_to_start:
-            t_ret = time.monotonic()
-            rot_ok, rot_msg, _delta = self._rotate_to_target_yaw(start_yaw, "원위치 복귀")
-            if not rot_ok and rot_msg and rot_msg != "이미 목표 방향을 바라보고 있습니다.":
-                logger.warning("[describe_surroundings] Return-to-start incomplete: %s", rot_msg)
-            logger.info(
-                "[describe_surroundings] Return-to-start complete (%.1fs)",
-                time.monotonic() - t_ret,
-            )
+            if cancelled or not self._is_active():
+                cancelled = True
+                return_to_start_result = {
+                    "success": False,
+                    "message": "중단 요청으로 시작 방향 복귀를 생략했습니다.",
+                }
+            else:
+                t_ret = time.monotonic()
+                rot_ok, rot_msg, _delta = self._rotate_to_target_yaw(start_yaw, "원위치 복귀")
+                return_to_start_result = {"success": rot_ok, "message": rot_msg}
+                if not rot_ok:
+                    logger.warning(
+                        "[describe_surroundings] Return-to-start incomplete: %s", rot_msg
+                    )
+                logger.info(
+                    "[describe_surroundings] Return-to-start finished (%.1fs)",
+                    time.monotonic() - t_ret,
+                )
 
         logger.info(
             "[describe_surroundings] 4-way capture complete (total %.1fs, images %d/%d)",
@@ -602,44 +660,74 @@ class DescribeSurroundingsSkill(BaseSkill):
                 f"현재 map 좌표: x={pose['x']}, y={pose['y']}, "
                 f"heading={pose['heading_deg']}도 (frame={pose['frame']}). "
             )
-        successful_dirs = [d for d, v in per_direction.items() if v and "실패" not in v]
-        partial = len(successful_dirs) < len(directions)
-        dir_text = "\n".join(f"- {label} 방향: {desc}" for label, desc in per_direction.items())
+        successful_dirs = [
+            label
+            for label, _en_label, _target_yaw in directions
+            if per_direction_meta.get(label, {}).get("rotate_ok") is True
+            and per_direction_meta.get(label, {}).get("image_received") is True
+            and per_direction_meta.get(label, {}).get("analysis_ok") is True
+            and bool(per_direction.get(label, "").strip())
+        ]
+        failed_dirs = [
+            label for label, _en_label, _target_yaw in directions if label not in successful_dirs
+        ]
+        dir_text = "\n".join(f"- {label} 방향: {per_direction[label]}" for label in successful_dirs)
+        return_failed = bool(return_to_start_result and not return_to_start_result["success"])
+        partial = len(successful_dirs) < len(directions) or cancelled
         summary = ""
         if successful_dirs:
             try:
+                missing_text = (
+                    f"\n관찰에 실패한 방향: {', '.join(failed_dirs)}. 해당 방향의 상태를 추측하지 마세요."
+                    if failed_dirs
+                    else ""
+                )
                 messages = [
                     {
                         "role": "user",
                         "content": (
                             "다음은 로봇이 제자리에서 4방향을 촬영해 분석한 결과야.\n"
-                            f"{pose_str}\n\n{dir_text}\n\n"
-                            "이 정보를 종합해서 로봇이 지금 어떤 장소(예: 거실, 복도, 주방 등)에 "
-                            "있는 것으로 보이는지와 주변 상황을 한국어로 자연스럽게 3~4문장으로 요약해줘."
+                            f"{pose_str}\n\n{dir_text}{missing_text}\n\n"
+                            "관찰에 성공한 방향의 정보만으로 장소와 주변 상황을 한국어로 3~4문장 요약해줘. "
+                            "관찰되지 않은 방향에 대해서는 추측하지 마세요."
                         ),
                     }
                 ]
-                summary = self.node._llm.chat(messages)
+                summary = str(self.node._llm.chat(messages) or "").strip()
             except Exception as exc:
                 logger.warning("[describe_surroundings] Comprehensive analysis failed: %s", exc)
-                summary = "4방향 이미지를 수집했으나 종합 요약 생성에 실패했습니다."
+            if not summary:
+                summary = "방향별 관찰은 수집했으나 종합 요약 생성에 실패했습니다."
+            if return_failed:
+                summary += " 시작 방향으로 복귀하지 못해 현재 로봇 방향을 확인해야 합니다."
         else:
             summary = (
-                "4방향 촬영 중 모든 방향에서 이미지 수신/VLM 분석에 실패했습니다. "
-                "카메라 토픽 또는 VLM 연결을 확인하세요."
+                "다방향 관찰에서 사용할 수 있는 이미지 분석 결과가 없습니다. "
+                "회전, 카메라 토픽 또는 VLM 연결을 확인하세요."
             )
             logger.error("[describe_surroundings] No successful directions — skipping summary")
 
+        if return_to_start_result is not None:
+            report["return_to_start"] = return_to_start_result
         report["per_direction"] = per_direction
         report["per_direction_meta"] = per_direction_meta
+        report["successful_directions"] = successful_dirs
+        report["failed_directions"] = failed_dirs
+        report["cancelled"] = cancelled
         report["partial"] = partial
+        report["success"] = bool(successful_dirs)
         report["scene_description"] = summary
         report["message"] = summary
         if montage_path:
             report["file_path"] = montage_path
 
         # RAG 저장
-        if self.node and hasattr(self.node, "_memory") and getattr(self.node, "_enable_rag", False):
+        if (
+            report["success"]
+            and self.node
+            and hasattr(self.node, "_memory")
+            and getattr(self.node, "_enable_rag", False)
+        ):
             try:
                 loc = f" [위치 x={pose['x']} y={pose['y']}]" if pose else ""
                 self.node._memory.add_knowledge(  # type: ignore

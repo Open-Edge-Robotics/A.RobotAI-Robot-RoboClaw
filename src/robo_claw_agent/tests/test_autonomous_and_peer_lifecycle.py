@@ -391,9 +391,14 @@ def test_stop_autonomous_cancels_motion_and_wakes_sleep(monkeypatch):
     _SLEEP_WAKE.clear()
 
     canceled = []
+    cmd_vel_canceled = []
     monkeypatch.setattr(
         "robo_claw_agent.skills.navigation_skill._cancel_active_goal",
         lambda *args, **kwargs: canceled.append(True),
+    )
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill.core._cancel_cmd_vel_rotation",
+        lambda: cmd_vel_canceled.append(True) or (True, "stopped"),
     )
 
     res = skill.execute({})
@@ -401,6 +406,7 @@ def test_stop_autonomous_cancels_motion_and_wakes_sleep(monkeypatch):
     assert not _AUTONOMOUS_ACTIVE.is_set()
     assert _SLEEP_WAKE.is_set()
     assert len(canceled) > 0
+    assert cmd_vel_canceled == [True]
 
 
 @pytest.mark.unit
