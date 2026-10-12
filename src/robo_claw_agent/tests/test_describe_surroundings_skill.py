@@ -80,7 +80,9 @@ def test_four_way_observation_skips_image_when_rotation_fails(monkeypatch):
     )
 
     llm = FakeLLM()
+    messages = []
     skill = DescribeSurroundingsSkill()
+    skill.send_user_message = messages.append
     skill.node = SimpleNamespace(_llm=llm)
     skill.get_map_pose = MagicMock(
         return_value={"x": 1.0, "y": 2.0, "yaw": 0.0, "heading_deg": 0.0, "frame": "map"}
@@ -114,6 +116,7 @@ def test_four_way_observation_skips_image_when_rotation_fails(monkeypatch):
     assert result["failed_directions"] == ["정면"]
     assert len(image_calls) == 3
     assert "방향 회전 실패" in result["per_direction"]["정면"]
+    assert messages[0] == "🧭 사방을 둘러보며 주변을 파악합니다..."
     assert all("명확한 빨래" in prompt for prompt in llm.prompts)
 
 

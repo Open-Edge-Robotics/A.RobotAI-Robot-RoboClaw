@@ -490,7 +490,7 @@ class DescribeSurroundingsSkill(BaseSkill):
             "yes",
         )
 
-        self.send_user_message("🧭 사방을 둘러보며 위치를 파악합니다...")
+        self.send_user_message("🧭 사방을 둘러보며 주변을 파악합니다...")
 
         start_pose = self.get_map_pose()
         if not start_pose:
