@@ -320,6 +320,7 @@ class TestQueueBypassPolicy:
             "stop_explore",
             "stop_monitor",
             "stop_autonomous",
+            "stop_cloid_motion",
         ):
             assert _mod.bypasses_queue(name) is True, name
 

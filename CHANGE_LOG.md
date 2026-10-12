@@ -5,6 +5,19 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-12**
 
+## 2026-10-12 — CLOi 선행 모션의 명시적 순차 실행 지원
+
+- `execute_cloid_motion`은 사용자가 `confirm=true`로 직접 실행을 명시 승인하면 카탈로그의 유효한 단일 `pre_id` 선행 모션을 먼저 요청하고 10초 뒤 대상 모션을 요청합니다. 누락·순환·중첩 선행은 차단합니다. STOP 요청은 아직 발행되지 않은 후속 명령을 중단하며, `stop_cloid_motion`은 task queue를 우회해 대기 중에도 실행되도록 합니다.
+- MotionCmd에는 완료 피드백이 없으므로 결과는 각 START/STOP 요청 발행까지만 나타냅니다. 10초 간격은 모션 완료 확인이 아니며, cleanup-demo의 allowlist/pre_id 차단 정책은 변경하지 않았습니다.
+- **검증**: ROS 없는 대역 테스트에서 선행 체인 순서·간격, 누락/순환 체인 차단, STOP 중단 및 정지 스킬의 큐 선점 실행을 검증합니다. 실제 로봇 실행이나 배포는 하지 않습니다.
+
+## 2026-10-12 — 단회 정리 후보에 생활용품과 유형별 보관 장소 추가
+
+- `tidy_home`에서 명확한 폐기물에 더해 수건, 쿠션/방석, 명확한 빨래/세탁물을 별도 후보 유형으로 인식합니다. 일반 옷·개인 소지품·위험물은 기존처럼 임의 이동하지 않습니다.
+- 폐기물은 승인된 폐기 장소로만, 생활용품은 metadata에서 해당 유형을 명시 승인한 비추정 보관 장소로만 배치하도록 검증합니다. CLOi의 `cleanup_demo`는 고정 시연 모션이므로 생활용품을 대상으로 위임하지 않습니다.
+- 자세/좌표를 추정하거나 실제 완료를 주장하지 않으며, 유형별 목적지나 실제 조작 능력이 없으면 처리를 보류하고 확인을 요청합니다.
+- **검증**: 관련 테스트 34건과 변경 Python 파일의 Ruff 검사, 스킬 카탈로그/문서 링크 검사를 통과했습니다. 전체 validation bundle은 ROS 패키지 source path 없이 pytest를 호출해 collection 오류가 발생했고, 기존 `.coverage` 파일도 현재 소스보다 오래되어 완료 증거로 사용할 수 없습니다.
+
 ## 2026-10-12 — CLOi 시연 설정을 공통 contract로 관리
 
 - 공통 runtime config contract v2.6.0에 `agent.cloid_cleanup_demo_enabled` 및 `agent.cloid_cleanup_demo_motion_ids_json`을 추가하고 생성된 Go/Python/shell consumer artifact 및 lock을 갱신합니다. RoboClaw CLI와 Docker launch가 두 설정을 launch argument로 전달합니다.

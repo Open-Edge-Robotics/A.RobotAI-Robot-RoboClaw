@@ -271,23 +271,29 @@ class LLMDecideAction(BTNode):
                     "대상을 관찰·기록하고 처리할 수 없음을 사용자에게 보고하세요."
                 )
 
-        cleanup_disposal_targets = self._blackboard.get("cleanup_disposal_targets", [])
-        cleanup_disposal_targets_str = (
-            ", ".join(str(target.get("name", "")) for target in cleanup_disposal_targets)
-            if isinstance(cleanup_disposal_targets, list) and cleanup_disposal_targets
-            else "없음 — 이 경우 집기/배치를 계획하지 마세요"
+        cleanup_destinations = self._blackboard.get("cleanup_destinations", [])
+        cleanup_destinations_str = (
+            ", ".join(
+                f"{target.get('name', '')} (허용 유형: {', '.join(target.get('categories', []))})"
+                for target in cleanup_destinations
+                if isinstance(target, dict)
+            )
+            if isinstance(cleanup_destinations, list) and cleanup_destinations
+            else "없음 — 집기/배치를 계획하지 마세요"
         )
-        cleanup_disposal_targets_section = (
-            f"\n[승인된 안전 폐기 장소]\n{cleanup_disposal_targets_str}\n"
+        cleanup_destinations_section = (
+            f"\n[승인된 유형별 정리 장소]\n{cleanup_destinations_str}\n"
             if cleanup_task_mode
             else ""
         )
         cleanup_mode_rule = (
             "\n[일회성 정리 작업]\n"
-            "현재 장소에서 명확히 폐기물로 확인된 대상만 처리하세요. 컵·병·옷·개인 소지품·위험물·액체는 "
-            "임의로 옮기거나 동료에게 위임하지 마세요. 목록에 있는 집기·배치 스킬만 사용하고 다른 장소로 "
-            "내비게이션하거나 탐험하지 마세요. 집기 계획에는 유효한 안전 배치 장소로의 place 단계를 반드시 포함하세요. "
-            "대상이 모호하거나 안전한 지정 배치 장소가 없으면 물리 동작을 계획하지 말고 사용자 확인을 요청하세요.\n"
+            "현재 장소에서 명확히 관찰된 폐기물, 수건, 쿠션/방석, 빨래/세탁물만 정리 후보로 삼으세요. "
+            "폐기물은 폐기물 유형 목적지에만, 생활용품은 동일한 유형이 허용된 보관 장소에만 놓으세요. "
+            "옷·컵·병·개인 소지품·위험물·액체 유출은 상태나 소유가 모호하면 이동하거나 위임하지 말고 확인을 요청하세요. "
+            "세탁 여부나 원래 보관 위치를 추측하지 말고, 유형별 승인 장소가 없는 항목은 집지 마세요. "
+            "목록에 있는 집기·배치 스킬만 사용하고 다른 장소로 내비게이션하거나 탐험하지 마세요. "
+            "집기 계획에는 대상 유형과 일치하는 승인 장소로의 place 단계를 반드시 포함하세요.\n"
             if cleanup_task_mode
             else ""
         )
@@ -325,7 +331,7 @@ class LLMDecideAction(BTNode):
 {self_caps_str}
 [정리 작업 능력]
 {"정리 대상을 집어 옮길 등록 스킬이 있습니다." if cleanup_capable else "정리 대상을 집어 옮길 등록 스킬이 없습니다."}
-{cleanup_disposal_targets_section}{delegate_force_hint}
+{cleanup_destinations_section}{delegate_force_hint}
 
 [응답 형식 — 반드시 JSON만 출력]
 
@@ -348,7 +354,7 @@ class LLMDecideAction(BTNode):
 - 과거 이력을 적극 활용하세요. 특히 [경고]로 표시된 반복 실패나 무효 결정이 있다면 동일한 장소/행동을 다시 선택하지 마세요.
 - 다음 경우 [주변의 다른 로봇 에이전트 목록]을 참고해 `delegate_task`(같은 ROS 네트워크) 또는 `call_peer_robot`(gRPC 원격)로 위임을 우선 고려하세요: (1) 자신의 역할/스킬 목록에 없는 작업(예: 자신에게 매니퓰레이션 스킬이 없는데 물건을 집어야 하는 경우)을 동료의 역할(role)이나 능력(capabilities)이 커버하는 경우, (2) 동료의 상태(캐시된 배터리/위치)가 확인되고 자신보다 목적지에 훨씬 가깝거나 배터리가 더 충분한 경우. 상태가 "상태 불명"인 동료에게는 위임 전에 `query_peer_status`로 먼저 확인하세요.
 - [동료와의 최근 대화]에 동료가 보낸 메시지가 있다면, 그 요청/지시/도움 요청에 대응하는 행동을 우선 고려하세요. 동료가 도움을 요청했고 자신이 처리할 수 있으면 해당 행동을, 처리할 수 없으면 `call_peer_robot`으로 다른 동료에게 재요청하거나 처리 불가를 알리세요.
-- 정리 대상이 확인되고 [정리 작업 능력]이 있다고 표시되면 자신의 등록된 조작 스킬로 직접 처리하세요.
+- 정리 대상이 확인되고 [정리 작업 능력]이 있다고 표시되어도, 현재 항목 유형과 일치하는 승인된 정리 장소가 있을 때만 등록된 조작 스킬로 처리하세요.
 - [정리 작업 능력]이 없으면 연결 및 조작 능력이 확인된 동료 한 대에게 `delegate_task`(같은 ROS 네트워크) 또는 `call_peer_robot`(gRPC)으로 해당 대상만 단발 요청하세요. `autonomous_cooperate`를 시작하지 마세요.
 - [정리 위임 상태]에 연결된 조작 가능 동료가 없다고 표시되면 다른 피어를 추측하거나 직접 조작하지 말고, 관찰 결과와 미처리 사유를 보고하세요.
 - 쓰레기 줍기나 정리처럼 여러 단계가 필요하면 plan 형식을 사용하세요.

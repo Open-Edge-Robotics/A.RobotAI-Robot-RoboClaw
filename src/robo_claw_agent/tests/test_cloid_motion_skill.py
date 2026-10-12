@@ -350,19 +350,110 @@ def test_execute_rejects_unregistered_name(monkeypatch):
     assert publisher.messages == []
 
 
-def test_execute_blocks_motion_with_unfulfilled_prerequisite(monkeypatch):
+def test_execute_requires_explicit_confirmation_for_prerequisite_chain(monkeypatch):
     publisher = _FakePublisher()
     _patch_ros(monkeypatch, publisher)
     skill = ExecuteCloidMotionSkill()
     skill.set_node(_FakeNode())
-    _set_catalog(skill, _catalog(_motion(20, "greet2", pre_id="19")))
+    _set_catalog(skill, _catalog(_motion(19, "greet1"), _motion(20, "greet2", pre_id="19")))
 
-    result = skill.execute({"motion_name": "greet2", "confirm": True})
+    result = skill.execute({"motion_name": "greet2", "confirm": False})
 
     assert result["success"] is False
-    assert result["failure_reason"] == "motion_prerequisite_required"
-    assert result["required_pre_motion_id"] == 19
+    assert result["failure_reason"] == "safety_rejected"
     assert publisher.messages == []
+
+
+def test_execute_runs_prerequisite_before_target_with_ten_second_gap(monkeypatch):
+    publisher = _FakePublisher()
+    _patch_ros(monkeypatch, publisher)
+    skill = ExecuteCloidMotionSkill()
+    skill.set_node(_FakeNode())
+    _set_catalog(
+        skill, _catalog(_motion(19, "prepare", pre_id=""), _motion(20, "requested", pre_id="19"))
+    )
+    events = []
+    original_publish = publisher.publish
+
+    def record_publish(command):
+        events.append(("publish", command.motion_id))
+        original_publish(command)
+
+    def record_gap():
+        events.append(("gap", 10.0))
+        return False
+
+    publisher.publish = record_publish
+    monkeypatch.setattr(_MOD, "_wait_for_prerequisite_gap", record_gap, raising=False)
+
+    result = skill.execute({"motion_name": "requested", "confirm": True})
+
+    assert result["success"] is True
+    assert result["status"] == "sent"
+    assert result["motion_id"] == 20
+    assert result["sequence_motion_ids"] == [19, 20]
+    assert result["prerequisite_gap_sec"] == 10.0
+    assert result["completion_confirmed"] is False
+    assert [command.motion_id for command in publisher.messages] == [19, 20]
+    assert events == [("publish", 19), ("gap", 10.0), ("publish", 20)]
+
+
+def test_execute_rejects_invalid_prerequisite_chain_before_publishing(monkeypatch):
+    publisher = _FakePublisher()
+    _patch_ros(monkeypatch, publisher)
+    skill = ExecuteCloidMotionSkill()
+    skill.set_node(_FakeNode())
+
+    _set_catalog(skill, _catalog(_motion(20, "missing", pre_id="99")))
+    missing = skill.execute({"motion_name": "missing", "confirm": True})
+    _set_catalog(
+        skill,
+        _catalog(
+            _motion(20, "cycle_a", pre_id="19"),
+            _motion(19, "cycle_b", pre_id="20"),
+        ),
+    )
+    cycle = skill.execute({"motion_name": "cycle_a", "confirm": True})
+    _set_catalog(
+        skill,
+        _catalog(
+            _motion(18, "nested_root"),
+            _motion(19, "nested_pre", pre_id="18"),
+            _motion(20, "nested_target", pre_id="19"),
+        ),
+    )
+    nested = skill.execute({"motion_name": "nested_target", "confirm": True})
+
+    assert missing["success"] is False
+    assert missing["failure_reason"] == "motion_prerequisite_not_registered"
+    assert cycle["success"] is False
+    assert cycle["failure_reason"] == "motion_prerequisite_cycle"
+    assert nested["success"] is False
+    assert nested["failure_reason"] == "motion_prerequisite_chain_too_long"
+    assert publisher.messages == []
+
+
+def test_execute_aborts_prerequisite_chain_after_stop_request(monkeypatch):
+    publisher = _FakePublisher()
+    _patch_ros(monkeypatch, publisher)
+    skill = ExecuteCloidMotionSkill()
+    skill.set_node(_FakeNode())
+    stop_skill = _MOD.StopCloidMotionSkill()
+    stop_skill.set_node(_FakeNode())
+    _set_catalog(skill, _catalog(_motion(19, "prepare"), _motion(20, "requested", pre_id="19")))
+
+    def stop_during_gap():
+        assert stop_skill.execute({"confirm": True})["success"] is True
+        return True
+
+    monkeypatch.setattr(_MOD, "_wait_for_prerequisite_gap", stop_during_gap, raising=False)
+
+    result = skill.execute({"motion_name": "requested", "confirm": True})
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "motion_chain_stopped"
+    assert [command.motion_id for command in publisher.messages] == [19, 0]
+    assert [command.command_type for command in publisher.messages] == [0, 1]
 
 
 def test_execute_requires_explicit_confirmation(monkeypatch):

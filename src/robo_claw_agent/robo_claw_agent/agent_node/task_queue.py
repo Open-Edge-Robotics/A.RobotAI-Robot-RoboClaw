@@ -49,6 +49,7 @@ PREEMPTIVE_SKILLS: frozenset[str] = frozenset({
     "stop_explore",
     "stop_monitor",
     "stop_autonomous",
+    "stop_cloid_motion",
 })
 
 

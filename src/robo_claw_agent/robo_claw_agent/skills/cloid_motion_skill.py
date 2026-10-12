@@ -26,6 +26,11 @@ _DEFAULT_CONNECTION_TIMEOUT_SEC = 2.0
 _MIN_CONNECTION_TIMEOUT_SEC = 0.1
 _MAX_CONNECTION_TIMEOUT_SEC = 10.0
 _SUBSCRIPTION_POLL_SEC = 0.05
+_PREREQUISITE_MOTION_GAP_SEC = 10.0
+_MAX_PREREQUISITE_MOTIONS = 1
+_MOTION_SEQUENCE_LOCK = threading.Lock()
+_MOTION_COMMAND_LOCK = threading.Lock()
+_MOTION_CHAIN_STOP_EVENT = threading.Event()
 
 
 def _load_string_type() -> type[Any]:
@@ -202,6 +207,36 @@ def _public_motion(motion: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _resolve_motion_sequence(
+    selected: dict[str, Any], motions: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]] | None, str]:
+    """Resolve one acyclic prerequisite in execution order; nested chains are rejected."""
+    by_id = {motion["motion_id"]: motion for motion in motions}
+    seen_ids = {selected["motion_id"]}
+    prerequisites: list[dict[str, Any]] = []
+    current = selected
+
+    while current["pre_id"] is not None:
+        pre_id = current["pre_id"]
+        if pre_id in seen_ids:
+            return None, "motion_prerequisite_cycle"
+        prerequisite = by_id.get(pre_id)
+        if prerequisite is None:
+            return None, "motion_prerequisite_not_registered"
+        if len(prerequisites) >= _MAX_PREREQUISITE_MOTIONS:
+            return None, "motion_prerequisite_chain_too_long"
+        seen_ids.add(pre_id)
+        prerequisites.append(prerequisite)
+        current = prerequisite
+
+    return list(reversed(prerequisites)) + [selected], ""
+
+
+def _wait_for_prerequisite_gap() -> bool:
+    """Wait the configured inter-motion gap, returning early when STOP interrupts the sequence."""
+    return _MOTION_CHAIN_STOP_EVENT.wait(_PREREQUISITE_MOTION_GAP_SEC)
+
+
 def _wait_for_subscription(publisher: Any, timeout_sec: float) -> bool:
     deadline = time.monotonic() + timeout_sec
     while True:
@@ -321,8 +356,10 @@ class ExecuteCloidMotionSkill(BaseSkill):
     }
     description = (
         "list_cloid_motions 결과의 정확한 이름을 CLOi에 등록된 motion_id로 해석해 "
-        "MotionCmd START 명령을 한 번 발행합니다. 동일 이름이 여러 개면 motion_id로 "
-        "선택해야 합니다. 사용자의 명시적 실행 요청이 있을 때만 confirm=true로 호출합니다."
+        "MotionCmd START 명령을 발행합니다. 동일 이름이 여러 개면 motion_id로 선택해야 합니다. "
+        "직접 pre_id 선행 모션은 사용자가 confirm=true로 실행을 명시 승인하면 먼저 요청하고 10초 뒤 "
+        "대상 모션을 요청합니다. 선행 모션이 누락·순환하거나 중첩 pre_id가 있으면 차단합니다. "
+        "완료 피드백이 없어 요청 발행만 확인합니다."
     )
 
     def __init__(self) -> None:
@@ -377,8 +414,18 @@ class ExecuteCloidMotionSkill(BaseSkill):
                 failure_reason="motion_busy",
                 recoverable=True,
             )
+        if not _MOTION_SEQUENCE_LOCK.acquire(blocking=False):
+            self._publish_lock.release()
+            return self.fail_result(
+                "다른 CLOi 모션 명령을 처리 중입니다.",
+                failure_reason="motion_busy",
+                recoverable=True,
+            )
 
         try:
+            with _MOTION_COMMAND_LOCK:
+                _MOTION_CHAIN_STOP_EVENT.clear()
+
             motions, source, failure_reason = _read_motion_catalog(
                 self, _DEFAULT_CATALOG_TIMEOUT_SEC
             )
@@ -418,15 +465,15 @@ class ExecuteCloidMotionSkill(BaseSkill):
             else:
                 selected = candidates[0]
 
-            pre_id = selected["pre_id"]
-            if pre_id is not None:
+            sequence, sequence_error = _resolve_motion_sequence(selected, motions)
+            if sequence is None:
                 return self.fail_result(
-                    f"이 모션은 선행 모션 ID {pre_id} 완료가 필요합니다. 자동 연속 실행은 하지 않습니다.",
-                    failure_reason="motion_prerequisite_required",
+                    "모션 카탈로그의 선행 동작이 누락·순환했거나 지원 범위를 초과해 실행을 차단했습니다.",
+                    failure_reason=sequence_error,
                     motion_name=motion_name,
                     motion_id=selected["motion_id"],
-                    required_pre_motion_id=pre_id,
                 )
+            prerequisites = sequence[:-1]
 
             try:
                 publisher, message_type = self._get_publisher()
@@ -448,32 +495,78 @@ class ExecuteCloidMotionSkill(BaseSkill):
                     motion_id=selected["motion_id"],
                 )
 
-            command = message_type()
-            command.motion_id = selected["motion_id"]
-            command.command_type = MOTION_COMMAND_START
-            try:
-                publisher.publish(command)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("CLOi MotionCmd publish failed: %s", exc)
-                return self.fail_result(
-                    f"CLOi 모션 명령을 발행하지 못했습니다: {exc}",
-                    failure_reason="motion_publish_failed",
-                    motion_name=motion_name,
-                    motion_id=selected["motion_id"],
-                )
+            sent_motion_ids: list[int] = []
+            for index, motion in enumerate(sequence):
+                if index > 0 and _wait_for_prerequisite_gap():
+                    return self.fail_result(
+                        "STOP 요청으로 선행 모션 체인을 중단했으며 이후 모션은 발행하지 않았습니다. "
+                        "이미 발행된 모션의 실제 상태는 별도로 확인해야 합니다.",
+                        failure_reason="motion_chain_stopped",
+                        motion_name=motion_name,
+                        motion_id=selected["motion_id"],
+                        sent_motion_ids=sent_motion_ids,
+                        completion_confirmed=False,
+                    )
+
+                with _MOTION_COMMAND_LOCK:
+                    if _MOTION_CHAIN_STOP_EVENT.is_set():
+                        return self.fail_result(
+                            "STOP 요청으로 선행 모션 체인을 중단했으며 이후 모션은 발행하지 않았습니다.",
+                            failure_reason="motion_chain_stopped",
+                            motion_name=motion_name,
+                            motion_id=selected["motion_id"],
+                            sent_motion_ids=sent_motion_ids,
+                            completion_confirmed=False,
+                        )
+                    command = message_type()
+                    command.motion_id = motion["motion_id"]
+                    command.command_type = MOTION_COMMAND_START
+                    try:
+                        publisher.publish(command)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("CLOi MotionCmd publish failed: %s", exc)
+                        return self.fail_result(
+                            f"CLOi 모션 명령을 발행하지 못했습니다: {exc}",
+                            failure_reason=(
+                                "motion_publish_failed"
+                                if not sent_motion_ids
+                                else "motion_chain_partial"
+                            ),
+                            motion_name=motion_name,
+                            motion_id=selected["motion_id"],
+                            failed_motion_id=motion["motion_id"],
+                            sent_motion_ids=sent_motion_ids,
+                            completion_confirmed=False,
+                        )
+                    sent_motion_ids.append(motion["motion_id"])
 
             source_key = "source_topic" if source == MOTION_MAP_TOPIC else "source_file"
+            if prerequisites:
+                sequence_names = " → ".join(
+                    f"{motion['motion_name']} (ID {motion['motion_id']})" for motion in sequence
+                )
+                message = (
+                    f"CLOi 모션 START 요청을 10초 간격으로 발행했습니다: {sequence_names}. "
+                    "MotionCmd 완료 응답이 없어 각 동작의 완료 여부는 확인되지 않았습니다."
+                )
+            else:
+                message = (
+                    f"CLOi 모션 시작 명령을 발행했습니다: {motion_name} (ID {selected['motion_id']}). "
+                    "이 토픽은 실행 완료 응답을 제공하지 않으므로 동작 완료는 확인되지 않았습니다."
+                )
             return self.success_result(
-                f"CLOi 모션 시작 명령을 발행했습니다: {motion_name} (ID {selected['motion_id']}). "
-                "이 토픽은 실행 완료 응답을 제공하지 않으므로 동작 완료는 확인되지 않았습니다.",
+                message,
                 status="sent",
                 motion_name=motion_name,
                 motion_id=selected["motion_id"],
                 command_type=MOTION_COMMAND_START,
+                sequence_motion_ids=sent_motion_ids,
+                prerequisite_gap_sec=(_PREREQUISITE_MOTION_GAP_SEC if prerequisites else 0.0),
                 completion_confirmed=False,
                 **{source_key: source},
             )
         finally:
+            _MOTION_SEQUENCE_LOCK.release()
             self._publish_lock.release()
 
 
@@ -538,6 +631,8 @@ class StopCloidMotionSkill(BaseSkill):
             )
 
         try:
+            with _MOTION_COMMAND_LOCK:
+                _MOTION_CHAIN_STOP_EVENT.set()
             try:
                 if self._publisher is None or self._publisher_node is not self.node:
                     self._publisher, self._message_type = _create_motion_publisher(self.node)
@@ -560,7 +655,8 @@ class StopCloidMotionSkill(BaseSkill):
             command.motion_id = 0
             command.command_type = MOTION_COMMAND_STOP
             try:
-                publisher.publish(command)
+                with _MOTION_COMMAND_LOCK:
+                    publisher.publish(command)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CLOi MotionCmd stop publish failed: %s", exc)
                 return self.fail_result(

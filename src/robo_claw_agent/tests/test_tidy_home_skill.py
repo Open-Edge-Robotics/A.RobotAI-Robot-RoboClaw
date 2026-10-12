@@ -3,7 +3,11 @@ from __future__ import annotations
 import random
 
 import pytest
-from robo_claw_agent.skills.cleanup_policy import _select_cleanup_demo_motion
+from robo_claw_agent.skills.cleanup_policy import (
+    _cleanup_target_category,
+    _safe_cleanup_storage_targets,
+    _select_cleanup_demo_motion,
+)
 from robo_claw_agent.skills.tidy_home_skill import (
     TidyHomeSkill,
     _cleanup_plan_has_complete_placement,
@@ -72,15 +76,35 @@ def test_room_scope_reports_missing_or_ambiguous_location():
     assert ambiguous_error == "requested_location_ambiguous"
 
 
-def test_cleanup_detection_requires_clear_disposable_waste():
+def test_cleanup_detection_includes_household_items_without_treating_them_as_waste():
     assert _has_cleanup_indication([{"name": "wrapper"}], "테이블 아래 포장지가 있습니다.") is True
+    assert _has_cleanup_indication([{"name": "towel"}], "바닥에 수건이 있습니다.") is True
+    assert _has_cleanup_indication([{"name": "cushion"}], "소파 옆 쿠션이 있습니다.") is True
+    assert _has_cleanup_indication([{"name": "laundry"}], "바닥에 빨래가 있습니다.") is True
+    assert (
+        _has_cleanup_indication([{"name": "쓰레기통"}], "주방 한쪽에 쓰레기통이 있습니다.") is False
+    )
+    assert _has_cleanup_indication([], "쓰레기통 옆에 포장지가 있습니다.") is True
+    assert _cleanup_target_category("수건") == "towel"
+    assert _cleanup_target_category("쿠션") == "cushion"
+    assert _cleanup_target_category("빨랫감") == "laundry"
+    assert _cleanup_target_category("wrapper") == "waste"
+    assert _cleanup_target_category("옷") is None
+    assert _cleanup_target_category("shirt") is None
     assert _has_cleanup_indication([], "정리해야 할 물건이 보입니다.") is False
     assert _has_cleanup_indication([], "정리할 대상이 보이지 않습니다.") is False
+    assert _has_cleanup_indication([], "쓰레기는 없고 바닥에 수건이 보입니다.") is True
+    assert _has_cleanup_indication([], "바닥에 수건이 보이지 않습니다.") is False
     assert _has_cleanup_indication(["person"], "사람이 서 있습니다.") is False
 
 
 def test_ambiguous_or_hazardous_items_require_user_clarification():
     assert _has_ambiguous_cleanup_indication([{"name": "cup"}], "테이블 위 컵이 보입니다.") is True
+    assert _has_ambiguous_cleanup_indication([{"name": "clothes"}], "바닥에 옷이 있습니다.") is True
+    assert (
+        _has_ambiguous_cleanup_indication([{"name": "laundry"}], "바닥에 빨래가 있습니다.") is False
+    )
+    assert _has_ambiguous_cleanup_indication([{"name": "shirt"}], "세탁물로 보입니다.") is True
     assert _has_ambiguous_cleanup_indication([], "바닥에 유리 조각이 있습니다.") is True
     assert (
         _has_ambiguous_cleanup_indication([{"name": "cup"}], "정리할 대상이 보이지 않습니다.")
@@ -114,7 +138,106 @@ def test_cleanup_disposal_destination_requires_curated_nonestimated_pose():
         ]
     )
 
-    assert _safe_cleanup_disposal_targets(memory) == [{"name": "쓰레기통", "target_pose": pose}]
+    assert _safe_cleanup_disposal_targets(memory) == [
+        {"name": "쓰레기통", "target_pose": pose, "categories": ["waste"]}
+    ]
+
+
+def test_cleanup_storage_targets_require_explicit_category_and_curated_pose():
+    from types import SimpleNamespace
+
+    pose = {
+        "frame_id": "map",
+        "position": {"x": 0.2, "y": 0.3, "z": 0.4},
+        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+    }
+    memory = SimpleNamespace(
+        get_all_objects=lambda: [
+            {
+                "name": "빨래 바구니",
+                "metadata": {
+                    "cleanup_storage_target": True,
+                    "cleanup_return_categories": ["laundry"],
+                    "target_pose": pose,
+                },
+            },
+            {
+                "name": "추정 바구니",
+                "metadata": {
+                    "cleanup_storage_target": True,
+                    "cleanup_return_categories": ["laundry"],
+                    "estimated": True,
+                    "target_pose": pose,
+                },
+            },
+            {
+                "name": "미지정 바구니",
+                "metadata": {"cleanup_storage_target": True, "target_pose": pose},
+            },
+        ]
+    )
+
+    assert _safe_cleanup_storage_targets(memory) == [
+        {"name": "빨래 바구니", "target_pose": pose, "categories": ["laundry"]}
+    ]
+
+
+def test_cleanup_plan_rejects_waste_destination_for_household_item():
+    pose = {
+        "frame_id": "map",
+        "position": {"x": 0.4, "y": -0.2, "z": 0.3},
+        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+    }
+    actions = [
+        {"skill": "adaptive_pick_object", "params": {"target_object": "towel"}},
+        {"skill": "place", "params": {"target_object": "쓰레기통", "target_pose": {"x": 999}}},
+    ]
+    destinations = [{"name": "쓰레기통", "target_pose": pose, "categories": ["waste"]}]
+
+    assert _resolve_cleanup_plan_destinations(actions, destinations) is False
+    assert actions[1]["params"]["target_pose"] == {"x": 999}
+
+
+def test_cleanup_plan_does_not_infer_household_category_for_ambiguous_object():
+    pose = {
+        "frame_id": "map",
+        "position": {"x": 0.4, "y": -0.2, "z": 0.3},
+        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+    }
+    actions = [
+        {"skill": "adaptive_pick_object", "params": {"target_object": "cup"}},
+        {"skill": "place", "params": {"target_object": "빨래 바구니"}},
+    ]
+
+    assert (
+        _resolve_cleanup_plan_destinations(
+            actions,
+            [{"name": "빨래 바구니", "target_pose": pose, "categories": ["laundry"]}],
+            detected_categories={"laundry"},
+        )
+        is False
+    )
+
+
+def test_cleanup_plan_uses_category_matched_storage_destination():
+    pose = {
+        "frame_id": "map",
+        "position": {"x": 0.4, "y": -0.2, "z": 0.3},
+        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+    }
+    actions = [
+        {"skill": "adaptive_pick_object", "params": {"target_object": "laundry"}},
+        {"skill": "place", "params": {"target_object": "빨래 바구니", "target_pose": {"x": 999}}},
+    ]
+
+    assert (
+        _resolve_cleanup_plan_destinations(
+            actions,
+            [{"name": "빨래 바구니", "target_pose": pose, "categories": ["laundry"]}],
+        )
+        is True
+    )
+    assert actions[1]["params"]["target_pose"] == pose
 
 
 def test_cleanup_plan_replaces_planner_pose_with_curated_disposal_pose():

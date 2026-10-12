@@ -308,6 +308,64 @@ def test_cleanup_mode_routes_to_demo_capable_peer_when_no_manipulator_exists(mon
     assert not {"x", "y", "target_pose"}.intersection(payload)
 
 
+def test_household_item_handoff_requires_manipulation_not_cleanup_demo(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import execution_nodes
+
+    find_peer = MagicMock(
+        side_effect=lambda _node, capability: (
+            {"peer_name": "cloid1", "transport": "grpc"} if capability == "cleanup_demo" else None
+        )
+    )
+    monkeypatch.setattr(execution_nodes, "_find_connected_peer_with_capability", find_peer)
+    node = _node_with_skills(["navigate_to", "call_peer_robot"])
+    skill = MagicMock()
+    skill.node = node
+
+    handoff = ResolveCleanupHandoff(skill)
+    handoff._blackboard = {
+        "cleanup_task_mode": True,
+        "detected_objects": [{"name": "laundry"}],
+        "scene_analysis": "바닥에 빨래가 있습니다.",
+        "patrol_last_place": "안방",
+    }
+
+    assert handoff.tick() == NodeStatus.SUCCESS
+    assert handoff._blackboard["cleanup_handoff_blocked"] is True
+    assert handoff._blackboard.get("cleanup_handoff_prepared") is not True
+    assert "보관 위치를 지정해 주세요" in handoff._blackboard["cleanup_handoff_status"]
+    find_peer.assert_called_once_with(node, "manipulation")
+
+
+def test_household_item_handoff_to_manipulator_preserves_category_safety(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import execution_nodes
+
+    monkeypatch.setattr(
+        execution_nodes,
+        "_find_connected_peer_with_capability",
+        lambda _node, capability: (
+            {"peer_name": "butler", "transport": "grpc"} if capability == "manipulation" else None
+        ),
+    )
+    node = _node_with_skills(["navigate_to", "call_peer_robot"])
+    skill = MagicMock()
+    skill.node = node
+    skill.get_map_pose.return_value = None
+
+    handoff = ResolveCleanupHandoff(skill)
+    handoff._blackboard = {
+        "cleanup_task_mode": True,
+        "detected_objects": [],
+        "scene_analysis": "바닥에 수건이 있습니다.",
+        "patrol_last_place": "안방",
+    }
+
+    assert handoff.tick() == NodeStatus.SUCCESS
+    instruction = handoff._blackboard["decided_params"]["instruction"]
+    assert "수건" in instruction
+    assert "쓰레기통" in instruction
+    assert "추측하지 마세요" in instruction
+
+
 def test_cleanup_handoff_records_no_connected_capable_peer(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 

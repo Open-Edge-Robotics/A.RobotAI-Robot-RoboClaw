@@ -8,27 +8,35 @@ import random
 import re
 from typing import Any
 
-_CLEANUP_OBJECT_KEYWORDS = (
-    "trash",
-    "garbage",
-    "waste",
-    "litter",
-    "wrapper",
-    "cigarette butt",
-    "쓰레기",
-    "포장지",
-    "담배꽁초",
-)
-_CLEANUP_SCENE_KEYWORDS = (
-    "쓰레기",
-    "포장지",
-    "담배꽁초",
-    "trash",
-    "garbage",
-    "waste",
-    "litter",
-    "wrapper",
-    "cigarette butt",
+_CLEANUP_TARGET_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "waste": (
+        "trash",
+        "garbage",
+        "waste",
+        "litter",
+        "wrapper",
+        "cigarette butt",
+        "쓰레기",
+        "포장지",
+        "담배꽁초",
+    ),
+    "towel": ("towel", "towels", "수건"),
+    "cushion": ("cushion", "cushions", "쿠션", "방석"),
+    "laundry": ("laundry", "dirty clothes", "빨래", "빨랫감", "세탁물"),
+}
+_CLEANUP_DESTINATION_TERMS = (
+    "trash bin",
+    "waste bin",
+    "rubbish bin",
+    "recycling bin",
+    "쓰레기통",
+    "휴지통",
+    "분리수거함",
+    "laundry basket",
+    "빨래 바구니",
+    "세탁 바구니",
+    "towel rack",
+    "수건걸이",
 )
 _AMBIGUOUS_CLEANUP_KEYWORDS = (
     "cup",
@@ -37,6 +45,15 @@ _AMBIGUOUS_CLEANUP_KEYWORDS = (
     "bag",
     "clothing",
     "clothes",
+    "shirt",
+    "t-shirt",
+    "pants",
+    "trousers",
+    "sock",
+    "sweater",
+    "jacket",
+    "skirt",
+    "dress",
     "shoe",
     "book",
     "toy",
@@ -54,6 +71,13 @@ _AMBIGUOUS_CLEANUP_KEYWORDS = (
     "캔",
     "가방",
     "옷",
+    "셔츠",
+    "바지",
+    "양말",
+    "스웨터",
+    "재킷",
+    "치마",
+    "원피스",
     "신발",
     "책",
     "장난감",
@@ -179,24 +203,81 @@ def _resolve_cleanup_places(
     return [], "requested_location_not_found"
 
 
-def _has_cleanup_indication(objects: Any, scene: str) -> bool:
-    """Return true only when visible labels or positive scene cues indicate cleanup work."""
-    scene_lower = str(scene or "").casefold()
-    if any(cue in scene_lower for cue in _NEGATIVE_CLEANUP_CUES):
+def _matches_cleanup_keyword(text: str, keyword: str) -> bool:
+    if keyword.isascii() and keyword.isalpha():
+        if not re.search(rf"\b{re.escape(keyword)}\b", text):
+            return False
+        return not bool(
+            re.search(rf"\b(?:no|not visible|not present)\s+{re.escape(keyword)}\b", text)
+        )
+    if keyword not in text:
         return False
+    return not bool(
+        re.search(
+            rf"{re.escape(keyword)}[^.!?。！？]{{0,12}}(?:없|보이지\s*않|확인되지\s*않)", text
+        )
+    )
 
+
+def _cleanup_target_category(value: Any) -> str | None:
+    """Classify an explicitly named tidying item without inferring its destination."""
+    lower = str(value or "").casefold()
+    if any(term in lower for term in _CLEANUP_DESTINATION_TERMS):
+        return None
+    for category, keywords in _CLEANUP_TARGET_KEYWORDS.items():
+        for keyword in keywords:
+            if _matches_cleanup_keyword(lower, keyword):
+                return category
+    return None
+
+
+def _cleanup_target_labels(objects: Any, scene: str = "") -> list[str]:
+    """Return explicit recognized target labels, falling back to unique visible scene terms."""
+    labels: list[str] = []
+    if isinstance(objects, (list, tuple)):
+        for item in objects:
+            label = str(item.get("name", "") if isinstance(item, dict) else item).strip()
+            if label and _cleanup_target_category(label):
+                labels.append(label)
+    if labels:
+        return list(dict.fromkeys(labels))
+
+    scene_text = str(scene or "").casefold()
+    for term in _CLEANUP_DESTINATION_TERMS:
+        scene_text = scene_text.replace(term, " ")
+    for keywords in _CLEANUP_TARGET_KEYWORDS.values():
+        for keyword in keywords:
+            if _matches_cleanup_keyword(scene_text, keyword):
+                labels.append(keyword)
+    return list(dict.fromkeys(labels))
+
+
+def _cleanup_target_categories(objects: Any, scene: str = "") -> set[str]:
+    """Return observed target categories; storage containers are not targets."""
+    categories: set[str] = set()
     if isinstance(objects, (list, tuple)):
         for item in objects:
             label = item.get("name", "") if isinstance(item, dict) else str(item)
-            label_lower = str(label).casefold()
-            for keyword in _CLEANUP_OBJECT_KEYWORDS:
-                if keyword.isascii() and keyword.isalpha():
-                    if re.search(rf"\b{re.escape(keyword)}\b", label_lower):
-                        return True
-                elif keyword in label_lower:
-                    return True
+            category = _cleanup_target_category(label)
+            if category:
+                categories.add(category)
 
-    return any(keyword in scene_lower for keyword in _CLEANUP_SCENE_KEYWORDS)
+    scene_text = str(scene or "").casefold()
+    for term in _CLEANUP_DESTINATION_TERMS:
+        scene_text = scene_text.replace(term, " ")
+    # A scene can mention more than one kind of item; retain each explicit category.
+    for category, keywords in _CLEANUP_TARGET_KEYWORDS.items():
+        if any(_matches_cleanup_keyword(scene_text, keyword) for keyword in keywords):
+            categories.add(category)
+    return categories
+
+
+def _has_cleanup_indication(objects: Any, scene: str) -> bool:
+    """Return true for visible waste or explicitly identified household tidying items."""
+    scene_lower = str(scene or "").casefold()
+    if any(cue in scene_lower for cue in _NEGATIVE_CLEANUP_CUES):
+        return bool(_cleanup_target_categories([], scene))
+    return bool(_cleanup_target_categories(objects, scene))
 
 
 def _has_ambiguous_cleanup_indication(objects: Any, scene: str) -> bool:
@@ -258,12 +339,77 @@ def _safe_cleanup_disposal_targets(memory: Any) -> list[dict[str, Any]]:
             continue
         canonical_pose = copy.deepcopy(pose)
         canonical_pose["position"] = xyz
-        targets.append({"name": name, "target_pose": canonical_pose})
+        targets.append({"name": name, "target_pose": canonical_pose, "categories": ["waste"]})
     return targets
 
 
-def _resolve_cleanup_plan_destinations(actions: Any, destinations: list[dict[str, Any]]) -> bool:
-    """Replace planner poses with a matching, curated disposal pose from memory."""
+def _safe_cleanup_storage_targets(memory: Any) -> list[dict[str, Any]]:
+    """Read explicitly approved, non-estimated return poses for named item categories."""
+    if memory is None or not callable(getattr(memory, "get_all_objects", None)):
+        return []
+    try:
+        objects = memory.get_all_objects()
+    except Exception:
+        return []
+
+    supported_categories = set(_CLEANUP_TARGET_KEYWORDS) - {"waste"}
+    targets: list[dict[str, Any]] = []
+    for obj in objects if isinstance(objects, list) else []:
+        if not isinstance(obj, dict):
+            continue
+        name = str(obj.get("name", "")).strip()
+        metadata = obj.get("metadata")
+        if (
+            not name
+            or not isinstance(metadata, dict)
+            or metadata.get("cleanup_storage_target") is not True
+            or bool(metadata.get("estimated"))
+        ):
+            continue
+        raw_categories = metadata.get("cleanup_return_categories")
+        if not isinstance(raw_categories, list):
+            continue
+        categories = sorted(
+            {
+                str(category).strip().casefold()
+                for category in raw_categories
+                if isinstance(category, str) and category.strip().casefold() in supported_categories
+            }
+        )
+        if not categories:
+            continue
+        pose = metadata.get("cleanup_target_pose") or metadata.get("target_pose")
+        canonical_pose = _canonical_cleanup_target_pose(pose)
+        if canonical_pose is None:
+            continue
+        targets.append({"name": name, "target_pose": canonical_pose, "categories": categories})
+    return targets
+
+
+def _canonical_cleanup_target_pose(pose: Any) -> dict[str, Any] | None:
+    if not isinstance(pose, dict) or not str(pose.get("frame_id", "")).strip():
+        return None
+    position = pose.get("position")
+    if not isinstance(position, dict):
+        return None
+    try:
+        xyz = {axis: float(position[axis]) for axis in ("x", "y", "z")}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in xyz.values()):
+        return None
+    canonical_pose = copy.deepcopy(pose)
+    canonical_pose["position"] = xyz
+    return canonical_pose
+
+
+def _resolve_cleanup_plan_destinations(
+    actions: Any,
+    destinations: list[dict[str, Any]],
+    *,
+    detected_categories: set[str] | None = None,
+) -> bool:
+    """Replace planner poses with curated destinations matching the picked item category."""
     if not isinstance(actions, list) or not actions:
         return False
     destinations_by_name = {
@@ -271,21 +417,48 @@ def _resolve_cleanup_plan_destinations(actions: Any, destinations: list[dict[str
         for destination in destinations
         if isinstance(destination, dict)
     }
+    allowed_categories = set(detected_categories or ())
+    pending_categories: list[str] = []
     saw_place = False
     for action in actions:
-        if not isinstance(action, dict) or action.get("skill") != "place":
+        if not isinstance(action, dict):
+            return False
+        skill_name = str(action.get("skill", ""))
+        if skill_name in _CLEANUP_PICK_SKILLS:
+            params = action.get("params")
+            if not isinstance(params, dict):
+                return False
+            target_name = (
+                params.get("target_object") or params.get("object_name") or params.get("object")
+            )
+            category = _cleanup_target_category(target_name)
+            if category is None and _has_ambiguous_cleanup_indication([target_name], ""):
+                return False
+            if category is None and len(allowed_categories) == 1:
+                category = next(iter(allowed_categories))
+            if category is None or (allowed_categories and category not in allowed_categories):
+                return False
+            pending_categories.append(category)
+            continue
+        if skill_name != "place":
             continue
         saw_place = True
         params = action.get("params")
-        if not isinstance(params, dict):
+        if not isinstance(params, dict) or not pending_categories:
             return False
+        category = pending_categories.pop(0)
         requested_name = _normalize_name(params.get("target_object", ""))
         destination = destinations_by_name.get(requested_name)
         if destination is None or not isinstance(destination.get("target_pose"), dict):
             return False
+        destination_categories = destination.get("categories")
+        if not isinstance(destination_categories, list):
+            destination_categories = ["waste"]
+        if category not in destination_categories:
+            return False
         params["target_object"] = destination["name"]
         params["target_pose"] = copy.deepcopy(destination["target_pose"])
-    return saw_place
+    return saw_place and not pending_categories
 
 
 def _cleanup_plan_has_complete_placement(actions: Any) -> bool:

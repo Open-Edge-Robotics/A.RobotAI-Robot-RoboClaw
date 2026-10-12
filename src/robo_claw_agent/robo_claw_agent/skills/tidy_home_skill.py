@@ -16,11 +16,13 @@ from .autonomous_skill.globals import (
 )
 from .cleanup_policy import (
     _cleanup_plan_has_complete_placement,
+    _cleanup_target_categories,
     _has_ambiguous_cleanup_indication,
     _has_cleanup_indication,
     _resolve_cleanup_places,
     _resolve_cleanup_plan_destinations,
     _safe_cleanup_disposal_targets,
+    _safe_cleanup_storage_targets,
     _select_cloid_indicator_motion,
 )
 
@@ -40,7 +42,7 @@ class TidyHomeSkill(BaseSkill):
     preconditions = (
         "대상 장소가 기억된 좌표로 해석되어야 합니다.",
         "모호한 생활용품·위험물은 이동하지 않아야 합니다.",
-        "로컬 배치에는 승인된 비추정 3D 폐기 pose가 필요합니다.",
+        "로컬 배치에는 항목 유형에 맞게 명시 승인된 비추정 3D 목적지 pose가 필요합니다.",
         "조작은 등록된 정리 스킬 또는 확인된 동료에게만 요청해야 합니다.",
     )
     input_schema = {
@@ -58,11 +60,12 @@ class TidyHomeSkill(BaseSkill):
     }
     description = (
         "한 번의 정리 작업을 수행하고 종료합니다. 지정 방은 기억된 시맨틱 맵/RAG 좌표로 먼저 이동합니다. "
-        "집 전체는 기억된 장소만 한 차례씩 방문하며 탐험하지 않습니다. 명확한 폐기물만 후보로 삼고, 로컬 "
-        "집기/배치는 승인된 비추정 3D 폐기 pose가 있을 때만 계획합니다. 모호한 항목은 이동하지 않으며, "
-        "처리 능력이 부족하면 연결과 능력이 확인된 동료 한 대에게 단발 위임합니다. CLOiD는 VLA 구현 전까지 "
-        "검토된 상태 표시 모션 하나를 임의 선택해 실행할 수 있으나, 이 임시 모션은 물체를 정리하지 않으며 "
-        "완료로 보고하지 않습니다. 중단: stop_autonomous를 사용하세요."
+        "집 전체는 기억된 장소만 한 차례씩 방문하며 탐험하지 않습니다. 명확한 폐기물뿐 아니라 수건, 쿠션/방석, "
+        "명확한 빨래/세탁물도 정리 후보로 구분합니다. 생활용품은 유형별로 명시 승인된 비추정 3D 보관 pose가 있을 "
+        "때만 집기/배치하며, 옷·개인 소지품·위험물이나 목적지가 모호한 항목은 이동하지 않습니다. 처리 능력이 "
+        "부족하면 실제 조작 능력이 확인된 동료 한 대에게 단발 위임할 수 있습니다. CLOiD의 cleanup_demo는 고정된 "
+        "시연 모션이며 생활용품을 옮기지 않습니다. 시연 요청은 물체 정리 완료로 보고하지 않습니다. "
+        "중단: stop_autonomous를 사용하세요."
     )
 
     def __init__(self) -> None:
@@ -324,9 +327,10 @@ class TidyHomeSkill(BaseSkill):
         return scene_skill.execute(
             {
                 "prompt": (
-                    f"'{place_name}'에서 정리 대상으로 보이는 쓰레기, 흩어진 물건, "
-                    "쏟아진 물질을 찾아주세요. 실제로 보이는 대상만 구체적으로 설명하고, "
-                    "정리 대상이 없으면 없다고 명시하세요. 물체 위치를 추측하지 마세요."
+                    f"'{place_name}'에서 정리 대상으로 보이는 폐기물과 제자리에 없는 생활용품을 찾아주세요. "
+                    "수건, 쿠션/방석, 명확한 빨래/세탁물도 후보로 구분하되, 일반 옷·개인 소지품·컵·병·위험물은 "
+                    "사용자 허가 없이 정리 대상으로 추정하지 마세요. 실제로 보이는 대상과 현재 위치만 설명하고, "
+                    "대상의 권장 보관 장소나 3D 좌표를 추측하지 마세요. 정리 대상이 없으면 없다고 명시하세요."
                 )
             }
         )
@@ -343,7 +347,11 @@ class TidyHomeSkill(BaseSkill):
         from .autonomous_skill.bt_runner import wire_blackboard
         from .autonomous_skill.core import NodeStatus
 
-        disposal_targets = _safe_cleanup_disposal_targets(getattr(self.node, "_memory", None))
+        memory = getattr(self.node, "_memory", None)
+        disposal_targets = _safe_cleanup_disposal_targets(memory)
+        storage_targets = _safe_cleanup_storage_targets(memory)
+        target_categories = _cleanup_target_categories(objects, scene)
+        destinations = disposal_targets + storage_targets
         blackboard: dict[str, Any] = {
             "cycle_count": cycle,
             "task_queue": [],
@@ -354,7 +362,10 @@ class TidyHomeSkill(BaseSkill):
             "scene_analysis": scene,
             "detected_objects": objects,
             "cleanup_task_mode": True,
+            "cleanup_target_categories": sorted(target_categories),
             "cleanup_disposal_targets": disposal_targets,
+            "cleanup_storage_targets": storage_targets,
+            "cleanup_destinations": destinations,
         }
         handoff = ResolveCleanupHandoff(self)
         decide = LLMDecideAction(self)
@@ -395,9 +406,12 @@ class TidyHomeSkill(BaseSkill):
                     f"'{place_name}'의 정리 계획에 안전한 집기 후 배치 단계가 모두 포함되지 않아 물리 동작을 시작하지 않았습니다."
                 )
                 return "incomplete_placement_plan"
-            if not _resolve_cleanup_plan_destinations(planned_actions, disposal_targets):
+            if not _resolve_cleanup_plan_destinations(
+                planned_actions, destinations, detected_categories=target_categories
+            ):
                 self.send_user_message(
-                    f"'{place_name}'에 명시적으로 지정된 3D 폐기 장소가 없거나 계획과 일치하지 않아 물리 동작을 시작하지 않았습니다."
+                    f"'{place_name}'에서 대상 유형과 일치하는 명시 승인 3D 정리 장소가 없거나 "
+                    "계획과 일치하지 않아 물리 동작을 시작하지 않았습니다."
                 )
                 return "unsafe_placement_destination"
 

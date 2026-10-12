@@ -6,7 +6,13 @@ import numpy as np
 
 from robo_claw_agent.skill_manager import BaseSkill
 
-from ..cleanup_policy import _has_cleanup_indication, _safe_cleanup_disposal_targets
+from ..cleanup_policy import (
+    _cleanup_target_categories,
+    _cleanup_target_labels,
+    _has_cleanup_indication,
+    _safe_cleanup_disposal_targets,
+    _safe_cleanup_storage_targets,
+)
 from .core import BTNode, NodeStatus
 from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE
 from .helpers import _find_connected_peer_with_capability, _has_cleanup_capability
@@ -182,27 +188,39 @@ class ResolveCleanupHandoff(BTNode):
         if node is None:
             return NodeStatus.SUCCESS
         local_cleanup_capable = _has_cleanup_capability(node)
-        missing_local_disposal_target = False
-        if blackboard.get("cleanup_task_mode") and local_cleanup_capable:
-            local_cleanup_capable = bool(
-                _safe_cleanup_disposal_targets(getattr(node, "_memory", None))
+        missing_local_destination = False
+        objects = blackboard.get("detected_objects", []) or []
+        scene = str(blackboard.get("scene_analysis", "") or "")
+        target_categories = set(blackboard.get("cleanup_target_categories", []) or ())
+        if not target_categories:
+            target_categories = _cleanup_target_categories(objects, scene)
+        if blackboard.get("cleanup_task_mode"):
+            destinations = blackboard.get("cleanup_destinations")
+            if not isinstance(destinations, list):
+                memory = getattr(node, "_memory", None)
+                destinations = _safe_cleanup_disposal_targets(
+                    memory
+                ) + _safe_cleanup_storage_targets(memory)
+            destination_categories = {
+                category
+                for destination in destinations
+                if isinstance(destination, dict)
+                for category in destination.get("categories", [])
+                if isinstance(category, str)
+            }
+            missing_local_destination = not target_categories or not target_categories.issubset(
+                destination_categories
             )
-            missing_local_disposal_target = not local_cleanup_capable
+            if local_cleanup_capable:
+                local_cleanup_capable = not missing_local_destination
         if local_cleanup_capable:
             return NodeStatus.SUCCESS
 
-        objects = blackboard.get("detected_objects", []) or []
-        scene = str(blackboard.get("scene_analysis", "") or "")
-        cleanup_targets = []
-        if isinstance(objects, (list, tuple)):
-            for obj in objects:
-                if _has_cleanup_indication([obj], ""):
-                    label = obj.get("name", "") if isinstance(obj, dict) else str(obj)
-                    cleanup_targets.append(str(label))
+        cleanup_targets = _cleanup_target_labels(objects, scene)
         if not _has_cleanup_indication(objects, scene):
             return NodeStatus.SUCCESS
 
-        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 폐기물 후보"
+        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 정리 후보"
         place = str(blackboard.get("patrol_last_place", "") or "").strip()
         pose_text = ""
         try:
@@ -217,7 +235,7 @@ class ResolveCleanupHandoff(BTNode):
         peer = _find_connected_peer_with_capability(node, "manipulation")
         handoff_kind = "manipulation"
         demo_target = ""
-        if peer is None:
+        if peer is None and target_categories == {"waste"}:
             peer = _find_connected_peer_with_capability(node, "cleanup_demo")
             handoff_kind = "cleanup_demo"
             if len(cleanup_targets) == 1:
@@ -246,12 +264,19 @@ class ResolveCleanupHandoff(BTNode):
                     "정리 시연 동료에게 보낼 장소 이름 또는 단일 폐기물 후보를 확인할 수 없습니다. "
                     "요청을 보내지 않았습니다."
                 )
-        if peer is None:
-            local_reason = (
-                "로컬 메모리에 승인된 비추정 3D 폐기 장소가 없습니다. "
-                if missing_local_disposal_target
-                else ""
+        elif peer is not None and (len(target_categories) != 1 or len(cleanup_targets) != 1):
+            peer = None
+            blackboard["cleanup_handoff_status"] = (
+                "동료에게 전달할 단일 대상과 항목 유형을 확인할 수 없어 요청하지 않았습니다."
             )
+        if peer is None:
+            local_reason = ""
+            if missing_local_destination:
+                local_reason = (
+                    "대상 유형과 일치하는 승인된 비추정 3D 보관 장소가 없습니다. 보관 위치를 지정해 주세요. "
+                    if target_categories - {"waste"}
+                    else "승인된 비추정 3D 폐기 장소가 없습니다. 폐기 장소를 지정해 주세요. "
+                )
             blackboard.setdefault(
                 "cleanup_handoff_status",
                 f"{local_reason}연결 상태와 작업 능력이 확인된 동료 로봇이 없습니다. "
@@ -278,12 +303,27 @@ class ResolveCleanupHandoff(BTNode):
                     "scene_summary": scene[:800] or "추가 장면 설명 없음",
                 }
             )
-        else:
+        elif target_categories == {"waste"}:
             instruction = (
                 f"정리 작업 요청: 명확한 폐기물 후보 '{target_description}'입니다. 위치: {location}. "
                 f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 대상을 다시 확인하세요. "
                 "명확한 폐기물로 확인되고 안전한 지정 폐기 장소가 알려져 있는 경우에만 한 건을 처리하세요. "
                 "컵·병·가방·의류·개인 소지품·위험물·액체 유출 등은 임의로 이동하지 말고 사용자 확인을 요청하세요. "
+                "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
+            )
+        else:
+            category = next(iter(target_categories), "생활용품")
+            category_name = {
+                "towel": "수건",
+                "cushion": "쿠션/방석",
+                "laundry": "빨래/세탁물",
+            }.get(category, "생활용품")
+            instruction = (
+                f"정리 작업 요청: 관찰된 {category_name} 후보 '{target_description}'입니다. 위치: {location}. "
+                f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 그 대상 하나만 다시 확인하세요. "
+                f"{category_name}에 맞게 명시 승인된 비추정 보관 장소가 확인될 때만 처리하세요. "
+                "폐기물로 취급하거나 쓰레기통에 넣지 말고, 목적지나 물체 위치를 추측하지 마세요. "
+                "안전한 유형별 보관 장소가 없거나 대상 상태가 모호하면 이동하지 말고 사용자 확인을 요청하세요. "
                 "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
             )
         skill_name = "delegate_task" if peer["transport"] == "ros2" else "call_peer_robot"

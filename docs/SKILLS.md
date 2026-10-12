@@ -75,13 +75,13 @@
 | Map | `find_reachable_places` | Public | action | 공통 | 도달 가능한 개방 공간 후보 계산 |
 | Map | `get_map_visual` | Public | action | 공통 | 현재 지도 시각화 및 전송 |
 | Autonomous | `autonomous_act` | Public | action | 공통 | 기억된 좌표 순찰·제자리 관찰(프론티어 탐험 미수행) |
-| Autonomous | `tidy_home` | Public | action | 공통 | 특정 기억 장소 또는 집 범위의 단회 정리 작업, 지정된 폐기 pose·집기/배치 검증, 동료 단발 위임·CLOi 시연 |
+| Autonomous | `tidy_home` | Public | action | 공통 | 폐기물·수건·쿠션·명확한 빨래 후보 정리, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연 |
 | Autonomous | `condition_reactive` | Public | action | 공통 | 조건 감지 시 foreground 중단 및 후속 체인 실행 |
 | Autonomous | `explore` | Public | action | 공통 | 미탐사 영역 자율 탐험 |
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |
 | Autonomous | `stop_autonomous` | Public | action | 공통 | 자율 행동 루프 중단 |
 | Autonomous | `stop_explore` | Public | action | 공통 | 탐험 루프 중단 |
-| Motion | `execute_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 하나 실행(목록·ID 검증 및 선행 모션 차단) |
+| Motion | `execute_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 실행(선행 동작은 확인된 요청에서 10초 간격으로 순차 요청) |
 | Motion | `list_cloid_motions` | Public | read | CLOiD | CLOi ScenarioManager 모션 카탈로그 조회 |
 | Motion | `stop_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 정지 요청 |
 | Collaboration | `autonomous_cooperate` | Public | action | 공통 | 동료 로봇과 지속적 자연어 협동 |
