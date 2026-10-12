@@ -46,9 +46,17 @@ _NAME_AFTER_LOC = re.compile(
     r"위치는?\s*['\"]?([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]*?)['\"]?\s*"
     r"(?:입니다|이다|이에요|에요|예요|이야|임)"
 )
+# (C) '<이름>(으)로 기억/저장/등록' (예: "3,4 좌표를 실험실로 기억해줘")
+_NAME_ACTION_LOC = re.compile(
+    r"(?:^|[\s,.\)\]]|[0-9]+(?:\.[0-9]+)?\s*(?:좌표|위치)?\s*)['\"]?([가-힣A-Za-z][0-9A-Za-z가-힣_]{0,19})['\"]?(?:으로|로|을|를)\s*(?:기억|저장|등록|설정)"
+)
+# (D) '회의실 (-1.5, 2.8)' 처럼 괄호 순서쌍 직전 이름
+_NAME_BEFORE_PAREN = re.compile(
+    r"^\s*['\"]?([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]{0,19}?)['\"]?\s*(?:\(위치\)\s*)?(?:\s*위치)?\s*\("
+)
 # (A) 문형에서 장소명이 아닌 지시/부사어가 이름으로 잡히지 않도록 제외한다.
 _NON_NAME_WORDS = frozenset(
-    {"현재", "지금", "이", "그", "저", "여기", "우리", "제", "너", "나", "현"}
+    {"현재", "지금", "이", "그", "저", "여기", "우리", "제", "너", "나", "현", "좌표"}
 )
 # "이동 성공 좌표: … (키친 (-5.15, -1.18))" 처럼 괄호 안 장소명을 뽑는다.
 _PAREN_NAME_RE = re.compile(r"\(([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]{0,19}?)\s*\(")
@@ -62,6 +70,10 @@ _FWD_SKIP_TYPES = frozenset(
         "map_visual_analysis",
         "observation",
         "where_am_i",
+        "virtual_obstacle",
+        "scan_room",
+        "explore_result",
+        "patrol_result",
     }
 )
 
@@ -81,7 +93,7 @@ def _location_name_from_text(text: str) -> str:
     """저장 텍스트에서 장소명을 추출한다(이름이 '위치' 앞/뒤 어디에 오든).
 
     LLM이 이름을 metadata가 아니라 텍스트에만 넣거나(예: '거실의 위치는 x: …'),
-    자유 문장으로 저장한 경우(예: '현재 위치는 충전대입니다')의 폴백.
+    자유 문장으로 저장한 경우(예: '현재 위치는 충전대입니다', '3,4 좌표를 실험실로 기억해줘')의 폴백.
     사이트/언어 무관하게 임의의 장소명을 받는다.
     """
     t = str(text or "")
@@ -91,6 +103,18 @@ def _location_name_from_text(text: str) -> str:
         return m.group(1).strip()
     # (A) '<이름> (의) 위치…' — 단, 지시/부사어는 이름으로 보지 않는다.
     m = _NAME_BEFORE_LOC.search(t)
+    if m:
+        name = m.group(1).strip()
+        if name and name not in _NON_NAME_WORDS:
+            return name
+    # (C) '<이름>(으)로 기억/저장/등록' (예: "3,4 좌표를 실험실로 기억해줘")
+    m = _NAME_ACTION_LOC.search(t)
+    if m:
+        name = m.group(1).strip()
+        if name and name not in _NON_NAME_WORDS:
+            return name
+    # (D) '<이름> (x, y)' (예: "회의실 (-1.5, 2.8)")
+    m = _NAME_BEFORE_PAREN.search(t)
     if m:
         name = m.group(1).strip()
         if name and name not in _NON_NAME_WORDS:

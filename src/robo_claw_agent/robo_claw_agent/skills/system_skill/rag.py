@@ -106,6 +106,8 @@ _NON_LOCATION_TYPES = frozenset(
 _XY_IN_TEXT = re.compile(
     r"x\s*[:=]\s*(-?\d+(?:\.\d+)?)\D+?y\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE
 )
+_PAIR_IN_TEXT = re.compile(r"\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)")
+_COMMA_COORD_IN_TEXT = re.compile(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:좌표|위치)?")
 
 
 def _normalize_location_metadata(text: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -126,8 +128,23 @@ def _normalize_location_metadata(text: str, metadata: dict[str, Any]) -> dict[st
             xy = (float(md["x"]), float(md["y"]))
         except (TypeError, ValueError):
             xy = None
+    t_str = str(text or "")
     if xy is None:
-        m = _XY_IN_TEXT.search(str(text or ""))
+        m = _XY_IN_TEXT.search(t_str)
+        if m:
+            try:
+                xy = (float(m.group(1)), float(m.group(2)))
+            except (TypeError, ValueError):
+                xy = None
+    if xy is None:
+        m = _PAIR_IN_TEXT.search(t_str)
+        if m:
+            try:
+                xy = (float(m.group(1)), float(m.group(2)))
+            except (TypeError, ValueError):
+                xy = None
+    if xy is None:
+        m = _COMMA_COORD_IN_TEXT.search(t_str)
         if m:
             try:
                 xy = (float(m.group(1)), float(m.group(2)))

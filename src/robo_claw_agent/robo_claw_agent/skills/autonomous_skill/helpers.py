@@ -112,9 +112,23 @@ def _extract_rag_location_candidates(memory: Any, limit: int = 5) -> list[dict[s
         if not isinstance(meta, dict):
             meta = {}
         if (
-            meta.get("type") in {"blocked_coordinate", "virtual_obstacle"}
+            meta.get("type")
+            in {
+                "blocked_coordinate",
+                "virtual_obstacle",
+                "scene_observation",
+                "scan_room",
+                "where_am_i",
+                "explore_result",
+                "patrol_result",
+                "map_visual_analysis",
+                "skill_episode",
+                "skill_lesson",
+            }
             or meta.get("kind") in {"blocked", "object"}
-            or meta.get("source") in {"vlm", "scan_room", "mark_virtual_obstacle"}
+            or meta.get("source")
+            in {"vlm", "scan_room", "mark_virtual_obstacle", "analyze_scene", "get_map_visual"}
+            or "frame=odom" in text
         ):
             continue
 
@@ -181,8 +195,13 @@ def _extract_rag_location_candidates(memory: Any, limit: int = 5) -> list[dict[s
                 except Exception:
                     pass
 
-        if not name:
-            name = f"RAG위치{len(candidates) + 1}"
+        # 유효한 장소명이 없거나 좌표 수식 형태이면 제외
+        if (
+            not name
+            or name.startswith("RAG위치")
+            or bool(re.search(r"[xyXY]\s*[:=]|^\s*-?\d+", name))
+        ):
+            continue
 
         dedupe_key = (name, round(x, 3), round(y, 3))
         if dedupe_key in seen:
