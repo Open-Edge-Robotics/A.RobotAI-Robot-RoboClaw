@@ -11,6 +11,12 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 
+from robo_claw_agent.memory_manager.semantic import (
+    _FWD_SKIP_TYPES,
+    _best_location_for_targets,
+    _normalize_location_name,
+)
+
 from . import globals
 
 logger = logging.getLogger(__name__)
@@ -412,8 +418,13 @@ def _extract_coords_from_entry(text: str, meta: Any, normalized: str) -> dict[st
     """RAG entry에서 좌표를 추출한다.
 
     메타데이터 좌표 > 순서쌍 파싱 > x/y 형식 파싱 순서로 시도한다.
-    단어 매칭이 안 되면 None을 반환한다.
+    단어 매칭이 안 되거나 제외 대상 타입(관찰/운영 로그 등)이면 None을 반환한다.
     """
+    if isinstance(meta, dict) and meta.get("type") in _FWD_SKIP_TYPES:
+        return None
+    if "frame=odom" in text:
+        return None
+
     text_match = normalized.lower() in text.lower()
     meta_match = False
     if isinstance(meta, dict):
@@ -469,8 +480,10 @@ def _extract_coords_from_entry(text: str, meta: Any, normalized: str) -> dict[st
 def _resolve_target_coordinates(memory: Any, target_name: str) -> dict[str, Any] | None:
     """번호 목적지 별칭을 포함해 저장된 장소 좌표를 조회한다.
 
-    우선순위는 시맨틱 맵 → RAG 검색 → RAG 풀스캔이다. 자율 행동 중 의미가 붙은
-    장소를 단순 좌표 지식보다 우선 사용하기 위해 시맨틱 맵을 먼저 본다.
+    우선순위는 시맨틱 맵 → RAG 우선순위 스캔(type=location > navigated_coordinate) → RAG 검색이다.
+    자율 행동 중 의미가 붙은 장소를 단순 좌표 지식보다 우선 사용하기 위해 시맨틱 맵을 먼저 보고,
+    RAG 내에서도 단순 주행 성공 기록(navigated_coordinate)보다 큐레이팅된 저장 위치(location)를
+    항상 우선 채택해 0,0 오염 회귀를 방지한다.
     """
     normalized = str(target_name or "").strip()
     if not normalized:
@@ -494,17 +507,39 @@ def _resolve_target_coordinates(memory: Any, target_name: str) -> dict[str, Any]
             if candidate not in candidates:
                 candidates.append(candidate)
 
-    # 1. 시맨틱 맵 조회 (O(1))
+    # 1. 시맨틱 맵 직접 조회 (O(1))
     for candidate in candidates:
         obj_info = memory.get_object_location(candidate)
         if obj_info:
             return obj_info
 
-    # 2. RAG 지식 베이스 검색 시도
+    # 2. RAG 지식 베이스 우선순위 기반 스캔 (_best_location_for_targets: type=location > navigated_coordinate)
+    target_set = {_normalize_location_name(c) for c in candidates if _normalize_location_name(c)}
+    try:
+        best = _best_location_for_targets(memory, target_set)
+        if best:
+            disp, bx, by, _src, _qid = best
+            return {
+                "name": disp or normalized,
+                "position": {"x": bx, "y": by},
+            }
+    except Exception as e:
+        logger.warning(
+            "Error occurred during priority RAG scan in _resolve_target_coordinates: %s", e
+        )
+
+    # 3. RAG 자연어 지식 검색 시도 (자연어 임베딩 폴백)
     if hasattr(memory, "search_knowledge"):
         try:
             results = memory.search_knowledge(normalized, top_k=5, score_threshold=0.35)
+            # location 타입 우선 매칭
             for candidate in candidates:
+                for res in results:
+                    m = res.get("metadata", {})
+                    if isinstance(m, dict) and m.get("type") == "location":
+                        coords = _extract_coords_from_entry(res.get("text", ""), m, candidate)
+                        if coords:
+                            return coords
                 for res in results:
                     coords = _extract_coords_from_entry(
                         res.get("text", ""), res.get("metadata", {}), candidate
@@ -514,7 +549,7 @@ def _resolve_target_coordinates(memory: Any, target_name: str) -> dict[str, Any]
         except Exception as e:
             logger.warning("Error occurred while looking up target coordinates via RAG: %s", e)
 
-    # 3. RAG 전체 리스트 풀스캔 백업 (키워드 100% 매칭 보장)
+    # 4. RAG 전체 리스트 풀스캔 백업 (키워드 100% 매칭 보장)
     if hasattr(memory, "_vector_store") and hasattr(memory._vector_store, "list_entries"):
         try:
             all_entries = memory._vector_store.list_entries()

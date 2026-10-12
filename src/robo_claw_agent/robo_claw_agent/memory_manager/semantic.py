@@ -53,7 +53,17 @@ _NON_NAME_WORDS = frozenset(
 # "이동 성공 좌표: … (키친 (-5.15, -1.18))" 처럼 괄호 안 장소명을 뽑는다.
 _PAREN_NAME_RE = re.compile(r"\(([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]{0,19}?)\s*\(")
 # 정방향 위치 근거로 인정하지 않을 순수 운영 로그 타입.
-_FWD_SKIP_TYPES = frozenset({"skill_episode", "skill_lesson", "blocked_coordinate"})
+_FWD_SKIP_TYPES = frozenset(
+    {
+        "skill_episode",
+        "skill_lesson",
+        "blocked_coordinate",
+        "scene_observation",
+        "map_visual_analysis",
+        "observation",
+        "where_am_i",
+    }
+)
 
 
 def _location_name_from_metadata(metadata: dict[str, Any]) -> str:
@@ -142,7 +152,7 @@ def known_place_in_text(text: str, memory: Any) -> str:
                 meta = obj.get("metadata", {})
                 if isinstance(meta, dict) and meta.get("alias_of"):
                     continue
-                if (hit := _match(str(obj.get("name") or ""))):
+                if hit := _match(str(obj.get("name") or "")):
                     return hit
         except Exception as exc:  # noqa: BLE001
             logger.warning("시맨틱 맵 장소명 조회 실패: %s", exc)
@@ -156,11 +166,98 @@ def known_place_in_text(text: str, memory: Any) -> str:
             if isinstance(meta, dict) and meta.get("type") in _FWD_SKIP_TYPES:
                 continue
             for name in _entry_all_names(entry):
-                if (hit := _match(name)):
+                if hit := _match(name):
                     return hit
     except Exception as exc:  # noqa: BLE001
         logger.warning("벡터스토어 장소명 조회 실패 — 위치 라우팅이 약해집니다: %s", exc)
-    return ""
+
+
+_XY_IN_TEXT = re.compile(
+    r"[xyXY]\s*[:=]\s*(-?\d+(?:\.\d+)?)[,\s]+[xyXY]\s*[:=]\s*(-?\d+(?:\.\d+)?)"
+)
+
+
+def _entry_xy(entry: dict[str, Any]) -> tuple[float, float] | None:
+    """RAG 항목에서 좌표를 뽑는다. metadata의 x/y 우선, 없으면 텍스트에서 파싱."""
+    text = str(entry.get("text", ""))
+    if "frame=odom" in text:
+        return None
+    meta = entry.get("metadata", {})
+    if isinstance(meta, dict) and "x" in meta and "y" in meta:
+        try:
+            return float(meta["x"]), float(meta["y"])
+        except (TypeError, ValueError):
+            pass
+    m = _XY_IN_TEXT.search(text)
+    if m:
+        try:
+            return float(m.group(1)), float(m.group(2))
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def _best_location_for_targets(
+    memory: Any, targets: set[str]
+) -> tuple[str, float, float, str, str | None] | None:
+    """대상 장소명들의 좌표를 찾는다. 우선순위: 시맨틱맵 > type=location > navigated_coordinate > 기타.
+
+    반환: (표시이름, x, y, source, qdrant_id) 또는 None.
+    """
+    if not targets:
+        return None
+    best: tuple[int, str, float, float, str, str | None] | None = None
+
+    if hasattr(memory, "get_all_objects"):
+        for obj in memory.get_all_objects():
+            meta = obj.get("metadata", {})
+            if isinstance(meta, dict) and meta.get("alias_of"):
+                continue
+            name = str(obj.get("name") or "")
+            if _normalize_location_name(name) not in targets:
+                continue
+            pos = obj.get("position") or {}
+            try:
+                x, y = float(pos["x"]), float(pos["y"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if best is None or 3 > best[0]:
+                best = (3, name, x, y, "시맨틱 맵", None)
+
+    store = getattr(memory, "_vector_store", None)
+    if store is not None and hasattr(store, "list_entries"):
+        try:
+            entries = store.list_entries()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[best_location] 위치 좌표 조회용 RAG 스캔 실패 — 시맨틱 맵 근거만 사용합니다: %s",
+                exc,
+            )
+            entries = []
+        for e in entries:
+            m = e.get("metadata", {})
+            typ = m.get("type") if isinstance(m, dict) else None
+            if typ in _FWD_SKIP_TYPES:
+                continue
+            xy = _entry_xy(e)
+            if xy is None:
+                continue
+            ent_names = _entry_all_names(e)
+            disp = next((n for n in ent_names if _normalize_location_name(n) in targets), "")
+            if not disp:
+                continue
+            rank = 2 if typ == "location" else (1 if typ == "navigated_coordinate" else 0)
+            src = (
+                "저장된 위치"
+                if typ == "location"
+                else ("이동 기록" if typ == "navigated_coordinate" else "기록")
+            )
+            if best is None or rank > best[0]:
+                best = (rank, disp, xy[0], xy[1], src, e.get("id"))
+
+    if best is None:
+        return None
+    return (best[1], best[2], best[3], best[4], best[5])
 
 
 class SemanticMixin:
