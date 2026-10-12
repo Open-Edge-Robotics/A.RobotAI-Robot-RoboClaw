@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 
 import pytest
+from robo_claw_agent.skills.cleanup_policy import _select_cleanup_demo_motion
 from robo_claw_agent.skills.tidy_home_skill import (
     TidyHomeSkill,
     _cleanup_plan_has_complete_placement,
@@ -175,6 +176,20 @@ def test_cloid_indicator_selects_only_approved_prerequisite_free_motion():
     assert selected["motion_id"] not in {59, 60, 147}
 
 
+def test_cleanup_demo_uses_only_explicit_prerequisite_free_ids_and_excludes_real_pick_motions():
+    motions = [
+        _motion(77, "cleanup_demo"),
+        _motion(78, "cleanup_demo_with_prerequisite", pre_id=76),
+        _motion(59, "wipe_1"),
+        _motion(60, "wipe_2"),
+    ]
+
+    selected = _select_cleanup_demo_motion(motions, [77, 78, 59, 60], rng=random.Random(1))
+
+    assert selected["motion_id"] == 77
+    assert _select_cleanup_demo_motion(motions, [78, 59, 60]) is None
+
+
 def test_cloid_indicator_avoids_immediate_repeat_when_an_alternative_exists():
     motions = [
         _motion(22, "scan"),
@@ -234,6 +249,128 @@ def test_home_cleanup_visits_each_remembered_place_once_and_stops_on_cancel(monk
     assert any("정리 작업이 종료됐습니다" in message for message in messages)
     assert any("완료 여부를 확정할 수 없습니다" in message for message in messages)
     assert not original_event.is_set()
+
+
+def test_cleanup_demo_handoff_stages_requester_and_skips_local_pick_place_guard(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from robo_claw_agent.skills import tidy_home_skill as tidy_module
+    from robo_claw_agent.skills.autonomous_skill import core, decision_nodes, execution_nodes
+
+    calls = []
+
+    class FakeSkills:
+        def has_skill(self, name):
+            return name in {"move_relative", "call_peer_robot"}
+
+        def execute(self, name, params, **_kwargs):
+            calls.append((name, params))
+            return SimpleNamespace(success=True, message="accepted")
+
+    node = SimpleNamespace(_memory=None, _skills=FakeSkills())
+    skill = TidyHomeSkill()
+    skill.node = node
+    skill.send_user_message = lambda _message: None
+    active = threading.Event()
+    active.set()
+    monkeypatch.setattr(tidy_module, "_AUTONOMOUS_ACTIVE", active)
+
+    def prepare_handoff(handoff):
+        handoff._blackboard.update(
+            {
+                "cleanup_handoff_prepared": True,
+                "cleanup_handoff_kind": "cleanup_demo",
+                "decided_skill": "call_peer_robot",
+                "decided_params": {"peer_name": "cloid1", "instruction": "demo request"},
+            }
+        )
+        return core.NodeStatus.SUCCESS
+
+    executed_skills = []
+
+    def execute_peer(execute):
+        executed_skills.append(execute._blackboard["decided_skill"])
+        execute._blackboard["last_action_success"] = True
+        return core.NodeStatus.SUCCESS
+
+    monkeypatch.setattr(execution_nodes.ResolveCleanupHandoff, "tick", prepare_handoff)
+    monkeypatch.setattr(
+        decision_nodes.ValidateDecidedAction, "tick", lambda _self: core.NodeStatus.SUCCESS
+    )
+    monkeypatch.setattr(execution_nodes.ExecuteDecidedAction, "tick", execute_peer)
+
+    status = skill._handle_cleanup_target(
+        place_name="안방",
+        scene="바닥에 포장지가 있습니다.",
+        objects=[{"name": "포장지"}],
+        cycle=1,
+    )
+
+    assert status == "delegated_demo"
+    assert [name for name, _params in calls] == ["move_relative"]
+    assert executed_skills == ["call_peer_robot"]
+    assert calls[0][1]["forward"] == 0.0
+    assert calls[0][1]["lateral"] > 0.0
+
+
+def test_cleanup_demo_handoff_is_not_sent_if_requester_cannot_stage_safely(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from robo_claw_agent.skills import tidy_home_skill as tidy_module
+    from robo_claw_agent.skills.autonomous_skill import core, decision_nodes, execution_nodes
+
+    calls = []
+    executed = []
+
+    class FakeSkills:
+        def has_skill(self, name):
+            return name in {"move_relative", "call_peer_robot"}
+
+        def execute(self, name, params, **_kwargs):
+            calls.append((name, params))
+            return SimpleNamespace(success=False, message="target blocked")
+
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=None, _skills=FakeSkills())
+    skill.send_user_message = lambda _message: None
+    active = threading.Event()
+    active.set()
+    monkeypatch.setattr(tidy_module, "_AUTONOMOUS_ACTIVE", active)
+
+    def prepare_handoff(handoff):
+        handoff._blackboard.update(
+            {
+                "cleanup_handoff_prepared": True,
+                "cleanup_handoff_kind": "cleanup_demo",
+                "decided_skill": "call_peer_robot",
+                "decided_params": {"peer_name": "cloid1", "instruction": "demo request"},
+            }
+        )
+        return core.NodeStatus.SUCCESS
+
+    def execute_peer(execute):
+        executed.append(execute._blackboard["decided_skill"])
+        execute._blackboard["last_action_success"] = True
+        return core.NodeStatus.SUCCESS
+
+    monkeypatch.setattr(execution_nodes.ResolveCleanupHandoff, "tick", prepare_handoff)
+    monkeypatch.setattr(
+        decision_nodes.ValidateDecidedAction, "tick", lambda _self: core.NodeStatus.SUCCESS
+    )
+    monkeypatch.setattr(execution_nodes.ExecuteDecidedAction, "tick", execute_peer)
+
+    status = skill._handle_cleanup_target(
+        place_name="안방",
+        scene="바닥에 포장지가 있습니다.",
+        objects=[{"name": "포장지"}],
+        cycle=1,
+    )
+
+    assert status == "handoff_staging_failed"
+    assert [name for name, _params in calls] == ["move_relative"]
+    assert executed == []
 
 
 def test_cloid_activity_indicator_executes_one_allowlisted_motion_and_avoids_repeat():

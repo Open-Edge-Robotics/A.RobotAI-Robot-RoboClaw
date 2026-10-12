@@ -389,6 +389,9 @@ else
   add_param "${RC_HTTP_CONTROL_TOKEN:-}" "http_control_token"
   add_param "${RC_HTTP_RATE_LIMIT_PER_MINUTE:-}" "http_rate_limit_per_minute"
   add_param "${RC_ROBOT_DESCRIPTION_FILE:-}" "robot_description_file"
+  add_param "${RC_CLOID_CLEANUP_DEMO_ENABLED:-}" "cloid_cleanup_demo_enabled"
+  cleanup_demo_motion_ids_json="${RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON:-}"
+  add_param "${cleanup_demo_motion_ids_json//[[:space:]]/}" "cloid_cleanup_demo_motion_ids_json"
   add_param "${RC_LIDAR_TOPIC:-}" "lidar_topic"
   add_param "${RC_IMU_TOPIC:-}" "imu_topic"
 

@@ -156,6 +156,7 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("cloid_motion_catalog_file", "")
     node.declare_parameter("cloid_cleanup_indicator_enabled", False)
     node.declare_parameter("cloid_cleanup_indicator_motion_ids_json", "[]")
+    node.declare_parameter("cloid_cleanup_demo_motion_ids_json", "[]")
     node.declare_parameter("butler_script_dir", "/ros2_ws/butler_scripts")
     node.declare_parameter("agent_workspace_dir", "/ros2_ws/agent_workspace")
 

@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import Any
 
 import numpy as np
@@ -214,15 +215,47 @@ class ResolveCleanupHandoff(BTNode):
         location = "; ".join(location_parts) or "정확한 위치는 알 수 없음"
 
         peer = _find_connected_peer_with_capability(node, "manipulation")
+        handoff_kind = "manipulation"
+        demo_target = ""
+        if peer is None:
+            peer = _find_connected_peer_with_capability(node, "cleanup_demo")
+            handoff_kind = "cleanup_demo"
+            if len(cleanup_targets) == 1:
+                demo_target = cleanup_targets[0].strip()
+            elif not cleanup_targets:
+                scene_candidates = {
+                    keyword
+                    for keyword in (
+                        "쓰레기",
+                        "포장지",
+                        "담배꽁초",
+                        "trash",
+                        "garbage",
+                        "waste",
+                        "litter",
+                        "wrapper",
+                        "cigarette butt",
+                    )
+                    if keyword in scene.casefold()
+                }
+                if len(scene_candidates) == 1:
+                    demo_target = next(iter(scene_candidates))
+            if not demo_target or not place:
+                peer = None
+                blackboard["cleanup_handoff_status"] = (
+                    "정리 시연 동료에게 보낼 장소 이름 또는 단일 폐기물 후보를 확인할 수 없습니다. "
+                    "요청을 보내지 않았습니다."
+                )
         if peer is None:
             local_reason = (
                 "로컬 메모리에 승인된 비추정 3D 폐기 장소가 없습니다. "
                 if missing_local_disposal_target
                 else ""
             )
-            blackboard["cleanup_handoff_status"] = (
-                f"{local_reason}연결 상태와 매니퓰레이션 능력을 확인할 수 있는 동료 로봇이 없습니다. "
-                "정리를 완료했다고 말하지 말고 발견 내용만 보고하세요."
+            blackboard.setdefault(
+                "cleanup_handoff_status",
+                f"{local_reason}연결 상태와 작업 능력이 확인된 동료 로봇이 없습니다. "
+                "정리를 완료했다고 말하지 말고 발견 내용만 보고하세요.",
             )
             blackboard["cleanup_handoff_blocked"] = True
             blackboard["decided_skill"] = "none"
@@ -234,22 +267,38 @@ class ResolveCleanupHandoff(BTNode):
             )
             return NodeStatus.SUCCESS
 
-        instruction = (
-            f"정리 작업 요청: 명확한 폐기물 후보 '{target_description}'입니다. 위치: {location}. "
-            f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 대상을 다시 확인하세요. "
-            "명확한 폐기물로 확인되고 안전한 지정 폐기 장소가 알려져 있는 경우에만 한 건을 처리하세요. "
-            "컵·병·가방·의류·개인 소지품·위험물·액체 유출 등은 임의로 이동하지 말고 사용자 확인을 요청하세요. "
-            "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
-        )
+        if handoff_kind == "cleanup_demo":
+            from ..cleanup_demo_protocol import encode_cleanup_demo_request
+
+            instruction = encode_cleanup_demo_request(
+                {
+                    "request_id": str(uuid.uuid4()),
+                    "target_location": place,
+                    "target_object": demo_target,
+                    "scene_summary": scene[:800] or "추가 장면 설명 없음",
+                }
+            )
+        else:
+            instruction = (
+                f"정리 작업 요청: 명확한 폐기물 후보 '{target_description}'입니다. 위치: {location}. "
+                f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 대상을 다시 확인하세요. "
+                "명확한 폐기물로 확인되고 안전한 지정 폐기 장소가 알려져 있는 경우에만 한 건을 처리하세요. "
+                "컵·병·가방·의류·개인 소지품·위험물·액체 유출 등은 임의로 이동하지 말고 사용자 확인을 요청하세요. "
+                "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
+            )
         skill_name = "delegate_task" if peer["transport"] == "ros2" else "call_peer_robot"
         params = (
-            {"agent_id": peer["peer_name"], "instruction": instruction}
+            {
+                "agent_id": peer["peer_name"],
+                "instruction": instruction,
+                "timeout_sec": 180.0,
+            }
             if skill_name == "delegate_task"
             else {
                 "peer_name": peer["peer_name"],
                 "instruction": instruction,
                 "wait_for_result": True,
-                "timeout_sec": 110.0,
+                "timeout_sec": 180.0,
             }
         )
         skills = getattr(node, "_skills", None)
@@ -269,11 +318,20 @@ class ResolveCleanupHandoff(BTNode):
         blackboard["decided_skill"] = skill_name
         blackboard["decided_params"] = params
         blackboard["decided_reason"] = (
-            f"자신에게 매니퓰레이션 능력이 없어 연결된 조작 가능 동료 {peer['peer_name']}에게 위임"
+            f"{peer['peer_name']}에게 임시 정리 시연 모션을 요청"
+            if handoff_kind == "cleanup_demo"
+            else f"자신에게 매니퓰레이션 능력이 없어 연결된 조작 가능 동료 {peer['peer_name']}에게 위임"
         )
         blackboard["cleanup_handoff_prepared"] = True
-        blackboard["cleanup_handoff_target"] = target_description
-        blackboard["cleanup_handoff_status"] = f"{peer['peer_name']}에게 정리 작업을 요청합니다."
+        blackboard["cleanup_handoff_kind"] = handoff_kind
+        blackboard["cleanup_handoff_target"] = (
+            demo_target if handoff_kind == "cleanup_demo" else target_description
+        )
+        blackboard["cleanup_handoff_status"] = (
+            f"{peer['peer_name']}에게 임시 정리 시연 모션을 요청합니다."
+            if handoff_kind == "cleanup_demo"
+            else f"{peer['peer_name']}에게 정리 작업을 요청합니다."
+        )
         logger.info("[BT] Prepared cleanup handoff to %s via %s", peer["peer_name"], skill_name)
         return NodeStatus.SUCCESS
 
@@ -337,9 +395,19 @@ class ExecuteDecidedAction(BTNode):
                 else [{"skill": skill_name, "params": params}]
             )
             result = None
+            skill_timeout_sec = 120.0
+            if skill_name in {"delegate_task", "call_peer_robot"}:
+                try:
+                    requested_timeout = float(params.get("timeout_sec", 180.0))
+                    if 10.0 <= requested_timeout <= 240.0:
+                        skill_timeout_sec = requested_timeout
+                except (TypeError, ValueError):
+                    pass
             for step in chain:
                 result = node._skills.execute(
-                    step["skill"], step.get("params", {}), timeout_sec=120.0
+                    step["skill"],
+                    step.get("params", {}),
+                    timeout_sec=skill_timeout_sec,
                 )
                 if not result.success:
                     break
@@ -362,7 +430,15 @@ class ExecuteDecidedAction(BTNode):
         if cleanup_handoff:
             peer_name = params.get("peer_name") or params.get("agent_id") or "동료 로봇"
             result_message = str(getattr(result, "message", "") or "")
-            if success:
+            if success and self._blackboard.get("cleanup_handoff_kind") == "cleanup_demo":
+                self._blackboard["cleanup_handoff_status"] = (
+                    f"{peer_name}의 임시 정리 시연 모션 요청 응답을 받았습니다."
+                )
+                self._skill.send_user_message(
+                    f"'{self._blackboard.get('cleanup_handoff_target', '')}' 정리 시연을 "
+                    f"{peer_name}에게 요청했습니다. {result_message} 실제 물체 정리 완료는 확인되지 않았습니다."
+                )
+            elif success:
                 self._blackboard["cleanup_handoff_status"] = (
                     f"{peer_name}의 정리 작업 완료를 확인했습니다."
                 )

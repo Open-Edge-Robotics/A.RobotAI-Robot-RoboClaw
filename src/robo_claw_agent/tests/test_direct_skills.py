@@ -80,6 +80,38 @@ def test_check_direct_skill_routes_plain_relative_move():
     assert result["params"] == {"forward": 2.0}
 
 
+def test_direct_cleanup_demo_protocol_bypasses_llm_with_validated_fields():
+    from robo_claw_agent.skills.cleanup_demo_protocol import encode_cleanup_demo_request
+
+    instruction = encode_cleanup_demo_request(
+        {
+            "request_id": "r1",
+            "target_location": "안방",
+            "target_object": "포장지",
+            "scene_summary": "안방 바닥의 포장지",
+        }
+    )
+
+    result = _DIRECT_SKILLS.check_direct_skill(None, instruction)
+
+    assert result == {
+        "skill": "cleanup_demo",
+        "params": {
+            "request_id": "r1",
+            "target_location": "안방",
+            "target_object": "포장지",
+            "scene_summary": "안방 바닥의 포장지",
+        },
+        "background": False,
+    }
+
+
+def test_malformed_cleanup_demo_protocol_fails_closed_to_demo_skill():
+    result = _DIRECT_SKILLS.check_direct_skill(None, "ROBOCLAW_CLEANUP_DEMO_V1:{broken")
+
+    assert result == {"skill": "cleanup_demo", "params": {}, "background": False}
+
+
 def test_direct_camera_capture_routes_plain_request():
     result = _DIRECT_SKILLS.direct_camera_capture_skill(None, "카메라 사진 보내줘")
 

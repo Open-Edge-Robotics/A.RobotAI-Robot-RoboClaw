@@ -27,6 +27,7 @@ from .cleanup_policy import (
 logger = logging.getLogger(__name__)
 _MAX_HOME_PLACES = 20
 _MAX_CLEANUP_ACTIONS_PER_PLACE = 4
+_CLEANUP_DEMO_HANDOFF_LATERAL_M = 0.30
 
 
 class TidyHomeSkill(BaseSkill):
@@ -379,16 +380,26 @@ class TidyHomeSkill(BaseSkill):
                 "params": blackboard.get("decided_params", {}),
             }
         ]
-        if not _cleanup_plan_has_complete_placement(planned_actions):
-            self.send_user_message(
-                f"'{place_name}'의 정리 계획에 안전한 집기 후 배치 단계가 모두 포함되지 않아 물리 동작을 시작하지 않았습니다."
-            )
-            return "incomplete_placement_plan"
-        if not _resolve_cleanup_plan_destinations(planned_actions, disposal_targets):
-            self.send_user_message(
-                f"'{place_name}'에 명시적으로 지정된 3D 폐기 장소가 없거나 계획과 일치하지 않아 물리 동작을 시작하지 않았습니다."
-            )
-            return "unsafe_placement_destination"
+        prepared_handoff = bool(blackboard.get("cleanup_handoff_prepared"))
+        if prepared_handoff:
+            # 위임은 로컬 pick/place 계획이 아니다. 로컬 물리 계획 검사로 거부하지 않는다.
+            if blackboard.get("cleanup_handoff_kind") == "cleanup_demo":
+                if not self._move_aside_for_cleanup_demo_handoff():
+                    self.send_user_message(
+                        "동료가 접근할 수 있도록 안전하게 비켜서지 못해 정리 시연 요청을 보내지 않았습니다."
+                    )
+                    return "handoff_staging_failed"
+        else:
+            if not _cleanup_plan_has_complete_placement(planned_actions):
+                self.send_user_message(
+                    f"'{place_name}'의 정리 계획에 안전한 집기 후 배치 단계가 모두 포함되지 않아 물리 동작을 시작하지 않았습니다."
+                )
+                return "incomplete_placement_plan"
+            if not _resolve_cleanup_plan_destinations(planned_actions, disposal_targets):
+                self.send_user_message(
+                    f"'{place_name}'에 명시적으로 지정된 3D 폐기 장소가 없거나 계획과 일치하지 않아 물리 동작을 시작하지 않았습니다."
+                )
+                return "unsafe_placement_destination"
 
         step_count = 0
         while step_count < _MAX_CLEANUP_ACTIONS_PER_PLACE:
@@ -406,7 +417,11 @@ class TidyHomeSkill(BaseSkill):
             step_count += 1
             if was_handoff:
                 # A handoff is one request; never plan another request for the same observation.
-                return "delegated"
+                return (
+                    "delegated_demo"
+                    if blackboard.get("cleanup_handoff_kind") == "cleanup_demo"
+                    else "delegated"
+                )
             if blackboard.get("task_queue"):
                 blackboard["decided_skill"] = ""
                 blackboard["decided_params"] = {}
@@ -415,6 +430,26 @@ class TidyHomeSkill(BaseSkill):
         if blackboard.get("task_queue"):
             return "partial_action_limit"
         return "handled" if step_count else "no_action"
+
+    def _move_aside_for_cleanup_demo_handoff(self) -> bool:
+        """Move a short Nav2-planned lateral distance before inviting a demo peer."""
+        if not _AUTONOMOUS_ACTIVE.is_set():
+            return False
+        skills = getattr(self.node, "_skills", None)
+        if skills is None or not skills.has_skill("move_relative"):
+            return False
+        try:
+            result = skills.execute(
+                "move_relative",
+                {"forward": 0.0, "lateral": _CLEANUP_DEMO_HANDOFF_LATERAL_M},
+                # MoveRelativeSkill may wait up to 120 s for Nav2; avoid returning while
+                # its navigation goal is still active.
+                timeout_sec=130.0,
+            )
+            return bool(getattr(result, "success", False))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[TidyHome] Cleanup demo staging move failed: %s", exc)
+            return False
 
     def _cloid_indicator_enabled(self) -> bool:
         try:

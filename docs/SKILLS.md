@@ -75,7 +75,7 @@
 | Map | `find_reachable_places` | Public | action | 공통 | 도달 가능한 개방 공간 후보 계산 |
 | Map | `get_map_visual` | Public | action | 공통 | 현재 지도 시각화 및 전송 |
 | Autonomous | `autonomous_act` | Public | action | 공통 | 기억된 좌표 순찰·제자리 관찰(프론티어 탐험 미수행) |
-| Autonomous | `tidy_home` | Public | action | 공통 | 특정 기억 장소 또는 집 범위의 단회 정리 작업, 지정된 폐기 pose·집기/배치 계획 검증, 동료 단발 위임, CLOiD 임시 표시 |
+| Autonomous | `tidy_home` | Public | action | 공통 | 특정 기억 장소 또는 집 범위의 단회 정리 작업, 지정된 폐기 pose·집기/배치 검증, 동료 단발 위임·CLOi 시연 |
 | Autonomous | `condition_reactive` | Public | action | 공통 | 조건 감지 시 foreground 중단 및 후속 체인 실행 |
 | Autonomous | `explore` | Public | action | 공통 | 미탐사 영역 자율 탐험 |
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |
@@ -89,6 +89,7 @@
 | Collaboration | `call_peer_robot` | Public | action | 공통 | 원격 동료 로봇에 작업 요청 |
 | Collaboration | `coordinate_peer_task` | Public | action | 공통 | 동료에게 복합 작업을 순차 위임 |
 | Collaboration | `delegate_task` | Public | action | 공통 | 같은 ROS 네트워크 에이전트에 작업 위임 |
+| Collaboration | `cleanup_demo` | Restricted | dangerous | CLOi 1호, allowlist 필요 | 기본 경로 플래그는 true; 검토된 모션 ID가 없으면 미등록. 기억 장소 이동·재관찰 후 실행 요청 |
 | Collaboration | `list_peer_robots` | Public | read | 공통 | 연결된 동료 로봇 목록 조회 |
 | Collaboration | `query_peer_capabilities` | Public | read | 공통 | 동료 로봇 능력 목록 조회 |
 | Collaboration | `query_peer_status` | Public | read | 공통 | 동료 로봇 상태 조회 |

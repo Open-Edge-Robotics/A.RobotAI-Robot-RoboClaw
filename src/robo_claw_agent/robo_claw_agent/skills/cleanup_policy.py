@@ -309,6 +309,44 @@ def _cleanup_plan_has_complete_placement(actions: Any) -> bool:
     return saw_pick_or_place and pending_picks == 0
 
 
+def _select_cleanup_demo_motion(
+    motions: list[dict[str, Any]],
+    allowed_motion_ids: list[int],
+    *,
+    rng: Any | None = None,
+    previous_motion_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Select one explicitly configured, prerequisite-free cleanup demonstration motion."""
+    allowed = {
+        motion_id
+        for motion_id in allowed_motion_ids
+        if isinstance(motion_id, int) and not isinstance(motion_id, bool) and motion_id > 0
+    }
+    # These catalog entries are known to perform real object manipulation, not a gesture.
+    allowed.difference_update({59, 60})
+    candidates = []
+    for motion in motions:
+        if not isinstance(motion, dict):
+            continue
+        motion_id = motion.get("motion_id")
+        if (
+            motion_id not in allowed
+            or motion.get("pre_id") is not None
+            or not str(motion.get("motion_name", "")).strip()
+        ):
+            continue
+        candidates.append(motion)
+    if previous_motion_id is not None and len(candidates) > 1:
+        alternatives = [
+            motion for motion in candidates if motion.get("motion_id") != previous_motion_id
+        ]
+        if alternatives:
+            candidates = alternatives
+    if not candidates:
+        return None
+    return (rng or random).choice(candidates)
+
+
 def _select_cloid_indicator_motion(
     motions: list[dict[str, Any]],
     allowed_motion_ids: list[int],

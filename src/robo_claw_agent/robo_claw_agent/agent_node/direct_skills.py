@@ -10,6 +10,19 @@ from .nav_safety import ensure_stretch_navigation_safety
 logger = logging.getLogger(__name__)
 
 
+def direct_cleanup_demo_skill(node: Any, instruction: str) -> dict[str, Any] | None:
+    """Route only the versioned peer protocol to the explicitly loaded demo skill."""
+    from robo_claw_agent.skills.cleanup_demo_protocol import (
+        CLEANUP_DEMO_PREFIX,
+        decode_cleanup_demo_request,
+    )
+
+    if not isinstance(instruction, str) or not instruction.startswith(CLEANUP_DEMO_PREFIX):
+        return None
+    params = decode_cleanup_demo_request(instruction) or {}
+    return {"skill": "cleanup_demo", "params": params, "background": False}
+
+
 def direct_cup_pick_skill(node: Any, instruction: str) -> dict[str, Any] | None:
     text = str(instruction or "").strip().lower()
     if not text:
@@ -163,6 +176,9 @@ def direct_relative_move_skill(node: Any, instruction: str) -> dict[str, Any] | 
 
 def check_direct_skill(node: Any, instruction: str) -> dict[str, Any] | None:
     """LLM 추론 지연이나 환각 없이 100% 직관적으로 처리해야 하는 명확한 지시사항 라우팅"""
+    res = direct_cleanup_demo_skill(node, instruction)
+    if res is not None:
+        return res
     # 조작(집기) 판정을 이동보다 먼저 수행한다. "2미터 앞의 컵 집어" 처럼 거리
     # 표현이 섞인 조작 요청이 상대 이동으로 오라우팅되지 않도록 하는 이중 방어.
     res = direct_cup_pick_skill(node, instruction)

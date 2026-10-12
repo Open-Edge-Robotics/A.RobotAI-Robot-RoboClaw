@@ -1,5 +1,6 @@
 """RoboClaw 전체 시스템 런치 파일"""
 
+import json
 import os
 import sys
 
@@ -284,6 +285,34 @@ def _launch_setup(context, *args, **kwargs):
     ).perform(context)
     mcp_enabled = LaunchConfiguration("mcp_enabled").perform(context)
     mcp_servers_json = LaunchConfiguration("mcp_servers_json").perform(context)
+    cleanup_demo_enabled = LaunchConfiguration("cloid_cleanup_demo_enabled").perform(
+        context
+    ).strip().lower() in ("1", "true", "yes", "on")
+    cleanup_demo_ids_raw = LaunchConfiguration("cloid_cleanup_demo_motion_ids_json").perform(
+        context
+    )
+    try:
+        cleanup_demo_ids_value = json.loads(cleanup_demo_ids_raw)
+    except (TypeError, ValueError):
+        cleanup_demo_ids_value = None
+    cleanup_demo_ids = (
+        list(dict.fromkeys(cleanup_demo_ids_value))
+        if isinstance(cleanup_demo_ids_value, list)
+        and cleanup_demo_ids_value
+        and all(
+            isinstance(item, int) and not isinstance(item, bool) and item > 0
+            for item in cleanup_demo_ids_value
+        )
+        and not {59, 60}.intersection(cleanup_demo_ids_value)
+        else []
+    )
+    if cleanup_demo_enabled and not cleanup_demo_ids:
+        print(
+            "[RoboClaw][WARN] CLOi cleanup demo disabled: configure a non-empty, valid "
+            "cloid_cleanup_demo_motion_ids_json allowlist (IDs 59/60 are forbidden).",
+            file=sys.stderr,
+        )
+        cleanup_demo_enabled = False
 
     core_parameters = []
     if os.path.exists(robot_yaml):
@@ -502,6 +531,12 @@ def _launch_setup(context, *args, **kwargs):
         skill_modules.append("robo_claw_agent.skills.butler_skill")
     elif robot_config == "cloid":
         skill_modules.append("robo_claw_agent.skills.cloid_motion_skill")
+        is_cloid2_profile = os.path.basename(skills_guide_file).casefold() == "skills.cloid.2.md"
+        if cleanup_demo_enabled and not is_cloid2_profile:
+            skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
+            agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
+                cleanup_demo_ids
+            )
     agent_parameters[-1]["skill_modules"] = skill_modules
 
     # YAML 설정에서 odom_topic 동적 파싱
@@ -848,6 +883,16 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="MoveIt 기반 manipulator_node 실행 여부 (true | false). "
                 "stretch3 설정에서는 자체 driver 백엔드를 쓰므로 무조건 비활성화된다.",
+            ),
+            DeclareLaunchArgument(
+                "cloid_cleanup_demo_enabled",
+                default_value="true",
+                description="CLOi 1호의 정리 시연 경로를 기본 활성화합니다. 검토된 모션 allowlist가 없으면 등록하지 않습니다.",
+            ),
+            DeclareLaunchArgument(
+                "cloid_cleanup_demo_motion_ids_json",
+                default_value="[]",
+                description="운영자가 검토한 CLOi 정리 시연 모션 ID allowlist JSON. 59/60은 허용하지 않습니다.",
             ),
             DeclareLaunchArgument(
                 "scan_interval_sec",

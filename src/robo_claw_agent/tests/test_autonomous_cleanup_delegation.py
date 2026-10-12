@@ -269,6 +269,45 @@ def test_cleanup_mode_delegates_when_local_disposal_pose_is_not_curated(monkeypa
     assert "안전한 지정 폐기 장소" in handoff._blackboard["decided_params"]["instruction"]
 
 
+def test_cleanup_mode_routes_to_demo_capable_peer_when_no_manipulator_exists(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import execution_nodes
+    from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
+
+    def find_peer(_node, capability):
+        if capability == "manipulation":
+            return None
+        if capability == "cleanup_demo":
+            return {"peer_name": "cloid1", "transport": "grpc"}
+        return None
+
+    monkeypatch.setattr(execution_nodes, "_find_connected_peer_with_capability", find_peer)
+    node = _node_with_skills(["navigate_to", "call_peer_robot"])
+    skill = MagicMock()
+    skill.node = node
+    skill.get_map_pose.return_value = {"x": 1.25, "y": -0.5}
+
+    handoff = ResolveCleanupHandoff(skill)
+    handoff._blackboard = {
+        "cleanup_task_mode": True,
+        "detected_objects": [{"name": "포장지"}],
+        "scene_analysis": "안방 바닥에 포장지가 놓여 있습니다.",
+        "patrol_last_place": "안방",
+    }
+
+    assert handoff.tick() == NodeStatus.SUCCESS
+    assert handoff._blackboard["cleanup_handoff_prepared"] is True
+    assert handoff._blackboard["cleanup_handoff_kind"] == "cleanup_demo"
+    assert handoff._blackboard["decided_params"]["peer_name"] == "cloid1"
+    payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
+    assert payload == {
+        "request_id": payload["request_id"],
+        "target_location": "안방",
+        "target_object": "포장지",
+        "scene_summary": "안방 바닥에 포장지가 놓여 있습니다.",
+    }
+    assert not {"x", "y", "target_pose"}.intersection(payload)
+
+
 def test_cleanup_handoff_records_no_connected_capable_peer(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 

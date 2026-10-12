@@ -93,6 +93,31 @@ class TestCallPeerRobotSkill:
         assert result["peer_name"] == "robot_a"
         assert result["response"] == "작업 완료"
 
+    def test_timeout_is_forwarded_to_peer_and_validated(self):
+        client = MagicMock()
+        client.wait_for_service.return_value = True
+        client.call_async.return_value = _future_with_result(
+            SimpleNamespace(success=True, result_message="요청 접수", error_message="")
+        )
+        skill = _make_skill(CallPeerRobotSkill, _make_dummy_node(_call_peer_client=client))
+
+        result = skill.execute(
+            {
+                "peer_name": "robot_a",
+                "instruction": "시연 모션을 요청해",
+                "timeout_sec": 180.0,
+            }
+        )
+
+        assert result["success"] is True
+        assert client.call_async.call_args[0][0].timeout_sec == 180.0
+
+        invalid = skill.execute(
+            {"peer_name": "robot_a", "instruction": "시연 모션을 요청해", "timeout_sec": 5.0}
+        )
+        assert invalid["success"] is False
+        assert client.call_async.call_count == 1
+
     def test_failure_response_mapping(self):
         client = MagicMock()
         client.wait_for_service.return_value = True

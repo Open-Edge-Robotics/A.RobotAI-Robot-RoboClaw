@@ -3,6 +3,7 @@
 """
 
 import logging
+import math
 import threading
 from typing import Any
 
@@ -54,23 +55,36 @@ class DelegateTaskSkill(BaseSkill):
     name = "delegate_task"
     input_schema = {
         "type": "object",
-        "properties": {"agent_id": {"type": "string"}, "instruction": {"type": "string"}},
+        "properties": {
+            "agent_id": {"type": "string"},
+            "instruction": {"type": "string"},
+            "timeout_sec": {"type": "number", "minimum": 10.0, "maximum": 240.0},
+        },
         "required": ["agent_id", "instruction"],
         "additionalProperties": False,
     }
     description = (
         "다른 RoboClaw 에이전트에게 자연어 작업을 위임하고 결과를 기다립니다. "
-        "`agent_id`와 `instruction`이 필요합니다."
+        "`agent_id`와 `instruction`이 필요하며 선택적 `timeout_sec`는 10~240초입니다."
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         target_agent = params.get("agent_id", "")
         instruction = params.get("instruction", "")
+        try:
+            timeout_sec = float(params.get("timeout_sec", 120.0))
+        except (TypeError, ValueError):
+            timeout_sec = 0.0
 
         if not target_agent or not instruction:
             return {
                 "success": False,
                 "message": "agent_id와 instruction 파라미터가 필요합니다.",
+            }
+        if not math.isfinite(timeout_sec) or not 10.0 <= timeout_sec <= 240.0:
+            return {
+                "success": False,
+                "message": "timeout_sec는 10~240초 범위여야 합니다.",
             }
 
         logger.info("Delegating task to agent [%s]: %s", target_agent, instruction)
@@ -93,6 +107,7 @@ class DelegateTaskSkill(BaseSkill):
 
             goal_msg = ExecuteTask.Goal()
             goal_msg.instruction = instruction
+            goal_msg.timeout_sec = timeout_sec
 
             send_goal_future = client.send_goal_async(goal_msg)
             ok, goal_or_message = _wait_for_future(
@@ -113,7 +128,7 @@ class DelegateTaskSkill(BaseSkill):
             get_result_future = goal_handle.get_result_async()
             ok, result_or_message = _wait_for_future(
                 get_result_future,
-                timeout_sec=60.0,
+                timeout_sec=timeout_sec,
                 message="에이전트 작업 실행 중 시간 초과",
             )
             if not ok:
@@ -149,7 +164,7 @@ class CallPeerRobotSkill(BaseSkill):
             "instruction": {"type": "string"},
             "file_path": {"type": "string"},
             "wait_for_result": {"type": "boolean", "default": True},
-            "timeout_sec": {"type": "number"},
+            "timeout_sec": {"type": "number", "minimum": 10.0, "maximum": 240.0},
         },
         "required": ["peer_name"],
         "anyOf": [{"required": ["instruction"]}, {"required": ["file_path"]}],
@@ -160,7 +175,7 @@ class CallPeerRobotSkill(BaseSkill):
         "전달합니다. delegate_task와 달리 같은 ROS 네트워크가 아니어도(gRPC로 원격 연결된 로봇) "
         "동작합니다. 파라미터: peer_name(필수), instruction(지시/메시지, file_path만 보낼 경우 생략 가능), "
         "file_path(선택, 함께 보낼 파일), wait_for_result(선택, 기본 true - false면 응답을 "
-        "기다리지 않고 즉시 반환), timeout_sec(선택)"
+        "기다리지 않고 즉시 반환), timeout_sec(선택, 10~240초)"
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -168,7 +183,21 @@ class CallPeerRobotSkill(BaseSkill):
         instruction = params.get("instruction", "")
         file_path = params.get("file_path", "")
         wait_for_result = params.get("wait_for_result", True)
-        timeout_sec = float(params.get("timeout_sec", 0.0) or 0.0)
+        try:
+            timeout_sec = float(params.get("timeout_sec", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            timeout_sec = -1.0
+
+        if (
+            not math.isfinite(timeout_sec)
+            or timeout_sec < 0.0
+            or (0.0 < timeout_sec < 10.0)
+            or timeout_sec > 240.0
+        ):
+            return {
+                "success": False,
+                "message": "timeout_sec는 생략하거나 10~240초 범위여야 합니다.",
+            }
 
         if not peer_name or (not instruction and not file_path):
             return {
