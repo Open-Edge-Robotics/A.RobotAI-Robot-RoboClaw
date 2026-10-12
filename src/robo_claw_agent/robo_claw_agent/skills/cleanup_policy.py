@@ -322,8 +322,6 @@ def _select_cleanup_demo_motion(
         for motion_id in allowed_motion_ids
         if isinstance(motion_id, int) and not isinstance(motion_id, bool) and motion_id > 0
     }
-    # These catalog entries are known to perform real object manipulation, not a gesture.
-    allowed.difference_update({59, 60})
     candidates = []
     for motion in motions:
         if not isinstance(motion, dict):

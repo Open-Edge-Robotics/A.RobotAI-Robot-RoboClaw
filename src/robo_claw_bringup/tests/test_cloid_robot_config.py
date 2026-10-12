@@ -234,46 +234,75 @@ def test_launch_binds_cloid_profiles_to_agent_node() -> None:
     assert "robo_claw_agent.skills.butler_skill" not in agent["skill_modules"]
 
 
-def test_cleanup_demo_defaults_true_but_fails_closed_without_reviewed_motion_ids() -> None:
-    module = _load_launch_module()
-    launch_description = module.generate_launch_description()
-    context = _build_context(launch_description, {"robot_config": "cloid"})
-
-    assert context.launch_configurations["cloid_cleanup_demo_enabled"] == "true"
-    entities = module._launch_setup(context)  # noqa: SLF001
-    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
-
-    # 데모 플래그의 기본값은 true지만, 검토된 모션 ID allowlist 없이는 스킬을 등록하지 않습니다.
-    assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
-    assert "cloid_cleanup_demo_motion_ids_json" not in agent
-
-
-def test_cleanup_demo_skill_loads_with_reviewed_cloid1_allowlist() -> None:
+def test_cleanup_demo_defaults_to_scan_and_wipe_motion_for_cloid1_only() -> None:
     module = _load_launch_module()
     launch_description = module.generate_launch_description()
     context = _build_context(
         launch_description,
         {
             "robot_config": "cloid",
+            "agent_id": "cloid01",
+            # 실기 AI Config Server 가이드 파일은 generic SKILLS.md 이름을 사용합니다.
+            "skills_guide_file": "/cache/cloid_cloi01/SKILLS.md",
+        },
+    )
+
+    assert context.launch_configurations["cloid_cleanup_demo_enabled"] == "true"
+    entities = module._launch_setup(context)  # noqa: SLF001
+    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+
+    assert "robo_claw_agent.skills.cleanup_demo_skill" in agent["skill_modules"]
+    assert agent["cloid_cleanup_demo_motion_ids_json"] == "[22,60]"
+
+
+def test_cleanup_demo_default_is_not_enabled_for_cloid2_generic_guide() -> None:
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+    context = _build_context(
+        launch_description,
+        {
+            "robot_config": "cloid",
+            "agent_id": "cloid02",
+            "skills_guide_file": "/cache/cloid_cloi02/SKILLS.md",
             "cloid_cleanup_demo_enabled": "true",
-            "cloid_cleanup_demo_motion_ids_json": "[77]",
+            "cloid_cleanup_demo_motion_ids_json": "[22]",
+        },
+    )
+    entities = module._launch_setup(context)  # noqa: SLF001
+    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+
+    assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
+    assert "cloid_cleanup_demo_motion_ids_json" not in agent
+
+
+def test_cleanup_demo_accepts_cloid1_allowlist_with_motion_60() -> None:
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+    context = _build_context(
+        launch_description,
+        {
+            "robot_config": "cloid",
+            "agent_id": "cloid01",
+            "cloid_cleanup_demo_enabled": "true",
+            "cloid_cleanup_demo_motion_ids_json": "[22,60]",
         },
     )
     entities = module._launch_setup(context)  # noqa: SLF001
     agent = _evaluated_params(context, _find_node(entities, "agent_node"))
 
     assert "robo_claw_agent.skills.cleanup_demo_skill" in agent["skill_modules"]
-    assert agent["cloid_cleanup_demo_motion_ids_json"] == "[77]"
+    assert agent["cloid_cleanup_demo_motion_ids_json"] == "[22,60]"
 
 
-@pytest.mark.parametrize("motion_ids", ["[59]", "[60]", "not-json", "[]"])
-def test_cleanup_demo_rejects_missing_or_unsafe_motion_allowlist(motion_ids: str) -> None:
+@pytest.mark.parametrize("motion_ids", ["not-json", "[]"])
+def test_cleanup_demo_rejects_empty_or_malformed_motion_allowlist(motion_ids: str) -> None:
     module = _load_launch_module()
     launch_description = module.generate_launch_description()
     context = _build_context(
         launch_description,
         {
             "robot_config": "cloid",
+            "agent_id": "cloid01",
             "cloid_cleanup_demo_enabled": "true",
             "cloid_cleanup_demo_motion_ids_json": motion_ids,
         },
@@ -292,6 +321,7 @@ def test_cloid2_profile_never_registers_cleanup_demo_skill() -> None:
         launch_description,
         {
             "robot_config": "cloid",
+            "agent_id": "cloid02",
             "skills_guide_file": str(_CLOID_SKILLS_UNIT_2),
             "cloid_cleanup_demo_enabled": "true",
             "cloid_cleanup_demo_motion_ids_json": "[77]",

@@ -176,18 +176,35 @@ def test_cloid_indicator_selects_only_approved_prerequisite_free_motion():
     assert selected["motion_id"] not in {59, 60, 147}
 
 
-def test_cleanup_demo_uses_only_explicit_prerequisite_free_ids_and_excludes_real_pick_motions():
+def test_cleanup_demo_uses_only_explicit_prerequisite_free_ids():
     motions = [
         _motion(77, "cleanup_demo"),
         _motion(78, "cleanup_demo_with_prerequisite", pre_id=76),
         _motion(59, "wipe_1"),
-        _motion(60, "wipe_2"),
+        _motion(60, "wipe_2", pre_id=59),
     ]
 
     selected = _select_cleanup_demo_motion(motions, [77, 78, 59, 60], rng=random.Random(1))
 
-    assert selected["motion_id"] == 77
-    assert _select_cleanup_demo_motion(motions, [78, 59, 60]) is None
+    assert selected["motion_id"] in {77, 59}
+    assert selected["pre_id"] is None
+    assert _select_cleanup_demo_motion(motions, [78, 60]) is None
+
+
+def test_cleanup_demo_allows_operator_allowlisted_wipe_ids_without_prerequisite():
+    motions = [_motion(59, "wipe_1"), _motion(60, "wipe_2")]
+
+    selected_59 = _select_cleanup_demo_motion(motions, [59], rng=random.Random(1))
+    selected_60 = _select_cleanup_demo_motion(motions, [60], rng=random.Random(1))
+
+    assert selected_59 is not None and selected_59["motion_id"] == 59
+    assert selected_60 is not None and selected_60["motion_id"] == 60
+
+
+def test_cleanup_demo_still_rejects_motion_with_catalog_prerequisite():
+    motions = [_motion(60, "wipe_2", pre_id=59)]
+
+    assert _select_cleanup_demo_motion(motions, [60]) is None
 
 
 def test_cloid_indicator_avoids_immediate_repeat_when_an_alternative_exists():

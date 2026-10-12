@@ -22,6 +22,9 @@ if _LAUNCH_DIR not in sys.path:
 from _common_launch_args import common_launch_arguments  # pyright: ignore[reportMissingImports]
 from _system1_launch import system1_local_server_actions  # pyright: ignore[reportMissingImports]
 
+_CLOID1_CLEANUP_DEMO_DEFAULT_MOTION_IDS = (22, 60)
+_CLOID1_AGENT_IDS = {"cloi01", "cloid01"}
+
 
 def _safe_int(value, default=0):
     """런치 인자 문자열을 int 로 안전하게 변환한다. 무효 값은 기본값 사용."""
@@ -288,13 +291,22 @@ def _launch_setup(context, *args, **kwargs):
     cleanup_demo_enabled = LaunchConfiguration("cloid_cleanup_demo_enabled").perform(
         context
     ).strip().lower() in ("1", "true", "yes", "on")
-    cleanup_demo_ids_raw = LaunchConfiguration("cloid_cleanup_demo_motion_ids_json").perform(
-        context
+    cleanup_demo_agent_id = "".join(
+        character
+        for character in LaunchConfiguration("agent_id").perform(context).casefold()
+        if character.isalnum()
     )
-    try:
-        cleanup_demo_ids_value = json.loads(cleanup_demo_ids_raw)
-    except (TypeError, ValueError):
-        cleanup_demo_ids_value = None
+    is_cloid1_profile = cleanup_demo_agent_id in _CLOID1_AGENT_IDS
+    cleanup_demo_ids_raw = (
+        LaunchConfiguration("cloid_cleanup_demo_motion_ids_json").perform(context).strip()
+    )
+    if not cleanup_demo_ids_raw and is_cloid1_profile:
+        cleanup_demo_ids_value = list(_CLOID1_CLEANUP_DEMO_DEFAULT_MOTION_IDS)
+    else:
+        try:
+            cleanup_demo_ids_value = json.loads(cleanup_demo_ids_raw or "[]")
+        except (TypeError, ValueError):
+            cleanup_demo_ids_value = None
     cleanup_demo_ids = (
         list(dict.fromkeys(cleanup_demo_ids_value))
         if isinstance(cleanup_demo_ids_value, list)
@@ -303,13 +315,14 @@ def _launch_setup(context, *args, **kwargs):
             isinstance(item, int) and not isinstance(item, bool) and item > 0
             for item in cleanup_demo_ids_value
         )
-        and not {59, 60}.intersection(cleanup_demo_ids_value)
         else []
     )
+    if not is_cloid1_profile:
+        cleanup_demo_enabled = False
     if cleanup_demo_enabled and not cleanup_demo_ids:
         print(
             "[RoboClaw][WARN] CLOi cleanup demo disabled: configure a non-empty, valid "
-            "cloid_cleanup_demo_motion_ids_json allowlist (IDs 59/60 are forbidden).",
+            "cloid_cleanup_demo_motion_ids_json allowlist.",
             file=sys.stderr,
         )
         cleanup_demo_enabled = False
@@ -531,8 +544,7 @@ def _launch_setup(context, *args, **kwargs):
         skill_modules.append("robo_claw_agent.skills.butler_skill")
     elif robot_config == "cloid":
         skill_modules.append("robo_claw_agent.skills.cloid_motion_skill")
-        is_cloid2_profile = os.path.basename(skills_guide_file).casefold() == "skills.cloid.2.md"
-        if cleanup_demo_enabled and not is_cloid2_profile:
+        if cleanup_demo_enabled and is_cloid1_profile:
             skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
             agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
                 cleanup_demo_ids
@@ -891,8 +903,8 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "cloid_cleanup_demo_motion_ids_json",
-                default_value="[]",
-                description="운영자가 검토한 CLOi 정리 시연 모션 ID allowlist JSON. 59/60은 허용하지 않습니다.",
+                default_value="",
+                description="CLOi 1호 기본 allowlist는 [22,60]입니다. []를 지정하면 비활성화합니다. 모션 카탈로그의 pre_id가 있으면 실행하지 않습니다.",
             ),
             DeclareLaunchArgument(
                 "scan_interval_sec",
