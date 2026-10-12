@@ -386,6 +386,52 @@ class TestQueryPeerCapabilitiesSkill:
         assert result["success"] is True
         assert result["capabilities"] == []
 
+    def test_success_with_comma_separated_text(self):
+        """동료가 대괄호 없는 쉼표 구분 텍스트로 응답해도 capabilities를 파싱한다."""
+        client = MagicMock()
+        client.wait_for_service.return_value = True
+
+        resp = SimpleNamespace(
+            success=True,
+            result_message="approach_object, navigate_to, grasp, place, analyze_scene",
+            error_message="",
+        )
+        client.call_async.return_value = _future_with_result(resp)
+
+        node = _make_dummy_node(_call_peer_client=client)
+        skill = _make_skill(QueryPeerCapabilitiesSkill, node)
+
+        result = skill.execute({"peer_name": "robot_a"})
+
+        assert result["success"] is True
+        assert result["capabilities"] == [
+            "approach_object",
+            "navigate_to",
+            "grasp",
+            "place",
+            "analyze_scene",
+        ]
+
+    def test_success_with_bulleted_list_text(self):
+        """동료가 마크다운 불릿 목록으로 응답해도 capabilities를 파싱한다."""
+        client = MagicMock()
+        client.wait_for_service.return_value = True
+
+        resp = SimpleNamespace(
+            success=True,
+            result_message="사용 가능한 스킬:\n- navigate_to\n- grasp\n- place",
+            error_message="",
+        )
+        client.call_async.return_value = _future_with_result(resp)
+
+        node = _make_dummy_node(_call_peer_client=client)
+        skill = _make_skill(QueryPeerCapabilitiesSkill, node)
+
+        result = skill.execute({"peer_name": "robot_a"})
+
+        assert result["success"] is True
+        assert result["capabilities"] == ["navigate_to", "grasp", "place"]
+
     def test_capabilities_instruction_asks_for_skills(self):
         """지시문에 스킬 목록을 요청하는 내용이 포함되어야 한다."""
         client = MagicMock()

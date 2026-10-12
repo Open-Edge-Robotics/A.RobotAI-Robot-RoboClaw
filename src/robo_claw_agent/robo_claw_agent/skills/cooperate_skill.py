@@ -492,22 +492,40 @@ class QueryPeerCapabilitiesSkill(BaseSkill):
                 "capabilities": [],
             }
 
-        # 동료가 JSON 배열로 응답했다면 파싱, 아니면 빈 리스트
+        # 동료가 JSON 배열로 응답했다면 파싱, 아니면 텍스트 기반 폴백 파싱
         import json as _json
         import re as _re
 
         raw = resp.result_message or ""
         capabilities: list[str] = []
+        clean = _re.sub(r"```(?:json)?\s*\n?", "", raw).strip()
         try:
-            clean = _re.sub(r"```(?:json)?\s*\n?", "", raw).strip()
             # 응답에서 JSON 배열 추출 시도
             match = _re.search(r"\[.*?\]", clean, _re.DOTALL)
             if match:
-                capabilities = _json.loads(match.group(0))
+                parsed = _json.loads(match.group(0))
+                if isinstance(parsed, list):
+                    capabilities = [str(x).strip() for x in parsed if isinstance(x, (str, int))]
             elif clean.startswith("["):
-                capabilities = _json.loads(clean)
+                parsed = _json.loads(clean)
+                if isinstance(parsed, list):
+                    capabilities = [str(x).strip() for x in parsed if isinstance(x, (str, int))]
         except Exception:
             capabilities = []
+
+        if not capabilities and clean:
+            # 폴백: JSON 배열 형식이 아닌 쉼표, 줄바꿈, 마크다운 불릿 목록 파싱
+            candidate_tokens: list[str] = []
+            for chunk in _re.split(r"[,;\n]+", clean):
+                chunk = chunk.strip()
+                if ":" in chunk:
+                    chunk = chunk.split(":", 1)[-1].strip()
+                item = _re.sub(r"^[\s*\[\]\-•\d\.\)]+|[\s*\[\]\-`'\"]+$", "", chunk).strip()
+                item = item.strip("'\"` ")
+                if _re.match(r"^[a-z][a-z0-9_]{1,63}$", item):
+                    candidate_tokens.append(item)
+            if candidate_tokens:
+                capabilities = list(dict.fromkeys(candidate_tokens))
 
         return {
             "success": True,

@@ -8,6 +8,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 
 from ..cleanup_policy import (
     _cleanup_target_categories,
+    _cleanup_target_category,
     _cleanup_target_labels,
     _has_cleanup_indication,
     _safe_cleanup_disposal_targets,
@@ -235,12 +236,15 @@ class ResolveCleanupHandoff(BTNode):
         peer = _find_connected_peer_with_capability(node, "manipulation")
         handoff_kind = "manipulation"
         demo_target = ""
-        if peer is None and target_categories == {"waste"}:
-            peer = _find_connected_peer_with_capability(node, "cleanup_demo")
-            handoff_kind = "cleanup_demo"
-            if len(cleanup_targets) == 1:
-                demo_target = cleanup_targets[0].strip()
-            elif not cleanup_targets:
+        if peer is None:
+            waste_targets = [
+                target.strip()
+                for target in cleanup_targets
+                if _cleanup_target_category(target) == "waste"
+            ]
+            if len(waste_targets) == 1:
+                demo_target = waste_targets[0]
+            elif not waste_targets:
                 scene_candidates = {
                     keyword
                     for keyword in (
@@ -258,8 +262,18 @@ class ResolveCleanupHandoff(BTNode):
                 }
                 if len(scene_candidates) == 1:
                     demo_target = next(iter(scene_candidates))
-            if not demo_target or not place:
-                peer = None
+
+            if demo_target:
+                peer = _find_connected_peer_with_capability(node, "cleanup_demo")
+                if peer is not None:
+                    handoff_kind = "cleanup_demo"
+                    if not place:
+                        peer = None
+                        blackboard["cleanup_handoff_status"] = (
+                            "정리 시연 동료에게 보낼 장소 이름 또는 단일 폐기물 후보를 확인할 수 없습니다. "
+                            "요청을 보내지 않았습니다."
+                        )
+            elif target_categories == {"waste"} and not demo_target:
                 blackboard["cleanup_handoff_status"] = (
                     "정리 시연 동료에게 보낼 장소 이름 또는 단일 폐기물 후보를 확인할 수 없습니다. "
                     "요청을 보내지 않았습니다."
