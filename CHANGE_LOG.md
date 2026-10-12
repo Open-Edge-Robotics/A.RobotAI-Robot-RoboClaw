@@ -5,6 +5,17 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-10-12**
 
+## 2026-10-12 — CLOi 시연 설정을 공통 contract로 관리
+
+- 공통 runtime config contract v2.6.0에 `agent.cloid_cleanup_demo_enabled` 및 `agent.cloid_cleanup_demo_motion_ids_json`을 추가하고 생성된 Go/Python/shell consumer artifact 및 lock을 갱신합니다. RoboClaw CLI와 Docker launch가 두 설정을 launch argument로 전달합니다.
+- 비어 있는 allowlist는 CLOi 1호 승인 기본값 `[22,60]`을 사용하고 `[]`는 끕니다. CLOi 2호에는 시연을 적용하지 않으며 catalog `pre_id` 가드는 유지합니다. AI Config Server에서 설정 필드를 편집하고 배포 `.env`에 내보내도록 연결합니다.
+- 계약 변경은 로컬 생성/소비자 반영만 수행했으며 공식 GitLab release, 프로필 값 갱신, 로봇 배포는 하지 않았습니다.
+
+## 2026-10-12 — 동료 로봇 capability 설정 계약 동기화
+
+- 공통 runtime config contract를 v2.5.0으로 갱신하고 `messenger.target_peers_json`의 `GRPC_TARGET_PEERS_JSON`/API/ROS 매핑을 등록합니다. 정리 시연 동료는 `capabilities: ["cleanup_demo"]`로 명시하며, `role` 필드는 capability를 대체하지 않습니다.
+- 생성된 Go/Python/shell 설정 consumer artifact와 계약 lock을 동기화합니다. AI Config Server의 피어 편집 폼에서 capability를 입력할 수 있도록 반영하며, 실제 프로필 값 변경이나 로봇 배포는 수행하지 않습니다.
+
 ## 2026-10-12 — CLOi 정리 시연 피어 요청 분리
 
 - CLOi 2호의 정리 위임을 실제 집기 능력과 별도의 `cleanup_demo` capability로 구분합니다. 요청에는 요청 ID, 기억된 방 이름, 후보 이름, 관찰 요약만 포함하며 물체 3D 좌표를 전달하지 않습니다.

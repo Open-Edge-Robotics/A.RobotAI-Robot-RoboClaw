@@ -6,6 +6,8 @@ rcf_generated_launch_argument() {
     RC_LLM_PROVIDER) printf '%s' 'llm_provider' ;;
     RC_LLM_MODEL) printf '%s' 'llm_model' ;;
     RC_AGENT_ID) printf '%s' 'agent_id' ;;
+    RC_CLOID_CLEANUP_DEMO_ENABLED) printf '%s' 'cloid_cleanup_demo_enabled' ;;
+    RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON) printf '%s' 'cloid_cleanup_demo_motion_ids_json' ;;
     RC_ENABLE_RAG) printf '%s' 'enable_rag' ;;
     RC_RAG_TOP_K) printf '%s' 'rag_top_k' ;;
     RC_STRICT_CONFIG) printf '%s' 'strict_config' ;;
@@ -13,6 +15,7 @@ rcf_generated_launch_argument() {
     RC_HTTP_CONTROL_TOKEN) printf '%s' 'http_control_token' ;;
     ROBO_CLAW_GRPC_PORT) printf '%s' 'grpc_port' ;;
     GRPC_PEER_TOKEN) printf '%s' 'grpc_peer_token' ;;
+    GRPC_TARGET_PEERS_JSON) printf '%s' 'target_peers_json' ;;
     RC_USE_VISION) printf '%s' 'use_vision' ;;
     RC_VISION_MODEL_PATH) printf '%s' 'vision_model_path' ;;
     RC_OLLAMA_BASE_URL) printf '%s' 'llm_base_url' ;;

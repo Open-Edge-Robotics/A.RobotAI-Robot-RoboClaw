@@ -31,7 +31,9 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 		"RC_CAMERA_TOPIC":   "/my_cam",
 		"RC_USE_DASHBOARD":  "true",
 		"RC_DASHBOARD_HOST": "10.0.0.5",
-		"RC_DASHBOARD_PORT": "9099",
+		"RC_DASHBOARD_PORT":                       "9099",
+		"RC_CLOID_CLEANUP_DEMO_ENABLED":          "true",
+		"RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22,60]",
 	}
 	args := BuildRunLaunchArgs(envMap, "azure", "gpt-4.1", "true", []string{"extra_arg:=123"})
 
@@ -43,6 +45,8 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 	foundUseDashboard := false
 	foundDashHost := false
 	foundDashPort := false
+	foundCleanupDemoEnabled := false
+	foundCleanupDemoMotionIDs := false
 
 	for _, a := range args {
 		if a == "llm_provider:=azure" {
@@ -66,6 +70,12 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 		if a == "dashboard_port:=9099" {
 			foundDashPort = true
 		}
+		if a == "cloid_cleanup_demo_enabled:=true" {
+			foundCleanupDemoEnabled = true
+		}
+		if a == "cloid_cleanup_demo_motion_ids_json:=[22,60]" {
+			foundCleanupDemoMotionIDs = true
+		}
 	}
 
 	if !foundProvider {
@@ -88,5 +98,11 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 	}
 	if !foundDashPort {
 		t.Errorf("expected dashboard_port:=9099 in args: %v", args)
+	}
+	if !foundCleanupDemoEnabled {
+		t.Errorf("expected CLOi cleanup-demo enable switch in args: %v", args)
+	}
+	if !foundCleanupDemoMotionIDs {
+		t.Errorf("expected CLOi cleanup-demo allowlist in args: %v", args)
 	}
 }

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.3.0",
+  "contract_version": "2.6.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -87,6 +87,50 @@
       "api_json": "agent_id",
       "launch_argument": "agent_id",
       "ros_parameter": "agent_id",
+      "value_type": "string",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "agent.cloid_cleanup_demo_enabled",
+      "type": "boolean",
+      "scope": "robot_profile",
+      "default": true,
+      "secret": false,
+      "description": "CLOi cleanup-demo launch switch. RoboClaw forcibly disables the path for non-CLOi-1 agent profiles; an empty peer list or unsafe motion catalog still prevents execution.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_CLOID_CLEANUP_DEMO_ENABLED",
+      "api_json": "cloid_cleanup_demo_enabled",
+      "launch_argument": "cloid_cleanup_demo_enabled",
+      "ros_parameter": "",
+      "value_type": "bool",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "agent.cloid_cleanup_demo_motion_ids_json",
+      "type": "string",
+      "scope": "robot_profile",
+      "default": "",
+      "secret": false,
+      "description": "Optional JSON array allowlist of reviewed CLOi cleanup-demo motion IDs. An empty value uses the CLOi 1 profile default [22,60]; [] disables the demo. The runtime still rejects catalog entries with pre_id and never runs prerequisites automatically.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON",
+      "api_json": "cloid_cleanup_demo_motion_ids_json",
+      "launch_argument": "cloid_cleanup_demo_motion_ids_json",
+      "ros_parameter": "cloid_cleanup_demo_motion_ids_json",
       "value_type": "string",
       "modes": [
         "local",
@@ -241,6 +285,28 @@
       "api_json": "grpc_peer_token",
       "launch_argument": "grpc_peer_token",
       "ros_parameter": "grpc_peer_token",
+      "value_type": "string",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "messenger.target_peers_json",
+      "type": "string",
+      "scope": "runtime",
+      "default": "[]",
+      "secret": false,
+      "description": "JSON array of gRPC peer records. Declare peer capabilities explicitly; role is descriptive and does not grant a capability. CLOi cleanup-demo peers use capabilities [\"cleanup_demo\"], not manipulation.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "GRPC_TARGET_PEERS_JSON",
+      "api_json": "grpc_target_peers_json",
+      "launch_argument": "target_peers_json",
+      "ros_parameter": "target_peers_json",
       "value_type": "string",
       "modes": [
         "local",
@@ -964,6 +1030,260 @@
       "maximum": null,
       "env": "LANGSMITH_WORKSPACE_ID",
       "api_json": "langsmith_workspace_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.router",
+      "type": "string",
+      "scope": "runtime",
+      "default": "rule",
+      "secret": false,
+      "description": "Select the pre-routing implementation used before the LLM planner.",
+      "enum": [
+        "rule",
+        "laya"
+      ],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_ROUTER",
+      "api_json": "system1_router",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.shadow",
+      "type": "boolean",
+      "scope": "runtime",
+      "default": false,
+      "secret": false,
+      "description": "Run the non-selected router in the background for comparison only.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_SHADOW",
+      "api_json": "system1_shadow",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.shadow_log",
+      "type": "path",
+      "scope": "runtime",
+      "default": "",
+      "secret": false,
+      "description": "Optional JSONL output path for System 1 shadow decisions.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_SHADOW_LOG",
+      "api_json": "system1_shadow_log",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.scope",
+      "type": "string",
+      "scope": "runtime",
+      "default": "readonly",
+      "secret": false,
+      "description": "Actions System 1 may select directly when Laya is the active router.",
+      "enum": [
+        "readonly",
+        "navigation"
+      ],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_SCOPE",
+      "api_json": "system1_scope",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.endpoint",
+      "type": "string",
+      "scope": "runtime",
+      "default": "",
+      "secret": false,
+      "description": "HTTP endpoint of the System 1 /v1/systemone service.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_ENDPOINT",
+      "api_json": "system1_endpoint",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.provider",
+      "type": "string",
+      "scope": "runtime",
+      "default": "laya",
+      "secret": false,
+      "description": "Name of the configured System 1 provider.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_PROVIDER",
+      "api_json": "system1_provider",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.timeout_ms",
+      "type": "number",
+      "scope": "runtime",
+      "default": 300.0,
+      "secret": false,
+      "description": "Timeout in milliseconds for each System 1 provider request.",
+      "enum": [],
+      "minimum": 1,
+      "maximum": null,
+      "env": "SYSTEM1_TIMEOUT_MS",
+      "api_json": "system1_timeout_ms",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.conf_thresholds",
+      "type": "object",
+      "scope": "runtime",
+      "default": {
+        "smalltalk": 0.9,
+        "single_skill": 0.85,
+        "skill": 0.8,
+        "target_place": 0.8,
+        "ambiguous": 0.5
+      },
+      "secret": false,
+      "description": "Optional per-intent confidence thresholds encoded as JSON in the environment.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_CONF_THRESHOLDS_JSON",
+      "api_json": "system1_conf_thresholds_json",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.skills",
+      "type": "string",
+      "scope": "runtime",
+      "default": "",
+      "secret": false,
+      "description": "Optional comma-separated list of candidate direct skills for System 1.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_SKILLS",
+      "api_json": "system1_skills",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.max_options",
+      "type": "integer",
+      "scope": "runtime",
+      "default": 12,
+      "secret": false,
+      "description": "Maximum number of candidate skills or places shown to System 1.",
+      "enum": [],
+      "minimum": 2,
+      "maximum": null,
+      "env": "SYSTEM1_MAX_OPTIONS",
+      "api_json": "system1_max_options",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.api_key",
+      "type": "string",
+      "scope": "secret",
+      "default": null,
+      "secret": true,
+      "description": "Optional bearer API key for a hosted System 1 provider.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_API_KEY",
+      "api_json": "system1_api_key",
       "launch_argument": "",
       "ros_parameter": "",
       "value_type": "env",

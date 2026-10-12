@@ -10,6 +10,8 @@ Schema version: `2.0`
 | `llm.model` | `RC_LLM_MODEL` | `llm_model` | `string` | `gpt-4.1` | `runtime` | `false` | local, docker, simulation, config_server |
 | `ros.domain_id` | `ROS_DOMAIN_ID` | `ros_domain_id` | `integer` | `0` | `host` | `false` | local, docker, simulation, config_server |
 | `agent.id` | `RC_AGENT_ID` | `agent_id` | `string` | `robo_claw_agent` | `runtime` | `false` | local, docker, simulation, config_server |
+| `agent.cloid_cleanup_demo_enabled` | `RC_CLOID_CLEANUP_DEMO_ENABLED` | `cloid_cleanup_demo_enabled` | `boolean` | `True` | `robot_profile` | `false` | local, docker, simulation, config_server |
+| `agent.cloid_cleanup_demo_motion_ids_json` | `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON` | `cloid_cleanup_demo_motion_ids_json` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `rag.enabled` | `RC_ENABLE_RAG` | `enable_rag` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `rag.top_k` | `RC_RAG_TOP_K` | `rag_top_k` | `integer` | `2` | `runtime` | `false` | local, docker, simulation, config_server |
 | `task.strict_config` | `RC_STRICT_CONFIG` | `strict_config` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -17,6 +19,7 @@ Schema version: `2.0`
 | `http.control_token` | `RC_HTTP_CONTROL_TOKEN` | `http_control_token` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
 | `messenger.server.port` | `ROBO_CLAW_GRPC_PORT` | `grpc_port` | `integer` | `50052` | `runtime` | `false` | local, docker, simulation, config_server |
 | `messenger.peer_token` | `GRPC_PEER_TOKEN` | `grpc_peer_token` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
+| `messenger.target_peers_json` | `GRPC_TARGET_PEERS_JSON` | `grpc_target_peers_json` | `string` | `[]` | `runtime` | `false` | local, docker, simulation, config_server |
 | `vision.enabled` | `RC_USE_VISION` | `use_vision` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `vision.model_path` | `RC_VISION_MODEL_PATH` | `vision_model_path` | `path` | `` | `host` | `false` | local, docker, simulation, config_server |
 | `ollama.base_url` | `RC_OLLAMA_BASE_URL` | `ollama_base_url` | `string` | `http://127.0.0.1:11434` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -50,6 +53,17 @@ Schema version: `2.0`
 | `diagnostics.imu_topic` | `RC_IMU_TOPIC` | `imu_topic` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `debug.enabled` | `RC_DEBUG` | `debug` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `langsmith.workspace_id` | `LANGSMITH_WORKSPACE_ID` | `langsmith_workspace_id` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.router` | `SYSTEM1_ROUTER` | `system1_router` | `string` | `rule` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.shadow` | `SYSTEM1_SHADOW` | `system1_shadow` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.shadow_log` | `SYSTEM1_SHADOW_LOG` | `system1_shadow_log` | `path` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.scope` | `SYSTEM1_SCOPE` | `system1_scope` | `string` | `readonly` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.endpoint` | `SYSTEM1_ENDPOINT` | `system1_endpoint` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.provider` | `SYSTEM1_PROVIDER` | `system1_provider` | `string` | `laya` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.timeout_ms` | `SYSTEM1_TIMEOUT_MS` | `system1_timeout_ms` | `number` | `300` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.conf_thresholds` | `SYSTEM1_CONF_THRESHOLDS_JSON` | `system1_conf_thresholds_json` | `object` | `map[ambiguous:0.5 single_skill:0.85 skill:0.8 smalltalk:0.9 target_place:0.8]` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.skills` | `SYSTEM1_SKILLS` | `system1_skills` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.max_options` | `SYSTEM1_MAX_OPTIONS` | `system1_max_options` | `integer` | `12` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.api_key` | `SYSTEM1_API_KEY` | `system1_api_key` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
 | `fleet.maestro_ip` | `MAESTRO_IP` | `maestro_ip` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.robot_port` | `ROBOT_PORT` | `robot_port` | `integer` | `50053` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.robot_id` | `ROBOT_ID` | `robot_id` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -84,6 +98,14 @@ ROS 2 domain identifier.
 
 Stable identity used by agent and peer discovery.
 
+### `agent.cloid_cleanup_demo_enabled`
+
+CLOi cleanup-demo launch switch. RoboClaw forcibly disables the path for non-CLOi-1 agent profiles; an empty peer list or unsafe motion catalog still prevents execution.
+
+### `agent.cloid_cleanup_demo_motion_ids_json`
+
+Optional JSON array allowlist of reviewed CLOi cleanup-demo motion IDs. An empty value uses the CLOi 1 profile default [22,60]; [] disables the demo. The runtime still rejects catalog entries with pre_id and never runs prerequisites automatically.
+
 ### `rag.enabled`
 
 Enable retrieval augmented generation.
@@ -111,6 +133,10 @@ RoboMessenger gRPC server port.
 ### `messenger.peer_token`
 
 Shared peer authentication token.
+
+### `messenger.target_peers_json`
+
+JSON array of gRPC peer records. Declare peer capabilities explicitly; role is descriptive and does not grant a capability. CLOi cleanup-demo peers use capabilities ["cleanup_demo"], not manipulation.
 
 ### `vision.enabled`
 
@@ -243,6 +269,50 @@ Enable verbose ROS logging.
 ### `langsmith.workspace_id`
 
 LangSmith workspace identifier for API keys with access to multiple workspaces.
+
+### `system1.router`
+
+Select the pre-routing implementation used before the LLM planner.
+
+### `system1.shadow`
+
+Run the non-selected router in the background for comparison only.
+
+### `system1.shadow_log`
+
+Optional JSONL output path for System 1 shadow decisions.
+
+### `system1.scope`
+
+Actions System 1 may select directly when Laya is the active router.
+
+### `system1.endpoint`
+
+HTTP endpoint of the System 1 /v1/systemone service.
+
+### `system1.provider`
+
+Name of the configured System 1 provider.
+
+### `system1.timeout_ms`
+
+Timeout in milliseconds for each System 1 provider request.
+
+### `system1.conf_thresholds`
+
+Optional per-intent confidence thresholds encoded as JSON in the environment.
+
+### `system1.skills`
+
+Optional comma-separated list of candidate direct skills for System 1.
+
+### `system1.max_options`
+
+Maximum number of candidate skills or places shown to System 1.
+
+### `system1.api_key`
+
+Optional bearer API key for a hosted System 1 provider.
 
 ### `fleet.maestro_ip`
 
