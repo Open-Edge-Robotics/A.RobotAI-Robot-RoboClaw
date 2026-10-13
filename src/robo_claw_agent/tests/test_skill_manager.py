@@ -3,6 +3,7 @@ SkillManager 단위 테스트
 """
 
 import time
+from typing import Any
 
 import pytest
 from robo_claw_agent.skill_manager import BaseSkill, SkillManager
@@ -52,9 +53,7 @@ def test_result_helpers_include_standard_execution_fields():
     skill = DummySkill()
 
     success = skill.success_result("완료")
-    failure = skill.fail_result(
-        "안전 차단", failure_reason="safety_rejected", recoverable=False
-    )
+    failure = skill.fail_result("안전 차단", failure_reason="safety_rejected", recoverable=False)
 
     assert success == {
         "success": True,
@@ -371,3 +370,85 @@ def test_execute_calls_set_timeout_hint_with_zero_when_unlimited():
 
     mgr.execute("timeout_hint_recorder", timeout_sec=0)
     assert skill.received_timeout_hint == 0.0
+
+
+class NestedCallerSkill(BaseSkill):
+    name = "nested_caller"
+    description = "다른 스킬을 호출하는 부모 스킬"
+
+    def __init__(self, manager: SkillManager):
+        super().__init__()
+        self._manager = manager
+
+    def execute(self, params: dict[str, Any]) -> dict[str, Any]:
+        child_res = self._manager.execute(
+            params.get("child_name", "dummy"),
+            params.get("child_params", {}),
+            timeout_sec=params.get("child_timeout", 1.0),
+        )
+        return {
+            "success": child_res.success,
+            "child_status": child_res.status,
+            "child_message": child_res.message,
+            "child_data": child_res.result_data,
+        }
+
+
+def test_nested_skill_execution_does_not_deadlock():
+    """부모 스킬 내부에서 SkillManager.execute로 자식 스킬을 호출할 때 단일 스레드 풀 데드락이 발생하지 않아야 한다."""
+    mgr = SkillManager()
+    mgr.register(DummySkill())
+    mgr.register(NestedCallerSkill(mgr))
+
+    result = mgr.execute(
+        "nested_caller",
+        {"child_name": "dummy", "child_params": {"value": 42}, "child_timeout": 0.5},
+        timeout_sec=1.0,
+    )
+    assert result.success is True
+    assert result.result_data["child_status"] == "completed"
+
+
+def test_queued_skill_cancels_on_timeout_and_does_not_execute_later():
+    """풀 포화로 큐에서 대기하다 타임아웃된 작업은 풀이 비워진 뒤에도 지연 실행되지 않아야 한다."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    mgr = SkillManager()
+    mgr.shutdown(wait=False, cancel_futures=True)
+    mgr._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="test-exec")
+
+    class TrackerSkill(BaseSkill):
+        name = "tracker"
+        description = "실행 횟수를 추적하는 스킬"
+
+        def __init__(self):
+            super().__init__()
+            self.executed = False
+
+        def execute(self, params):
+            self.executed = True
+            return {"success": True}
+
+    blocking_skill = BlockingSkill()
+    tracker_skill = TrackerSkill()
+    mgr.register(blocking_skill)
+    mgr.register(tracker_skill)
+
+    # 1) blocking_skill을 백그라운드 스레드로 실행하여 1개 워커를 점유
+    t = threading.Thread(target=mgr.execute, args=("blocking",), kwargs={"timeout_sec": 0.3})
+    t.start()
+    time.sleep(0.05)
+
+    # 2) 워커가 점유된 상태에서 tracker_skill 실행 -> 큐에서 대기하다가 0.1s 만에 타임아웃
+    timeout_res = mgr.execute("tracker", timeout_sec=0.1)
+    assert timeout_res.success is False
+    assert timeout_res.result_data["status"] == "timeout"
+
+    # 3) blocking_skill이 끝날 때까지 대기
+    t.join()
+    time.sleep(0.05)
+
+    # 4) 워커가 비워졌더라도 큐에 있던 tracker_skill은 future.cancel()로 취소되어 실행되지 않아야 함!
+    assert tracker_skill.executed is False
+    mgr.shutdown(wait=False, cancel_futures=True)

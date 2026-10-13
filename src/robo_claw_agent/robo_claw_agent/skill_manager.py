@@ -936,8 +936,8 @@ class SkillManager:
         self._blocked_skills: set[str] = set()
         self._active_executions: dict[str, dict[str, Any]] = {}
         self._active_lock = threading.Lock()
-        # 재사용 가능한 단일 스레드 풀 — 매 호출마다 스레드 생성/소멸 오버헤드 제거
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="skill-exec")
+        # 재사용 가능한 작업 스레드 풀 — 매 호출마다 스레드 생성/소멸 오버헤드를 줄이고 중첩 스킬 호출 데드락 방지
+        self._executor = ThreadPoolExecutor(max_workers=16, thread_name_prefix="skill-exec")
 
     def set_skill_policy(
         self, allowed: list[str] | None = None, blocked: list[str] | None = None
@@ -1323,6 +1323,8 @@ class SkillManager:
         try:
             return future.result(timeout=timeout_sec)
         except FuturesTimeoutError:
+            # 큐에서 대기 중인 미시작 작업 취소 (타임아웃 이후 지연 실행 방지)
+            future.cancel()
             # 스킬에 협조적 취소 기회 제공 (ROS action goal cancel 등)
             cancel_confirmed = False
             try:
@@ -1335,6 +1337,10 @@ class SkillManager:
         except Exception as e:  # noqa: BLE001
             logger.exception("Error executing skill: %s", skill.name)
             return {"success": False, "message": f"오류: {e}"}
+
+    def shutdown(self, *, wait: bool = False, cancel_futures: bool = True) -> None:
+        """스킬 실행 스레드 풀을 종료한다."""
+        self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
 
     def list_skills(self, *, include_internal: bool = True) -> list[dict[str, Any]]:
         """등록된 스킬 목록 반환.

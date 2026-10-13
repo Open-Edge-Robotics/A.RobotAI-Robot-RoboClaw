@@ -523,3 +523,15 @@ def test_execute_rejects_bad_timeout_and_bad_motion_id(monkeypatch):
     assert bad_id["success"] is False
     assert bad_id["failure_reason"] == "invalid_motion_id"
     assert publisher.messages == []
+
+
+def test_execute_cloid_motion_cancel_sets_stop_event():
+    skill = ExecuteCloidMotionSkill()
+    stop_event = _MOD._MOTION_CHAIN_STOP_EVENT
+    stop_event.clear()
+    assert stop_event.is_set() is False
+
+    res = skill.cancel()
+    assert res is True
+    assert stop_event.is_set() is True
+    stop_event.clear()

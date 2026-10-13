@@ -3,6 +3,19 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-13 — SkillManager 중첩 스킬 실행 스레드 풀 데드락 및 타임아웃 후 모션 지연 실행 결함 해결
+
+- **배경**:
+  - `SkillManager._executor`가 `ThreadPoolExecutor(max_workers=1)` 단일 작업 스레드로 구성되어 있어, `cleanup_demo_skill`, `tidy_home_skill`, `autonomous_cooperate` 등 부모 스킬 실행 중에 내부에서 `skills.execute("list_cloid_motions", ...)` 또는 `skills.execute("execute_cloid_motion", ...)` 등의 자식 스킬을 타임아웃과 함께 호출하면 단일 워커가 부모 스킬에 의해 점유되어 자식 작업이 큐에서 블로킹되는 풀 기아(worker starvation) 데드락이 발생했습니다.
+  - 이로 인해 `list_cloid_motions`와 `execute_cloid_motion`이 5.0초/60.0초 타임아웃으로 실패하고 부모 스킬이 에러를 반환하며 종료되었습니다.
+  - 또한 `_execute_with_timeout`에서 타임아웃 발생 시 큐에 대기 중이던 미실행 작업에 대해 `future.cancel()`을 호출하지 않아, 부모 스킬이 실패 종료되어 워커 스레드가 비워지자마자 큐에 잔류하던 모션 실행 작업이 뒤늦게 실행되어 "스킬 타임아웃 실패 통보 이후에 로봇이 모션을 재생"하는 심각한 시차 오작동이 발생했습니다.
+- **조치**:
+  - `skill_manager.py`: `SkillManager._executor`의 `max_workers`를 1에서 16으로 상향하여 중첩(nested) 스킬 호출 시 워커 데드락을 완전히 해소했습니다. 타임아웃 발생 시 `future.cancel()`을 호출하여 큐에 대기 중이던 작업이 타임아웃 이후에 뒤늦게 실행되지 않도록 안전 가드를 추가했습니다. 스레드 풀 정리를 위한 `shutdown` 메서드를 추가했습니다.
+  - `cloid_motion_skill.py`: `ExecuteCloidMotionSkill`에 `cancel()` 메서드를 추가하여 모션 체인 대기 중 협조적 취소가 즉시 반영되도록 구현했습니다.
+  - `test_skill_manager.py`: 부모 스킬에서 `SkillManager.execute`로 자식 스킬을 호출할 때 데드락 없이 정상 완료되는지 검증하는 단위 테스트(`test_nested_skill_execution_does_not_deadlock`)와, 풀 포화 상태에서 타임아웃된 큐 작업이 풀이 비워진 뒤에도 실행되지 않는지 검증하는 단위 테스트(`test_queued_skill_cancels_on_timeout_and_does_not_execute_later`)를 추가했습니다.
+  - `test_cloid_motion_skill.py`: `ExecuteCloidMotionSkill.cancel()` 호출 시 `_MOTION_CHAIN_STOP_EVENT`가 설정되는지 검증하는 단위 테스트(`test_execute_cloid_motion_cancel_sets_stop_event`)를 추가했습니다.
+- **검증**: `test_skill_manager.py` (26건), `test_cloid_motion_skill.py` (21건), `test_cleanup_demo_skill.py` (7건), `test_tidy_home_skill.py` (31건) 등 총 85건의 관련 단위 테스트 통과, `task contract-check`, `task deps-check`, `task build-fast`, Ruff 정적 검사 및 포맷팅 검증 완료.
+
 ## 2026-10-13 — 정리 시연 제약 완화 및 로컬 모션 덮어쓰기 버그·모션 실행 타임아웃(10초) 해소
 
 - **배경**:

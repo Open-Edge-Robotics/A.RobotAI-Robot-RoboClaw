@@ -569,6 +569,11 @@ class ExecuteCloidMotionSkill(BaseSkill):
             _MOTION_SEQUENCE_LOCK.release()
             self._publish_lock.release()
 
+    def cancel(self) -> bool:
+        """선행 모션 대기 중이거나 진행 중인 모션 시퀀스의 중단을 요청한다."""
+        _MOTION_CHAIN_STOP_EVENT.set()
+        return True
+
 
 class StopCloidMotionSkill(BaseSkill):
     """Publish CLOi MotionCmd STOP as a user-confirmed safety control."""
