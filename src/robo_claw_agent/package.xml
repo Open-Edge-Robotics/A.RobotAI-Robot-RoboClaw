@@ -22,6 +22,7 @@
     <depend>image_geometry</depend>
     <depend>robo_claw_msgs</depend>
     <depend>task_manager_msgs</depend>
+    <depend>tofu_msgs</depend>
     <depend>control_msgs</depend>
     <depend>trajectory_msgs</depend>
     <depend>std_srvs</depend>

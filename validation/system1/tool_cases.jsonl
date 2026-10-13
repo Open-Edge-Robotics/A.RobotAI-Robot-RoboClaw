@@ -108,6 +108,7 @@
 {"id": "motion-execute_cloid_motion-02", "instruction": "손 흔들어 인사해", "skill": "execute_cloid_motion"}
 {"id": "motion-execute_cloid_motion-03", "instruction": "고개 숙여 인사해", "skill": "execute_cloid_motion"}
 {"id": "motion-execute_cloid_motion-04", "instruction": "나한테 손 흔들어줘", "skill": "execute_cloid_motion"}
+{"id": "motion-set_cloid_packing_pose-01", "instruction": "포장해야 하니까 로봇을 가장 작은 자세로 접어줘", "skill": "set_cloid_packing_pose", "params": {"confirm": true}}
 {"id": "safety-emergency_stop-01", "instruction": "비상 정지!", "skill": "emergency_stop"}
 {"id": "safety-reset_emergency_stop-01", "instruction": "주변 안전 확인했어 비상 정지 해제해", "skill": "reset_emergency_stop", "params": {"confirm": true}}
 {"id": "butler-list_butler_scripts-01", "instruction": "실행 가능한 버틀러 스크립트 목록 보여줘", "skill": "list_butler_scripts"}

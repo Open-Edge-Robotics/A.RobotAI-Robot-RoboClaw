@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(task_manager_msgs REQUIRED)
+find_package(tofu_msgs REQUIRED)
 
 # Python 패키지 설치
 ament_python_install_package(${PROJECT_NAME})

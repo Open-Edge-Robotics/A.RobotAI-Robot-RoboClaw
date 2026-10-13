@@ -3,6 +3,38 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-13 — CLOiD 포장용 최소 부피(boxing) 자세 스킬 추가
+
+- **배경**: CLOiD 는 출하 포장처럼 부피를 최소로 줄여야 할 때 가장 움츠린 boxing 자세를
+  사용합니다. 이 자세는 허리를 URDF 한계까지 숙이고(`waist_joint_1..3`) 양팔을 앞으로
+  접어(`arm_joint_4=90°`) 전고를 낮춥니다. boxing 은 ScenarioManager 등록 모션이 아니어서
+  기존 `execute_cloid_motion` 경로로는 실행할 수 없었습니다.
+- **실측 조사**: CLOiD 1호(`cloi@192.168.50.105`)의 `cloi-tofu` 컨테이너에서 확인했습니다.
+  boxing 자세는 tofu tofupy 스크립트 `cloid.move_boxing` 이며, OQC 스테이지(`aging` 선행
+  + OQC 기록)를 거치는 `/tofu_stage_control` 은 포장 용도에 부적합합니다. tofu 는
+  `/script_runner/run_script`(`tofu_msgs/action/RunScript`) action 으로 임의의 tofupy
+  스크립트를 실행합니다.
+- **조치**:
+  - `src/tofu_msgs` 추가 — `action/RunScript.action` wire-compatible subset vendoring
+    (`task_manager_msgs` 와 동일 방식, 로봇 설치본과 type description 이 일치).
+  - `robo_claw_agent` 의존성에 `tofu_msgs` 추가(`package.xml`, `CMakeLists.txt`).
+  - `src/robo_claw_agent/robo_claw_agent/skills/cloid_packing_pose_skill.py` 추가 —
+    `set_cloid_packing_pose` 스킬. `/script_runner/run_script` 로 `cloid.move_boxing` 을
+    요청하고 스크립트 정상 종료만 확인합니다. `confirm=true` 필수, `risk_level=dangerous`,
+    `exclusive_resources=(cloid_motion,)`, 정지 상태에서만 사용합니다.
+  - `robo_claw.launch.py` 가 `robot_config:=cloid` 이면 개체(1호/2호) 구분 없이 이 모듈을
+    등록합니다.
+  - 문서 갱신: `docs/SKILLS.md`, `docs/CLOiD_GUIDE.md`, `SKILLS.cloid.1.md`,
+    `SKILLS.cloid.2.md`. `validation/system1/skill_catalog.json` 및 `tool_cases.jsonl`
+    재생성·추가.
+- **한계**: `RunScript` 는 실제 자세 도달을 확인하지 않으므로 결과는
+  `completion_confirmed=false` 로 보고합니다. `waist_joint_3`(-67°)가 RoboClaw 한계 파일
+  하한(-66.0°)보다 약 1° 크지만, 실측 로봇은 `TOFU_USE_LIMITS=false` 로 동작해 실행됩니다.
+  실기에서 boxing 자세 자체의 안전성 검증은 아직 하지 않았습니다.
+- **검증**: `task unit-test` **1170 passed / 2 deselected**, `test_cloid_packing_pose_skill.py`
+  20건 및 `test_cloid_robot_config.py` 신규 2건 통과, `task lint-skills` 통과, 신규 파일 Ruff
+  검사·포맷 통과, `colcon build --packages-select tofu_msgs robo_claw_agent` 성공.
+
 ## 2026-10-13 — 시연용 정리 항목(쓰레기·수건·쿠션) 단순화 및 로컬 모션 우선 수행·동료 재관찰 조건 완화
 
 - 사용자의 단순 시연 목적에 맞추어 복잡하고 세분화된 분기 조건을 단순화합니다.

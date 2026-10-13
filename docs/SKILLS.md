@@ -84,6 +84,7 @@
 | Motion | `execute_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 실행(선행 동작은 확인된 요청에서 10초 간격으로 순차 요청) |
 | Motion | `list_cloid_motions` | Public | read | CLOiD | CLOi ScenarioManager 모션 카탈로그 조회 |
 | Motion | `stop_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 정지 요청 |
+| Motion | `set_cloid_packing_pose` | Public | dangerous | CLOiD | 포장용 최소 부피 boxing 자세 실행 요청(정지 상태, confirm 필요) |
 | Collaboration | `autonomous_cooperate` | Public | action | 공통 | 동료 로봇과 지속적 자연어 협동 |
 | Collaboration | `broadcast_to_peers` | Public | action | 공통 | 모든 동료 로봇에 메시지 전송 |
 | Collaboration | `call_peer_robot` | Public | action | 공통 | 원격 동료 로봇에 작업 요청 |

@@ -170,6 +170,33 @@ CLOi MotionCmd에는 완료 응답이 없으므로 이 경로의 결과는 모�
 
 직접 모션 스킬 `execute_cloid_motion`은 사용자가 `confirm=true`로 실행을 명시 승인하면 카탈로그의 단일 `pre_id` 선행 모션을 먼저 요청하고 10초 뒤 대상 모션을 요청합니다. 선행 ID 누락·순환·중첩은 차단합니다. 완료 피드백은 없으므로 10초는 완료 보장이 아닌 간격 설정입니다. 이 순차 실행은 정리 시연에 적용되지 않습니다. 정리 시연은 기존처럼 `pre_id` 모션을 선택하지 않으며, `pre_id` 선행 모션도 실행하지 않습니다.
 
+## 포장용 최소 부피 자세
+
+CLOiD 는 출하 포장처럼 로봇 부피를 최소로 줄여야 할 때 boxing 자세를 사용합니다. 이
+자세는 허리를 URDF 한계까지 숙이고(`waist_joint_1..3`) 양팔을 앞으로 접어
+(`arm_joint_4=90°`) 전고를 낮춥니다. RoboClaw 는 `set_cloid_packing_pose` 스킬로 이
+자세를 요청합니다.
+
+- **실행 경로**: 로봇 tofu 의 `script_runner` action(`/script_runner/run_script`,
+  `tofu_msgs/action/RunScript`)에 `ros2 run tofupy cloid.move_boxing` 실행을
+  요청합니다. `tofu_msgs` 는 RoboClaw 가 wire-compatible subset 으로 `src/tofu_msgs` 에
+  vendoring 하며, `task_manager_msgs` 와 같은 방식입니다.
+- **전제**: `tofu_control` daemon 과 `script_runner` 가 실행 중이어야 합니다.
+  `script_runner` 서버가 없으면 스킬은 `script_runner_unavailable` 로 fail closed 합니다.
+  `tofu_msgs/action/RunScript` 인터페이스가 없으면 `motion_interface_unavailable` 입니다.
+- **한계**: `cloid.move_boxing` 은 실행 완료 피드백을 주지 않습니다. 이 스킬은 스크립트
+  정상 종료(`exit_code=0`)만 확인하고 실제 자세 도달은 확인하지 않습니다
+  (`completion_confirmed=false`).
+- **사용**: 정지 상태에서 사용자의 명시적 요청(`confirm=true`)으로만 실행합니다. 허리를
+  크게 숙인 자세는 무게 중심이 앞으로 쏠려 주행에 부적합하므로 주행 중에는 사용하지
+  않습니다. 자세 복원은 이 스킬에 포함되지 않습니다.
+- **등록 범위**: `robot_config:=cloid` 프로필이면 개체(1호/2호) 구분 없이 등록됩니다.
+- **대안 스크립트 주의**: `hmc.boxing` 은 손가락을 쥐고 10초 뒤 양팔 gain 을 0으로 풀어
+  힘을 빼므로, 자세 유지가 필요한 포장 용도로는 사용하지 않습니다.
+- **한계값 확인**: `cloid.move_boxing` 의 허리 `waist_joint_3`(-67°)는 RoboClaw 한계 파일의
+  하한(-66.0°)보다 약 1° 크므로, 로봇의 `use_limits` 가 켜진 배포에서는 자세가 제한될 수
+  있습니다. 실측 CLOiD 1호는 `TOFU_USE_LIMITS=false` 로 동작합니다.
+
 ## x64 DevBox SIL
 
 x64 SIL 명령은 체크아웃의 경로 스코프 DevBox 안에서 실행합니다.

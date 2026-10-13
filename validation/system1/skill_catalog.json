@@ -1397,6 +1397,17 @@
       "source": "src/robo_claw_agent/robo_claw_agent/skills/manipulation_skill/sequence/gripper_target_skills.py"
     },
     {
+      "name": "set_cloid_packing_pose",
+      "category": "other",
+      "module": "cloid_packing_pose_skill",
+      "risk_level": "dangerous",
+      "internal": false,
+      "required": null,
+      "properties": [],
+      "description": "CLOiD 를 포장용 최소 부피 자세(boxing, 허리·양팔 최대 접힘)로 만드는 실행을 요청합니다. 사용자의 명시적 요청(confirm=true)이 필요하며 정지 상태에서만 사용합니다. 스크립트 정상 종료만 확인하고 실제 자세 도달은 확인하지 않습니다.",
+      "source": "src/robo_claw_agent/robo_claw_agent/skills/cloid_packing_pose_skill.py"
+    },
+    {
       "name": "set_initial_pose",
       "category": "navigation",
       "module": "navigation_skill",

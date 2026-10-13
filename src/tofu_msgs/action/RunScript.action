@@ -1,0 +1,21 @@
+# Run a package executable (ros2 run <package> <executable> <args...>) as a child
+# process, run-to-completion with feedback/result. Served by the script_runner
+# node (tofupy: runner.script_server), one goal at a time.
+
+string package        # empty -> the server's default_package parameter ("tofupy")
+string executable     # e.g. "cloid.move_arm"  (ros2 run tofupy cloid.move_arm)
+string[] args         # extra argv passed after the executable name
+float64 timeout       # 0 -> the server's default_timeout parameter (0 = unlimited)
+bool stream_output    # publish each child stdout/stderr line as feedback
+---
+# Result
+bool success          # true iff the child exited with code 0
+int32 exit_code       # child exit code; -1 when it never started
+string message        # "ok" / "timeout after ..." / "canceled" / spawn error text
+string output_tail    # last output_tail_lines lines of the merged stdout+stderr
+---
+# Feedback
+string state          # STARTING / RUNNING / STOPPING
+int32 pid             # child pid (0 before spawn)
+float64 elapsed       # seconds since spawn
+string line           # latest output line (only when stream_output)

@@ -230,8 +230,36 @@ def test_launch_binds_cloid_profiles_to_agent_node() -> None:
 
     # 로봇 전용 모션 스킬은 CLOi 프로필에만 주입하며 Butler 스크립트 스킬은 제외한다.
     assert "robo_claw_agent.skills.cloid_motion_skill" in agent["skill_modules"]
+    # 포장용 최소 부피(boxing) 자세는 전체 CLOi 개체 전용이므로 cloid 프로필이면 항상 등록한다.
+    assert "robo_claw_agent.skills.cloid_packing_pose_skill" in agent["skill_modules"]
     assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
     assert "robo_claw_agent.skills.butler_skill" not in agent["skill_modules"]
+
+
+def test_packing_pose_skill_is_registered_for_every_cloid_unit() -> None:
+    """packing pose 스킬은 cloid1/cloid2 구분 없이 cloid 프로필이면 등록된다."""
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+
+    for agent_id in ("cloid01", "cloi02", "cloid"):
+        context = _build_context(
+            launch_description,
+            {"robot_config": "cloid", "agent_id": agent_id},
+        )
+        entities = module._launch_setup(context)  # noqa: SLF001
+        agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+        assert "robo_claw_agent.skills.cloid_packing_pose_skill" in agent["skill_modules"]
+
+
+def test_packing_pose_skill_is_not_registered_for_non_cloid_profiles() -> None:
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+
+    for robot_config in ("sim", "former", "butler"):
+        context = _build_context(launch_description, {"robot_config": robot_config})
+        entities = module._launch_setup(context)  # noqa: SLF001
+        agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+        assert "robo_claw_agent.skills.cloid_packing_pose_skill" not in agent["skill_modules"]
 
 
 def test_cleanup_demo_defaults_to_scan_and_wipe_motion_for_cloid1_only() -> None:

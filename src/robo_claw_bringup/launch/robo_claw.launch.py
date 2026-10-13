@@ -550,6 +550,9 @@ def _launch_setup(context, *args, **kwargs):
         skill_modules.append("robo_claw_agent.skills.butler_skill")
     elif robot_config == "cloid":
         skill_modules.append("robo_claw_agent.skills.cloid_motion_skill")
+        # CLOiD 포장용 최소 부피(boxing) 자세는 개체 상태와 무관하게 사용하는 CLOi 전용
+        # 스킬이므로 cloid 프로필이면 항상 등록한다.
+        skill_modules.append("robo_claw_agent.skills.cloid_packing_pose_skill")
         if cleanup_demo_enabled and is_cloid1_profile:
             skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
             agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
