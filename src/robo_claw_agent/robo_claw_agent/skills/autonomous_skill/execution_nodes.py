@@ -1,4 +1,6 @@
+import json
 import logging
+import random
 import uuid
 from typing import Any
 
@@ -7,12 +9,14 @@ import numpy as np
 from robo_claw_agent.skill_manager import BaseSkill
 
 from ..cleanup_policy import (
+    _CLOID_INDICATOR_MOTIONS,
     _cleanup_target_categories,
     _cleanup_target_category,
     _cleanup_target_labels,
     _has_cleanup_indication,
     _safe_cleanup_disposal_targets,
     _safe_cleanup_storage_targets,
+    _select_cleanup_demo_motion,
 )
 from .core import BTNode, NodeStatus
 from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE
@@ -195,6 +199,21 @@ class ResolveCleanupHandoff(BTNode):
         target_categories = set(blackboard.get("cleanup_target_categories", []) or ())
         if not target_categories:
             target_categories = _cleanup_target_categories(objects, scene)
+        cleanup_targets = _cleanup_target_labels(objects, scene)
+        if not _has_cleanup_indication(objects, scene):
+            return NodeStatus.SUCCESS
+
+        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 정리 후보"
+        place = str(blackboard.get("patrol_last_place", "") or "").strip()
+
+        # [자신이 가능하면 바로 모션을 수행]
+        skills = getattr(node, "_skills", None)
+        local_demo_capable = False
+        if skills is not None and hasattr(skills, "has_skill"):
+            local_demo_capable = skills.has_skill("cloid_cleanup_demo") or (
+                skills.has_skill("execute_cloid_motion") and skills.has_skill("list_cloid_motions")
+            )
+
         if blackboard.get("cleanup_task_mode"):
             destinations = blackboard.get("cleanup_destinations")
             if not isinstance(destinations, list):
@@ -214,15 +233,68 @@ class ResolveCleanupHandoff(BTNode):
             )
             if local_cleanup_capable:
                 local_cleanup_capable = not missing_local_destination
+
         if local_cleanup_capable:
+            # 실제 조작 로봇: 로컬 집기/배치 계획으로 진행
             return NodeStatus.SUCCESS
 
-        cleanup_targets = _cleanup_target_labels(objects, scene)
-        if not _has_cleanup_indication(objects, scene):
-            return NodeStatus.SUCCESS
+        if local_demo_capable:
+            # 시연 로봇(1호 등): 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
+            allowed_ids = []
+            try:
+                raw_ids = node.get_parameter("cloid_cleanup_demo_motion_ids_json").value
+                allowed_ids = json.loads(str(raw_ids))
+                if not isinstance(allowed_ids, list):
+                    allowed_ids = []
+            except Exception:
+                allowed_ids = [22, 128]
+            if not allowed_ids:
+                allowed_ids = [22, 128]
 
-        target_description = ", ".join(cleanup_targets) or "장면 분석에서 확인한 정리 후보"
-        place = str(blackboard.get("patrol_last_place", "") or "").strip()
+            catalog_res = None
+            try:
+                catalog_res = skills.execute(
+                    "list_cloid_motions", {"timeout_sec": 3.0}, timeout_sec=5.0
+                )
+            except Exception:
+                pass
+            available_motions = []
+            if (
+                catalog_res
+                and getattr(catalog_res, "success", False) is True
+                and isinstance(getattr(catalog_res, "result_data", None), dict)
+                and isinstance(catalog_res.result_data.get("motions"), list)
+            ):
+                available_motions = catalog_res.result_data["motions"]
+            if not available_motions:
+                available_motions = [
+                    {
+                        "motion_id": mid,
+                        "motion_name": _CLOID_INDICATOR_MOTIONS.get(mid, f"motion_{mid}"),
+                    }
+                    for mid in allowed_ids
+                ]
+
+            selected_motion = _select_cleanup_demo_motion(
+                available_motions,
+                allowed_ids,
+                rng=random.Random(),
+            )
+            if selected_motion:
+                blackboard["decided_skill"] = "execute_cloid_motion"
+                blackboard["decided_params"] = {
+                    "motion_name": selected_motion["motion_name"],
+                    "motion_id": selected_motion["motion_id"],
+                    "confirm": True,
+                }
+                reason = (
+                    f"'{place or '현재 위치'}'에서 정리 대상 '{target_description}'을 확인하고 "
+                    f"정리 시연 모션 '{selected_motion['motion_name']}'을 수행합니다."
+                )
+                blackboard["decided_reason"] = reason
+                self._skill.send_user_message(reason)
+                return NodeStatus.SUCCESS
+
         pose_text = ""
         try:
             pose = self._skill.get_map_pose()
@@ -233,74 +305,41 @@ class ResolveCleanupHandoff(BTNode):
         location_parts = [value for value in (place, pose_text) if value]
         location = "; ".join(location_parts) or "정확한 위치는 알 수 없음"
 
+        # [불가능할 때 동료를 불러 시연/조작 요청]
         peer = _find_connected_peer_with_capability(node, "manipulation")
         handoff_kind = "manipulation"
-        demo_target = ""
-        if peer is None:
-            waste_targets = [
-                target.strip()
-                for target in cleanup_targets
-                if _cleanup_target_category(target) == "waste"
-            ]
-            if waste_targets:
-                demo_target = waste_targets[0]
-            else:
-                scene_waste_candidates = {
-                    keyword
-                    for keyword in (
-                        "쓰레기",
-                        "포장지",
-                        "담배꽁초",
-                        "trash",
-                        "garbage",
-                        "waste",
-                        "litter",
-                        "wrapper",
-                        "cigarette butt",
-                    )
-                    if keyword in scene.casefold()
-                }
-                if scene_waste_candidates:
-                    demo_target = next(iter(sorted(scene_waste_candidates)))
-                else:
-                    household_targets = [
-                        target.strip()
-                        for target in cleanup_targets
-                        if _cleanup_target_category(target) in {"towel", "cushion"}
-                    ]
-                    if household_targets:
-                        towel_targets = [
-                            target
-                            for target in household_targets
-                            if _cleanup_target_category(target) == "towel"
-                        ]
-                        demo_target = towel_targets[0] if towel_targets else household_targets[0]
-                    else:
-                        scene_household_candidates = {
-                            keyword
-                            for keyword in (
-                                "수건",
-                                "타월",
-                                "towel",
-                                "쿠션",
-                                "방석",
-                                "cushion",
-                                "pillow",
-                            )
-                            if keyword in scene.casefold()
-                        }
-                        if scene_household_candidates:
-                            towel_keywords = [
-                                kw
-                                for kw in scene_household_candidates
-                                if _cleanup_target_category(kw) == "towel"
-                            ]
-                            demo_target = (
-                                sorted(towel_keywords)[0]
-                                if towel_keywords
-                                else next(iter(sorted(scene_household_candidates)))
-                            )
+        all_candidate_labels = list(cleanup_targets)
+        for st in _cleanup_target_labels([], scene):
+            if st not in all_candidate_labels:
+                all_candidate_labels.append(st)
 
+        demo_candidates = [
+            t
+            for t in all_candidate_labels
+            if _cleanup_target_category(t) in {"waste", "towel", "cushion"}
+        ]
+        waste_cands = [t for t in demo_candidates if _cleanup_target_category(t) == "waste"]
+        towel_cands = [t for t in demo_candidates if _cleanup_target_category(t) == "towel"]
+        if waste_cands:
+            demo_target = waste_cands[0]
+        elif towel_cands:
+            demo_target = towel_cands[0]
+        elif demo_candidates:
+            demo_target = demo_candidates[0]
+        else:
+            demo_target = ""
+
+        if not demo_target and (target_categories & {"waste", "towel", "cushion"}):
+            category_names = {
+                "waste": "쓰레기",
+                "towel": "수건",
+                "cushion": "쿠션",
+            }
+            valid_cats = sorted(target_categories & {"waste", "towel", "cushion"})
+            first_cat = "waste" if "waste" in valid_cats else valid_cats[0]
+            demo_target = category_names.get(first_cat, first_cat)
+
+        if peer is None:
             if demo_target:
                 peer = _find_connected_peer_with_capability(node, "cleanup_demo")
                 if peer is not None:
@@ -308,14 +347,15 @@ class ResolveCleanupHandoff(BTNode):
                     if not place:
                         peer = None
                         blackboard["cleanup_handoff_status"] = (
-                            "정리 시연 동료에게 보낼 장소 이름 또는 단일 정리 후보를 확인할 수 없습니다. "
+                            "정리 시연 동료에게 보낼 장소 이름을 확인할 수 없습니다. "
                             "요청을 보내지 않았습니다."
                         )
             elif (target_categories & {"waste", "towel", "cushion"}) and not demo_target:
                 blackboard["cleanup_handoff_status"] = (
-                    "정리 시연 동료에게 보낼 장소 이름 또는 단일 정리 후보를 확인할 수 없습니다. "
+                    "정리 시연 동료에게 보낼 장소 이름 또는 정리 후보를 확인할 수 없습니다. "
                     "요청을 보내지 않았습니다."
                 )
+
         elif peer is not None and (len(target_categories) != 1 or len(cleanup_targets) != 1):
             peer = None
             blackboard["cleanup_handoff_status"] = (

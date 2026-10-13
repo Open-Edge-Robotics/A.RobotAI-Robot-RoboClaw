@@ -141,7 +141,7 @@ class CleanupDemoSkill(BaseSkill):
             fresh_scene = str(observation.get("analysis", "") or "")
             if not self._target_reobserved(target, detected, fresh_scene):
                 return self.fail_result(
-                    f"'{place_name}'에서 요청 대상 '{target}'을 다시 확인하지 못해 시연하지 않았습니다.",
+                    f"'{place_name}'에서 정리 대상 후보를 다시 확인하지 못해 시연하지 않았습니다.",
                     failure_reason="target_not_reobserved",
                 )
             if _has_ambiguous_cleanup_indication(detected, fresh_scene):
@@ -191,13 +191,17 @@ class CleanupDemoSkill(BaseSkill):
                     recoverable=True,
                 )
             self._previous_motion_id = motion["motion_id"]
+            actual_target = self._effective_target(target, detected, fresh_scene)
+            target_desc = (
+                f"'{target}'" if actual_target == target else f"'{actual_target}'(요청: '{target}')"
+            )
             return self.success_result(
-                f"'{place_name}'에서 요청 대상 '{target}'을 다시 확인하고 임시 정리 시연 모션 "
+                f"'{place_name}'에서 정리 대상 {target_desc}을 다시 확인하고 임시 정리 시연 모션 "
                 f"'{motion['motion_name']}' 실행을 요청했습니다. 실제 물체 정리와 모션 완료는 확인되지 않았습니다.",
                 status="motion_requested",
                 request_id=request_id,
                 target_location=place_name,
-                target_object=target,
+                target_object=actual_target,
                 motion_id=motion["motion_id"],
                 physical_cleanup_confirmed=False,
                 motion_completion_confirmed=False,
@@ -229,8 +233,6 @@ class CleanupDemoSkill(BaseSkill):
     @staticmethod
     def _target_reobserved(target: str, detected: Any, scene: str) -> bool:
         expected = _normalize_name(target)
-        if not expected:
-            return False
         labels: list[str] = []
         if isinstance(detected, (list, tuple)):
             labels.extend(
@@ -239,7 +241,7 @@ class CleanupDemoSkill(BaseSkill):
             )
         observed_raw = " ".join([*labels, scene])
         observed = _normalize_name(observed_raw)
-        if expected in observed:
+        if expected and expected in observed:
             return True
 
         category = _cleanup_target_category(target)
@@ -250,4 +252,41 @@ class CleanupDemoSkill(BaseSkill):
                     return True
                 if _matches_cleanup_keyword(observed_raw.casefold(), kw.casefold()):
                     return True
+
+        # 시연 단순화: 요청 대상의 명칭과 상관없이 현장에 정리 가능한 항목이 있으면 재관찰 인정
+        from .cleanup_policy import _cleanup_target_labels
+
+        if _cleanup_target_labels(detected, scene) or _has_cleanup_indication(detected, scene):
+            return True
+
         return False
+
+    @staticmethod
+    def _effective_target(target: str, detected: Any, scene: str) -> str:
+        expected = _normalize_name(target)
+        labels: list[str] = []
+        if isinstance(detected, (list, tuple)):
+            labels.extend(
+                str(item.get("name", "") if isinstance(item, dict) else item).strip()
+                for item in detected
+            )
+        observed_raw = " ".join([*labels, scene])
+        observed = _normalize_name(observed_raw)
+        if expected and expected in observed:
+            return target
+
+        category = _cleanup_target_category(target)
+        if category and category in _CLEANUP_TARGET_KEYWORDS:
+            for kw in _CLEANUP_TARGET_KEYWORDS[category]:
+                norm_kw = _normalize_name(kw)
+                if norm_kw and norm_kw in observed:
+                    return target
+                if _matches_cleanup_keyword(observed_raw.casefold(), kw.casefold()):
+                    return target
+
+        from .cleanup_policy import _cleanup_target_labels
+
+        confirmed_labels = _cleanup_target_labels(detected, scene)
+        if confirmed_labels:
+            return confirmed_labels[0]
+        return target

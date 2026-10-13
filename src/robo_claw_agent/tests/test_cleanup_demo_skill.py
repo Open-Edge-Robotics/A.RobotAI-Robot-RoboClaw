@@ -213,3 +213,31 @@ def test_cleanup_demo_reobserves_cushion_with_english_detection(monkeypatch):
     assert result["status"] == "motion_requested"
     assert events == [("visit", "거실"), ("observe", "거실")]
     assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
+
+
+def test_cleanup_demo_executes_when_any_cleanup_candidate_is_reobserved(monkeypatch):
+    """요청 대상이 '쓰레기'여도 현장에서 수건/쿠션 등 정리 가능한 항목이 관찰되면 시연 모션을 수행한다."""
+    skill = CleanupDemoSkill()
+    skills, events = _configure_demo(
+        monkeypatch,
+        skill,
+        scene_result={
+            "success": True,
+            "analysis": "안방 바닥에 수건이 놓여 있습니다.",
+            "detected_objects": [{"name": "수건"}],
+        },
+    )
+
+    result = skill.execute(
+        {
+            "target_location": "안방",
+            "target_object": "쓰레기",
+            "scene_summary": "방에 정리 대상이 있습니다.",
+            "request_id": "req-cross-category",
+        }
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "motion_requested"
+    assert events == [("visit", "안방"), ("observe", "안방")]
+    assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)

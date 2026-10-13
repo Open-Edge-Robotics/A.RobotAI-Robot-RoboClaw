@@ -6,8 +6,17 @@ import threading
 from typing import Any
 
 import cv2
-from cv_bridge import CvBridge
-from sensor_msgs.msg import LaserScan
+
+try:
+    from cv_bridge import CvBridge
+except ImportError:
+    CvBridge = None  # type: ignore[assignment,misc]
+
+try:
+    from sensor_msgs.msg import LaserScan
+except ImportError:
+    LaserScan = None  # type: ignore[assignment,misc]
+
 
 from robo_claw_agent.agent_node.utils import _extract_first_json_block
 from robo_claw_agent.skill_manager import BaseSkill

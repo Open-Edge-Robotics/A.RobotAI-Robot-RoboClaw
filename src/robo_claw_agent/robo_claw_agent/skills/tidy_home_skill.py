@@ -186,6 +186,19 @@ class TidyHomeSkill(BaseSkill):
         places, error = _resolve_cleanup_places(scope, target_location, candidates)
         if error and scope == "room" and target_location:
             try:
+                if hasattr(memory, "get_object_location"):
+                    obj_info = memory.get_object_location(target_location)
+                    if obj_info and isinstance(obj_info.get("position"), dict):
+                        pos = obj_info["position"]
+                        if "x" in pos and "y" in pos:
+                            place_name = str(obj_info.get("name") or target_location).strip()
+                            return [
+                                {
+                                    "name": place_name,
+                                    "position": {"x": float(pos["x"]), "y": float(pos["y"])},
+                                }
+                            ], None
+
                 from .navigation_skill.core import _resolve_target_coordinates
 
                 resolved = _resolve_target_coordinates(memory, target_location)

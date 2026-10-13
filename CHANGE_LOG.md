@@ -3,7 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-13 — 시연용 정리 항목(쓰레기·수건·쿠션) 단순화 및 로컬 모션 우선 수행·동료 재관찰 조건 완화
+
+- 사용자의 단순 시연 목적에 맞추어 복잡하고 세분화된 분기 조건을 단순화합니다.
+- **로컬 로봇 우선 실행**: 로컬 로봇이 시연 모션 스킬(`execute_cloid_motion`/`list_cloid_motions` 또는 `cloid_cleanup_demo`)을 보유하고 정리 가능한 항목(쓰레기, 수건, 쿠션 등)을 발견하면, 동료에게 위임하지 않고 로컬에서 바로 안전한 허용 시연 모션을 선택해 실행하도록 개선합니다.
+- **정리 대상 추출 오류 해소**: 씬 분석 텍스트에 "쓰레기통" 등 수거함 단어가 포함되어 있을 때 `"쓰레기"` 서브스트링으로 오인 추출되던 문제를 해결하고, 이미 필터링된 정리 후보 라벨(`_cleanup_target_labels`) 및 폐기물 우선 정렬을 적용하여 수건·쿠션 등의 대표 대상을 정확히 추출하도록 개선합니다.
+- **동료 현장 재관찰 완화**: 동료 로봇(`CleanupDemoSkill`)이 현장에 도착했을 때, 요청된 대상명(예: `쓰레기`)과 엄격히 일치하지 않더라도 현장에서 정리 가능한 후보(`수건`, `쿠션`, `쓰레기` 등)가 확인되면 거부하지 않고 정리 시연 모션을 정상 수행하도록 개선합니다 (결과 보고 시 요청 대상과 실제 확인 대상을 함께 안내).
+- **의존성 분리 방어**: `approach_object.py`의 `cv_bridge`/`sensor_msgs` 및 `tidy_home_skill.py`의 `get_object_location` fallback에 방어 임포트를 적용하여 비-ROS/단위 테스트 환경의 호환성을 보장합니다.
+- **검증**: `test_cleanup_demo_skill.py`, `test_autonomous_cleanup_delegation.py`, `test_tidy_home_skill.py` 포함 전체 단위 테스트 1,148건 통과, `task contract-check` 통과, Ruff 정적 검사 및 포맷팅 통과.
+
 ## 2026-10-13 — System 1(Laya) 및 복합 구문 가드 우회 없는 정리 시연 프로토콜 직접 라우팅 및 지연 해소
+
 
 - `SystemOneRouter`와 `RuleRouter`에서 기기 간 버전화 프로토콜(`ROBOCLAW_CLEANUP_DEMO_V1:`)을 감지하면 Laya 자연어 분류 모델 및 `looks_compound`(한국어 접속사 분해 가드)를 거치지 않고 `cleanup_demo` 다이렉트 스킬로 직행하도록 개선합니다.
 - Laya 모드(`SYSTEM1_ROUTER=laya`) 활성화 시 1호가 수신한 정리 시연 프로토콜을 자연어 분류 모델로 넘겨 저확신도(0.14)로 인해 LLM으로 폴백되고, LLM에는 `cleanup_demo`(내부 스킬, `is_internal=True`)가 비공개되어 모션 조회가 대신 실행되던 문제를 해결합니다.
