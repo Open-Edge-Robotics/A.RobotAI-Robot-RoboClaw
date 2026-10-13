@@ -137,6 +137,7 @@ def test_json_params_reach_nodes_as_parseable_raw_strings(payload: str) -> None:
     for node, key in (
         ("channel", "grpc_peer_tokens_json"),
         ("client", "target_peers_json"),
+        ("agent", "target_peers_json"),
         ("agent", "mcp_servers_json"),
     ):
         value = params[node][key]

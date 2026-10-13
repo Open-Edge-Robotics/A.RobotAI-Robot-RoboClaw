@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-12-01**
 
+## 2026-10-13 — 동료 로봇 능력 조회 타임아웃 상향 및 런타임 결과 캐싱
+
+- `_query_grpc_peer_capability`의 기본 타임아웃을 10.0초에서 25.0초(`_PEER_CAPABILITY_DEFAULT_TIMEOUT_SEC`)로 상향하여 피어 로봇의 RAG 정제·System1 추론·LLM 플래닝 처리 지연(~11.5초)으로 인한 불필요한 타임아웃 실패를 해결합니다.
+- `_PEER_CAPABILITY_CACHE`를 추가해 성공한 동료 로봇 스킬 목록을 300초 동안 캐싱하고, 실패한 피어는 30초 동안 쿨다운 캐싱하여 동일 탐색 주기 내 중복 질의 및 블로킹 지연을 방지합니다.
+- `_discover_peer_agents`에서 `GRPC_TARGET_PEERS_JSON` 환경변수가 비어 있는 경우 `AgentNode`에 전달된 `target_peers_json` ROS 파라미터를 읽도록 지원하고, `robo_claw.launch.py`에서 `agent_node`로 `target_peers_json` 파라미터를 전달하도록 연동합니다.
+- `_peer_has_capability`에서 `cleanup_demo` 역할(role) 키워드 매칭을 지원합니다.
+- **검증**: `test_autonomous_cleanup_delegation.py` 단위 테스트 24건 및 `test_launch_parameter_value.py` 런치 파라미터 테스트 6건 전체 통과, contract-check 통과, Ruff 정적 검사 통과.
+
 ## 2026-10-12 — 혼합 정리 대상의 cleanup_demo 위임 및 동료 스킬 파서 강화
 
 - `ResolveCleanupHandoff`에서 장면에 쿠션·수건 등 생활용품이 함께 감지되더라도 단일 폐기물 후보가 식별되면 해당 폐기물 후보를 대상으로 `cleanup_demo` 시연을 동료에게 정상 위임하도록 개선합니다.

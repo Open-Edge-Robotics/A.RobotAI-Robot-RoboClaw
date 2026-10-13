@@ -520,3 +520,99 @@ def test_stationary_observation_allows_only_prepared_cleanup_handoff():
 
     blackboard["cleanup_handoff_prepared"] = False
     assert validator.tick() == NodeStatus.FAILURE
+
+
+def test_query_grpc_peer_capability_timeout_and_caching(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import helpers
+
+    helpers._clear_peer_capability_cache()
+
+    calls = []
+
+    class FakeQuerySkill:
+        def __init__(self):
+            self.node = None
+
+        def set_node(self, node):
+            self.node = node
+
+        def execute(self, params):
+            calls.append(dict(params))
+            return {
+                "success": True,
+                "capabilities": ["cleanup_demo", "navigate_to"],
+            }
+
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.cooperate_skill.QueryPeerCapabilitiesSkill",
+        FakeQuerySkill,
+    )
+
+    node = MagicMock()
+    # 1st query: should call QueryPeerCapabilitiesSkill with timeout >= 25.0
+    res1 = helpers._query_grpc_peer_capability(node, "cloid 1호", "manipulation")
+    assert res1 is False
+    assert len(calls) == 1
+    assert calls[0]["timeout_sec"] >= 25.0
+
+    # 2nd query for same peer, different capability ("cleanup_demo"): should HIT cache, no new call!
+    res2 = helpers._query_grpc_peer_capability(node, "cloid 1호", "cleanup_demo")
+    assert res2 is True
+    assert len(calls) == 1
+
+
+def test_query_grpc_peer_capability_negative_caching(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import helpers
+
+    helpers._clear_peer_capability_cache()
+
+    calls = []
+
+    class FakeFailingSkill:
+        def set_node(self, node):
+            pass
+
+        def execute(self, params):
+            calls.append(dict(params))
+            return {"success": False, "capabilities": []}
+
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.cooperate_skill.QueryPeerCapabilitiesSkill",
+        FakeFailingSkill,
+    )
+
+    node = MagicMock()
+    res1 = helpers._query_grpc_peer_capability(node, "offline_peer", "manipulation")
+    assert res1 is False
+    assert len(calls) == 1
+
+    # Second check within cooldown should not execute again
+    res2 = helpers._query_grpc_peer_capability(node, "offline_peer", "cleanup_demo")
+    assert res2 is False
+    assert len(calls) == 1
+
+
+def test_discover_peer_agents_reads_from_node_parameter(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import helpers
+
+    monkeypatch.delenv("GRPC_TARGET_PEERS_JSON", raising=False)
+
+    node = _node_with_skills([])
+    node.has_parameter.return_value = True
+    node.get_parameter.return_value = SimpleNamespace(
+        value=json.dumps(
+            [{"name": "cloid 1호", "role": "humanoid", "capabilities": ["cleanup_demo"]}]
+        )
+    )
+
+    peers = helpers._discover_peer_agents(node)
+    assert "cloid 1호" in peers
+    assert peers["cloid 1호"]["capabilities"] == ["cleanup_demo"]
+
+
+def test_peer_has_capability_matches_cleanup_demo_role():
+    from robo_claw_agent.skills.autonomous_skill import helpers
+
+    assert helpers._peer_has_capability({"capabilities": ["cleanup_demo"]}, "cleanup_demo") is True
+    assert helpers._peer_has_capability({"role": "청소 로봇"}, "cleanup_demo") is True
+    assert helpers._peer_has_capability({"role": "cleanup_demo"}, "cleanup_demo") is True

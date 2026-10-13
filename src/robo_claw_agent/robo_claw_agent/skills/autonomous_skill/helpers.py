@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,14 @@ def _discover_peer_agents(node: Any) -> dict[str, dict[str, Any]]:
     other_agents: dict[str, dict[str, Any]] = {}
 
     peers_json = os.environ.get("GRPC_TARGET_PEERS_JSON", "[]")
+    if (not peers_json or peers_json.strip() in ("", "[]")) and node is not None:
+        try:
+            if hasattr(node, "has_parameter") and node.has_parameter("target_peers_json"):
+                param_val = node.get_parameter("target_peers_json").value
+                if isinstance(param_val, str) and param_val.strip() and param_val.strip() != "[]":
+                    peers_json = param_val
+        except Exception:
+            pass
     try:
         if peers_json and peers_json.strip() and peers_json != "[]":
             peers_list = json.loads(peers_json)
@@ -355,6 +364,17 @@ def _peer_has_capability(info: dict[str, Any], capability: str) -> bool:
         )
     ):
         return True
+    if capability == "cleanup_demo" and any(
+        kw in role
+        for kw in (
+            "cleanup",
+            "cleanup_demo",
+            "청소",
+            "정리시연",
+            "시연",
+        )
+    ):
+        return True
     return False
 
 
@@ -414,17 +434,51 @@ def _is_connected_ros_peer(node: Any, peer_id: str) -> bool:
     )
 
 
-def _query_grpc_peer_capability(node: Any, peer_name: str, capability: str) -> bool:
+_PEER_CAPABILITY_CACHE: dict[str, tuple[float, set[str] | None]] = {}
+_PEER_CAPABILITY_CACHE_TTL_SEC: float = 300.0
+_PEER_CAPABILITY_NEGATIVE_CACHE_TTL_SEC: float = 30.0
+_PEER_CAPABILITY_DEFAULT_TIMEOUT_SEC: float = 25.0
+
+
+def _clear_peer_capability_cache() -> None:
+    """테스트 및 세션 리셋용 캐시 초기화 함수."""
+    _PEER_CAPABILITY_CACHE.clear()
+
+
+def _query_grpc_peer_capability(
+    node: Any,
+    peer_name: str,
+    capability: str,
+    timeout_sec: float = _PEER_CAPABILITY_DEFAULT_TIMEOUT_SEC,
+) -> bool:
     """설정 메타데이터가 없는 연결된 gRPC 피어의 실제 스킬 목록을 확인한다."""
     try:
-        from robo_claw_agent.skills.cooperate_skill import QueryPeerCapabilitiesSkill
+        now = time.monotonic()
+        cache_key = peer_name.strip().casefold()
+        cached = _PEER_CAPABILITY_CACHE.get(cache_key)
+        skill_names: set[str] | None = None
 
-        skill = QueryPeerCapabilitiesSkill()
-        skill.set_node(node)
-        result = skill.execute({"peer_name": peer_name, "timeout_sec": 10.0})
-        if not result.get("success"):
-            return False
-        skill_names = set(result.get("capabilities", []))
+        if cached is not None:
+            cached_time, cached_skills = cached
+            if cached_skills is not None and (now - cached_time < _PEER_CAPABILITY_CACHE_TTL_SEC):
+                skill_names = cached_skills
+            elif cached_skills is None and (
+                now - cached_time < _PEER_CAPABILITY_NEGATIVE_CACHE_TTL_SEC
+            ):
+                return False
+
+        if skill_names is None:
+            from robo_claw_agent.skills.cooperate_skill import QueryPeerCapabilitiesSkill
+
+            skill = QueryPeerCapabilitiesSkill()
+            skill.set_node(node)
+            result = skill.execute({"peer_name": peer_name, "timeout_sec": timeout_sec})
+            if not result.get("success"):
+                _PEER_CAPABILITY_CACHE[cache_key] = (now, None)
+                return False
+            skill_names = {str(c).strip() for c in result.get("capabilities", [])}
+            _PEER_CAPABILITY_CACHE[cache_key] = (now, skill_names)
+
         if capability == "manipulation":
             pick_skills = {
                 "adaptive_pick_object",
@@ -434,6 +488,8 @@ def _query_grpc_peer_capability(node: Any, peer_name: str, capability: str) -> b
                 "pick_from_right_side_zone",
             }
             return bool(skill_names & pick_skills) or {"grasp", "place"}.issubset(skill_names)
+        if capability == "cleanup_demo":
+            return bool(skill_names & {"cleanup_demo", "cloid_cleanup_demo"})
         return capability in skill_names
     except Exception as exc:  # noqa: BLE001
         logger.debug("[BT] Could not query capabilities for %s: %s", peer_name, exc)

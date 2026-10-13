@@ -524,6 +524,12 @@ def _launch_setup(context, *args, **kwargs):
             value_type=str,
         )
 
+    # gRPC 피어 목록 JSON (동료 스킬 확인 및 협업 연동)
+    agent_parameters[-1]["target_peers_json"] = ParameterValue(
+        LaunchConfiguration("target_peers_json"),
+        value_type=str,
+    )
+
     # 로봇 설정에 따른 추가 스킬 모듈 주입
     skill_modules = [
         "robo_claw_agent.skills.navigation_skill",

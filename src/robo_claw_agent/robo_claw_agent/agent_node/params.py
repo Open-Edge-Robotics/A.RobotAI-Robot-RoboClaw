@@ -225,6 +225,9 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("task_step_max_retries", 1)
     node.declare_parameter("task_decomposition_wait_margin_cap_sec", 1800.0)
 
+    # gRPC 피어 목록 JSON (client_node와 공유)
+    node.declare_parameter("target_peers_json", "")
+
 
 def _s(node, name: str) -> str:
     return node.get_parameter(name).get_parameter_value().string_value

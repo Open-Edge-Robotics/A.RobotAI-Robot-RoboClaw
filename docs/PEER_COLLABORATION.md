@@ -208,7 +208,7 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 5. CLOi MotionCmd는 완료 응답을 제공하지 않으므로 시연 결과를 물체 정리 완료로 보고하지 않습니다. 정리 시연의 성공은 승인된 모션 실행 요청까지를 의미하며, 모션 완료나 물체 이동은 별도로 확인되지 않습니다.
 6. 피어가 연결되지 않았거나 요구 능력이 확인되지 않으면 요청하지 않습니다. 결과가 불명확한 시간 초과는 중복 실행을 피하기 위해 자동 재요청하지 않습니다.
 
-이 동작은 한 대상에 대한 단발 요청이며 `autonomous_cooperate`처럼 지속적으로 대화하거나 여러 로봇이 작업을 조율하는 루프를 시작하지 않습니다. 같은 ROS 네트워크 동료는 현재 ROS 그래프에서 발견되어야 하고 `GRPC_TARGET_PEERS_JSON`의 `capabilities`에 `manipulation` 또는 `cleanup_demo`를 정확히 등록해야 합니다. CLOi 1호는 실제 조작 능력이 없으므로 `manipulation` 역할을 설정하지 않습니다. gRPC 동료는 `ListPeers`의 현재 연결 상태를 확인하며, 일반 공개 스킬의 capability가 설정되지 않으면 사용 가능 스킬 목록(JSON 배열 또는 쉼표/불릿 구분 텍스트)을 조회·해석합니다. `cleanup_demo`는 내부 스킬이므로 capability를 명시적으로 등록해야 합니다. CLOi 1호는 경로 플래그가 기본 `true`지만, 검토된 시연 모션 ID allowlist가 비어 있으면 스킬을 등록하지 않습니다. allowlist는 CLOi 1호에서만 설정합니다.
+이 동작은 한 대상에 대한 단발 요청이며 `autonomous_cooperate`처럼 지속적으로 대화하거나 여러 로봇이 작업을 조율하는 루프를 시작하지 않습니다. 같은 ROS 네트워크 동료는 현재 ROS 그래프에서 발견되어야 하고 `GRPC_TARGET_PEERS_JSON`의 `capabilities`에 `manipulation` 또는 `cleanup_demo`를 정확히 등록해야 합니다. CLOi 1호는 실제 조작 능력이 없으므로 `manipulation` 역할을 설정하지 않습니다. gRPC 동료는 `ListPeers`의 현재 연결 상태를 확인하며, 일반 공개 스킬의 capability가 설정되지 않으면 사용 가능 스킬 목록(JSON 배열 또는 쉼표/불릿 구분 텍스트)을 조회·해석합니다(RAG/LLM 응답 지연을 수용하기 위해 타임아웃 25초 적용, 조회 결과는 300초간 캐싱). `cleanup_demo`는 내부 스킬이므로 capability를 명시적으로 등록해야 합니다. CLOi 1호는 경로 플래그가 기본 `true`지만, 검토된 시연 모션 ID allowlist가 비어 있으면 스킬을 등록하지 않습니다. allowlist는 CLOi 1호에서만 설정합니다.
 
 `autonomous_act` patrol 루프의 `ProcessPeerMessages` BT 노드는 별도로 동료가 보낸 메시지를 수집해 `LLMDecideAction` 프롬프트에 "동료와의 최근 대화"로 주입합니다. 따라서 지속 순찰 중 동료의 도움 요청에도 대응할 수 있습니다. `tidy_home`의 위임은 정리 대상 한 건에 대한 단발 요청이며 지속 대화나 협업 루프를 시작하지 않습니다.
 
