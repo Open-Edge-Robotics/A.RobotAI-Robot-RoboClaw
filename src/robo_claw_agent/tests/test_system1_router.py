@@ -448,6 +448,25 @@ class TestSystemOneRouter:
                 _decide(router, "상태 알려줘")
         assert router.breaker.is_open
 
+    def test_cleanup_demo_protocol_bypasses_model_in_laya_mode(self):
+        """기기 간 버전화 프로토콜은 Laya 모델 호출 없이 direct_skill(cleanup_demo)로 직행해야 한다."""
+        from robo_claw_agent.skills.cleanup_demo_protocol import encode_cleanup_demo_request
+
+        router, client = _laya(_resp("single_skill", skill="none"))
+        instruction = encode_cleanup_demo_request(
+            {
+                "request_id": "req-1",
+                "target_location": "안방",
+                "target_object": "수건",
+                "scene_summary": "안방 욕조에 걸쳐진 수건",
+            }
+        )
+        d = _decide(router, instruction)
+        assert d.kind == ROUTE_DIRECT_SKILL
+        assert d.skill == "cleanup_demo"
+        assert d.params["target_object"] == "수건"
+        assert client.calls == [], "프로토콜 요청은 Laya 모델을 호출하지 않아야 한다"
+
 
 class TestSelectedRouter:
     def test_laya_failure_falls_back_to_rule_per_request(self):
@@ -461,6 +480,26 @@ class TestSelectedRouter:
         assert d.skill == "move_relative"
         assert d.source == "rule"
         assert d.fallback is True
+
+    def test_selected_router_routes_cleanup_demo_protocol_in_laya_mode(self):
+        from robo_claw_agent.agent_node.fast_router import RuleRouter
+        from robo_claw_agent.skills.cleanup_demo_protocol import encode_cleanup_demo_request
+
+        laya, client = _laya(_resp("single_skill", skill="none"))
+        router = SelectedRouter(laya, fallback=RuleRouter())
+        instruction = encode_cleanup_demo_request(
+            {
+                "request_id": "req-2",
+                "target_location": "안방",
+                "target_object": "수건",
+                "scene_summary": "안방 바닥의 수건",
+            }
+        )
+        d = _decide(router, instruction)
+        assert d.kind == ROUTE_DIRECT_SKILL
+        assert d.skill == "cleanup_demo"
+        assert d.params["target_object"] == "수건"
+        assert client.calls == []
 
     def test_shadow_does_not_change_primary_decision(self, tmp_path):
         from robo_claw_agent.agent_node.fast_router import RuleRouter

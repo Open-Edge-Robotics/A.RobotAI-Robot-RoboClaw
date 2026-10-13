@@ -40,8 +40,10 @@ class _FakePlanner:
     def __init__(self, loop_result: tuple) -> None:
         self.loop_result = loop_result
         self.loop_calls: list[str] = []
+        self.collect_calls: list[str] = []
 
     async def collect_task_context(self, instruction: str, goal_handle: Any):
+        self.collect_calls.append(instruction)
         return [{"role": "user", "content": instruction}], {}
 
     async def run_llm_planning_loop(
@@ -139,6 +141,34 @@ def test_simple_instruction_still_uses_direct_routing():
     assert skill_results[0].skill_name == "move_relative"
     assert decomposer.calls == []
     assert planner.loop_calls == []
+    assert planner.collect_calls == [], "다이렉트 스킬은 RAG/컨텍스트 수집을 생략해야 한다"
+
+
+def test_cleanup_demo_protocol_executes_demo_skill_directly():
+    """동료 로봇의 정리 시연 프로토콜 요청은 LLM/분해/RAG 없이 cleanup_demo 스킬을 직접 실행해야 한다."""
+    from robo_claw_agent.skills.cleanup_demo_protocol import encode_cleanup_demo_request
+
+    decomposer = _FakeDecomposer(("", [], True, []))
+    planner = _FakePlanner(("", [], True, []))
+    node = _Node(planner, decomposer)
+
+    instruction = encode_cleanup_demo_request(
+        {
+            "request_id": "r-100",
+            "target_location": "안방",
+            "target_object": "수건",
+            "scene_summary": "안방에 수건과 쿠션이 있습니다.",
+        }
+    )
+    result_msg, skill_results, task_success = _run(node, instruction)
+
+    assert task_success is True
+    assert [name for name, _ in node._skills.executed] == ["cleanup_demo"]
+    assert node._skills.executed[0][1]["target_object"] == "수건"
+    assert skill_results[0].skill_name == "cleanup_demo"
+    assert decomposer.calls == []
+    assert planner.loop_calls == []
+    assert planner.collect_calls == []
 
 
 # ── 2. 복구된 중간 실패는 전체 실패로 뒤집지 않는다 ────────────────────────

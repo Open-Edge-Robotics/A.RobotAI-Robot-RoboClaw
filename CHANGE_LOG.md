@@ -3,7 +3,12 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
-기간: **2026-02-24 ~ 2026-12-01**
+## 2026-10-13 — System 1(Laya) 및 복합 구문 가드 우회 없는 정리 시연 프로토콜 직접 라우팅 및 지연 해소
+
+- `SystemOneRouter`와 `RuleRouter`에서 기기 간 버전화 프로토콜(`ROBOCLAW_CLEANUP_DEMO_V1:`)을 감지하면 Laya 자연어 분류 모델 및 `looks_compound`(한국어 접속사 분해 가드)를 거치지 않고 `cleanup_demo` 다이렉트 스킬로 직행하도록 개선합니다.
+- Laya 모드(`SYSTEM1_ROUTER=laya`) 활성화 시 1호가 수신한 정리 시연 프로토콜을 자연어 분류 모델로 넘겨 저확신도(0.14)로 인해 LLM으로 폴백되고, LLM에는 `cleanup_demo`(내부 스킬, `is_internal=True`)가 비공개되어 모션 조회가 대신 실행되던 문제를 해결합니다.
+- `ExecutionMixin._execute_task_inner`에서 RAG 및 LLM 컨텍스트 수집(`collect_task_context`)을 사전 라우터 판단 이후로 지연하여, 다이렉트 스킬 및 단순 고정 응답 요청 시 불필요한 LLM 쿼리 정제·임베딩 검색 지연(~4.6초)을 제거합니다.
+- **검증**: `test_fast_router.py`, `test_system1_router.py`, `test_execution_routing.py` 단위 테스트 12건 포함 전체 단위 테스트 1,145건 통과, Ruff 정적 검사 및 `task contract-check` 통과.
 
 ## 2026-10-13 — CLOi 휴머노이드 피어 능력 분류 및 생활용품 정리 시연·한영 레이블 대조 개선
 

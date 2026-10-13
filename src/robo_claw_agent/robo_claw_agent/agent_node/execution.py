@@ -449,8 +449,7 @@ class ExecutionMixin:
             )
             goal_handle.publish_feedback(fb)
 
-        send_fb("상태 및 과거 지식 파악 중", 5)
-        messages, robot_summary = await self._planner.collect_task_context(instruction, goal_handle)
+        send_fb("명령 분석 및 경로 결정 중", 5)
 
         skill_results: list[Any] = []
         pending_send_events: list[threading.Event] = []
@@ -537,6 +536,9 @@ class ExecutionMixin:
             result_msg = route.reply
             task_success = True
             return result_msg, skill_results, task_success
+
+        send_fb("상태 및 과거 지식 파악 중", 10)
+        messages, robot_summary = await self._planner.collect_task_context(instruction, goal_handle)
 
         if (
             self._llm

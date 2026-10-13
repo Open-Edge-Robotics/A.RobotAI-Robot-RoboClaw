@@ -57,6 +57,23 @@ class TestRuleRouter:
         for text in ("주방으로 이동해", "지금 배터리 상태 알려줘", "안녕 오늘 할 일 알려줘"):
             assert _decide(RuleRouter(), text).kind == ROUTE_LLM, text
 
+    def test_cleanup_demo_protocol_routes_even_with_connective_scene_summary(self):
+        """씬 요약문에 접속어('그리고', '하고')가 있어도 프로토콜 요청은 direct_skill로 라우팅되어야 한다."""
+        from robo_claw_agent.skills.cleanup_demo_protocol import encode_cleanup_demo_request
+
+        instruction = encode_cleanup_demo_request(
+            {
+                "request_id": "r-comp",
+                "target_location": "안방",
+                "target_object": "수건",
+                "scene_summary": "안방 바닥에 수건이 있고 그리고 침대 옆에 쿠션이 놓여 있습니다.",
+            }
+        )
+        route = _decide(RuleRouter(), instruction)
+        assert route.kind == ROUTE_DIRECT_SKILL
+        assert route.skill == "cleanup_demo"
+        assert route.params["target_object"] == "수건"
+
 
 def test_trace_metadata_contains_route_fields():
     route = RouteDecision(

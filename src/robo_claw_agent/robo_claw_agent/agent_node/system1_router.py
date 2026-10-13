@@ -421,9 +421,21 @@ class SystemOneRouter:
         self.breaker = CircuitBreaker(cfg.breaker_failures, cfg.breaker_cooldown_sec)
 
     async def decide(self, node: Any, instruction: str) -> RouteDecision:
-        # 가드(그룹 B'): 복합 명령을 단일 스킬로 축약하면 나머지 절이 사라진다.
+        from .direct_skills import direct_cleanup_demo_skill
         from .task_planner import looks_compound
 
+        # 기기 간 버전화 프로토콜(ROBOCLAW_CLEANUP_DEMO_V1)은 자연어 분류 모델(Laya)로 보내지 않고 직접 라우팅
+        direct_demo = direct_cleanup_demo_skill(node, instruction)
+        if direct_demo is not None:
+            return RouteDecision(
+                kind=ROUTE_DIRECT_SKILL,
+                skill=direct_demo["skill"],
+                params=dict(direct_demo.get("params") or {}),
+                background=bool(direct_demo.get("background")),
+                source=self.name,
+            )
+
+        # 가드(그룹 B'): 복합 명령을 단일 스킬로 축약하면 나머지 절이 사라진다.
         if looks_compound(instruction):
             return RouteDecision.to_llm(source=self.name, intent="multi_step")
 

@@ -106,8 +106,18 @@ class RuleRouter:
 
     def decide_sync(self, node: Any, instruction: str) -> RouteDecision:
         # 테스트에서 monkeypatch 할 수 있도록 호출 시점에 import 한다.
-        from .direct_skills import check_direct_skill
+        from .direct_skills import check_direct_skill, direct_cleanup_demo_skill
         from .task_planner import looks_compound
+
+        direct_demo = direct_cleanup_demo_skill(node, instruction)
+        if direct_demo is not None:
+            return RouteDecision(
+                kind=ROUTE_DIRECT_SKILL,
+                skill=direct_demo["skill"],
+                params=dict(direct_demo.get("params") or {}),
+                background=bool(direct_demo.get("background")),
+                source=self.name,
+            )
 
         if looks_compound(instruction):
             node.get_logger().info(
