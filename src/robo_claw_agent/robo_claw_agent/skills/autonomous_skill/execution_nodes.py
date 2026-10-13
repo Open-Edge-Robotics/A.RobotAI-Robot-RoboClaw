@@ -242,9 +242,9 @@ class ResolveCleanupHandoff(BTNode):
                 for target in cleanup_targets
                 if _cleanup_target_category(target) == "waste"
             ]
-            if len(waste_targets) == 1:
+            if waste_targets:
                 demo_target = waste_targets[0]
-            elif not waste_targets:
+            else:
                 scene_waste_candidates = {
                     keyword
                     for keyword in (
@@ -260,17 +260,22 @@ class ResolveCleanupHandoff(BTNode):
                     )
                     if keyword in scene.casefold()
                 }
-                if len(scene_waste_candidates) == 1:
-                    demo_target = next(iter(scene_waste_candidates))
-                elif not scene_waste_candidates:
+                if scene_waste_candidates:
+                    demo_target = next(iter(sorted(scene_waste_candidates)))
+                else:
                     household_targets = [
                         target.strip()
                         for target in cleanup_targets
                         if _cleanup_target_category(target) in {"towel", "cushion"}
                     ]
-                    if len(household_targets) == 1:
-                        demo_target = household_targets[0]
-                    elif not household_targets:
+                    if household_targets:
+                        towel_targets = [
+                            target
+                            for target in household_targets
+                            if _cleanup_target_category(target) == "towel"
+                        ]
+                        demo_target = towel_targets[0] if towel_targets else household_targets[0]
+                    else:
                         scene_household_candidates = {
                             keyword
                             for keyword in (
@@ -284,8 +289,17 @@ class ResolveCleanupHandoff(BTNode):
                             )
                             if keyword in scene.casefold()
                         }
-                        if len(scene_household_candidates) == 1:
-                            demo_target = next(iter(scene_household_candidates))
+                        if scene_household_candidates:
+                            towel_keywords = [
+                                kw
+                                for kw in scene_household_candidates
+                                if _cleanup_target_category(kw) == "towel"
+                            ]
+                            demo_target = (
+                                sorted(towel_keywords)[0]
+                                if towel_keywords
+                                else next(iter(sorted(scene_household_candidates)))
+                            )
 
             if demo_target:
                 peer = _find_connected_peer_with_capability(node, "cleanup_demo")
