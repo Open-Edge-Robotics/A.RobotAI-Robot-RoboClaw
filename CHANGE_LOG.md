@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 
 기간: **2026-02-24 ~ 2026-12-01**
 
+## 2026-10-13 — CLOi 휴머노이드 피어 능력 분류 및 생활용품 정리 시연·한영 레이블 대조 개선
+
+- `_query_grpc_peer_capability`에서 CLOi 계열 로봇(이름에 `cloi`가 포함되거나 `execute_cloid_motion`/`cloid_motion` 보유)을 판별하여, 공통 스킬의 `grasp`/`place` 로드 여부와 무관하게 `manipulation` 피어 분류에서 제외하고 `cleanup_demo` 피어로 자동 분류하도록 개선합니다.
+- `ResolveCleanupHandoff`에서 현장에 폐기물이 없더라도 단일 수건(`towel`) 또는 쿠션(`cushion`) 후보가 감지된 경우 `cleanup_demo` 동료 로봇에게 정상 위임되도록 지원합니다 (장면에 폐기물 후보가 함께 있는 경우 폐기물 최우선 정책 유지).
+- `CleanupDemoSkill`의 `_target_reobserved`에 정리 카테고리별 동의어 사전 매칭을 도입하여, 동료 로봇이 전달한 한글 대상명(`수건`, `쿠션`)과 현장 VLM/YOLO의 영문 검출 레이블(`towel`, `cushion`) 및 씬 분석을 정확히 대조하여 모션 시연이 중단되지 않고 실행되도록 보완합니다.
+- **검증**: `test_autonomous_cleanup_delegation.py` 단위 테스트 27건, `test_cleanup_demo_skill.py` 5건, `test_cleanup_demo_protocol.py` 2건 전체 통과 및 Ruff 정적 검사 통과.
+
 ## 2026-10-13 — 동료 로봇 능력 조회 타임아웃 상향 및 런타임 결과 캐싱
 
 - `_query_grpc_peer_capability`의 기본 타임아웃을 10.0초에서 25.0초(`_PEER_CAPABILITY_DEFAULT_TIMEOUT_SEC`)로 상향하여 피어 로봇의 RAG 정제·System1 추론·LLM 플래닝 처리 지연(~11.5초)으로 인한 불필요한 타임아웃 실패를 해결합니다.

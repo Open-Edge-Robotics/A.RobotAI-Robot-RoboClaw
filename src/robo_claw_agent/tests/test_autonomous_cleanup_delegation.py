@@ -616,3 +616,111 @@ def test_peer_has_capability_matches_cleanup_demo_role():
     assert helpers._peer_has_capability({"capabilities": ["cleanup_demo"]}, "cleanup_demo") is True
     assert helpers._peer_has_capability({"role": "청소 로봇"}, "cleanup_demo") is True
     assert helpers._peer_has_capability({"role": "cleanup_demo"}, "cleanup_demo") is True
+
+
+def test_query_grpc_peer_capability_classifies_cloi_humanoid_as_cleanup_demo_not_manipulation(
+    monkeypatch,
+):
+    from robo_claw_agent.skills.autonomous_skill import helpers
+
+    helpers._clear_peer_capability_cache()
+
+    class FakeQuerySkill:
+        def __init__(self):
+            self.node = None
+
+        def set_node(self, node):
+            self.node = node
+
+        def execute(self, params):
+            # CLOi reports grasp/place from common manipulator skill and motion skills,
+            # but cleanup_demo is internal so it is NOT listed in capabilities.
+            return {
+                "success": True,
+                "capabilities": [
+                    "grasp",
+                    "place",
+                    "execute_cloid_motion",
+                    "list_cloid_motions",
+                    "navigate_to",
+                ],
+            }
+
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.cooperate_skill.QueryPeerCapabilitiesSkill",
+        FakeQuerySkill,
+    )
+
+    node = MagicMock()
+    # CLOi peer must NOT be treated as physical manipulation peer even with grasp/place
+    assert helpers._query_grpc_peer_capability(node, "cloid 1호", "manipulation") is False
+    # CLOi peer must be recognized as cleanup_demo peer
+    assert helpers._query_grpc_peer_capability(node, "cloid 1호", "cleanup_demo") is True
+
+
+def test_cleanup_mode_routes_to_demo_peer_when_single_towel_is_detected(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import execution_nodes
+    from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
+
+    def find_peer(_node, capability):
+        if capability == "manipulation":
+            return None
+        if capability == "cleanup_demo":
+            return {"peer_name": "cloid 1호", "transport": "grpc"}
+        return None
+
+    monkeypatch.setattr(execution_nodes, "_find_connected_peer_with_capability", find_peer)
+    node = _node_with_skills(["navigate_to", "call_peer_robot"])
+    skill = MagicMock()
+    skill.node = node
+    skill.get_map_pose.return_value = {"x": 6.62, "y": -1.84}
+
+    handoff = ResolveCleanupHandoff(skill)
+    handoff._blackboard = {
+        "cleanup_task_mode": True,
+        "detected_objects": [{"name": "수건"}],
+        "scene_analysis": "안방 바닥에 수건이 놓여 있습니다.",
+        "patrol_last_place": "안방",
+    }
+
+    assert handoff.tick() == NodeStatus.SUCCESS
+    assert handoff._blackboard["cleanup_handoff_prepared"] is True
+    assert handoff._blackboard["cleanup_handoff_kind"] == "cleanup_demo"
+    assert handoff._blackboard["decided_params"]["peer_name"] == "cloid 1호"
+    payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
+    assert payload["target_location"] == "안방"
+    assert payload["target_object"] == "수건"
+
+
+def test_cleanup_mode_routes_to_demo_peer_when_single_cushion_is_detected(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import execution_nodes
+    from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
+
+    def find_peer(_node, capability):
+        if capability == "manipulation":
+            return None
+        if capability == "cleanup_demo":
+            return {"peer_name": "cloid 1호", "transport": "grpc"}
+        return None
+
+    monkeypatch.setattr(execution_nodes, "_find_connected_peer_with_capability", find_peer)
+    node = _node_with_skills(["navigate_to", "call_peer_robot"])
+    skill = MagicMock()
+    skill.node = node
+    skill.get_map_pose.return_value = {"x": 1.0, "y": 2.0}
+
+    handoff = ResolveCleanupHandoff(skill)
+    handoff._blackboard = {
+        "cleanup_task_mode": True,
+        "detected_objects": [{"name": "쿠션"}],
+        "scene_analysis": "거실 바닥에 쿠션이 놓여 있습니다.",
+        "patrol_last_place": "거실",
+    }
+
+    assert handoff.tick() == NodeStatus.SUCCESS
+    assert handoff._blackboard["cleanup_handoff_prepared"] is True
+    assert handoff._blackboard["cleanup_handoff_kind"] == "cleanup_demo"
+    assert handoff._blackboard["decided_params"]["peer_name"] == "cloid 1호"
+    payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
+    assert payload["target_location"] == "거실"
+    assert payload["target_object"] == "쿠션"

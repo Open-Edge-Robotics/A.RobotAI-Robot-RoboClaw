@@ -245,7 +245,7 @@ class ResolveCleanupHandoff(BTNode):
             if len(waste_targets) == 1:
                 demo_target = waste_targets[0]
             elif not waste_targets:
-                scene_candidates = {
+                scene_waste_candidates = {
                     keyword
                     for keyword in (
                         "쓰레기",
@@ -260,8 +260,32 @@ class ResolveCleanupHandoff(BTNode):
                     )
                     if keyword in scene.casefold()
                 }
-                if len(scene_candidates) == 1:
-                    demo_target = next(iter(scene_candidates))
+                if len(scene_waste_candidates) == 1:
+                    demo_target = next(iter(scene_waste_candidates))
+                elif not scene_waste_candidates:
+                    household_targets = [
+                        target.strip()
+                        for target in cleanup_targets
+                        if _cleanup_target_category(target) in {"towel", "cushion"}
+                    ]
+                    if len(household_targets) == 1:
+                        demo_target = household_targets[0]
+                    elif not household_targets:
+                        scene_household_candidates = {
+                            keyword
+                            for keyword in (
+                                "수건",
+                                "타월",
+                                "towel",
+                                "쿠션",
+                                "방석",
+                                "cushion",
+                                "pillow",
+                            )
+                            if keyword in scene.casefold()
+                        }
+                        if len(scene_household_candidates) == 1:
+                            demo_target = next(iter(scene_household_candidates))
 
             if demo_target:
                 peer = _find_connected_peer_with_capability(node, "cleanup_demo")
@@ -270,12 +294,12 @@ class ResolveCleanupHandoff(BTNode):
                     if not place:
                         peer = None
                         blackboard["cleanup_handoff_status"] = (
-                            "정리 시연 동료에게 보낼 장소 이름 또는 단일 폐기물 후보를 확인할 수 없습니다. "
+                            "정리 시연 동료에게 보낼 장소 이름 또는 단일 정리 후보를 확인할 수 없습니다. "
                             "요청을 보내지 않았습니다."
                         )
-            elif target_categories == {"waste"} and not demo_target:
+            elif (target_categories & {"waste", "towel", "cushion"}) and not demo_target:
                 blackboard["cleanup_handoff_status"] = (
-                    "정리 시연 동료에게 보낼 장소 이름 또는 단일 폐기물 후보를 확인할 수 없습니다. "
+                    "정리 시연 동료에게 보낼 장소 이름 또는 단일 정리 후보를 확인할 수 없습니다. "
                     "요청을 보내지 않았습니다."
                 )
         elif peer is not None and (len(target_categories) != 1 or len(cleanup_targets) != 1):

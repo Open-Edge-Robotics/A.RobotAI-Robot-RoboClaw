@@ -39,7 +39,11 @@ def mock_node():
     node._memory = MagicMock()
     node._memory.get_all_objects.return_value = [
         {"name": "이동가능지점1", "position": {"x": 1.0, "y": 2.0}, "metadata": {}},
-        {"name": "Place 1", "position": {"x": 1.0, "y": 2.0}, "metadata": {"alias_of": "이동가능지점1"}},
+        {
+            "name": "Place 1",
+            "position": {"x": 1.0, "y": 2.0},
+            "metadata": {"alias_of": "이동가능지점1"},
+        },
     ]
     node._memory.rag_status.return_value = {"enabled": False}
     # Skills Mock
@@ -205,7 +209,7 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
         "/butler/robo_claw_agent_node",
         "/former/robo_claw_agent_node",
         "/other_ns/robo_claw_agent_node",
-        "/some_other_ros_node"
+        "/some_other_ros_node",
     ]
     mock_node.get_name.return_value = "robo_claw_agent_node"
     mock_node.get_namespace.return_value = "/butler"  # 자기 자신은 butler
@@ -215,8 +219,20 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
         "cycle_count": 3,
         "task_queue": [],
         "task_history": [
-            {"cycle": 1, "decided_skill": "navigate", "decided_params": {"target_location": "이동가능지점1"}, "decided_reason": "순회 시작", "success": True},
-            {"cycle": 2, "decided_skill": "analyze_scene", "decided_params": {}, "decided_reason": "관찰", "success": True},
+            {
+                "cycle": 1,
+                "decided_skill": "navigate",
+                "decided_params": {"target_location": "이동가능지점1"},
+                "decided_reason": "순회 시작",
+                "success": True,
+            },
+            {
+                "cycle": 2,
+                "decided_skill": "analyze_scene",
+                "decided_params": {},
+                "decided_reason": "관찰",
+                "success": True,
+            },
         ],
         "current_map_coverage": 100.0,
     }
@@ -242,9 +258,9 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
     assert "x=0.50, y=0.50" in user_content
     assert "former" in system_prompt
     assert "other_ns" in system_prompt
-    assert "butler" not in system_prompt  # 자기 자신은 프롬프트의 타 에이전트 목록에서 제외되어야 함
-
-
+    assert (
+        "butler" not in system_prompt
+    )  # 자기 자신은 프롬프트의 타 에이전트 목록에서 제외되어야 함
 
 
 def test_llm_decide_action_excludes_explore_and_motion_without_destination(mock_node):
@@ -308,10 +324,26 @@ def test_execute_decided_action_records_history(mock_node):
 def test_split_semantic_places_excludes_vlm_detected_objects():
     """analyze_scene(kind='object')가 등록한 소형 물체는 이동 후보에서 제외되어야 한다."""
     objects = [
-        {"name": "주방", "position": {"x": 1.0, "y": 2.0}, "metadata": {"source": "annotate_map", "kind": "place"}},
-        {"name": "cup", "position": {"x": 1.3, "y": 2.1}, "metadata": {"source": "vlm", "kind": "object", "estimated": True}},
-        {"name": "가상장애물", "position": {"x": 2.0, "y": 2.0}, "metadata": {"source": "mark_virtual_obstacle", "type": "virtual_obstacle"}},
-        {"name": "이동가능지점1", "position": {"x": 3.0, "y": 4.0}, "metadata": {"source": "autonomous_ensure_places", "kind": "place"}},
+        {
+            "name": "주방",
+            "position": {"x": 1.0, "y": 2.0},
+            "metadata": {"source": "annotate_map", "kind": "place"},
+        },
+        {
+            "name": "cup",
+            "position": {"x": 1.3, "y": 2.1},
+            "metadata": {"source": "vlm", "kind": "object", "estimated": True},
+        },
+        {
+            "name": "가상장애물",
+            "position": {"x": 2.0, "y": 2.0},
+            "metadata": {"source": "mark_virtual_obstacle", "type": "virtual_obstacle"},
+        },
+        {
+            "name": "이동가능지점1",
+            "position": {"x": 3.0, "y": 4.0},
+            "metadata": {"source": "autonomous_ensure_places", "kind": "place"},
+        },
     ]
 
     semantic_places, map_generated_places = _split_semantic_places(objects)
@@ -330,15 +362,33 @@ def test_extract_rag_location_candidates_excludes_blocked_coordinates():
     memory._vector_store.list_entries.return_value = [
         {
             "text": "이동 성공 좌표",
-            "metadata": {"type": "navigated_coordinate", "kind": "place", "x": 1.0, "y": 1.0, "name": "성공지점"},
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "x": 1.0,
+                "y": 1.0,
+                "name": "성공지점",
+            },
         },
         {
             "text": "이동 실패 좌표",
-            "metadata": {"type": "blocked_coordinate", "kind": "blocked", "x": 9.0, "y": 9.0, "name": "실패지점"},
+            "metadata": {
+                "type": "blocked_coordinate",
+                "kind": "blocked",
+                "x": 9.0,
+                "y": 9.0,
+                "name": "실패지점",
+            },
         },
         {
             "text": "가상 장애물 위치",
-            "metadata": {"type": "virtual_obstacle", "source": "mark_virtual_obstacle", "x": 8.0, "y": 8.0, "name": "장애물"},
+            "metadata": {
+                "type": "virtual_obstacle",
+                "source": "mark_virtual_obstacle",
+                "x": 8.0,
+                "y": 8.0,
+                "name": "장애물",
+            },
         },
     ]
 
@@ -403,7 +453,6 @@ def test_patrol_gather_place_candidates_includes_rag():
 
     names = [c["name"] for c in candidates]
     assert "충전소" in names
-
 
 
 def test_validate_decided_action_rejects_unregistered_skill():
@@ -734,9 +783,7 @@ def test_scan_room_stops_after_current_goal_is_cancelled(monkeypatch):
         cancel_event.clear()
         return False, "취소되었습니다."
 
-    monkeypatch.setattr(
-        "robo_claw_agent.skills.navigation_skill._send_spin_goal", send_goal
-    )
+    monkeypatch.setattr("robo_claw_agent.skills.navigation_skill._send_spin_goal", send_goal)
     monkeypatch.setattr(
         "robo_claw_agent.skills.navigation_skill._wait_for_goal_result", wait_for_goal
     )
@@ -759,19 +806,26 @@ def test_scan_room_stops_after_current_goal_is_cancelled(monkeypatch):
 
 def test_goal_planner_node_decomposes_goal(mock_node):
     """GoalPlannerNode가 LLM에서 다단계 plan을 받아 task_queue에 저장한다."""
-    mock_node._llm.chat.return_value = json.dumps({
-        "plan": [
-            {"skill": "navigate_to", "params": {"target_name": "거실"}, "reason": "이동"},
-            {"skill": "get_status", "params": {}, "reason": "완료 확인"},
-        ],
-        "goal_achieved": False,
-    })
+    mock_node._llm.chat.return_value = json.dumps(
+        {
+            "plan": [
+                {"skill": "navigate_to", "params": {"target_name": "거실"}, "reason": "이동"},
+                {"skill": "get_status", "params": {}, "reason": "완료 확인"},
+            ],
+            "goal_achieved": False,
+        }
+    )
     mock_node._robot_soul = ""
     skill = MagicMock()
     skill.node = mock_node
 
     node = GoalPlannerNode(skill, goal="거실 쓰레기 버리기")
-    blackboard = {"cycle_count": 0, "task_queue": [], "task_history": [], "goal": "거실 쓰레기 버리기"}
+    blackboard = {
+        "cycle_count": 0,
+        "task_queue": [],
+        "task_history": [],
+        "goal": "거실 쓰레기 버리기",
+    }
     node._blackboard = blackboard
 
     status = node.tick()
@@ -847,10 +901,22 @@ def test_self_capabilities_no_manipulation(mock_node):
 def test_discover_peer_agents_reads_capabilities(monkeypatch):
     """GRPC_TARGET_PEERS_JSON의 capabilities 필드가 파싱된다."""
 
-    peers_json = json.dumps([
-        {"name": "butler", "description": "팔 로봇", "role": "매니퓰레이션", "capabilities": ["manipulation", "navigation"]},
-        {"name": "former", "description": "이동 로봇", "role": "탐색", "capabilities": ["navigation"]},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "butler",
+                "description": "팔 로봇",
+                "role": "매니퓰레이션",
+                "capabilities": ["manipulation", "navigation"],
+            },
+            {
+                "name": "former",
+                "description": "이동 로봇",
+                "role": "탐색",
+                "capabilities": ["navigation"],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -868,10 +934,22 @@ def test_discover_peer_agents_reads_capabilities(monkeypatch):
 def test_find_peer_with_capability_finds_manipulation(monkeypatch):
     """manipulation 능력을 가진 동료를 찾는다."""
 
-    peers_json = json.dumps([
-        {"name": "former", "description": "이동 로봇", "role": "탐색", "capabilities": ["navigation"]},
-        {"name": "butler", "description": "팔 로봇", "role": "매니퓰레이션", "capabilities": ["manipulation"]},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "former",
+                "description": "이동 로봇",
+                "role": "탐색",
+                "capabilities": ["navigation"],
+            },
+            {
+                "name": "butler",
+                "description": "팔 로봇",
+                "role": "매니퓰레이션",
+                "capabilities": ["manipulation"],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -885,9 +963,16 @@ def test_find_peer_with_capability_finds_manipulation(monkeypatch):
 
 def test_find_peer_with_capability_returns_none_when_no_match(monkeypatch):
     """매칭되는 동료가 없으면 None을 반환한다."""
-    peers_json = json.dumps([
-        {"name": "former", "description": "이동 로봇", "role": "탐색", "capabilities": ["navigation"]},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "former",
+                "description": "이동 로봇",
+                "role": "탐색",
+                "capabilities": ["navigation"],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -906,6 +991,7 @@ def test_llm_decide_action_includes_capabilities_in_prompt(mock_node):
     ]
     mock_node._llm.chat.return_value = '{"skill": "get_status", "params": {}, "reason": "테스트"}'
     mock_node._robot_soul = ""
+    mock_node.get_node_names.return_value = ["/butler/robo_claw_agent_node"]
 
     skill = MagicMock()
     skill.node = mock_node
@@ -913,11 +999,19 @@ def test_llm_decide_action_includes_capabilities_in_prompt(mock_node):
 
     # GRPC_TARGET_PEERS_JSON에 manipulation 동료 설정
     import os
+
     old_env = os.environ.get("GRPC_TARGET_PEERS_JSON")
     try:
-        os.environ["GRPC_TARGET_PEERS_JSON"] = json.dumps([
-            {"name": "butler", "description": "팔", "role": "매니퓰레이션", "capabilities": ["manipulation"]},
-        ])
+        os.environ["GRPC_TARGET_PEERS_JSON"] = json.dumps(
+            [
+                {
+                    "name": "butler",
+                    "description": "팔",
+                    "role": "매니퓰레이션",
+                    "capabilities": ["manipulation"],
+                },
+            ]
+        )
         node = LLMDecideAction(skill)
         blackboard = {
             "cycle_count": 1,

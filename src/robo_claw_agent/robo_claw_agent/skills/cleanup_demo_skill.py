@@ -11,8 +11,11 @@ from robo_claw_agent.skill_manager import BaseSkill
 
 from .autonomous_skill.globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
 from .cleanup_policy import (
+    _CLEANUP_TARGET_KEYWORDS,
+    _cleanup_target_category,
     _has_ambiguous_cleanup_indication,
     _has_cleanup_indication,
+    _matches_cleanup_keyword,
     _normalize_name,
     _select_cleanup_demo_motion,
 )
@@ -148,7 +151,7 @@ class CleanupDemoSkill(BaseSkill):
                 )
             if not _has_cleanup_indication(detected, fresh_scene):
                 return self.fail_result(
-                    f"'{place_name}'에서 명확한 폐기물 후보를 확인하지 못해 시연하지 않았습니다.",
+                    f"'{place_name}'에서 명확한 정리 후보를 확인하지 못해 시연하지 않았습니다.",
                     failure_reason="cleanup_target_not_confirmed",
                 )
 
@@ -228,10 +231,23 @@ class CleanupDemoSkill(BaseSkill):
         expected = _normalize_name(target)
         if not expected:
             return False
-        labels = []
+        labels: list[str] = []
         if isinstance(detected, (list, tuple)):
             labels.extend(
-                item.get("name", "") if isinstance(item, dict) else str(item) for item in detected
+                str(item.get("name", "") if isinstance(item, dict) else item).strip()
+                for item in detected
             )
-        observed = _normalize_name(" ".join([*(str(label) for label in labels), scene]))
-        return expected in observed
+        observed_raw = " ".join([*labels, scene])
+        observed = _normalize_name(observed_raw)
+        if expected in observed:
+            return True
+
+        category = _cleanup_target_category(target)
+        if category and category in _CLEANUP_TARGET_KEYWORDS:
+            for kw in _CLEANUP_TARGET_KEYWORDS[category]:
+                norm_kw = _normalize_name(kw)
+                if norm_kw and norm_kw in observed:
+                    return True
+                if _matches_cleanup_keyword(observed_raw.casefold(), kw.casefold()):
+                    return True
+        return False

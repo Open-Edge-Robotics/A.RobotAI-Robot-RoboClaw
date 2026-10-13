@@ -553,7 +553,7 @@ def _launch_setup(context, *args, **kwargs):
         if cleanup_demo_enabled and is_cloid1_profile:
             skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
             agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
-                cleanup_demo_ids
+                cleanup_demo_ids, separators=(",", ":")
             )
     agent_parameters[-1]["skill_modules"] = skill_modules
 

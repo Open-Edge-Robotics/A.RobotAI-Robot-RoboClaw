@@ -479,7 +479,12 @@ def _query_grpc_peer_capability(
             skill_names = {str(c).strip() for c in result.get("capabilities", [])}
             _PEER_CAPABILITY_CACHE[cache_key] = (now, skill_names)
 
+        is_cloi_peer = "cloi" in peer_name.casefold() or bool(
+            skill_names & {"execute_cloid_motion", "cloid_motion", "cloid_cleanup_demo"}
+        )
         if capability == "manipulation":
+            if is_cloi_peer:
+                return False
             pick_skills = {
                 "adaptive_pick_object",
                 "vla_pick_gripper_object",
@@ -489,6 +494,8 @@ def _query_grpc_peer_capability(
             }
             return bool(skill_names & pick_skills) or {"grasp", "place"}.issubset(skill_names)
         if capability == "cleanup_demo":
+            if is_cloi_peer:
+                return True
             return bool(skill_names & {"cleanup_demo", "cloid_cleanup_demo"})
         return capability in skill_names
     except Exception as exc:  # noqa: BLE001

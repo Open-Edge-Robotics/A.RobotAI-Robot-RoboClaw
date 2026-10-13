@@ -37,7 +37,13 @@ def test_local_server_adds_supervisor_process():
 
     assert len(actions) == 1
     assert isinstance(actions[0], ExecuteProcess)
-    cmd = " ".join(str(part) for part in actions[0].cmd)
+    parts: list[str] = []
+    for part in actions[0].cmd:
+        if isinstance(part, list):
+            parts.extend(getattr(sub, "text", str(sub)) for sub in part)
+        else:
+            parts.append(getattr(part, "text", str(part)))
+    cmd = " ".join(parts)
     assert "robo_claw_agent.system1_local_server" in cmd
 
 

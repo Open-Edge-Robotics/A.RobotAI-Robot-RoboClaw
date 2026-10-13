@@ -159,3 +159,57 @@ def test_cleanup_demo_rejects_unapproved_or_prerequisite_motion(monkeypatch):
     assert result["success"] is False
     assert result["failure_reason"] == "no_approved_cleanup_demo_motion"
     assert all(name != "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
+
+
+def test_cleanup_demo_reobserves_korean_target_with_english_detection(monkeypatch):
+    skill = CleanupDemoSkill()
+    skills, events = _configure_demo(
+        monkeypatch,
+        skill,
+        scene_result={
+            "success": True,
+            "analysis": "시각 분석 완료. 인식된 객체: towel",
+            "detected_objects": [{"name": "towel"}],
+        },
+    )
+
+    result = skill.execute(
+        {
+            "target_location": "안방",
+            "target_object": "수건",
+            "scene_summary": "수건이 있습니다.",
+            "request_id": "req-towel-bilingual",
+        }
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "motion_requested"
+    assert events == [("visit", "안방"), ("observe", "안방")]
+    assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
+
+
+def test_cleanup_demo_reobserves_cushion_with_english_detection(monkeypatch):
+    skill = CleanupDemoSkill()
+    skills, events = _configure_demo(
+        monkeypatch,
+        skill,
+        scene_result={
+            "success": True,
+            "analysis": "거실 바닥에 cushion이 놓여 있습니다.",
+            "detected_objects": [{"name": "cushion"}],
+        },
+    )
+
+    result = skill.execute(
+        {
+            "target_location": "거실",
+            "target_object": "쿠션",
+            "scene_summary": "쿠션이 있습니다.",
+            "request_id": "req-cushion-bilingual",
+        }
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "motion_requested"
+    assert events == [("visit", "거실"), ("observe", "거실")]
+    assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
