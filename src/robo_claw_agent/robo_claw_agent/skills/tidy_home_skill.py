@@ -682,7 +682,7 @@ class TidyHomeSkill(BaseSkill):
                     "motion_id": motion["motion_id"],
                     "confirm": True,
                 },
-                timeout_sec=10.0,
+                timeout_sec=60.0,
             )
             if result.success:
                 self.send_user_message(

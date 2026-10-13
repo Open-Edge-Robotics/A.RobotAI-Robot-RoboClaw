@@ -106,6 +106,7 @@ def test_cleanup_demo_relocates_reobserves_target_then_requests_only_allowlisted
     ]
     assert skills.calls[-1][1]["motion_id"] == 77
     assert skills.calls[-1][1]["confirm"] is True
+    assert skills.calls[-1][2]["timeout_sec"] == 60.0
 
 
 def test_cleanup_demo_aborts_when_requested_target_is_not_reobserved(monkeypatch):
