@@ -241,3 +241,35 @@ def test_cleanup_demo_executes_when_any_cleanup_candidate_is_reobserved(monkeypa
     assert result["status"] == "motion_requested"
     assert events == [("visit", "안방"), ("observe", "안방")]
     assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
+
+
+def test_cleanup_demo_executes_even_with_ambiguous_objects_in_scene(monkeypatch):
+    """현장에 컵이나 옷 등 모호한 물체가 함께 있어도 정리 대상이 확인되면 시연을 중단하지 않고 모션을 수행한다."""
+    skill = CleanupDemoSkill()
+    skills, events = _configure_demo(
+        monkeypatch,
+        skill,
+        scene_result={
+            "success": True,
+            "analysis": "안방에 포장지, 쿠션, 방석과 함께 컵이 보입니다.",
+            "detected_objects": [
+                {"name": "포장지"},
+                {"name": "쿠션"},
+                {"name": "방석"},
+                {"name": "cup"},
+            ],
+        },
+    )
+
+    result = skill.execute(
+        {
+            "target_location": "안방",
+            "target_object": "쿠션",
+            "scene_summary": "방에 쿠션과 포장지가 있습니다.",
+            "request_id": "req-ambiguous-tolerant",
+        }
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "motion_requested"
+    assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)

@@ -754,3 +754,57 @@ def test_tidy_home_resolves_room_via_rag_navigated_coordinate():
     assert places[0]["name"] == "주방"
     assert places[0]["position"]["x"] == 1.5
     assert places[0]["position"]["y"] == 2.0
+
+
+def test_tidy_home_executes_demo_motion_locally_when_capable(monkeypatch):
+    """시연 가능한 로컬 로봇(1호)은 정리 대상 확인 시 no_action으로 끝나지 않고 demo_motion_executed를 반환한다."""
+    from types import SimpleNamespace
+
+    executed_motions = []
+
+    class _Skills:
+        def has_skill(self, name):
+            return name in {
+                "navigate_to",
+                "execute_cloid_motion",
+                "list_cloid_motions",
+                "cleanup_demo",
+            }
+
+        def execute(self, name, params, **kwargs):
+            if name == "list_cloid_motions":
+                return SimpleNamespace(
+                    success=True,
+                    message="ok",
+                    result_data={
+                        "motions": [
+                            {"motion_id": 60, "motion_name": "scan", "pre_id": None},
+                            {"motion_id": 22, "motion_name": "greeting", "pre_id": None},
+                        ]
+                    },
+                )
+            if name == "execute_cloid_motion":
+                executed_motions.append(params)
+                return SimpleNamespace(success=True, message="executed")
+            return SimpleNamespace(success=True, message="ok")
+
+    skills = _Skills()
+    node = SimpleNamespace(
+        _memory=None,
+        _skills=skills,
+        get_parameter=lambda name: SimpleNamespace(value="[22, 60]"),
+    )
+    skill = TidyHomeSkill()
+    skill.set_node(node)
+    skill.send_user_message = lambda _msg: None
+
+    status = skill._handle_cleanup_target(
+        place_name="안방",
+        scene="안방 바닥에 포장지와 쿠션이 놓여 있습니다.",
+        objects=[{"name": "포장지"}, {"name": "쿠션"}],
+        cycle=0,
+    )
+
+    assert status == "demo_motion_executed"
+    assert len(executed_motions) == 1
+    assert executed_motions[0]["motion_id"] in [22, 60]

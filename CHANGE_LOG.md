@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-13 — 정리 시연 제약 완화 및 로컬 모션 덮어쓰기 버그(no_action) 해소
+
+- **배경**:
+  - 1호기가 직접 정리 작업을 수행하거나 동료(2호)의 시연 요청을 받아 수행할 때, 실제 물리 Pick & Place(집기/배치)용 안전 가드(모호/위험 물체 감지 시 중단)가 단순 시연 모션에도 적용되어 방 안에 컵, 책, 옷, 포장지 등이 보이면 `ambiguous_scene`으로 시연이 강제 중단되는 문제가 발생했습니다.
+  - 또한, 1호기가 로컬에서 시연 모션(`execute_cloid_motion`)을 결정했음에도 `tidy_home_skill.py`에서 물리 조작 계획 단계(`decide.tick()`)를 추가 호출하여 결정된 모션을 덮어쓰고 `no_action`으로 처리되어 실제 모션을 수행하지 못했습니다.
+- **조치**:
+  - `cleanup_demo_skill.py`: 단순 제자리 제스처/스캔 시연 목적에 맞추어 `_has_ambiguous_cleanup_indication` 중단 가드를 제거하고, 현장에 도착해 요청 대상 또는 정리 대상 후보가 확인되면 안전한 허용 모션을 즉시 수행하도록 제약을 완화했습니다. 또한 모션 카탈로그 조회 실패 시 허용 모션 ID 기본 매핑으로 폴백하도록 안정성을 강화했습니다.
+  - `tidy_home_skill.py`: `decided_skill`이 이미 `execute_cloid_motion`으로 결정된 경우 물리 조작용 LLM 계획(`decide.tick()`)을 건너뛰고 바로 모션 실행(`execute.tick()`)으로 직행하도록 수정하여 `no_action`으로 종료되던 결함을 해결했습니다 (`demo_motion_executed` 정상 반환).
+- **검증**: `test_cleanup_demo_skill.py` (7건), `test_tidy_home_skill.py` (31건), `test_autonomous_cleanup_delegation.py` (32건) 포함 전체 단위 테스트 1,173건 통과, `task contract-check` 통과, Ruff 정적 검사 및 포맷팅 통과.
+
 ## 2026-10-13 — CLOi 2호 상체 구동 불가 반영 및 정리 시연 로컬 수행 엄격화·동료 위임 보장
 
 - **배경**: CLOi 2호는 상체/팔 모터 고장 상태(`SKILLS.cloid.2.md`)로 `cleanup_demo` 스킬이 제외되어 있고 `cloid_cleanup_demo_motion_ids_json = []`으로 설정되어 있습니다. 그러나 `ResolveCleanupHandoff`에서 `execute_cloid_motion` 스킬 존재 여부만으로 `local_demo_capable`을 판단하고, 허용 ID 목록이 비어있을 때 기본값 `[22, 128]`로 폴백하면서 2호가 동료(1호)를 부르지 않고 로컬 모션(`task ready pose`)을 직접 시도하려다 `no_action`으로 종료되는 문제가 발생했습니다.

@@ -13,7 +13,6 @@ from .autonomous_skill.globals import _AUTONOMOUS_ACTIVE, claim_autonomous, rele
 from .cleanup_policy import (
     _CLEANUP_TARGET_KEYWORDS,
     _cleanup_target_category,
-    _has_ambiguous_cleanup_indication,
     _has_cleanup_indication,
     _matches_cleanup_keyword,
     _normalize_name,
@@ -78,11 +77,6 @@ class CleanupDemoSkill(BaseSkill):
             )
         if (error := self.require_node()) is not None:
             return error
-        if _has_ambiguous_cleanup_indication([target], ""):
-            return self.fail_result(
-                f"요청 대상 '{target}'은 모호하거나 위험할 수 있어 시연을 중단했습니다.",
-                failure_reason="ambiguous_target",
-            )
         allowed_ids = self._allowed_motion_ids()
         if not allowed_ids:
             return self.fail_result(
@@ -144,26 +138,35 @@ class CleanupDemoSkill(BaseSkill):
                     f"'{place_name}'에서 정리 대상 후보를 다시 확인하지 못해 시연하지 않았습니다.",
                     failure_reason="target_not_reobserved",
                 )
-            if _has_ambiguous_cleanup_indication(detected, fresh_scene):
-                return self.fail_result(
-                    f"'{place_name}'에 모호하거나 위험할 수 있는 물체가 보여 시연을 중단했습니다.",
-                    failure_reason="ambiguous_scene",
+            catalog = None
+            try:
+                catalog = skills.execute(
+                    "list_cloid_motions", {"timeout_sec": 3.0}, timeout_sec=5.0
                 )
-            if not _has_cleanup_indication(detected, fresh_scene):
-                return self.fail_result(
-                    f"'{place_name}'에서 명확한 정리 후보를 확인하지 못해 시연하지 않았습니다.",
-                    failure_reason="cleanup_target_not_confirmed",
-                )
+            except Exception:
+                catalog = None
 
-            catalog = skills.execute("list_cloid_motions", {"timeout_sec": 3.0}, timeout_sec=5.0)
-            if not catalog.success:
-                return self.fail_result(
-                    f"CLOi 모션 목록을 확인하지 못했습니다: {catalog.message}",
-                    failure_reason="motion_catalog_unavailable",
-                    recoverable=True,
-                )
+            available_motions = []
+            if (
+                catalog is not None
+                and getattr(catalog, "success", False) is True
+                and isinstance(getattr(catalog, "result_data", None), dict)
+                and isinstance(catalog.result_data.get("motions"), list)
+            ):
+                available_motions = catalog.result_data["motions"]
+            if not available_motions:
+                from .autonomous_skill.execution_nodes import _CLOID_INDICATOR_MOTIONS
+
+                available_motions = [
+                    {
+                        "motion_id": mid,
+                        "motion_name": _CLOID_INDICATOR_MOTIONS.get(mid, f"motion_{mid}"),
+                    }
+                    for mid in allowed_ids
+                ]
+
             motion = _select_cleanup_demo_motion(
-                catalog.result_data.get("motions", []),
+                available_motions,
                 allowed_ids,
                 rng=random.Random(),
                 previous_motion_id=self._previous_motion_id,

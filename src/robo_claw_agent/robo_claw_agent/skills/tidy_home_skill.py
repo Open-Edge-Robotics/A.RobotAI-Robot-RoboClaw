@@ -526,7 +526,10 @@ class TidyHomeSkill(BaseSkill):
             return "planning_failed"
         if blackboard.get("cleanup_handoff_blocked"):
             return "unhandled"
-        if not blackboard.get("cleanup_handoff_prepared"):
+        if (
+            not blackboard.get("cleanup_handoff_prepared")
+            and blackboard.get("decided_skill") != "execute_cloid_motion"
+        ):
             if decide.tick() != NodeStatus.SUCCESS:
                 return "planning_failed"
             if blackboard.get("decided_skill") in {None, "", "none"} and not blackboard.get(
