@@ -44,6 +44,13 @@ RUNTIME_CONFIG_FIELDS = {
         "scope": "robot_profile",
         "secret": False,
     },
+    "agent.cloid_expression_enabled": {
+        "env": "RC_CLOID_EXPRESSION_ENABLED",
+        "launch_argument": "cloid_expression_enabled",
+        "parameter": "",
+        "scope": "robot_profile",
+        "secret": False,
+    },
     "rag.enabled": {
         "env": "RC_ENABLE_RAG",
         "launch_argument": "enable_rag",
@@ -520,6 +527,7 @@ ENV_TO_LAUNCH_ARGUMENT = {
     "RC_AGENT_ID": "agent_id",
     "RC_CLOID_CLEANUP_DEMO_ENABLED": "cloid_cleanup_demo_enabled",
     "RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "cloid_cleanup_demo_motion_ids_json",
+    "RC_CLOID_EXPRESSION_ENABLED": "cloid_expression_enabled",
     "RC_ENABLE_RAG": "enable_rag",
     "RC_RAG_TOP_K": "rag_top_k",
     "RC_STRICT_CONFIG": "strict_config",

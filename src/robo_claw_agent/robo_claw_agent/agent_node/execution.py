@@ -30,6 +30,36 @@ if TYPE_CHECKING:
     pass
 
 
+_CLOID_EXPRESSION_SKILL = "cloid_express"
+
+
+def resolve_cloid_expression_situation(
+    skills: Any, instruction: str, skill_results: list[Any], task_success: bool
+) -> str | None:
+    """태스크 완료 후 재생할 표현 상황을 정한다. 재생하지 않으면 None.
+
+    - 표현 스킬이 등록되어 있지 않으면 None(기능 비활성).
+    - 베이스 주행 스킬이 실행된 태스크에서는 None(주행 중 상체 모션 금지).
+    """
+    if skills is None or not skills.has_skill(_CLOID_EXPRESSION_SKILL):
+        return None
+
+    from robo_claw_agent.skills.cloid_expression_policy import classify_situation
+
+    from .nav_safety import _is_base_motion_skill
+
+    used_base_motion = False
+    for result in skill_results:
+        name = str(getattr(result, "skill_name", "") or "")
+        if name and _is_base_motion_skill(name, skills):
+            used_base_motion = True
+            break
+
+    return classify_situation(
+        instruction, task_success=task_success, used_base_motion=used_base_motion
+    )
+
+
 @traceable(
     run_type="chain",
     name="runtime_operation",
@@ -247,6 +277,38 @@ class ExecutionMixin:
             return f"다음 스킬은 다른 스킬과 체이닝할 수 없습니다: {joined}"
         return None
 
+    def _maybe_play_cloid_expression(
+        self, instruction: str, skill_results: list[Any], task_success: bool
+    ) -> None:
+        """태스크 완료 후 상황 표현 모션을 백그라운드 스레드로 1회 요청한다.
+
+        태스크 응답을 지연시키지 않도록 발행은 데몬 스레드에서 수행하며, 상황이
+        정해지지 않거나 표현 스킬이 미등록이면 아무것도 하지 않는다.
+        """
+        try:
+            situation = resolve_cloid_expression_situation(
+                getattr(self, "_skills", None), instruction, skill_results, task_success
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warning(f"CLOi expression selection failed: {exc}")
+            return
+        if situation is None:
+            return
+
+        def _work() -> None:
+            try:
+                res = self._skills.execute(
+                    _CLOID_EXPRESSION_SKILL, {"situation": situation}, timeout_sec=30.0
+                )
+                if not res.success:
+                    self.get_logger().info(
+                        f"CLOi expression motion skipped ({situation}): {res.message}"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                self.get_logger().warning(f"CLOi expression motion failed: {exc}")
+
+        threading.Thread(target=_work, daemon=True, name="cloid-express").start()
+
     async def _handle_execute_task(self, goal_handle: Any) -> ExecuteTask.Result:
         instruction = goal_handle.request.instruction
         timeout = goal_handle.request.timeout_sec or 600.0
@@ -283,6 +345,8 @@ class ExecutionMixin:
             self._set_state(AgentState.IDLE)
 
         self._memory.add_event("task_completed", {"result": result_msg})
+
+        self._maybe_play_cloid_expression(instruction, skill_results, task_success)
 
         if task_success:
             goal_handle.succeed()
@@ -406,6 +470,8 @@ class ExecutionMixin:
         result_msg, skill_results, task_success = result
 
         self._memory.add_event("task_completed", {"result": result_msg})
+
+        self._maybe_play_cloid_expression(instruction, skill_results, task_success)
 
         if task_success:
             goal_handle.succeed()

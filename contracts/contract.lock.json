@@ -1,8 +1,8 @@
 {
   "name": "rcf-runtime-config",
-  "version": "2.6.0",
-  "source": "gitlab-release://rcf-config-contract/2.6.0",
-  "runtime_contract_sha256": "b4a1436ffb667180b98ecf4aeeb783d83900042d7b09b94a4193ea2249625237",
-  "schema_sha256": "56accf4b3a56d4f936b7714c59e642de28af3b0cb203d122065ed8d2be4ac6b8",
+  "version": "2.7.0",
+  "source": "gitlab-release://rcf-config-contract/2.7.0",
+  "runtime_contract_sha256": "3b18de11726d4de99bb463d15f137a34b40ece9045c081df3b1f8877ebfb41ae",
+  "schema_sha256": "280ed273d78c9a1c956889a5cfa9598afb1127956edb07cb0bff708c285f2fa2",
   "supported_range": ">=2.0.0,<3.0.0"
 }

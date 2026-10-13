@@ -326,6 +326,17 @@
       "source": "src/robo_claw_agent/robo_claw_agent/skills/navigation_skill/mark_virtual_obstacle.py"
     },
     {
+      "name": "cloid_express",
+      "category": "other",
+      "module": "cloid_express_skill",
+      "risk_level": "action",
+      "internal": true,
+      "required": null,
+      "properties": [],
+      "description": "상황(인사·대화·탐색·실패)에 맞는 CLOiD 등록 모션 하나를 골라 실행을 요청합니다. 자동 표현 경로에서만 쓰는 내부 스킬입니다.",
+      "source": "src/robo_claw_agent/robo_claw_agent/skills/cloid_express_skill.py"
+    },
+    {
       "name": "close_gripper",
       "category": "manipulation",
       "module": "manipulation_skill",

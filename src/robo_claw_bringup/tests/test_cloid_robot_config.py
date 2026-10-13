@@ -417,3 +417,25 @@ def test_launch_passes_cloid_yaml_to_core_and_agent_nodes() -> None:
     agent_paths = _raw_param_paths(context, _find_node(entities, "agent_node"))
     assert any(str(p).endswith("agent.yaml") for p in agent_paths)
     assert any(str(p).endswith("cloid_config.yaml") for p in agent_paths)
+
+
+def test_cloid_expression_skill_is_registered_only_when_enabled() -> None:
+    """상황별 표현 모션 스킬은 cloid + cloid_expression_enabled=true 일 때만 등록된다."""
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+
+    def _modules(overrides: dict[str, str]) -> list[str]:
+        context = _build_context(launch_description, overrides)
+        entities = module._launch_setup(context)  # noqa: SLF001
+        agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+        return agent["skill_modules"]
+
+    assert "robo_claw_agent.skills.cloid_express_skill" not in _modules(
+        {"robot_config": "cloid"}
+    )
+    assert "robo_claw_agent.skills.cloid_express_skill" in _modules(
+        {"robot_config": "cloid", "cloid_expression_enabled": "true"}
+    )
+    assert "robo_claw_agent.skills.cloid_express_skill" not in _modules(
+        {"robot_config": "sim", "cloid_expression_enabled": "true"}
+    )

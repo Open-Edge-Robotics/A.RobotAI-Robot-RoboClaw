@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.6.0",
+  "contract_version": "2.7.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -132,6 +132,28 @@
       "launch_argument": "cloid_cleanup_demo_motion_ids_json",
       "ros_parameter": "cloid_cleanup_demo_motion_ids_json",
       "value_type": "string",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "agent.cloid_expression_enabled",
+      "type": "boolean",
+      "scope": "robot_profile",
+      "default": false,
+      "secret": false,
+      "description": "CLOiD situation-based expression motion switch. When enabled, the agent plays at most one registered CLOiD motion per task that matches the situation (greeting, talking, scanning, idle, success, fail). Motions are never played while the base is navigating. RoboClaw only registers the path for the cloid profile.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_CLOID_EXPRESSION_ENABLED",
+      "api_json": "cloid_expression_enabled",
+      "launch_argument": "cloid_expression_enabled",
+      "ros_parameter": "",
+      "value_type": "bool",
       "modes": [
         "local",
         "docker",

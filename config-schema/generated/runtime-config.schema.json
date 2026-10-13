@@ -81,6 +81,14 @@
           "x-scope": "robot_profile",
           "x-secret": false
         },
+        "cloid_expression_enabled": {
+          "type": "boolean",
+          "description": "CLOiD situation-based expression motion switch. When enabled, the agent plays at most one registered CLOiD motion per task that matches the situation (greeting, talking, scanning, idle, success, fail). Motions are never played while the base is navigating. RoboClaw only registers the path for the cloid profile.",
+          "default": false,
+          "x-canonical-name": "agent.cloid_expression_enabled",
+          "x-scope": "robot_profile",
+          "x-secret": false
+        },
         "enable_rag": {
           "type": "boolean",
           "description": "Enable retrieval augmented generation.",

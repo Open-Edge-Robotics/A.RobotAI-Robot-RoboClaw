@@ -43,3 +43,13 @@ def test_cloid_cleanup_demo_settings_mapping() -> None:
     assert motion_ids["launch_argument"] == "cloid_cleanup_demo_motion_ids_json"
     assert motion_ids["parameter"] == "cloid_cleanup_demo_motion_ids_json"
     assert motion_ids["scope"] == "robot_profile"
+
+
+def test_cloid_expression_setting_mapping() -> None:
+    module = _load_generated_runtime_config()
+    field = module.RUNTIME_CONFIG_FIELDS["agent.cloid_expression_enabled"]
+    assert field["env"] == "RC_CLOID_EXPRESSION_ENABLED"
+    assert field["launch_argument"] == "cloid_expression_enabled"
+    assert field["parameter"] == ""
+    assert field["scope"] == "robot_profile"
+    assert field["secret"] is False

@@ -197,6 +197,32 @@ CLOiD 는 출하 포장처럼 로봇 부피를 최소로 줄여야 할 때 boxin
   하한(-66.0°)보다 약 1° 크므로, 로봇의 `use_limits` 가 켜진 배포에서는 자세가 제한될 수
   있습니다. 실측 CLOiD 1호는 `TOFU_USE_LIMITS=false` 로 동작합니다.
 
+## 상황별 표현 모션 자동 재생
+
+사용자 상호작용을 친근하게 만들기 위해, CLOiD 개체가 태스크를 마친 뒤 상황에 맞는
+등록 모션을 한 번 재생할 수 있습니다. 기본값은 꺼짐이며 `RC_CLOID_EXPRESSION_ENABLED`
+(launch `cloid_expression_enabled`)로 켭니다.
+
+- **동작**: 태스크 완료 후 `cloid_express` 내부 스킬이 상황(인사·대화·탐색·실패)에
+  맞는 모션을 카탈로그에서 골라 `execute_cloid_motion` 경로로 한 번 요청합니다.
+  반복을 피하려고 직전 모션과 다른 후보를 우선 선택합니다.
+- **상황 판정**: 인사 표현이 있으면 인사, 탐색 표현이 있으면 탐색, 태스크 실패면 실패,
+  그 외에는 대화 모션을 고릅니다.
+- **태스크당 1회**: 태스크 완료 시 한 번만 백그라운드로 요청하며 응답을 지연시키지
+  않습니다.
+- **주행 태스크 제외**: `navigate_to`, `move_relative` 같은 베이스 주행 스킬이 실행된
+  태스크이거나 명령에 이동 표현이 있으면 재생하지 않습니다. 주행 중·직후의 상체 모션은
+  위험하기 때문입니다.
+- **allowlist**: 선택 가능한 모션 ID는 코드 상수(`cloid_expression_policy`)로 고정되어
+  있고 모두 `pre_id` 없는 모션입니다. 카탈로그에 없거나 `pre_id` 가 있으면 재생하지
+  않습니다. `rcf-config-contract` `agent.cloid_expression_enabled`(env
+  `RC_CLOID_EXPRESSION_ENABLED`, launch `cloid_expression_enabled`)로 계약에 등록되어
+  있습니다.
+- **미확인 사항**: `MotionCmd` 는 완료 응답을 주지 않으므로 결과는 모션 실행 요청까지이며
+  실제 자세 도달은 확인하지 않습니다. 실기에서 안전성 검증은 아직 하지 않았습니다.
+- **개체별 설정**: 모든 cloid 개체에 등록되므로, 상체 구동 오류가 있는 2호는 개체
+  설정에서 `RC_CLOID_EXPRESSION_ENABLED=false` 로 두어 비활성화합니다.
+
 ## x64 DevBox SIL
 
 x64 SIL 명령은 체크아웃의 경로 스코프 DevBox 안에서 실행합니다.

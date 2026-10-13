@@ -8,6 +8,7 @@ rcf_generated_launch_argument() {
     RC_AGENT_ID) printf '%s' 'agent_id' ;;
     RC_CLOID_CLEANUP_DEMO_ENABLED) printf '%s' 'cloid_cleanup_demo_enabled' ;;
     RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON) printf '%s' 'cloid_cleanup_demo_motion_ids_json' ;;
+    RC_CLOID_EXPRESSION_ENABLED) printf '%s' 'cloid_expression_enabled' ;;
     RC_ENABLE_RAG) printf '%s' 'enable_rag' ;;
     RC_RAG_TOP_K) printf '%s' 'rag_top_k' ;;
     RC_STRICT_CONFIG) printf '%s' 'strict_config' ;;

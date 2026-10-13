@@ -91,6 +91,21 @@
           "config_server"
         ]
     },
+    "agent.cloid_expression_enabled": {
+      "type": "boolean",
+      "scope": "robot_profile",
+      "secret": false,
+      "env": "RC_CLOID_EXPRESSION_ENABLED",
+      "api_json": "cloid_expression_enabled",
+      "launch_argument": "cloid_expression_enabled",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "rag.enabled": {
       "type": "boolean",
       "scope": "runtime",

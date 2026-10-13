@@ -75,6 +75,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "cloid_cleanup_demo_motion_ids_json",
 		Secret:         false,
 	},
+	"agent.cloid_expression_enabled": {
+		Canonical:      "agent.cloid_expression_enabled",
+		Type:           "boolean",
+		Scope:          "robot_profile",
+		Env:            "RC_CLOID_EXPRESSION_ENABLED",
+		APIJSON:        "cloid_expression_enabled",
+		LaunchArgument: "cloid_expression_enabled",
+		ROSParameter:   "",
+		Secret:         false,
+	},
 	"rag.enabled": {
 		Canonical:      "rag.enabled",
 		Type:           "boolean",

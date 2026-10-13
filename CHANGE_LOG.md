@@ -22,6 +22,29 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   - `tidy_home_skill.py`에서 로컬 시연 모션 실행(`decided_skill == "execute_cloid_motion"`) 경로를 추가하여 1호가 로컬에서 모션을 직접 수행할 때 `demo_motion_executed`로 정상 종료되도록 처리했습니다.
 - **검증**: `test_autonomous_cleanup_delegation.py`의 `test_cloi2_does_not_execute_local_motion_and_delegates_to_cloi1` 신규 단위 테스트 추가 및 전체 단위 테스트(1,171건) 통과, Ruff 정적 검사 및 포맷팅 통과.
 
+## 2026-10-13 — CLOiD 상황별 표현 모션 자동 재생 추가
+
+- **배경**: CLOiD 등록 모션 카탈로그에는 인사·대화·탐색·실패 같은 상황별 모션이 있지만,
+  사용자가 명시적으로 요청할 때만 실행되어 상호작용이 딱딱했습니다. 태스크를 마친 뒤
+  상황에 맞는 모션을 자동으로 한 번 재생해 친근함을 높입니다.
+- **조치**:
+  - 환경변수 `RC_CLOID_EXPRESSION_ENABLED`(launch `cloid_expression_enabled`, 기본
+    `false`)로 켜고 끕니다. `true` 일 때만 `cloid_express_skill` 모듈을 등록합니다.
+  - `cloid_expression_policy.py` 추가 — 상황→모션 ID allowlist(상수)와 `pre_id` 없는
+    모션만 고르는 선택기, 반복 회피.
+  - `cloid_express_skill.py` 추가 — 내부 스킬 `cloid_express`. 카탈로그에서 상황에 맞는
+    모션을 골라 검증된 `execute_cloid_motion` 경로로 위임합니다.
+  - `execution.py` — 태스크 완료 시 `_maybe_play_cloid_expression` 이 상황을 판정해
+    백그라운드 스레드로 표현 모션을 1회 요청합니다. 베이스 주행 스킬이 실행된 태스크와
+    이동 표현이 있는 명령은 제외합니다.
+  - contract(`agent.cloid_expression_enabled`, v2.7.0)와 launch/CLI/shell 매핑, `.env.example`
+    문서를 함께 갱신했습니다.
+- **안전**: 태스크당 1회, 주행 태스크 제외, `pre_id` 모션 제외, allowlist 상수 고정.
+  `MotionCmd` 는 완료 응답을 주지 않으므로 결과는 실행 요청까지만입니다.
+- **검증**: `task unit-test` **1194 passed / 2 deselected**, `task lint-skills` 통과,
+  `./rclaw contract check` 통과, 신규 파일 Ruff 검사 통과. 실기에서 표현 모션 안전성
+  검증은 아직 하지 않았습니다.
+
 ## 2026-10-13 — CLOiD 포장용 최소 부피(boxing) 자세 스킬 추가
 
 - **배경**: CLOiD 는 출하 포장처럼 부피를 최소로 줄여야 할 때 가장 움츠린 boxing 자세를

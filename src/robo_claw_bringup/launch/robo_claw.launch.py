@@ -291,6 +291,10 @@ def _launch_setup(context, *args, **kwargs):
     cleanup_demo_enabled = LaunchConfiguration("cloid_cleanup_demo_enabled").perform(
         context
     ).strip().lower() in ("1", "true", "yes", "on")
+    cloid_expression_enabled = (
+        LaunchConfiguration("cloid_expression_enabled").perform(context).strip().lower()
+        in ("1", "true", "yes", "on")
+    )
     cleanup_demo_agent_id = "".join(
         character
         for character in LaunchConfiguration("agent_id").perform(context).casefold()
@@ -553,6 +557,9 @@ def _launch_setup(context, *args, **kwargs):
         # CLOiD 포장용 최소 부피(boxing) 자세는 개체 상태와 무관하게 사용하는 CLOi 전용
         # 스킬이므로 cloid 프로필이면 항상 등록한다.
         skill_modules.append("robo_claw_agent.skills.cloid_packing_pose_skill")
+        # 상황별 표현 모션 자동 재생은 환경변수 스위치로만 켜고 끈다(기본 꺼짐).
+        if cloid_expression_enabled:
+            skill_modules.append("robo_claw_agent.skills.cloid_express_skill")
         if cleanup_demo_enabled and is_cloid1_profile:
             skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
             agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
@@ -914,6 +921,11 @@ def generate_launch_description() -> LaunchDescription:
                 "cloid_cleanup_demo_motion_ids_json",
                 default_value="",
                 description="CLOi 1호 기본 allowlist는 [22,60]입니다. []를 지정하면 비활성화합니다. 모션 카탈로그의 pre_id가 있으면 실행하지 않습니다.",
+            ),
+            DeclareLaunchArgument(
+                "cloid_expression_enabled",
+                default_value="false",
+                description="CLOiD 상황별 표현 모션 자동 재생 스위치(기본 false). 활성화하면 태스크당 최대 한 번 상황에 맞는 등록 모션을 재생하며, 베이스 주행 중에는 재생하지 않습니다.",
             ),
             DeclareLaunchArgument(
                 "scan_interval_sec",

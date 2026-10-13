@@ -12,6 +12,7 @@ Schema version: `2.0`
 | `agent.id` | `RC_AGENT_ID` | `agent_id` | `string` | `robo_claw_agent` | `runtime` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_cleanup_demo_enabled` | `RC_CLOID_CLEANUP_DEMO_ENABLED` | `cloid_cleanup_demo_enabled` | `boolean` | `True` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_cleanup_demo_motion_ids_json` | `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON` | `cloid_cleanup_demo_motion_ids_json` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
+| `agent.cloid_expression_enabled` | `RC_CLOID_EXPRESSION_ENABLED` | `cloid_expression_enabled` | `boolean` | `False` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `rag.enabled` | `RC_ENABLE_RAG` | `enable_rag` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `rag.top_k` | `RC_RAG_TOP_K` | `rag_top_k` | `integer` | `2` | `runtime` | `false` | local, docker, simulation, config_server |
 | `task.strict_config` | `RC_STRICT_CONFIG` | `strict_config` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -105,6 +106,10 @@ CLOi cleanup-demo launch switch. RoboClaw forcibly disables the path for non-CLO
 ### `agent.cloid_cleanup_demo_motion_ids_json`
 
 Optional JSON array allowlist of reviewed CLOi cleanup-demo motion IDs. An empty value uses the CLOi 1 profile default [22,60]; [] disables the demo. The runtime still rejects catalog entries with pre_id and never runs prerequisites automatically.
+
+### `agent.cloid_expression_enabled`
+
+CLOiD situation-based expression motion switch. When enabled, the agent plays at most one registered CLOiD motion per task that matches the situation (greeting, talking, scanning, idle, success, fail). Motions are never played while the base is navigating. RoboClaw only registers the path for the cloid profile.
 
 ### `rag.enabled`
 
