@@ -549,6 +549,12 @@ class TidyHomeSkill(BaseSkill):
                         "동료가 접근할 수 있도록 안전하게 비켜서지 못해 정리 시연 요청을 보내지 않았습니다."
                     )
                     return "handoff_staging_failed"
+        elif blackboard.get("decided_skill") == "execute_cloid_motion":
+            # 로컬 정리 시연 모션 실행 (CLOi 1호 등 시연 가능 개체)
+            exec_status = execute.tick()
+            return (
+                "demo_motion_executed" if exec_status == NodeStatus.SUCCESS else "execution_failed"
+            )
         else:
             if not _cleanup_plan_has_complete_placement(planned_actions):
                 self.send_user_message(

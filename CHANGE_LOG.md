@@ -3,6 +3,15 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-13 — CLOi 2호 상체 구동 불가 반영 및 정리 시연 로컬 수행 엄격화·동료 위임 보장
+
+- **배경**: CLOi 2호는 상체/팔 모터 고장 상태(`SKILLS.cloid.2.md`)로 `cleanup_demo` 스킬이 제외되어 있고 `cloid_cleanup_demo_motion_ids_json = []`으로 설정되어 있습니다. 그러나 `ResolveCleanupHandoff`에서 `execute_cloid_motion` 스킬 존재 여부만으로 `local_demo_capable`을 판단하고, 허용 ID 목록이 비어있을 때 기본값 `[22, 128]`로 폴백하면서 2호가 동료(1호)를 부르지 않고 로컬 모션(`task ready pose`)을 직접 시도하려다 `no_action`으로 종료되는 문제가 발생했습니다.
+- **조치**:
+  - `ResolveCleanupHandoff`에서 로컬 시연 가능 여부(`local_demo_capable`)를 판단할 때, `cleanup_demo` 스킬 보유 및 `cloid_cleanup_demo_motion_ids_json`에 실제 양의 정수 ID가 1개 이상 등록된 경우(1호 프로필)에만 `True`로 판정하도록 엄격화하고, 하드코딩 기본 폴백(`[22, 128]`)을 완전히 제거했습니다.
+  - 이를 통해 2호는 `local_demo_capable`이 `False`로 판정되어 자체 모션을 실행하지 않고, 정리 시연 권한이 있는 동료 로봇(1호)에게 정상적으로 `cleanup_demo`를 위임합니다.
+  - `tidy_home_skill.py`에서 로컬 시연 모션 실행(`decided_skill == "execute_cloid_motion"`) 경로를 추가하여 1호가 로컬에서 모션을 직접 수행할 때 `demo_motion_executed`로 정상 종료되도록 처리했습니다.
+- **검증**: `test_autonomous_cleanup_delegation.py`의 `test_cloi2_does_not_execute_local_motion_and_delegates_to_cloi1` 신규 단위 테스트 추가 및 전체 단위 테스트(1,171건) 통과, Ruff 정적 검사 및 포맷팅 통과.
+
 ## 2026-10-13 — CLOiD 포장용 최소 부피(boxing) 자세 스킬 추가
 
 - **배경**: CLOiD 는 출하 포장처럼 부피를 최소로 줄여야 할 때 가장 움츠린 boxing 자세를

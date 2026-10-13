@@ -209,10 +209,27 @@ class ResolveCleanupHandoff(BTNode):
         # [자신이 가능하면 바로 모션을 수행]
         skills = getattr(node, "_skills", None)
         local_demo_capable = False
+        allowed_demo_ids: list[int] = []
         if skills is not None and hasattr(skills, "has_skill"):
-            local_demo_capable = skills.has_skill("cloid_cleanup_demo") or (
-                skills.has_skill("execute_cloid_motion") and skills.has_skill("list_cloid_motions")
+            has_demo_skill = skills.has_skill("cleanup_demo") or skills.has_skill(
+                "cloid_cleanup_demo"
             )
+            has_motion_skill = skills.has_skill("execute_cloid_motion") or skills.has_skill(
+                "cloid_motion"
+            )
+            if has_demo_skill and has_motion_skill and hasattr(node, "get_parameter"):
+                try:
+                    raw_ids = node.get_parameter("cloid_cleanup_demo_motion_ids_json").value
+                    parsed_ids = json.loads(str(raw_ids))
+                    if isinstance(parsed_ids, list):
+                        allowed_demo_ids = [
+                            mid
+                            for mid in parsed_ids
+                            if isinstance(mid, int) and not isinstance(mid, bool) and mid > 0
+                        ]
+                except Exception:
+                    allowed_demo_ids = []
+            local_demo_capable = bool(allowed_demo_ids)
 
         if blackboard.get("cleanup_task_mode"):
             destinations = blackboard.get("cleanup_destinations")
@@ -240,17 +257,6 @@ class ResolveCleanupHandoff(BTNode):
 
         if local_demo_capable:
             # 시연 로봇(1호 등): 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
-            allowed_ids = []
-            try:
-                raw_ids = node.get_parameter("cloid_cleanup_demo_motion_ids_json").value
-                allowed_ids = json.loads(str(raw_ids))
-                if not isinstance(allowed_ids, list):
-                    allowed_ids = []
-            except Exception:
-                allowed_ids = [22, 128]
-            if not allowed_ids:
-                allowed_ids = [22, 128]
-
             catalog_res = None
             try:
                 catalog_res = skills.execute(
@@ -272,12 +278,12 @@ class ResolveCleanupHandoff(BTNode):
                         "motion_id": mid,
                         "motion_name": _CLOID_INDICATOR_MOTIONS.get(mid, f"motion_{mid}"),
                     }
-                    for mid in allowed_ids
+                    for mid in allowed_demo_ids
                 ]
 
             selected_motion = _select_cleanup_demo_motion(
                 available_motions,
-                allowed_ids,
+                allowed_demo_ids,
                 rng=random.Random(),
             )
             if selected_motion:
