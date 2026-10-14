@@ -5,10 +5,11 @@ _PLANNER_PATH = (
     Path(__file__).resolve().parents[1]
     / "robo_claw_agent"
     / "agent_node"
-    / "planner.py"
+    / "planner"
+    / "routing.py"
 )
 _SPEC = importlib.util.spec_from_file_location(
-    "robo_claw_agent.agent_node.planner", _PLANNER_PATH
+    "robo_claw_agent.agent_node.planner.routing", _PLANNER_PATH
 )
 _PLANNER = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None

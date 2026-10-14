@@ -273,8 +273,8 @@ def parse_llm_response(llm_response: str) -> dict[str, Any]:
         # 내부 신호 키 _parse_failed는 parse_llm_plan이 소비해 LLMPlanResult.parse_failed로
         # 전달한다 — planner가 "의도된 최종 답변"과 "형식 오류로 강등된 응답"을 구분해
         # 후자만 형식 교정 재시도 대상에 포함시킬 수 있게 하기 위함이다.
-        # 원문 로깅은 여기서 하지 않는다: 유일한 호출부인 planner.py가 재시도 횟수/
-        # 라운드 정보와 함께 300자 길이로 일관되게 로깅한다(중복 로깅 방지).
+        # 원문 로깅은 여기서 하지 않는다: 유일한 호출부인 planner/llm_planner.py가 재시도
+        # 횟수/라운드 정보와 함께 300자 길이로 일관되게 로깅한다(중복 로깅 방지).
         original_text = llm_response.strip()
         if original_text:
             return {"skill": None, "response": original_text, "_parse_failed": True}

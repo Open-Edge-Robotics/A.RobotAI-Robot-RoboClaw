@@ -1,7 +1,7 @@
 """LLMPlanner.run_llm_planning_loop 의 형식 교정 재시도 게이트 통합 테스트.
 
 utils.py의 parse_llm_plan은 이미 단위 테스트가 있지만, "형식 교정 재시도를
-언제 트리거하는가"는 planner.py의 루프 안에서만 결정된다(§B). 기존
+언제 트리거하는가"는 planner/llm_planner.py의 루프 안에서만 결정된다(§B). 기존
 test_task_planner.py는 이 루프를 통째로 mock하므로 실제로 검증된 적이 없다.
 
 이 파일은 LLMPlanner를 최소 의존성 fake node로 인스턴스화해 실제 루프를 돌린다.
