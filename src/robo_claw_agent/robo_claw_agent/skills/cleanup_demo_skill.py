@@ -195,6 +195,16 @@ class CleanupDemoSkill(BaseSkill):
                 )
             self._previous_motion_id = motion["motion_id"]
             actual_target = self._effective_target(target, detected, fresh_scene)
+            logger.info(
+                "[CleanupDemo] 정리 시연 모션 실행을 요청했습니다: "
+                "place=%s target=%s motion=%s(id=%s) request_id=%s "
+                "(실제 정리와 모션 완료는 확인되지 않음)",
+                place_name,
+                actual_target,
+                motion["motion_name"],
+                motion["motion_id"],
+                request_id,
+            )
             target_desc = (
                 f"'{target}'" if actual_target == target else f"'{actual_target}'(요청: '{target}')"
             )

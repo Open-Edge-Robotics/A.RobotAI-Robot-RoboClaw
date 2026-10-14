@@ -274,3 +274,54 @@ def test_cleanup_demo_executes_even_with_ambiguous_objects_in_scene(monkeypatch)
     assert result["success"] is True
     assert result["status"] == "motion_requested"
     assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
+
+
+def test_cleanup_demo_logs_cleanup_motion_request_after_execution(monkeypatch):
+    """모션 실행을 요청한 뒤 정리 시연 실행 로그를 남기고, 실행 전에는 남기지 않는다."""
+    skill = CleanupDemoSkill()
+    skills, _events = _configure_demo(
+        monkeypatch,
+        skill,
+        scene_result={
+            "success": True,
+            "analysis": "안방 바닥에 포장지가 보입니다.",
+            "detected_objects": [{"name": "포장지"}],
+        },
+    )
+
+    from robo_claw_agent.skills import cleanup_demo_skill as demo_module
+
+    info_calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(
+        demo_module,
+        "logger",
+        SimpleNamespace(info=lambda message, *args: info_calls.append((message, args))),
+    )
+
+    calls_at_motion: list[list[tuple[str, tuple]]] = []
+    original_execute = skills.execute
+
+    def _spy(name, params, **kwargs):
+        if name == "execute_cloid_motion":
+            calls_at_motion.append(list(info_calls))
+        return original_execute(name, params, **kwargs)
+
+    skills.execute = _spy
+
+    result = skill.execute(
+        {
+            "target_location": "안방",
+            "target_object": "포장지",
+            "scene_summary": "바닥에 포장지가 있습니다.",
+            "request_id": "req-log",
+        }
+    )
+
+    assert result["success"] is True
+    assert calls_at_motion == [[]]
+    assert len(info_calls) == 1
+    message, args = info_calls[0]
+    assert "정리 시연 모션 실행" in message
+    assert "cleanup_demo" in args
+    assert 77 in args
+    assert "req-log" in args
