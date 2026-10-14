@@ -5,12 +5,15 @@ Discovery 노드 — ROS2 토픽/서비스/액션을 자동 탐색해 에이전�
 import json
 import subprocess
 import threading
+import time
 from typing import Any
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
+
+from .log_throttle import DEFAULT_LOG_INTERVAL_SEC, should_log_summary
 
 
 class DiscoveryNode(Node):
@@ -19,13 +22,22 @@ class DiscoveryNode(Node):
     에이전트 노드는 이 정보를 기반으로 스킬 실행 가능 여부를 판단한다.
     """
 
-    def __init__(self, scan_interval_sec: float = 10.0) -> None:
+    def __init__(
+        self,
+        scan_interval_sec: float = 10.0,
+        log_interval_sec: float = DEFAULT_LOG_INTERVAL_SEC,
+    ) -> None:
         super().__init__("robo_claw_discovery_node")
 
         self.declare_parameter("scan_interval_sec", scan_interval_sec)
         interval = (
             self.get_parameter("scan_interval_sec").get_parameter_value().double_value
         )
+        # 요약 로그 간격. 스캔 주기와 독립적이며 기본 60초로 다른 로그를 가리지 않게 한다.
+        self.declare_parameter("log_interval_sec", log_interval_sec)
+        log_interval = self.get_parameter("log_interval_sec").get_parameter_value().double_value
+        self._log_interval_sec = max(0.0, log_interval)
+        self._last_summary_log_time: float | None = None
 
         qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE)
 
@@ -36,7 +48,10 @@ class DiscoveryNode(Node):
 
         # 최초 스캔 + 주기 스캔
         self._timer = self.create_timer(interval, self._scan)
-        self.get_logger().info(f"DiscoveryNode ready ({interval:.1f}s interval)")
+        self.get_logger().info(
+            f"DiscoveryNode ready ({interval:.1f}s interval, "
+            f"summary log every {self._log_interval_sec:.0f}s)"
+        )
         self._scan()  # 시작 시 즉시 실행
 
     def _scan(self) -> None:
@@ -69,12 +84,16 @@ class DiscoveryNode(Node):
         msg = String()
         msg.data = json.dumps(capabilities, ensure_ascii=False)
         self._pub.publish(msg)
-        self.get_logger().info(
-            f"Discovery complete: topics {len(capabilities['topics'])}, "
-            f"services {len(capabilities['services'])}, "
-            f"actions {len(capabilities['actions'])}, "
-            f"nodes {len(capabilities['nodes'])}"
-        )
+
+        now = time.monotonic()
+        if should_log_summary(self._last_summary_log_time, now, self._log_interval_sec):
+            self._last_summary_log_time = now
+            self.get_logger().info(
+                f"Discovery complete: topics {len(capabilities['topics'])}, "
+                f"services {len(capabilities['services'])}, "
+                f"actions {len(capabilities['actions'])}, "
+                f"nodes {len(capabilities['nodes'])}"
+            )
 
     # ── 탐색 헬퍼 (Node API 사용) ─────────────────────────────────────────────
 

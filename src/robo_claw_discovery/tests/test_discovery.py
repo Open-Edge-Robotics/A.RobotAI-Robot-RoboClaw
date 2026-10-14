@@ -5,6 +5,8 @@ DiscoveryNode 단위 테스트
 import json
 from unittest.mock import MagicMock, patch
 
+from robo_claw_discovery.log_throttle import should_log_summary
+
 
 def test_get_topics_parses_output():
     """ros2 topic list -t 결과를 올바르게 파싱하는지 확인"""
@@ -36,3 +38,21 @@ def test_capabilities_json_structure():
     assert "actions" in parsed
     assert "nodes" in parsed
     assert parsed["topics"][0]["name"] == "/test"
+
+
+def test_should_log_summary_first_scan_always_logs():
+    """아직 로그를 남기지 않았으면 첫 스캔은 항상 남긴다."""
+    assert should_log_summary(None, 100.0, 60.0) is True
+
+
+def test_should_log_summary_throttles_until_interval_elapsed():
+    """마지막 로그로부터 60초가 지나기 전에는 남기지 않는다."""
+    assert should_log_summary(100.0, 159.9, 60.0) is False
+    assert should_log_summary(100.0, 160.0, 60.0) is True
+    assert should_log_summary(100.0, 200.0, 60.0) is True
+
+
+def test_should_log_summary_disabled_when_interval_is_non_positive():
+    """간격이 0 이하이면 매 스캔마다 남긴다."""
+    assert should_log_summary(100.0, 100.0, 0.0) is True
+    assert should_log_summary(100.0, 100.0, -1.0) is True

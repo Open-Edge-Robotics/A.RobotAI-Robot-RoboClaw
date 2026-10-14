@@ -595,6 +595,7 @@ def _launch_setup(context, *args, **kwargs):
             {
                 "use_sim_time": LaunchConfiguration("use_sim_time"),
                 "scan_interval_sec": LaunchConfiguration("scan_interval_sec"),
+                "log_interval_sec": LaunchConfiguration("discovery_log_interval_sec"),
             }
         ],
     )
@@ -931,6 +932,11 @@ def generate_launch_description() -> LaunchDescription:
                 "scan_interval_sec",
                 default_value="10.0",
                 description="Discovery 스캔 간격 (초)",
+            ),
+            DeclareLaunchArgument(
+                "discovery_log_interval_sec",
+                default_value="60.0",
+                description="Discovery 요약 로그 출력 간격 (초). 0 이하면 매 스캔마다 출력합니다.",
             ),
             DeclareLaunchArgument(
                 "use_channel",
