@@ -4,49 +4,12 @@
 
 import logging
 import math
-import threading
 from typing import Any
 
+from robo_claw_agent import ros_future
 from robo_claw_agent.skill_manager import BaseSkill
 
 logger = logging.getLogger(__name__)
-
-# call_peer_robot/query_peer_status에서 timeout_sec 미지정 시, 로컬 ROS2 future 대기 상한.
-# 실제 gRPC 데드라인은 MessengerClientNode의 request_timeout_sec 파라미터(서버 측 설정)를 그대로
-# 신뢰하도록 req.timeout_sec=0을 보내고, 여기서는 그 서버 설정이 병목이 되지 않도록 충분히 크게 잡는다.
-_DEFAULT_PEER_CALL_LOCAL_WAIT_SEC = 300.0
-# timeout_sec를 명시한 경우, 로컬 대기가 서버 측 gRPC 데드라인과 정확히 같은 값으로 경합하지 않도록
-# 더해주는 여유 시간.
-_SERVICE_CALL_MARGIN_SEC = 5.0
-
-
-def _local_wait_sec(timeout_sec: float) -> float:
-    """peer 호출용 로컬 ROS2 future 대기 시간을 계산한다."""
-    return (
-        timeout_sec + _SERVICE_CALL_MARGIN_SEC if timeout_sec else _DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
-    )
-
-
-def _wait_for_future(future: Any, timeout_sec: float, message: str) -> tuple[bool, Any]:
-    done = threading.Event()
-    future.add_done_callback(lambda _: done.set())
-    if not done.wait(timeout=timeout_sec):
-        return False, message
-    return True, future.result()
-
-
-def _call_service(
-    client: Any,
-    request: Any,
-    call_timeout_sec: float,
-    not_found_message: str,
-    timeout_message: str,
-) -> tuple[bool, Any]:
-    """ROS2 서비스 클라이언트로 요청을 보내고 응답(또는 에러 메시지)을 기다린다."""
-    if not client.wait_for_service(timeout_sec=5.0):
-        return False, not_found_message
-    future = client.call_async(request)
-    return _wait_for_future(future, call_timeout_sec, timeout_message)
 
 
 class DelegateTaskSkill(BaseSkill):
@@ -110,10 +73,10 @@ class DelegateTaskSkill(BaseSkill):
             goal_msg.timeout_sec = timeout_sec
 
             send_goal_future = client.send_goal_async(goal_msg)
-            ok, goal_or_message = _wait_for_future(
+            ok, goal_or_message = ros_future.wait_for_future(
                 send_goal_future,
                 timeout_sec=10.0,
-                message="에이전트 요청 시간 초과",
+                timeout_value="에이전트 요청 시간 초과",
             )
             if not ok:
                 return {"success": False, "message": str(goal_or_message)}
@@ -126,10 +89,10 @@ class DelegateTaskSkill(BaseSkill):
                 return {"success": False, "message": "에이전트가 작업을 거절했습니다."}
 
             get_result_future = goal_handle.get_result_async()
-            ok, result_or_message = _wait_for_future(
+            ok, result_or_message = ros_future.wait_for_future(
                 get_result_future,
                 timeout_sec=timeout_sec,
-                message="에이전트 작업 실행 중 시간 초과",
+                timeout_value="에이전트 작업 실행 중 시간 초과",
             )
             if not ok:
                 return {
@@ -228,10 +191,10 @@ class CallPeerRobotSkill(BaseSkill):
         req.wait_for_result = bool(wait_for_result)
         req.timeout_sec = timeout_sec
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             self.node._call_peer_client,
             req,
-            call_timeout_sec=_local_wait_sec(timeout_sec),
+            call_timeout_sec=ros_future.local_wait_sec(timeout_sec),
             not_found_message="채널 노드의 CallPeerRobot 서비스를 찾을 수 없습니다.",
             timeout_message="동료 로봇 호출 시간 초과",
         )
@@ -270,7 +233,7 @@ class ListPeerRobotsSkill(BaseSkill):
 
         req = ListPeers.Request()
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             self.node._list_peers_client,
             req,
             call_timeout_sec=10.0,
@@ -343,7 +306,7 @@ class BroadcastToPeersSkill(BaseSkill):
         req.message = message
         req.file_path = file_path
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             self.node._broadcast_peers_client,
             req,
             call_timeout_sec=15.0,
@@ -408,10 +371,10 @@ class QueryPeerStatusSkill(BaseSkill):
         req.wait_for_result = True
         req.timeout_sec = timeout_sec
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             self.node._call_peer_client,
             req,
-            call_timeout_sec=_local_wait_sec(timeout_sec),
+            call_timeout_sec=ros_future.local_wait_sec(timeout_sec),
             not_found_message="채널 노드의 CallPeerRobot 서비스를 찾을 수 없습니다.",
             timeout_message="동료 로봇 상태 조회 시간 초과",
         )
@@ -474,10 +437,10 @@ class QueryPeerCapabilitiesSkill(BaseSkill):
         req.wait_for_result = True
         req.timeout_sec = timeout_sec
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             self.node._call_peer_client,
             req,
-            call_timeout_sec=_local_wait_sec(timeout_sec),
+            call_timeout_sec=ros_future.local_wait_sec(timeout_sec),
             not_found_message="채널 노드의 CallPeerRobot 서비스를 찾을 수 없습니다.",
             timeout_message="동료 로봇 능력 조회 시간 초과",
         )
@@ -760,10 +723,10 @@ JSON 외의 텍스트를 출력하지 마세요."""
                     goal_msg = ExecuteTask.Goal()
                     goal_msg.instruction = instruction
                     send_goal_future = client.send_goal_async(goal_msg)
-                    ok, goal_or_message = _wait_for_future(
+                    ok, goal_or_message = ros_future.wait_for_future(
                         send_goal_future,
                         timeout_sec=10.0,
-                        message="동료 요청 시간 초과",
+                        timeout_value="동료 요청 시간 초과",
                     )
                     if not ok:
                         return {"success": False, "message": str(goal_or_message)}
@@ -771,10 +734,10 @@ JSON 외의 텍스트를 출력하지 마세요."""
                     if not goal_handle or not goal_handle.accepted:
                         return {"success": False, "message": "동료가 작업을 거절했습니다."}
                     get_result_future = goal_handle.get_result_async()
-                    ok, result_or_message = _wait_for_future(
+                    ok, result_or_message = ros_future.wait_for_future(
                         get_result_future,
                         timeout_sec=timeout_sec if timeout_sec > 0 else 60.0,
-                        message="동료 작업 실행 중 시간 초과",
+                        timeout_value="동료 작업 실행 중 시간 초과",
                     )
                     if not ok:
                         return {"success": False, "message": str(result_or_message)}
@@ -802,10 +765,10 @@ JSON 외의 텍스트를 출력하지 마세요."""
         req.wait_for_result = True
         req.timeout_sec = timeout_sec
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             node._call_peer_client,
             req,
-            call_timeout_sec=_local_wait_sec(timeout_sec),
+            call_timeout_sec=ros_future.local_wait_sec(timeout_sec),
             not_found_message="CallPeerRobot 서비스를 찾을 수 없습니다.",
             timeout_message="동료 로봇 호출 시간 초과",
         )

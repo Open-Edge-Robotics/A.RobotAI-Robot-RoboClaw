@@ -21,6 +21,7 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
+from robo_claw_agent import ros_future
 from robo_claw_agent.skill_manager import BaseSkill
 
 from . import globals as _coop_globals
@@ -31,9 +32,6 @@ from .policy import evaluate_remote_skill
 
 logger = logging.getLogger(__name__)
 
-# 동료 호출 로컬 대기 상한 (cooperate_skill 의 _DEFAULT_PEER_CALL_LOCAL_WAIT_SEC 와 동일 정신)
-_DEFAULT_PEER_CALL_LOCAL_WAIT_SEC = 300.0
-_SERVICE_CALL_MARGIN_SEC = 5.0
 _COOPERATION_MESSAGE_TYPE = "peer_cooperation"
 _DEFAULT_REMOTE_ALLOWED_SKILLS = (
     "analyze_scene",
@@ -53,31 +51,6 @@ def cooperation_start_params(message: str) -> dict[str, Any]:
     """협동 시작 메시지에서 자동 참여에 사용할 목표를 추출한다."""
     match = re.search(r"협동 목표는\s*['\"](?P<goal>[^'\"]+)['\"]", str(message or ""))
     return {"goal": match.group("goal").strip()} if match else {}
-
-
-def _local_wait_sec(timeout_sec: float) -> float:
-    return timeout_sec + _SERVICE_CALL_MARGIN_SEC if timeout_sec else _DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
-
-
-def _wait_for_future(future: Any, timeout_sec: float, message: str) -> tuple[bool, Any]:
-    done = threading.Event()
-    future.add_done_callback(lambda _: done.set())
-    if not done.wait(timeout=timeout_sec):
-        return False, message
-    return True, future.result()
-
-
-def _call_service(
-    client: Any,
-    request: Any,
-    call_timeout_sec: float,
-    not_found_message: str,
-    timeout_message: str,
-) -> tuple[bool, Any]:
-    if not client.wait_for_service(timeout_sec=5.0):
-        return False, not_found_message
-    future = client.call_async(request)
-    return _wait_for_future(future, call_timeout_sec, timeout_message)
 
 
 class AutonomousCooperateSkill(BaseSkill):
@@ -682,7 +655,7 @@ class AutonomousCooperateSkill(BaseSkill):
         try:
             from robo_claw_msgs.srv import ListPeers  # type: ignore[import]
 
-            ok, response = _call_service(
+            ok, response = ros_future.call_service(
                 client,
                 ListPeers.Request(),
                 call_timeout_sec=10.0,
@@ -791,10 +764,10 @@ class AutonomousCooperateSkill(BaseSkill):
         req.wait_for_result = False  # 대화는 비동기로 전달
         req.timeout_sec = 0.0
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             node._call_peer_client,
             req,
-            call_timeout_sec=_local_wait_sec(0.0),
+            call_timeout_sec=ros_future.local_wait_sec(0.0),
             not_found_message="CallPeerRobot 서비스를 찾을 수 없습니다.",
             timeout_message="동료 로봇 호출 시간 초과",
         )

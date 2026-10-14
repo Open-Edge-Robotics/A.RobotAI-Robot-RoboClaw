@@ -12,7 +12,6 @@ query_peer_status) 단위 테스트
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import robo_claw_agent.skills.cooperate_skill as cooperate_skill_module
 from robo_claw_agent.skills.cooperate_skill import (
     BroadcastToPeersSkill,
     CallPeerRobotSkill,
@@ -20,8 +19,9 @@ from robo_claw_agent.skills.cooperate_skill import (
     ListPeerRobotsSkill,
     QueryPeerCapabilitiesSkill,
     QueryPeerStatusSkill,
-    _local_wait_sec,
 )
+
+from robo_claw_agent import ros_future
 
 
 def _make_dummy_node(**extra):
@@ -262,10 +262,10 @@ class TestLocalWaitSec:
     """timeout_sec 미지정/지정 시 로컬 ROS2 future 대기 상한 계산 검증"""
 
     def test_default_uses_generous_ceiling(self):
-        assert _local_wait_sec(0.0) == cooperate_skill_module._DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
+        assert ros_future.local_wait_sec(0.0) == ros_future.DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
 
     def test_explicit_timeout_adds_margin(self):
-        assert _local_wait_sec(10.0) == 10.0 + cooperate_skill_module._SERVICE_CALL_MARGIN_SEC
+        assert ros_future.local_wait_sec(10.0) == 10.0 + ros_future.SERVICE_CALL_MARGIN_SEC
 
 
 class TestPeerCallTimeoutWiring:
@@ -281,12 +281,12 @@ class TestPeerCallTimeoutWiring:
         skill = _make_skill(CallPeerRobotSkill, node)
 
         with patch.object(
-            cooperate_skill_module, "_wait_for_future", wraps=cooperate_skill_module._wait_for_future
+            ros_future, "call_service", wraps=ros_future.call_service
         ) as spy:
             skill.execute({"peer_name": "robot_a", "instruction": "상태 확인"})
 
-        call_timeout_sec = spy.call_args[0][1]
-        assert call_timeout_sec == cooperate_skill_module._DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
+        call_timeout_sec = spy.call_args.kwargs["call_timeout_sec"]
+        assert call_timeout_sec == ros_future.DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
 
     def test_call_peer_robot_explicit_timeout_adds_margin(self):
         client = MagicMock()
@@ -298,14 +298,14 @@ class TestPeerCallTimeoutWiring:
         skill = _make_skill(CallPeerRobotSkill, node)
 
         with patch.object(
-            cooperate_skill_module, "_wait_for_future", wraps=cooperate_skill_module._wait_for_future
+            ros_future, "call_service", wraps=ros_future.call_service
         ) as spy:
             skill.execute(
                 {"peer_name": "robot_a", "instruction": "이동해", "timeout_sec": 120.0}
             )
 
-        call_timeout_sec = spy.call_args[0][1]
-        assert call_timeout_sec == 120.0 + cooperate_skill_module._SERVICE_CALL_MARGIN_SEC
+        call_timeout_sec = spy.call_args.kwargs["call_timeout_sec"]
+        assert call_timeout_sec == 120.0 + ros_future.SERVICE_CALL_MARGIN_SEC
 
     def test_query_peer_status_default_timeout_uses_local_wait_sec(self):
         client = MagicMock()
@@ -317,12 +317,12 @@ class TestPeerCallTimeoutWiring:
         skill = _make_skill(QueryPeerStatusSkill, node)
 
         with patch.object(
-            cooperate_skill_module, "_wait_for_future", wraps=cooperate_skill_module._wait_for_future
+            ros_future, "call_service", wraps=ros_future.call_service
         ) as spy:
             skill.execute({"peer_name": "robot_a"})
 
-        call_timeout_sec = spy.call_args[0][1]
-        assert call_timeout_sec == cooperate_skill_module._DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
+        call_timeout_sec = spy.call_args.kwargs["call_timeout_sec"]
+        assert call_timeout_sec == ros_future.DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
 
 
 # ---------------------------------------------------------------------------
