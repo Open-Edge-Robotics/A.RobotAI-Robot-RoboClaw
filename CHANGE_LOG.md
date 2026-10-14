@@ -3,6 +3,35 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-14 — rclaw launch 경로 CLOiD 개체 설정 launch 인자 누락 수정
+
+- **배경**: CLOiD 상황별 표현 모션 자동 재생을 AI Config Server 프로필에서
+  `RC_CLOID_EXPRESSION_ENABLED=true` 로 켰는데도 실기에서 인사 시 표현 모션이
+  재생되지 않았습니다. 조사 결과 AI Config Server 캐시 `.env` 에는 값이 있었지만
+  실행 중인 `ros2 launch` 인자에는 `cloid_expression_enabled` 가 없었고,
+  `skill_modules` 에 `robo_claw_agent.skills.cloid_express_skill` 이 등록되지
+  않았습니다.
+- **원인**: 로봇은 `launch.sh` 의 `rclaw launch` 로 기동합니다. `rclaw run` 경로
+  (`robo_claw_cli/cmd/run.go` `BuildRunLaunchArgs`)에는 CLOiD 매핑이 있었지만,
+  `rclaw launch` 가 쓰는 `robo_claw_cli/launcher/args.go` `BuildCommonLaunchArgs`
+  에는 CLOiD 개체 설정 매핑이 전혀 없었습니다. 그 결과
+  `cloid_expression_enabled` 가 launch 인자로 전달되지 않아 launch 파일 기본값
+  `false` 가 적용되고 `cloid_express` 스킬이 미등록 상태로 남았습니다. 완료 훅은
+  `has_skill("cloid_express")` 게이트에서 즉시 비활성으로 빠졌습니다.
+- **조치**: `launcher/args.go` `BuildCommonLaunchArgs` 에 계약(`contract.RuntimeFields`)
+  을 단일 출처로 삼아 `agent.cloid_cleanup_demo_enabled`,
+  `agent.cloid_cleanup_demo_motion_ids_json`, `agent.cloid_expression_enabled` 를
+  launch 인자로 전달하는 블록을 추가했습니다. 로컬/도커 launch 모드가 모두
+  `CommonLaunchArgs` 를 사용하므로 두 경로가 함께 복구됩니다. 이 변경으로 정리
+  시연 allowlist(`RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON`)도 원격 설정값이 그대로
+  적용됩니다.
+- **검증**: `launcher/args_test.go` 에 세 개의 단위 테스트
+  (`TestBuildCommonLaunchArgsCloidProfileSettings`,
+  `TestBuildCommonLaunchArgsCloidSettingsOmitted`,
+  `TestBuildCommonLaunchArgsForwardsEveryCloidContractField`)를 추가했습니다.
+  `go build ./...`, `go test ./...`, `gofmt`, `go vet` 를 robo_claw_cli 에서
+  통과했습니다.
+
 ## 2026-10-13 — SkillManager 중첩 스킬 실행 스레드 풀 데드락 및 타임아웃 후 모션 지연 실행 결함 해결
 
 - **배경**:

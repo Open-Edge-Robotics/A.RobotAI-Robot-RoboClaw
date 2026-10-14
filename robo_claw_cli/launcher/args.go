@@ -59,6 +59,24 @@ func BuildCommonLaunchArgs(lctx *LaunchContext) []string {
 		args = append(args, fmt.Sprintf("%s:=%s", launchArgument, v))
 	}
 
+	// CLOiD 개체 설정 — rclaw launch 경로도 rclaw run(cmd/run.go)과 동일하게 계약에
+	// 등록된 CLOiD launch 인자를 전달해야 한다. 누락되면 launch 파일 기본값이 적용되어
+	// AI Config Server의 개체별 설정(예: 상황별 표현 모션, 정리 시연 allowlist)이 조용히
+	// 무시된다. 인자 이름은 계약(runtime-contract.json)을 단일 출처로 삼는다.
+	for _, canonical := range []string{
+		"agent.cloid_cleanup_demo_enabled",
+		"agent.cloid_cleanup_demo_motion_ids_json",
+		"agent.cloid_expression_enabled",
+	} {
+		field, ok := contract.RuntimeFields[canonical]
+		if !ok || field.LaunchArgument == "" {
+			continue
+		}
+		if v := strings.TrimSpace(env[field.Env]); v != "" {
+			args = append(args, fmt.Sprintf("%s:=%s", field.LaunchArgument, v))
+		}
+	}
+
 	// HTTP 설정
 	if v := env["RC_HTTP_HOST"]; v != "" {
 		args = append(args, fmt.Sprintf("http_host:=%s", v))

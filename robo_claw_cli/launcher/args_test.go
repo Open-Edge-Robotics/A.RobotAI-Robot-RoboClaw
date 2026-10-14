@@ -1,10 +1,13 @@
 package launcher
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"robo_claw_cli/contract"
 )
 
 func baseCtx(env map[string]string) *LaunchContext {
@@ -324,6 +327,61 @@ func TestBuildCommonLaunchArgsTaskDecompositionOmitted(t *testing.T) {
 	} {
 		if strings.Contains(joined, notWant) {
 			t.Errorf("미설정 시 인수가 없어야 함: %s\n실제: %s", notWant, joined)
+		}
+	}
+}
+
+// rclaw launch 경로도 rclaw run 경로와 동일하게 CLOiD 개체 설정을 ROS launch 인수로
+// 전달해야 한다. 누락되면 launch 파일 기본값(비활성/빈 allowlist)이 적용되어 원격
+// 설정이 조용히 무시된다.
+func TestBuildCommonLaunchArgsCloidProfileSettings(t *testing.T) {
+	lctx := baseCtx(map[string]string{
+		"RC_CLOID_EXPRESSION_ENABLED":           "true",
+		"RC_CLOID_CLEANUP_DEMO_ENABLED":         "true",
+		"RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22]",
+	})
+
+	joined := strings.Join(BuildCommonLaunchArgs(lctx), " ")
+	for _, want := range []string{
+		"cloid_expression_enabled:=true",
+		"cloid_cleanup_demo_enabled:=true",
+		"cloid_cleanup_demo_motion_ids_json:=[22]",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("기대한 CLOiD launch 인수 누락: %s\n실제: %s", want, joined)
+		}
+	}
+}
+
+// CLOiD 설정이 없으면 관련 인수도 생성되지 않아야 한다(launch 기본값 유지).
+func TestBuildCommonLaunchArgsCloidSettingsOmitted(t *testing.T) {
+	joined := strings.Join(BuildCommonLaunchArgs(baseCtx(map[string]string{})), " ")
+	for _, notWant := range []string{
+		"cloid_expression_enabled:=",
+		"cloid_cleanup_demo_enabled:=",
+		"cloid_cleanup_demo_motion_ids_json:=",
+	} {
+		if strings.Contains(joined, notWant) {
+			t.Errorf("미설정 시 CLOiD 인수가 없어야 함: %s\n실제: %s", notWant, joined)
+		}
+	}
+}
+
+// 계약에 launch_argument가 정의된 CLOiD 개체 필드는 모두 전달되어야 한다.
+// 새 CLOiD 필드가 계약에 추가될 때 launch 경로 누락을 이 테스트가 잡는다.
+func TestBuildCommonLaunchArgsForwardsEveryCloidContractField(t *testing.T) {
+	for canonical, field := range contract.RuntimeFields {
+		if !strings.HasPrefix(canonical, "agent.cloid") || field.LaunchArgument == "" {
+			continue
+		}
+		lctx := baseCtx(map[string]string{field.Env: "test-value"})
+		joined := strings.Join(BuildCommonLaunchArgs(lctx), " ")
+		want := fmt.Sprintf("%s:=test-value", field.LaunchArgument)
+		if !strings.Contains(joined, want) {
+			t.Errorf(
+				"CLOiD 계약 필드 %s(%s)가 launch 인수로 전달되지 않음: %s",
+				canonical, field.Env, joined,
+			)
 		}
 	}
 }
