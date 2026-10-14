@@ -1,7 +1,6 @@
 import importlib.util
 from pathlib import Path
 
-
 _PLANNER_PATH = (
     Path(__file__).resolve().parents[1]
     / "robo_claw_agent"

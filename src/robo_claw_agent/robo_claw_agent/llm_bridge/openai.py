@@ -1,9 +1,8 @@
 import logging
 import os
-from typing import Any
 
 from ..tracing import traceable, wrap_openai_client
-from .base import BaseLLMBridge, DEFAULT_TIMEOUT_SEC, openai_message_to_text
+from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge, openai_message_to_text
 
 logger = logging.getLogger(__name__)
 

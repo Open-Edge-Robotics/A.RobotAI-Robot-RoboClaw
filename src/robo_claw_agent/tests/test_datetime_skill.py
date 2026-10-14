@@ -2,8 +2,7 @@
 
 import importlib.util
 import os
-from datetime import datetime, timezone
-from unittest.mock import patch
+from datetime import datetime
 
 import pytest
 
@@ -144,7 +143,6 @@ class TestGetDatetimeTimezone:
 
     def test_utc_timestamp_is_consistent(self, skill):
         """UTC 호출과 로컬 호출의 unix_timestamp가 거의 동일해야 함"""
-        import time as _time
 
         result_local = skill.execute({})
         result_utc = skill.execute({"timezone": "UTC"})

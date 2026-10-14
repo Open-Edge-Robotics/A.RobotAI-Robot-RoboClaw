@@ -100,6 +100,7 @@ class OllamaBridge(BaseLLMBridge):
         if self._think_supported is None:
             try:
                 import inspect
+
                 import ollama
 
                 self._think_supported = "think" in inspect.signature(

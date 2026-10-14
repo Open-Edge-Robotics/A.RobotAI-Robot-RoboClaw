@@ -3,7 +3,7 @@ import os
 from typing import Any
 
 from ..tracing import traceable, wrap_anthropic_client
-from .base import BaseLLMBridge, DEFAULT_TIMEOUT_SEC
+from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge
 
 logger = logging.getLogger(__name__)
 
