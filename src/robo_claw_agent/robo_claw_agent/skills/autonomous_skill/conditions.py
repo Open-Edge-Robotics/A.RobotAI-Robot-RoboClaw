@@ -7,7 +7,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills._battery import read_sysfs_battery
 
 from .core import BTNode, NodeStatus
-from .globals import _AUTONOMOUS_ACTIVE
+from .globals import is_autonomous_active
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class CheckAutonomousActive(BTNode):
         super().__init__("CheckAutonomousActive")
 
     def tick(self) -> NodeStatus:
-        return NodeStatus.SUCCESS if _AUTONOMOUS_ACTIVE.is_set() else NodeStatus.FAILURE
+        return NodeStatus.SUCCESS if is_autonomous_active() else NodeStatus.FAILURE
 
 
 class CheckBatterySufficient(BTNode):

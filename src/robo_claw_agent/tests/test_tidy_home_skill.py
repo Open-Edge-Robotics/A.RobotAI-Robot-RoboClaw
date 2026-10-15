@@ -396,8 +396,8 @@ def test_cleanup_demo_handoff_stages_requester_and_skips_local_pick_place_guard(
     import threading
     from types import SimpleNamespace
 
-    from robo_claw_agent.skills import tidy_home_skill as tidy_module
     from robo_claw_agent.skills.autonomous_skill import core, decision_nodes, execution_nodes
+    from robo_claw_agent.skills.autonomous_skill import globals as autonomous_globals
 
     calls = []
 
@@ -415,7 +415,7 @@ def test_cleanup_demo_handoff_stages_requester_and_skips_local_pick_place_guard(
     skill.send_user_message = lambda _message: None
     active = threading.Event()
     active.set()
-    monkeypatch.setattr(tidy_module, "_AUTONOMOUS_ACTIVE", active)
+    monkeypatch.setattr(autonomous_globals, "_AUTONOMOUS_ACTIVE", active)
 
     def prepare_handoff(handoff):
         handoff._blackboard.update(
@@ -459,8 +459,8 @@ def test_cleanup_demo_handoff_is_not_sent_if_requester_cannot_stage_safely(monke
     import threading
     from types import SimpleNamespace
 
-    from robo_claw_agent.skills import tidy_home_skill as tidy_module
     from robo_claw_agent.skills.autonomous_skill import core, decision_nodes, execution_nodes
+    from robo_claw_agent.skills.autonomous_skill import globals as autonomous_globals
 
     calls = []
     executed = []
@@ -478,7 +478,7 @@ def test_cleanup_demo_handoff_is_not_sent_if_requester_cannot_stage_safely(monke
     skill.send_user_message = lambda _message: None
     active = threading.Event()
     active.set()
-    monkeypatch.setattr(tidy_module, "_AUTONOMOUS_ACTIVE", active)
+    monkeypatch.setattr(autonomous_globals, "_AUTONOMOUS_ACTIVE", active)
 
     def prepare_handoff(handoff):
         handoff._blackboard.update(

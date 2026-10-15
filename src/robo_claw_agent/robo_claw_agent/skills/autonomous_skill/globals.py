@@ -8,6 +8,11 @@ _AUTONOMOUS_LOCK = threading.Lock()
 _SLEEP_WAKE = threading.Event()
 
 
+def is_autonomous_active(active_event: threading.Event | None = None) -> bool:
+    """자율/반응 실행 슬롯이 점유되어 있는지."""
+    return (active_event or _AUTONOMOUS_ACTIVE).is_set()
+
+
 def claim_autonomous(active_event: threading.Event | None = None) -> bool:
     """Atomically claim the shared autonomous/reactive execution slot."""
     event = active_event or _AUTONOMOUS_ACTIVE

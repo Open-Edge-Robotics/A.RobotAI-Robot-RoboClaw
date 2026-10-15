@@ -19,7 +19,7 @@ from ..cleanup_policy import (
     _select_cleanup_demo_motion,
 )
 from .core import BTNode, NodeStatus
-from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE
+from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE, release_autonomous
 from .helpers import _find_connected_peer_with_capability, _has_cleanup_capability
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class EmergencyLowBattery(BTNode):
             msg = f"[자율 행동] 배터리 잔량이 {pct:.0f}%로 부족합니다. 자율 행동을 안전하게 종료합니다."
             logger.warning("[BT] %s", msg)
             self._skill.send_user_message(msg)
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             return NodeStatus.FAILURE
 
         if not self._warned:
@@ -695,17 +695,17 @@ class CheckGoalAchieved(BTNode):
             self._skill.send_user_message(
                 "목표 계획 실행 중 실패가 발생하여 자율 행동을 종료합니다."
             )
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             return NodeStatus.FAILURE
         if self._blackboard.get("goal_achieved"):
             logger.info("[BT] CheckGoalAchieved: goal achieved — stopping autonomous loop")
             self._skill.send_user_message("목표를 달성했습니다. 자율 행동을 종료합니다.")
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             return NodeStatus.SUCCESS
         if not self._blackboard.get("task_queue"):
             logger.info("[BT] CheckGoalAchieved: task queue empty — plan completed")
             self._blackboard["goal_achieved"] = True
             self._skill.send_user_message("목표 계획을 모두 실행했습니다. 자율 행동을 종료합니다.")
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             return NodeStatus.SUCCESS
         return NodeStatus.SUCCESS
