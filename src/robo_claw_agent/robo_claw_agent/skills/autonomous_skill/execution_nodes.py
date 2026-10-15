@@ -182,6 +182,109 @@ class ResolveCleanupHandoff(BTNode):
         super().__init__("ResolveCleanupHandoff")
         self._skill = skill
 
+    def _select_local_demo_motion(
+        self,
+        blackboard: dict[str, Any],
+        skills: Any,
+        allowed_demo_ids: list[int],
+        place: str,
+        target_description: str,
+    ) -> bool:
+        """시연 로봇이 로컬에서 바로 정리 시연 모션을 수행하도록 결정을 채운다."""
+        # 시연 로봇(1호 등): 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
+        catalog_res = None
+        try:
+            catalog_res = skills.execute(
+                "list_cloid_motions", {"timeout_sec": 3.0}, timeout_sec=5.0
+            )
+        except Exception:
+            pass
+        available_motions = []
+        if (
+            catalog_res
+            and getattr(catalog_res, "success", False) is True
+            and isinstance(getattr(catalog_res, "result_data", None), dict)
+            and isinstance(catalog_res.result_data.get("motions"), list)
+        ):
+            available_motions = catalog_res.result_data["motions"]
+        if not available_motions:
+            available_motions = [
+                {
+                    "motion_id": mid,
+                    "motion_name": _CLOID_INDICATOR_MOTIONS.get(mid, f"motion_{mid}"),
+                }
+                for mid in allowed_demo_ids
+            ]
+
+        selected_motion = _select_cleanup_demo_motion(
+            available_motions,
+            allowed_demo_ids,
+            rng=random.Random(),
+        )
+        if selected_motion:
+            blackboard["decided_skill"] = "execute_cloid_motion"
+            blackboard["decided_params"] = {
+                "motion_name": selected_motion["motion_name"],
+                "motion_id": selected_motion["motion_id"],
+                "confirm": True,
+            }
+            reason = (
+                f"'{place or '현재 위치'}'에서 정리 대상 '{target_description}'을 확인하고 "
+                f"정리 시연 모션 '{selected_motion['motion_name']}'을 수행합니다."
+            )
+            blackboard["decided_reason"] = reason
+            self._skill.send_user_message(reason)
+            return True
+        return False
+
+    def _build_handoff_instruction(
+        self,
+        *,
+        handoff_kind: str,
+        target_categories: set[str],
+        target_description: str,
+        location: str,
+        scene: str,
+        demo_target: str,
+        place: str,
+    ) -> str:
+        """동료에게 전달할 정리 위임 지시문을 만든다."""
+        if handoff_kind == "cleanup_demo":
+            from ..cleanup_demo_protocol import encode_cleanup_demo_request
+
+            instruction = encode_cleanup_demo_request(
+                {
+                    "request_id": str(uuid.uuid4()),
+                    "target_location": place,
+                    "target_object": demo_target,
+                    "scene_summary": scene[:800] or "추가 장면 설명 없음",
+                }
+            )
+        elif target_categories == {"waste"}:
+            instruction = (
+                f"정리 작업 요청: 명확한 폐기물 후보 '{target_description}'입니다. 위치: {location}. "
+                f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 대상을 다시 확인하세요. "
+                "명확한 폐기물로 확인되고 안전한 지정 폐기 장소가 알려져 있는 경우에만 한 건을 처리하세요. "
+                "컵·병·가방·의류·개인 소지품·위험물·액체 유출 등은 임의로 이동하지 말고 사용자 확인을 요청하세요. "
+                "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
+            )
+        else:
+            category = next(iter(target_categories), "생활용품")
+            category_name = {
+                "towel": "수건",
+                "cushion": "쿠션/방석",
+                "laundry": "빨래/세탁물",
+            }.get(category, "생활용품")
+            instruction = (
+                f"정리 작업 요청: 관찰된 {category_name} 후보 '{target_description}'입니다. 위치: {location}. "
+                f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 그 대상 하나만 다시 확인하세요. "
+                f"{category_name}에 맞게 명시 승인된 비추정 보관 장소가 확인될 때만 처리하세요. "
+                "폐기물로 취급하거나 쓰레기통에 넣지 말고, 목적지나 물체 위치를 추측하지 마세요. "
+                "안전한 유형별 보관 장소가 없거나 대상 상태가 모호하면 이동하지 말고 사용자 확인을 요청하세요. "
+                "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
+            )
+        return instruction
+
     def tick(self) -> NodeStatus:
         blackboard = self._blackboard
         blackboard.pop("cleanup_handoff_prepared", None)
@@ -255,51 +358,10 @@ class ResolveCleanupHandoff(BTNode):
             # 실제 조작 로봇: 로컬 집기/배치 계획으로 진행
             return NodeStatus.SUCCESS
 
-        if local_demo_capable:
-            # 시연 로봇(1호 등): 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
-            catalog_res = None
-            try:
-                catalog_res = skills.execute(
-                    "list_cloid_motions", {"timeout_sec": 3.0}, timeout_sec=5.0
-                )
-            except Exception:
-                pass
-            available_motions = []
-            if (
-                catalog_res
-                and getattr(catalog_res, "success", False) is True
-                and isinstance(getattr(catalog_res, "result_data", None), dict)
-                and isinstance(catalog_res.result_data.get("motions"), list)
-            ):
-                available_motions = catalog_res.result_data["motions"]
-            if not available_motions:
-                available_motions = [
-                    {
-                        "motion_id": mid,
-                        "motion_name": _CLOID_INDICATOR_MOTIONS.get(mid, f"motion_{mid}"),
-                    }
-                    for mid in allowed_demo_ids
-                ]
-
-            selected_motion = _select_cleanup_demo_motion(
-                available_motions,
-                allowed_demo_ids,
-                rng=random.Random(),
-            )
-            if selected_motion:
-                blackboard["decided_skill"] = "execute_cloid_motion"
-                blackboard["decided_params"] = {
-                    "motion_name": selected_motion["motion_name"],
-                    "motion_id": selected_motion["motion_id"],
-                    "confirm": True,
-                }
-                reason = (
-                    f"'{place or '현재 위치'}'에서 정리 대상 '{target_description}'을 확인하고 "
-                    f"정리 시연 모션 '{selected_motion['motion_name']}'을 수행합니다."
-                )
-                blackboard["decided_reason"] = reason
-                self._skill.send_user_message(reason)
-                return NodeStatus.SUCCESS
+        if local_demo_capable and self._select_local_demo_motion(
+            blackboard, skills, allowed_demo_ids, place, target_description
+        ):
+            return NodeStatus.SUCCESS
 
         pose_text = ""
         try:
@@ -390,40 +452,15 @@ class ResolveCleanupHandoff(BTNode):
             )
             return NodeStatus.SUCCESS
 
-        if handoff_kind == "cleanup_demo":
-            from ..cleanup_demo_protocol import encode_cleanup_demo_request
-
-            instruction = encode_cleanup_demo_request(
-                {
-                    "request_id": str(uuid.uuid4()),
-                    "target_location": place,
-                    "target_object": demo_target,
-                    "scene_summary": scene[:800] or "추가 장면 설명 없음",
-                }
-            )
-        elif target_categories == {"waste"}:
-            instruction = (
-                f"정리 작업 요청: 명확한 폐기물 후보 '{target_description}'입니다. 위치: {location}. "
-                f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 대상을 다시 확인하세요. "
-                "명확한 폐기물로 확인되고 안전한 지정 폐기 장소가 알려져 있는 경우에만 한 건을 처리하세요. "
-                "컵·병·가방·의류·개인 소지품·위험물·액체 유출 등은 임의로 이동하지 말고 사용자 확인을 요청하세요. "
-                "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
-            )
-        else:
-            category = next(iter(target_categories), "생활용품")
-            category_name = {
-                "towel": "수건",
-                "cushion": "쿠션/방석",
-                "laundry": "빨래/세탁물",
-            }.get(category, "생활용품")
-            instruction = (
-                f"정리 작업 요청: 관찰된 {category_name} 후보 '{target_description}'입니다. 위치: {location}. "
-                f"관찰 내용: {scene[:800] or '추가 장면 설명 없음'}. 해당 위치에서 그 대상 하나만 다시 확인하세요. "
-                f"{category_name}에 맞게 명시 승인된 비추정 보관 장소가 확인될 때만 처리하세요. "
-                "폐기물로 취급하거나 쓰레기통에 넣지 말고, 목적지나 물체 위치를 추측하지 마세요. "
-                "안전한 유형별 보관 장소가 없거나 대상 상태가 모호하면 이동하지 말고 사용자 확인을 요청하세요. "
-                "다른 구역 순찰, 추가 대상 처리, 지속적인 자율협동은 시작하지 말고 결과를 반환하세요."
-            )
+        instruction = self._build_handoff_instruction(
+            handoff_kind=handoff_kind,
+            target_categories=target_categories,
+            target_description=target_description,
+            location=location,
+            scene=scene,
+            demo_target=demo_target,
+            place=place,
+        )
         skill_name = "delegate_task" if peer["transport"] == "ros2" else "call_peer_robot"
         params = (
             {
