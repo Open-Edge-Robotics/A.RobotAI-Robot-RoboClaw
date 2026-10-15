@@ -34,6 +34,24 @@ class InternalSkill(BaseSkill):
         return {"success": True}
 
 
+class BackgroundDummySkill(BaseSkill):
+    name = "background_dummy"
+    description = "테스트용 백그라운드 스킬"
+    terminal_behavior = "background"
+
+    def execute(self, params):
+        return self.success_result("백그라운드 시작")
+
+
+class BackgroundFailingSkill(BaseSkill):
+    name = "background_failing"
+    description = "시작에 실패하는 백그라운드 스킬"
+    terminal_behavior = "background"
+
+    def execute(self, params):
+        return self.fail_result("백그라운드 시작 실패")
+
+
 @pytest.fixture
 def manager():
     mgr = SkillManager()
@@ -123,6 +141,27 @@ def test_execute_failure_result_is_recoverability_aware(manager):
     assert result.result_data["status"] == "failed"
     assert result.result_data["failure_reason"] == "safety_rejected"
     assert result.result_data["recoverable"] is False
+
+
+def test_background_skill_success_reports_started_status():
+    """success_result() 기본 status(completed)를 써도 background 는 started 로 확정된다."""
+    mgr = SkillManager()
+    mgr.register(BackgroundDummySkill())
+
+    result = mgr.execute("background_dummy")
+
+    assert result.success is True
+    assert result.result_data["status"] == "started"
+
+
+def test_background_skill_failure_reports_failed_to_start():
+    mgr = SkillManager()
+    mgr.register(BackgroundFailingSkill())
+
+    result = mgr.execute("background_failing")
+
+    assert result.success is False
+    assert result.result_data["status"] == "failed_to_start"
 
 
 def test_base_skill_requires_name():

@@ -372,7 +372,10 @@ class SkillManager:
         # 백그라운드/장기 실행 스킬은 호출 수락과 작업 완료를 구분한다.
         # 기존 스킬 구현을 모두 수정하지 않고 공통 결과 계층에서 상태를 보완한다.
         if getattr(skill, "terminal_behavior", "terminal") == "background":
-            result_data.setdefault("status", "started" if success else "failed_to_start")
+            # background 스킬의 execute() 반환은 "호출 수락" 결과다. 스킬이 status 를
+            # 명시하지 않아도(또는 success_result() 기본값 status="completed" 를 써도)
+            # 호출 수락/시작 실패를 구분하도록 공통 계층에서 확정한다.
+            result_data["status"] = "started" if success else "failed_to_start"
         else:
             result_data.setdefault("status", "completed" if success else "failed")
         declared_postconditions: tuple[str, ...] = tuple(getattr(skill, "postconditions", ()))
