@@ -60,7 +60,7 @@ ignore = [
 max-complexity = 35
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B011"]  # 테스트에서 assert False 허용
+"**/tests/*" = ["B011", "F811"]  # assert False 허용, 공용 하네스 fixture import 와 파라미터명 겹침 허용
 
 [tool.pytest.ini_options]
 testpaths = [
