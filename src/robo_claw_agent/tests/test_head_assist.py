@@ -175,7 +175,7 @@ def test_head_assist_disabled_keeps_blind_lift_recovery(monkeypatch):
 
 
 def test_head_assist_skipped_on_non_stretch_backend(monkeypatch):
-    """moveit 등 비-Stretch 백엔드에서는 헤드 보조가 아예 켜지지 않는다."""
+    """ServoGripperToObjectSkill 은 Stretch 전용이라 비-Stretch 에서는 헤드 보조 이전에 거부된다."""
     backend = FakeBackend()
     node = _make_node({}, manipulation_backend="moveit", _manipulation_backend=backend)
     observations = [
@@ -191,12 +191,10 @@ def test_head_assist_skipped_on_non_stretch_backend(monkeypatch):
     skill.set_node(node)
     result = skill.execute({"target_object": "cup", "max_steps": 4})
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert "Stretch" in result["message"]
     assert "head_assist" not in result
-    assert backend.calls == [
-        ("joint", "arm", {"wrist_extension": pytest.approx(0.15)}),
-        ("joint", "arm", {"joint_lift": pytest.approx(0.37)}),
-    ]
+    assert backend.calls == []
 
 
 # ── 2. 대상 소실 → 헤드 유도 ───────────────────────────────────────────────
@@ -898,7 +896,7 @@ def test_adaptive_pick_places_head_between_prepare_and_gripper_observe(monkeypat
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_stretch_node())
-    result = skill.execute({"target_object": "cup"})
+    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False})
 
     assert result["success"] is True
     stages = [name for name, _ in calls]
@@ -915,7 +913,7 @@ def test_adaptive_pick_marks_head_ready_for_servo(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_stretch_node())
-    skill.execute({"target_object": "cup"})
+    skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False})
 
     pick_calls = [value for name, value in calls if name == "pick"]
     assert pick_calls == [True]
@@ -928,7 +926,7 @@ def test_adaptive_pick_continues_when_head_move_fails(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_stretch_node())
-    result = skill.execute({"target_object": "cup"})
+    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False})
 
     assert result["success"] is True
     assert "observe_gripper" in [name for name, _ in calls]
@@ -941,7 +939,9 @@ def test_adaptive_pick_skips_head_assist_when_disabled(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_stretch_node())
-    result = skill.execute({"target_object": "cup", "use_head_assist": False})
+    result = skill.execute(
+        {"target_object": "cup", "use_head_assist": False, "use_fixed_pattern_grasp": False}
+    )
 
     assert result["success"] is True
     assert ("head", "gripper_side_head") not in calls
@@ -970,7 +970,7 @@ def test_adaptive_pick_lateral_aligns_while_arm_is_retracted(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_stretch_node())
-    result = skill.execute({"target_object": "cup"})
+    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False})
 
     assert result["success"] is True
     assert aligned["obj"] == (0.05, -0.60, 0.70)

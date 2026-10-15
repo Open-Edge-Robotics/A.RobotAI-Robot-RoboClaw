@@ -352,7 +352,7 @@ def test_grasp_skill_runs_generic_sequence():
         "manipulation_end_effector_link": "tool0",
         "manipulation_gripper_group": "hand",
         "manipulation_gripper_presets_json": (
-            '{"open":{"finger_joint":0.04},"close":{"finger_joint":0.0}}'
+            '{"open":{"gripper_aperture":0.16},"close":{"gripper_aperture":0.0}}'
         ),
     }
     node = _make_node(params, _manipulation_backend=backend)
@@ -364,7 +364,7 @@ def test_grasp_skill_runs_generic_sequence():
     assert result["success"] is True
     assert result["target_pose"]["position"]["x"] == pytest.approx(0.5)
     assert backend.calls == [
-        ("joint", "hand", {"finger_joint": 0.04}),
+        ("joint", "hand", {"gripper_aperture": 0.16}),
         (
             "pose",
             "arm",
@@ -383,9 +383,8 @@ def test_grasp_skill_runs_generic_sequence():
             "tool0",
             False,
         ),
-        ("joint", "hand", {"finger_joint": 0.04}),
-        ("joint", "hand", {"finger_joint": 0.04}),
-        ("joint", "hand", {"finger_joint": 0.0}),
+        ("joint", "hand", {"gripper_aperture": 0.16}),
+        ("joint", "hand", {"gripper_aperture": 0.0}),
         (
             "pose",
             "arm",
@@ -483,12 +482,12 @@ class FakeTFBuffer:
         return result
 
 
-def test_grasp_skill_resolves_pose_from_memory_metadata():
+def test_grasp_skill_resolves_pose_from_memory_metadata(monkeypatch):
     backend = FakeBackend()
     params = {
         "manipulation_end_effector_link": "tool0",
         "manipulation_gripper_presets_json": (
-            '{"open":{"finger_joint":0.04},"close":{"finger_joint":0.0}}'
+            '{"open":{"gripper_aperture":0.16},"close":{"gripper_aperture":0.0}}'
         ),
     }
     memory = SimpleNamespace(
@@ -512,10 +511,13 @@ def test_grasp_skill_resolves_pose_from_memory_metadata():
         _memory=memory,
         _tf_buffer=FakeTFBuffer(),
     )
+    # 이 테스트는 TF 재변환에 집중한다. 도달성/회전 복구 경로는 별도 테스트에서 다룬다.
+    monkeypatch.setattr(sb, "check_reachable", lambda xyz: True)
+
     skill = GraspSkill()
     skill.set_node(node)
 
-    result = skill.execute({"object_name": "cup"})
+    result = skill.execute({"object_name": "cup", "require_gripper_confirmation": False})
 
     assert result["success"] is True
     # 저장된 pose는 map 프레임이지만, grasp 실행 시점의 최신 TF로 base_link 프레임으로
@@ -620,7 +622,7 @@ def test_grasp_skips_rotation_for_moveit_backend(monkeypatch):
     backend = FakeBackend()
     params = {
         "manipulation_end_effector_link": "tool0",
-        "manipulation_gripper_presets_json": '{"open":{"finger_joint":0.04},"close":{"finger_joint":0.0}}',
+        "manipulation_gripper_presets_json": '{"open":{"gripper_aperture":0.16},"close":{"gripper_aperture":0.0}}',
     }
     memory = SimpleNamespace(
         get_object_location=lambda name: (
@@ -660,7 +662,7 @@ def test_grasp_defaults_to_gripper_camera_confirmation_for_object_name(monkeypat
     backend = FakeBackend()
     node = _stretch_object_node(monkeypatch, backend, (0.3, -0.3, 0.5))
     monkeypatch.setattr(sb, "check_reachable", lambda xyz: True)
-    monkeypatch.setattr(grasp_verification, "_joint_positions", lambda skill, names: None)
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     estimate_calls = []
     monkeypatch.setattr(
@@ -720,7 +722,7 @@ def test_grasp_allows_opt_out_with_require_gripper_confirmation_false(monkeypatc
     backend = FakeBackend()
     node = _stretch_object_node(monkeypatch, backend, (0.3, -0.3, 0.5))
     monkeypatch.setattr(sb, "check_reachable", lambda xyz: True)
-    monkeypatch.setattr(grasp_verification, "_joint_positions", lambda skill, names: None)
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     def fail_if_called(self, params):
         raise AssertionError("그리퍼 카메라 확인이 호출되면 안 됩니다")
@@ -1048,7 +1050,7 @@ def test_pick_from_right_side_zone_runs_calibrated_sequence(monkeypatch):
         ("named", "arm", "right_side_pick_ready"),
         ("named", "arm", "right_side_pick_reach"),
         ("joint", "gripper", {"gripper_aperture": 0.0}),
-        ("named", "arm", "right_side_pick_lift"),
+        ("joint", "arm", {"joint_lift": pytest.approx(0.68)}),
         ("named", "arm", "carry"),
     ]
 
@@ -1634,7 +1636,7 @@ def test_vla_pick_front_object_runs_safe_sequence(monkeypatch):
         ("named", "arm", "right_side_pick_ready"),
         ("joint", "gripper", {"gripper_aperture": 0.16}),
         ("joint", "gripper", {"gripper_aperture": 0.0}),
-        ("named", "arm", "right_side_pick_lift"),
+        ("joint", "arm", {"joint_lift": pytest.approx(0.68)}),
     ]
 
 
@@ -1673,6 +1675,8 @@ def test_vla_pick_front_object_does_not_close_when_servo_not_ready(monkeypatch):
     assert backend.calls == [
         ("joint", "gripper", {"gripper_aperture": 0.16}),
         ("named", "arm", "right_side_pick_ready"),
+        # 서보가 ready 가 아니어서 닫지 못하고, 복구 stow 로 접는다.
+        ("named", "arm", "stow"),
     ]
 
 
@@ -1824,7 +1828,7 @@ def test_vla_pick_gripper_object_does_not_align_or_move_ready_by_default(monkeyp
     assert result["grasp_verified"] is True
     assert backend.calls == [
         ("joint", "gripper", {"gripper_aperture": 0.0}),
-        ("named", "arm", "right_side_pick_lift"),
+        ("joint", "arm", {"joint_lift": pytest.approx(0.68)}),
     ]
 
 
@@ -2127,7 +2131,13 @@ def test_search_object_sweeps_head_pan_before_rotating_body(monkeypatch):
     skill = SearchObjectSkill()
     skill.set_node(node)
     result = skill.execute(
-        {"target_object": "cup", "pan_sweep_deg": [-68.8, 0.0, 68.8], "head_settle_sec": 0}
+        {
+            "target_object": "cup",
+            "pan_sweep_deg": [-68.8, 0.0, 68.8],
+            "head_settle_sec": 0,
+            # find_results 4개(pan 3회 실패 + 회전 후 1회 성공)에 맞춘다.
+            "view_retries": 1,
+        }
     )
 
     assert result["success"] is True
@@ -2236,7 +2246,9 @@ def test_adaptive_pick_object_full_flow_uses_search_result_to_align(monkeypatch)
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
-    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False})
+    result = skill.execute(
+        {"target_object": "cup", "use_fixed_pattern_grasp": False, "use_head_assist": False}
+    )
 
     assert result["success"] is True
     assert calls == [
@@ -2426,7 +2438,9 @@ def test_adaptive_pick_object_restores_head_even_on_pick_failure(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
-    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False})
+    result = skill.execute(
+        {"target_object": "cup", "use_fixed_pattern_grasp": False, "use_head_assist": False}
+    )
 
     assert result["success"] is False
     assert "grasp failed" in result["message"]
