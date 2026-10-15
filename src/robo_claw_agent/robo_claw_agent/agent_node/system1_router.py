@@ -32,6 +32,7 @@ from .fast_router import (
     FastRouter,
     RouteDecision,
     RuleRouter,
+    direct_skill_decision,
 )
 
 logger = logging.getLogger(__name__)
@@ -427,13 +428,7 @@ class SystemOneRouter:
         # 기기 간 버전화 프로토콜(ROBOCLAW_CLEANUP_DEMO_V1)은 자연어 분류 모델(Laya)로 보내지 않고 직접 라우팅
         direct_demo = direct_cleanup_demo_skill(node, instruction)
         if direct_demo is not None:
-            return RouteDecision(
-                kind=ROUTE_DIRECT_SKILL,
-                skill=direct_demo["skill"],
-                params=dict(direct_demo.get("params") or {}),
-                background=bool(direct_demo.get("background")),
-                source=self.name,
-            )
+            return direct_skill_decision(direct_demo, self.name)
 
         # 가드(그룹 B'): 복합 명령을 단일 스킬로 축약하면 나머지 절이 사라진다.
         if looks_compound(instruction):

@@ -529,15 +529,14 @@ class ExecutionMixin:
         router = getattr(self, "_router", None) or DEFAULT_RULE_ROUTER
         route = await router.decide(self, instruction)
         set_current_trace_metadata(route.trace_metadata())
-        direct_skill = route.as_direct_skill() if route.kind == ROUTE_DIRECT_SKILL else None
-        if direct_skill is not None:
-            name = direct_skill["skill"]
-            params = direct_skill["params"]
+        if route.kind == ROUTE_DIRECT_SKILL:
+            name = route.skill
+            params = dict(route.params)
             # 결과 메시지에 쓸 실제 실행 스킬명. stow 등 선행 스킬이 실패하면
             # 원래 요청 스킬명이 아니라 실패한 스킬명을 보고해야 한다.
             step_name = name
             self.get_logger().info(f"Direct skill routing: {name} (params={params})")
-            if direct_skill.get("background"):
+            if route.background:
                 send_fb(f"실행: {name}", 40)
                 res = start_background_direct_skill(self, instruction, name, params)
                 skill_results.append(res)
