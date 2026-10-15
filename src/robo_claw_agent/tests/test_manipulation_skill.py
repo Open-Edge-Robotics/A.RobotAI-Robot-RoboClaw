@@ -155,6 +155,22 @@ class _FakeStretchModeNode:
         self.destroyed = True
 
 
+def _grasp_positions(aperture):
+    """파지 검증용 joint stub.
+
+    aperture 만 담은 dict 는 파지 후 lift 검증이 요구하는 joint_lift 를 빠뜨려
+    실패하므로, 요청된 이름을 기본값으로 채운 뒤 aperture/joint_lift 를 덮어쓴다.
+    """
+
+    def _positions(skill, names):
+        values = {name: 0.0 for name in names}
+        values["gripper_aperture"] = aperture
+        values["joint_lift"] = 0.5
+        return values
+
+    return _positions
+
+
 def _make_node(params=None, manipulation_backend="stretch", **extra):
     values = dict(params or {})
     values.setdefault("manipulation_backend", manipulation_backend)
@@ -163,7 +179,9 @@ def _make_node(params=None, manipulation_backend="stretch", **extra):
         get_parameter=lambda name: DummyParameter(values[name]),
         create_subscription=lambda *a, **k: SimpleNamespace(destroy=lambda: None),
         destroy_subscription=lambda *a, **k: None,
-        default_callback_group=SimpleNamespace(),
+        default_callback_group=SimpleNamespace(
+            add_entity=lambda *a, **k: None, remove_entity=lambda *a, **k: None
+        ),
         add_entity=lambda *a, **k: None,
         remove_entity=lambda *a, **k: None,
     )
@@ -188,6 +206,16 @@ def _stub_joint_positions(monkeypatch):
         rotation,
     )
 
+    defaults = {
+        "gripper_aperture": 0.03,
+        "joint_lift": 0.5,
+        "wrist_extension": 0.1,
+        "joint_wrist_yaw": 0.0,
+    }
+
+    def _fake_positions(skill, names):
+        return {name: defaults.get(name, 0.0) for name in names}
+
     for module in (
         joint_state,
         grasp_verification,
@@ -196,7 +224,7 @@ def _stub_joint_positions(monkeypatch):
         ee_state,
         rotation,
     ):
-        monkeypatch.setattr(module, "_joint_positions", lambda skill, names: None)
+        monkeypatch.setattr(module, "_joint_positions", _fake_positions)
 
 
 @pytest.fixture(autouse=True)
@@ -722,7 +750,7 @@ def test_grasp_verified_true_proceeds_normally(monkeypatch):
         EstimateGripperObjectPoseSkill, "execute", lambda self, params: {"success": True}
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.03}
+        grasp_verification, "_joint_positions", _grasp_positions(0.03)
     )
 
     skill = GraspSkill()
@@ -782,7 +810,7 @@ def test_grasp_verified_false_after_retries_exhausted_fails(monkeypatch):
         EstimateGripperObjectPoseSkill, "execute", lambda self, params: {"success": True}
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.0}
+        grasp_verification, "_joint_positions", _grasp_positions(0.0)
     )
 
     skill = GraspSkill()
@@ -1006,7 +1034,7 @@ def test_pick_from_right_side_zone_runs_calibrated_sequence(monkeypatch):
         _manipulation_backend=backend,
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.03}
+        grasp_verification, "_joint_positions", _grasp_positions(0.03)
     )
     skill = PickFromRightSideZoneSkill()
     skill.set_node(node)
@@ -1436,7 +1464,7 @@ def test_servo_gripper_to_object_moves_extension_and_lift(monkeypatch):
     skill = ServoGripperToObjectSkill()
     skill.set_node(node)
 
-    result = skill.execute({"target_object": "cup", "max_steps": 2})
+    result = skill.execute({"target_object": "cup", "max_steps": 2, "use_head_assist": False})
 
     assert result["success"] is True
     assert len(backend.calls) == 1
@@ -1479,7 +1507,7 @@ def test_servo_gripper_to_object_scans_lift_after_losing_seen_target(monkeypatch
     skill = ServoGripperToObjectSkill()
     skill.set_node(node)
 
-    result = skill.execute({"target_object": "cup", "max_steps": 4})
+    result = skill.execute({"target_object": "cup", "max_steps": 4, "use_head_assist": False})
 
     assert result["success"] is True
     assert backend.calls == [
@@ -1521,7 +1549,7 @@ def test_servo_gripper_to_object_alternates_lift_recovery_direction(monkeypatch)
     skill = ServoGripperToObjectSkill()
     skill.set_node(node)
 
-    result = skill.execute({"target_object": "cup", "max_steps": 5})
+    result = skill.execute({"target_object": "cup", "max_steps": 5, "use_head_assist": False})
 
     assert result["success"] is True
     assert backend.calls == [
@@ -1589,7 +1617,7 @@ def test_vla_pick_front_object_runs_safe_sequence(monkeypatch):
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.03}
+        grasp_verification, "_joint_positions", _grasp_positions(0.03)
     )
 
     skill = VLABasedPickFrontObjectSkill()
@@ -1687,7 +1715,7 @@ def test_vla_pick_front_object_uses_active_search_when_requested(monkeypatch):
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.03}
+        grasp_verification, "_joint_positions", _grasp_positions(0.03)
     )
 
     skill = VLABasedPickFrontObjectSkill()
@@ -1782,7 +1810,7 @@ def test_vla_pick_gripper_object_does_not_align_or_move_ready_by_default(monkeyp
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.03}
+        grasp_verification, "_joint_positions", _grasp_positions(0.03)
     )
 
     skill = VLABasedPickGripperObjectSkill()
@@ -1816,7 +1844,7 @@ def test_vla_pick_gripper_object_uses_loose_close_for_cup(monkeypatch):
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.04}
+        grasp_verification, "_joint_positions", _grasp_positions(0.04)
     )
 
     skill = VLABasedPickGripperObjectSkill()
@@ -1847,7 +1875,7 @@ def test_vla_pick_gripper_object_explicit_close_preset_wins(monkeypatch):
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
     monkeypatch.setattr(
-        grasp_verification, "_joint_positions", lambda skill, names: {"gripper_aperture": 0.03}
+        grasp_verification, "_joint_positions", _grasp_positions(0.03)
     )
 
     skill = VLABasedPickGripperObjectSkill()
