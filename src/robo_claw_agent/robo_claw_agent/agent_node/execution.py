@@ -225,7 +225,12 @@ class ExecutionMixin:
             skill = self._skills.get_skill(name)
             if skill is None:
                 return f"등록되지 않은 스킬입니다: {name}"
-            preconditions_valid, precondition_error = skill.check_preconditions(params)
+            mock_execution = getattr(
+                self._skills, "mock_robot", False
+            ) is True and self._skills._requires_robot(skill)
+            preconditions_valid, precondition_error = (
+                (True, "") if mock_execution else skill.check_preconditions(params)
+            )
             if not preconditions_valid:
                 return f"{name}의 실행 전 조건이 충족되지 않았습니다: {precondition_error}"
             schema_valid, schema_error = skill.validate_input_schema(params)

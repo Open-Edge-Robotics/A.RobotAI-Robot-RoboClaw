@@ -161,7 +161,9 @@ class LLMPlanner:
         robot_summary: dict = {}
         try:
             status_skill = self.node._skills._skills.get("get_status")
-            if hasattr(status_skill, "get_robot_summary"):
+            if getattr(self.node._skills, "mock_robot", False) is True:
+                robot_summary = {"mocked": True, "hardware_connected": False}
+            elif hasattr(status_skill, "get_robot_summary"):
                 robot_summary = await self.node._run_blocking(
                     "get_robot_summary", status_skill.get_robot_summary
                 )
@@ -569,7 +571,9 @@ class LLMPlanner:
 
             skill_results.append(res)
 
-            if getattr(self.node, "_enable_skill_learning", False):
+            if getattr(self.node, "_enable_skill_learning", False) and not res.result_data.get(
+                "mocked"
+            ):
                 try:
                     await self.node._run_blocking(
                         "record_skill_episode",

@@ -24,11 +24,15 @@ func LaunchCmd() *wcli.Command {
 	var pull bool
 	var useGrpc bool
 	var dryRun bool
+	var mockRobot bool
 
 	cmd := &wcli.Command{
 		Use:   "launch [robot_name] [environment]",
 		Short: "원격 설정을 적용하여 로봇 시스템(ROS 2 Launch 또는 Docker 컨테이너)을 구동합니다.",
 		Run: func(ctx *wcli.Context) error {
+			if mockRobot && (docker || sim || nav2 || slam) {
+				return fmt.Errorf("--mock-robot은 로컬 네이티브 실행 전용입니다. --docker/--sim/--nav2/--slam 없이 사용하세요")
+			}
 			args := ctx.Args
 			if len(args) < 2 {
 				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli launch butler office")
@@ -49,6 +53,7 @@ func LaunchCmd() *wcli.Command {
 				ImageTag:   imageTag,
 				Pull:       pull,
 				ForceGrpc:  useGrpc,
+				MockRobot:  mockRobot,
 			}, fetchConfig)
 			if err != nil {
 				logging.Error("launch 환경 구성 실패: %v", err)
@@ -86,6 +91,7 @@ func LaunchCmd() *wcli.Command {
 	cmd.Flags().BoolVar(&pull, "pull", "", false, "(Docker) 실행 직전 이미지를 레지스트리에서 pull")
 	cmd.Flags().BoolVar(&useGrpc, "use-grpc", "", false, "gRPC 서버 노드 활성화 (robo_claw_cli test 연동 시 필요)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", "", false, "실행하지 않고 최종 launch command만 출력")
+	cmd.Flags().BoolVar(&mockRobot, "mock-robot", "", false, "로봇 없이 기존 config/gRPC/LLM을 실행하고 로봇 스킬은 가짜 성공 반환 (로컬 전용)")
 
 	return cmd
 }

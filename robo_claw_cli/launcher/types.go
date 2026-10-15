@@ -157,6 +157,7 @@ type LaunchFlags struct {
 	ImageTag   string // (Docker) 사용할 이미지 태그. 비면 "latest".
 	Pull       bool   // (Docker) 실행 직전 docker pull 수행 여부.
 	ForceGrpc  bool   // gRPC 서버 노드(use_grpc) 강제 활성화. robo_claw_cli test 연동에 필요.
+	MockRobot  bool   // 로봇 노드를 끄고 로봇 스킬을 표시된 가짜 성공으로 반환합니다.
 }
 
 // LaunchContext launch 커맨드 실행에 필요한 모든 상태를 보관합니다.

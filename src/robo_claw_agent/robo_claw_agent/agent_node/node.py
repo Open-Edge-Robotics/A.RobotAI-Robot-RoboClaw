@@ -121,6 +121,8 @@ class AgentNode(Node, ExecutionMixin):
         # 메모리/RAG → 스킬매니저 → LLM/TF 순서로 구성 (원본 순서 유지)
         qdrant_primary = setup_memory_and_rag(self, p)
         self._skills = SkillManager(self)  # type: ignore
+        if self._skills.mock_robot:
+            self.get_logger().warning("MOCK ROBOT: 로봇 스킬은 실제 실행 없이 가짜 성공을 반환합니다.")
         self._apply_skill_policy(p)
         self._llm: BaseLLMBridge | None = None
         self._mcp_manager = None
@@ -310,6 +312,8 @@ class AgentNode(Node, ExecutionMixin):
 
     def _get_robot_health_state(self, robot_summary: dict = None) -> dict:
         """로봇 배터리·측위·센서 상태 취합. 구현은 sensor_health.get_robot_health_state."""
+        if self._skills.mock_robot:
+            return {"mocked": True, "hardware_connected": False}
         return _get_robot_health_state_impl(self, robot_summary)
 
     def _handle_execute_skill(self, request, response):

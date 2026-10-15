@@ -3,12 +3,12 @@ Discovery 노드 — ROS2 토픽/서비스/액션을 자동 탐색해 에이전�
 """
 
 import json
-import subprocess
 import threading
 import time
 from typing import Any
 
 import rclpy
+from rclpy.action import get_action_names_and_types
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
@@ -115,21 +115,12 @@ class DiscoveryNode(Node):
 
     def _get_actions_api(self) -> list[dict[str, Any]]:
         try:
-            # Action은 rclpy에 직접적인 get_action_names_and_types가 없으므로
-            # 토픽 이름 패턴(/_action/feedback 등)으로 추론하거나 subprocess 유지
-            # 여기서는 안정성을 위해 subprocess를 쓰되 timeout을 짧게 잡음
-            result = subprocess.run(
-                ["ros2", "action", "list", "-t"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            actions = []
-            for line in result.stdout.strip().splitlines():
-                parts = line.strip().split(" ")
-                if len(parts) == 2:
-                    actions.append({"name": parts[0], "type": parts[1].strip("[]")})
-            return actions
+            # 현재 노드의 그래프 캐시를 조회하므로 CLI/daemon 기동을 기다리지 않습니다.
+            return [
+                {"name": name, "type": types[0]}
+                for name, types in get_action_names_and_types(self)
+                if types
+            ]
         except Exception as e:
             self.get_logger().error(f"Action discovery failed: {e}")
             return []

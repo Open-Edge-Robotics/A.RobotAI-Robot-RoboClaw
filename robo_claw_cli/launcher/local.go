@@ -129,6 +129,8 @@ func buildLocalLaunchArgs(lctx *LaunchContext) []string {
 // buildMergedEnv 시스템 환경변수, .env 값, 설정값을 병합하여 최종 환경변수 슬라이스를 반환합니다.
 func buildMergedEnv(ctx *wcli.Context, lctx *LaunchContext) []string {
 	env := append(os.Environ(), lctx.EnvSlice...)
+	// CLI 실행 옵션으로만 선택합니다. 캐시나 이전 셸의 테스트 모드는 상속하지 않습니다.
+	env = append(env, fmt.Sprintf("RC_MOCK_ROBOT=%t", lctx.MockRobot))
 
 	// RC_DEBUG 환경변수 또는 --debug 플래그가 활성화된 경우 ROS 2 디버그 로깅 활성화
 	if lctx.Debug || isEnvTrue(lctx.EnvMap, "RC_DEBUG") {

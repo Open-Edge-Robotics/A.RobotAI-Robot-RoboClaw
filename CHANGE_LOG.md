@@ -3,6 +3,26 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-15 — 액션 탐색의 반복 CLI timeout을 제거합니다
+
+- discovery가 액션 목록을 `rclpy.action.get_action_names_and_types`로 직접
+  조회하도록 변경합니다. 매 스캔마다 실행하던 CLI 프로세스와 고정 2초 timeout을
+  제거하며, 탐색 주기와 capabilities JSON 형식은 유지합니다.
+
+## 2026-10-15 — 네이티브 launch의 기본 RMW를 Cyclone DDS로 통일합니다
+
+- `rclaw launch`에서 RMW 미지정 시 `rmw_cyclonedds_cpp`를 자동 적용합니다.
+  비어 있지 않은 호스트·캐시 설정과 사용자 DDS 설정 파일은 유지하며, 선택한 RMW를
+  시작 로그에 출력합니다.
+
+## 2026-10-15 — 로봇 없이 기존 gRPC·LLM 흐름을 실행하는 옵션을 추가합니다
+
+- `rclaw launch <robot> <env> --mock-robot`으로 기존 config 동기화와 인증·LLM·RAG
+  설정을 유지하면서 로봇 의존 노드와 스킬 실행을 대체합니다. 로컬 네이티브
+  실행에서만 지원합니다.
+- 로봇 스킬은 정책·입력 검증 후 `mocked=true`, `executed=false`를 포함한 가짜
+  성공을 반환합니다. 가짜 실행은 스킬 학습 이력에 기록하지 않습니다.
+
 ## 2026-10-15 — CLOiD 주행 전 boxing 자세 자동 prelude 및 설정 계약 추가
 
 - **배경**: CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 몸 밖으로 나올 수
