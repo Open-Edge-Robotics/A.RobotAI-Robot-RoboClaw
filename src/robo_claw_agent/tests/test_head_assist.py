@@ -47,8 +47,9 @@ class FakeBackend:
         self.calls.append(("pose", group_name, pose.frame_id))
 
 
-def _make_node(params=None, **extra):
+def _make_node(params=None, manipulation_backend="stretch", **extra):
     values = dict(params or {})
+    values.setdefault("manipulation_backend", manipulation_backend)
     node = SimpleNamespace(
         has_parameter=lambda name: name in values,
         get_parameter=lambda name: DummyParameter(values[name]),

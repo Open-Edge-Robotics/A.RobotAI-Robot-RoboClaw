@@ -155,8 +155,9 @@ class _FakeStretchModeNode:
         self.destroyed = True
 
 
-def _make_node(params=None, **extra):
+def _make_node(params=None, manipulation_backend="stretch", **extra):
     values = dict(params or {})
+    values.setdefault("manipulation_backend", manipulation_backend)
     node = SimpleNamespace(
         has_parameter=lambda name: name in values,
         get_parameter=lambda name: DummyParameter(values[name]),
@@ -564,7 +565,9 @@ def test_grasp_skips_rotation_for_moveit_backend(monkeypatch):
             else None
         )
     )
-    node = _make_node(params, _manipulation_backend=backend, _memory=memory)
+    node = _make_node(
+        params, manipulation_backend="moveit", _manipulation_backend=backend, _memory=memory
+    )
 
     def fail_if_called(xyz):
         raise AssertionError("MoveIt 백엔드에서는 check_reachable이 호출되면 안 됩니다")
@@ -811,7 +814,9 @@ def test_place_skill_executes_release_sequence():
 
 
 def test_runtime_reports_unavailable_backend(monkeypatch):
-    node = _make_node({"manipulation_end_effector_link": "tool0"})
+    node = _make_node(
+        {"manipulation_end_effector_link": "tool0"}, manipulation_backend="moveit"
+    )
     runtime = MoveItManipulationRuntime(node)
 
     class RaisingBackend:
@@ -1824,7 +1829,8 @@ def test_vla_pick_gripper_object_does_not_close_when_not_ready(monkeypatch):
     result = skill.execute({"target_object": "cup"})
 
     assert result["success"] is False
-    assert backend.calls == []
+    # 서보가 ready 가 아니면 gripper 를 닫지 않는다(사전 stow 이동은 허용).
+    assert [call for call in backend.calls if call[0] == "gripper"] == []
 
 
 def test_estimate_gripper_object_pose_uses_gripper_low_score_defaults(monkeypatch):
@@ -1856,7 +1862,7 @@ def _stretch_head_node(backend=None):
 
 def test_head_pan_tilt_rejects_non_stretch_backend():
     backend = FakeBackend()
-    node = _make_node({}, _manipulation_backend=backend)  # manipulation_backend 미지정(기본 moveit)
+    node = _make_node({}, manipulation_backend="moveit", _manipulation_backend=backend)  # manipulation_backend 미지정(기본 moveit)
     skill = HeadPanTiltSkill()
     skill.set_node(node)
 
@@ -2093,7 +2099,7 @@ def test_search_object_gives_up_after_max_body_rotations(monkeypatch):
 
 def test_search_object_skips_head_when_not_stretch_backend(monkeypatch):
     backend = FakeBackend()
-    node = _make_node({}, _manipulation_backend=backend)  # moveit 기본
+    node = _make_node({}, manipulation_backend="moveit", _manipulation_backend=backend)  # moveit 기본
 
     def fail_if_called(self, params):
         raise AssertionError("non-stretch 백엔드에서는 헤드 제어를 시도하면 안 됩니다")
