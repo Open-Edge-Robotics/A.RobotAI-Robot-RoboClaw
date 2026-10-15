@@ -435,9 +435,14 @@ def test_household_item_handoff_to_manipulator_preserves_category_safety(monkeyp
 
 
 def test_cleanup_handoff_records_no_connected_capable_peer(monkeypatch):
-    from robo_claw_agent.skills.autonomous_skill import helpers
+    from robo_claw_agent.skills.autonomous_skill import execution_nodes, helpers
 
+    # execution_nodes 는 import 시점에 helpers 함수를 자체 바인딩하므로 두 곳 모두 대체한다.
+    # (helpers 만 대체하면 실제 gRPC peer capability 조회가 실행돼 테스트가 20초 지연된다.)
     monkeypatch.setattr(helpers, "_find_connected_peer_with_capability", lambda *_args: None)
+    monkeypatch.setattr(
+        execution_nodes, "_find_connected_peer_with_capability", lambda *_args: None
+    )
     node = _node_with_skills(["navigate_to"])
     skill = MagicMock()
     skill.node = node
@@ -453,6 +458,30 @@ def test_cleanup_handoff_records_no_connected_capable_peer(monkeypatch):
     assert handoff._blackboard["cleanup_handoff_blocked"] is True
     assert handoff._blackboard["decided_skill"] == "none"
     assert "동료" in handoff._blackboard["cleanup_handoff_status"]
+
+
+def test_find_connected_peer_skips_grpc_lookup_when_ros_peer_capable(monkeypatch):
+    """ROS 그래프에서 능력이 확인되면 ListPeers gRPC 조회(최대 10초)를 지연시켜야 한다."""
+    from robo_claw_agent.skills.autonomous_skill import helpers
+
+    monkeypatch.setenv(
+        "GRPC_TARGET_PEERS_JSON",
+        json.dumps([{"name": "butler", "capabilities": ["manipulation"]}]),
+    )
+    called = []
+
+    def _spy(node):
+        called.append(node)
+        return set()
+
+    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", _spy)
+
+    node = _node_with_skills(["navigate_to"], node_names=["/butler/robo_claw_agent_node"])
+
+    peer = helpers._find_connected_peer_with_capability(node, "manipulation")
+
+    assert peer == {"peer_name": "butler", "transport": "ros2"}
+    assert called == []
 
 
 def test_blocked_cleanup_handoff_skips_llm_replanning():
