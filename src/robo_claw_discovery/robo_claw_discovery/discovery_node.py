@@ -33,11 +33,12 @@ class DiscoveryNode(Node):
         interval = (
             self.get_parameter("scan_interval_sec").get_parameter_value().double_value
         )
-        # 요약 로그 간격. 스캔 주기와 독립적이며 기본 60초로 다른 로그를 가리지 않게 한다.
+        # 요약 로그 간격. 스캔 주기와 독립적이며 기본 600초로 다른 로그를 가리지 않게 한다.
         self.declare_parameter("log_interval_sec", log_interval_sec)
         log_interval = self.get_parameter("log_interval_sec").get_parameter_value().double_value
         self._log_interval_sec = max(0.0, log_interval)
         self._last_summary_log_time: float | None = None
+        self._last_capability_signature = None
 
         qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE)
 
@@ -50,7 +51,7 @@ class DiscoveryNode(Node):
         self._timer = self.create_timer(interval, self._scan)
         self.get_logger().info(
             f"DiscoveryNode ready ({interval:.1f}s interval, "
-            f"summary log every {self._log_interval_sec:.0f}s)"
+            f"summary on change or every {self._log_interval_sec:.0f}s)"
         )
         self._scan()  # 시작 시 즉시 실행
 
@@ -86,7 +87,16 @@ class DiscoveryNode(Node):
         self._pub.publish(msg)
 
         now = time.monotonic()
-        if should_log_summary(self._last_summary_log_time, now, self._log_interval_sec):
+        # 이름과 타입까지 비교하여 개수가 같은 인터페이스 교체도 감지합니다.
+        signature = tuple(
+            (key, tuple(sorted(json.dumps(item, sort_keys=True) for item in values)))
+            for key, values in sorted(capabilities.items())
+        )
+        changed = signature != self._last_capability_signature
+        self._last_capability_signature = signature
+        if should_log_summary(
+            self._last_summary_log_time, now, self._log_interval_sec, changed=changed
+        ):
             self._last_summary_log_time = now
             self.get_logger().info(
                 f"Discovery complete: topics {len(capabilities['topics'])}, "

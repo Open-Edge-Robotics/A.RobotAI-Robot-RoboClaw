@@ -68,9 +68,9 @@ class AgentNode(Node, ExecutionMixin):
         declare_agent_parameters(self)
         p = read_agent_parameters(self)
 
-        self.get_logger().info(f"Python path (sys.path): {sys.path[:3]} ...")
-        self.get_logger().info(f"Parameters loaded: skill_modules={p.skill_modules}")
-        self.get_logger().info(f"Camera topic parameter: {p.camera_topic or '(not set)'}")
+        self.get_logger().debug(f"Python path (sys.path): {sys.path[:3]} ...")
+        self.get_logger().debug(f"Parameters loaded: skill_modules={p.skill_modules}")
+        self.get_logger().debug(f"Camera topic parameter: {p.camera_topic or '(not set)'}")
         if p.gripper_camera_topic:
             self.get_logger().info(
                 f"Gripper camera topic parameter: {p.gripper_camera_topic}"
@@ -154,16 +154,21 @@ class AgentNode(Node, ExecutionMixin):
             self._init_task_queue(max_size=_qmax)
         else:
             self._task_queue = None
-            self.get_logger().info("TaskQueue disabled (task_queue_max_size=0) — parallel execution")
-
-        if self._llm is None:
-            self.get_logger().warning(
-                f"AgentNode starting in restricted mode [id={p.agent_id}] — "
-                "LLM was not initialized. Natural language reasoning and LLM-dependent skills are unavailable. "
-                "Check the LLM configuration (llm_provider/endpoint/api_key)."
+            self.get_logger().info(
+                "TaskQueue disabled (task_queue_max_size=0) — parallel execution"
             )
-        else:
-            self.get_logger().info(f"AgentNode ready [id={p.agent_id}]")
+
+        from ..domain.startup_summary import startup_summary
+
+        level, message = startup_summary(
+            p.agent_id,
+            self._skills.mock_robot,
+            self._llm is not None,
+            p.enable_rag,
+            self._enable_rag,
+            len(self._skills.list_skills()),
+        )
+        getattr(self.get_logger(), level)(message)
 
     def _apply_skill_policy(self, p) -> None:
         """AgentParams에서 스킬 허용/차단 정책을 파싱해 SkillManager에 주입한다."""
@@ -385,7 +390,8 @@ class AgentNode(Node, ExecutionMixin):
         )
         if task_id is None:
             response.result = build_failure_skill_result_msg(
-                self.get_clock(), skill_name,
+                self.get_clock(),
+                skill_name,
                 "처리 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요.",
             )
             return response

@@ -20,17 +20,20 @@ func RunLocalMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	launchArgs := buildLocalLaunchArgs(lctx)
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", lctx.LaunchTarget}, launchArgs...)
-	logging.Info("실행 명령어: ros2 %s", strings.Join(argsToExec, " "))
-	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", strings.Join(argsToExec, " "))
+	logging.Debug("실행 명령어: ros2 %s", FormatLaunchLogArgs(argsToExec))
+	logging.Info("최종 실행 설정: %s · mock_robot=%t", launchSummary(launchArgs), lctx.MockRobot)
 
 	cmdLaunch := exec.Command("ros2", argsToExec...)
 	cmdLaunch.Env = mergedEnv
-	cmdLaunch.Stdout = os.Stdout
-	cmdLaunch.Stderr = os.Stderr
+	consoleOut := NewConsoleLogWriter(os.Stdout)
+	consoleErr := NewConsoleLogWriter(os.Stderr)
+	defer consoleOut.Flush()
+	defer consoleErr.Flush()
+	cmdLaunch.Stdout = consoleOut
+	cmdLaunch.Stderr = consoleErr
 	cmdLaunch.Stdin = os.Stdin
 
 	logging.Info("RoboClaw 시스템 기동 시작...")
-	rich.Println("[cyan]🚀 RoboClaw 시스템 기동 중...[/cyan]")
 
 	// 시그널 채널 생성 및 등록
 	sigChan := make(chan os.Signal, 1)
@@ -41,7 +44,7 @@ func RunLocalMode(ctx *wcli.Context, lctx *LaunchContext) error {
 		return fmt.Errorf("RoboClaw 런치 시작 에러: %w", err)
 	}
 
-	logging.Info("RoboClaw 프로세스 기동 성공 (PID: %d)", cmdLaunch.Process.Pid)
+	logging.Info("RoboClaw 프로세스 시작 (서비스 초기화 대기) (PID: %d)", cmdLaunch.Process.Pid)
 
 	// 프로세스 종료 대기 채널
 	done := make(chan error, 1)
@@ -208,7 +211,6 @@ func applyVenv(ctx *wcli.Context, projectRoot string, env []string) []string {
 	}
 
 	logging.Debug("Python 가상환경(.venv) 적용 완료")
-	rich.Println("[green]✔[/green] Python 가상환경(.venv) 적용 완료")
 	return env
 }
 

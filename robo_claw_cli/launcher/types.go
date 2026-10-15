@@ -204,10 +204,8 @@ func LoadLaunchContext(
 
 	// 원격 설정 동기화 (실패 시 로컬 캐시로 폴백)
 	logging.Info("원격 서버에서 설정 동기화 시도 중... (로봇: %s, 환경: %s)", robotName, envName)
-	rich.Println("[cyan]⚡[/cyan] 원격 서버에서 설정 동기화 시도 중...")
 	if fetchErr := fetchFn(ctx, robotName, envName); fetchErr != nil {
 		logging.Warn("원격 설정 서버 연결 실패: %v. 로컬 캐시 폴백을 시도합니다.", fetchErr)
-		rich.Println("[yellow]⚠ 경고: 원격 설정 서버 연결 실패 (%v). 로컬 캐시를 사용합니다.[/yellow]", fetchErr)
 
 		configPath := filepath.Join(cacheDir, "config.json")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -217,7 +215,6 @@ func LoadLaunchContext(
 		}
 	} else {
 		logging.Info("원격 설정 동기화 성공")
-		rich.Println("[green]✔[/green] 원격 설정 동기화 성공")
 	}
 
 	// config.json 로드
