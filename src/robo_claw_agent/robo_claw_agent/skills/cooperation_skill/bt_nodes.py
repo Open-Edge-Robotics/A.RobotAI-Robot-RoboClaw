@@ -13,7 +13,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.autonomous_skill.core import BTNode, NodeStatus
 
 from .conversation import get_peer_conversation
-from .globals import _COOPERATE_ACTIVE
+from .globals import is_cooperation_active
 from .inbox import get_peer_message_inbox
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class ProcessPeerMessages(BTNode):
         try:
             # 두 루프가 같은 인박스를 경쟁 소비하지 않도록 자율협동 루프가
             # 실행 중이면 해당 루프가 유일한 소비자가 된다.
-            if _COOPERATE_ACTIVE.is_set():
+            if is_cooperation_active():
                 return NodeStatus.SUCCESS
             inbox = get_peer_message_inbox()
             consumer_id = "autonomous_act"
