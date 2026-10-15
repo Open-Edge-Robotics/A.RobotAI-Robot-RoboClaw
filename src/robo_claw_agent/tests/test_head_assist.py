@@ -14,6 +14,9 @@ import math
 from types import SimpleNamespace
 
 import pytest
+
+# 공용 하네스(manipulation 계열 테스트와 동일 구현).
+from _manip_helpers import DummyParameter, _make_node  # noqa: F401
 from robo_claw_agent.skills.manipulation_skill import (
     AdaptivePickObjectSkill,
     ServoGripperToObjectSkill,
@@ -28,11 +31,6 @@ from robo_claw_agent.skills.manipulation_skill.sequence import (
 )
 
 
-class DummyParameter:
-    def __init__(self, value):
-        self.value = value
-
-
 class FakeBackend:
     def __init__(self):
         self.calls = []
@@ -45,25 +43,6 @@ class FakeBackend:
 
     def move_to_pose_target(self, group_name, pose, end_effector_link, cartesian=False):
         self.calls.append(("pose", group_name, pose.frame_id))
-
-
-def _make_node(params=None, manipulation_backend="stretch", **extra):
-    values = dict(params or {})
-    values.setdefault("manipulation_backend", manipulation_backend)
-    node = SimpleNamespace(
-        has_parameter=lambda name: name in values,
-        get_parameter=lambda name: DummyParameter(values[name]),
-        create_subscription=lambda *a, **k: SimpleNamespace(destroy=lambda: None),
-        destroy_subscription=lambda *a, **k: None,
-        default_callback_group=SimpleNamespace(
-            add_entity=lambda *a, **k: None, remove_entity=lambda *a, **k: None
-        ),
-        add_entity=lambda *a, **k: None,
-        remove_entity=lambda *a, **k: None,
-    )
-    for key, value in extra.items():
-        setattr(node, key, value)
-    return node
 
 
 @pytest.fixture(autouse=True)
