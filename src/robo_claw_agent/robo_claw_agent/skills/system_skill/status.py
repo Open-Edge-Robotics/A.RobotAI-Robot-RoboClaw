@@ -5,6 +5,7 @@ from typing import Any
 from sensor_msgs.msg import BatteryState
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills._battery import read_sysfs_battery
 
 logger = logging.getLogger(__name__)
 
@@ -91,16 +92,7 @@ class GetStatusSkill(BaseSkill):
         }
 
     def _read_sysfs_battery(self) -> float:
-        from pathlib import Path
-
-        for bat_dir in Path("/sys/class/power_supply").glob("BAT*"):
-            try:
-                cap_file = bat_dir / "capacity"
-                if cap_file.exists():
-                    return float(cap_file.read_text().strip())
-            except Exception:
-                pass
-        return 0.0
+        return read_sysfs_battery()
 
     def _read_sysfs_battery_status(self) -> str:
         from pathlib import Path

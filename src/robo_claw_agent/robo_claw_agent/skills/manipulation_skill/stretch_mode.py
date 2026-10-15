@@ -8,6 +8,7 @@ import rclpy
 from std_srvs.srv import Trigger
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills._param_utils import bool_param as _bool_param
 
 logger = logging.getLogger(__name__)
 
@@ -37,20 +38,6 @@ _MODE_ALIASES = {
 def _normalize_mode(value: Any) -> str:
     mode = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     return _MODE_ALIASES.get(mode, "")
-
-
-def _bool_param(value: Any, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-    return bool(value)
 
 
 def _call_trigger_service(

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills._param_utils import bounded_timeout as _bounded_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -52,20 +52,6 @@ def _create_motion_publisher(node: Any) -> tuple[Any, type[Any]]:
         durability=DurabilityPolicy.VOLATILE,
     )
     return node.create_publisher(MotionCmd, MOTION_COMMAND_TOPIC, qos), MotionCmd
-
-
-def _bounded_timeout(value: Any, *, default: float, minimum: float, maximum: float) -> float | None:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return None
-    try:
-        timeout = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(timeout) or timeout < minimum or timeout > maximum:
-        return None
-    return timeout
 
 
 def _positive_int(value: Any) -> int | None:
