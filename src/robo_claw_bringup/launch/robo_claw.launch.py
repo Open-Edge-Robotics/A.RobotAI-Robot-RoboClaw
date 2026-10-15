@@ -42,6 +42,16 @@ def _safe_float(value, default=0.0):
         return default
 
 
+def _optional_overrides(entries: dict) -> dict:
+    """``key -> (raw, value)`` 항목 중 raw 가 truthy 인 것만 ``key -> value`` 로 모은다.
+
+    빈 문자열("")이나 미설정 값으로 노드 기본값을 덮어쓰지 않도록, 저장할 값이 아니라
+    **원본(raw)** 의 truthiness 로 포함 여부를 결정한다. 예컨대 ``enable_rag="false"``
+    는 raw 가 truthy 이므로 ``False`` 로 포함되어 노드 기본값을 명시적으로 끈다.
+    """
+    return {key: value for key, (raw, value) in entries.items() if raw}
+
+
 def _load_robot_config(robot_config: str) -> dict:
     bringup_share = get_package_share_directory("robo_claw_bringup")
     config_path = os.path.join(bringup_share, "config", f"{robot_config}_config.yaml")
@@ -377,124 +387,52 @@ def _launch_setup(context, *args, **kwargs):
             ),
         }
     )
-    if llm_embedding_model:
-        agent_parameters[-1]["llm_embedding_model"] = llm_embedding_model
-    if llm_embedding_provider:
-        agent_parameters[-1]["llm_embedding_provider"] = llm_embedding_provider
-    if llm_embedding_base_url:
-        agent_parameters[-1]["llm_embedding_base_url"] = llm_embedding_base_url
-    if llm_embedding_api_key:
-        agent_parameters[-1]["llm_embedding_api_key"] = llm_embedding_api_key
-    if llm_base_url:
-        agent_parameters[-1]["llm_base_url"] = llm_base_url
-    if robot_soul_file:
-        agent_parameters[-1]["robot_soul_file"] = robot_soul_file
-    if system_prompt_file:
-        agent_parameters[-1]["system_prompt_file"] = system_prompt_file
-    if skills_guide_file:
-        agent_parameters[-1]["skills_guide_file"] = skills_guide_file
-    if robot_limits_file:
-        agent_parameters[-1]["robot_limits_file"] = robot_limits_file
-    if troubleshooting_guide_file:
-        agent_parameters[-1]["troubleshooting_guide_file"] = troubleshooting_guide_file
-    if resolved_butler_script_dir:
-        agent_parameters[-1]["butler_script_dir"] = resolved_butler_script_dir
-    if agent_workspace_dir:
-        agent_parameters[-1]["agent_workspace_dir"] = agent_workspace_dir
-    if ollama_options_json:
-        agent_parameters[-1]["ollama_options_json"] = ollama_options_json
-    if enable_rag:
-        agent_parameters[-1]["enable_rag"] = enable_rag.lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
+    agent_parameters[-1].update(
+        _optional_overrides(
+            {
+                'llm_embedding_model': (llm_embedding_model, llm_embedding_model),
+                'llm_embedding_provider': (llm_embedding_provider, llm_embedding_provider),
+                'llm_embedding_base_url': (llm_embedding_base_url, llm_embedding_base_url),
+                'llm_embedding_api_key': (llm_embedding_api_key, llm_embedding_api_key),
+                'llm_base_url': (llm_base_url, llm_base_url),
+                'robot_soul_file': (robot_soul_file, robot_soul_file),
+                'system_prompt_file': (system_prompt_file, system_prompt_file),
+                'skills_guide_file': (skills_guide_file, skills_guide_file),
+                'robot_limits_file': (robot_limits_file, robot_limits_file),
+                'troubleshooting_guide_file': (troubleshooting_guide_file, troubleshooting_guide_file),
+                'butler_script_dir': (resolved_butler_script_dir, resolved_butler_script_dir),
+                'agent_workspace_dir': (agent_workspace_dir, agent_workspace_dir),
+                'ollama_options_json': (ollama_options_json, ollama_options_json),
+                'enable_rag': (enable_rag, enable_rag.lower() in ('1', 'true', 'yes', 'on')),
+                'rag_vector_backend': (rag_vector_backend, rag_vector_backend),
+                'rag_top_k': (rag_top_k, _safe_int(rag_top_k)),
+                'rag_score_threshold': (rag_score_threshold, _safe_float(rag_score_threshold)),
+                'enable_skill_learning': (enable_skill_learning, enable_skill_learning.lower() in ('1', 'true', 'yes', 'on')),
+                'skill_learning_success_sample_rate': (skill_learning_success_sample_rate, _safe_float(skill_learning_success_sample_rate)),
+                'skill_learning_reflect_interval_sec': (skill_learning_reflect_interval_sec, _safe_float(skill_learning_reflect_interval_sec)),
+                'qdrant_url': (qdrant_url, qdrant_url),
+                'qdrant_api_key': (qdrant_api_key, qdrant_api_key),
+                'qdrant_collection': (qdrant_collection, qdrant_collection),
+                'qdrant_timeout_sec': (qdrant_timeout_sec, _safe_float(qdrant_timeout_sec)),
+                'rag_local_mirror': (rag_local_mirror, rag_local_mirror.lower() in ('1', 'true', 'yes', 'on')),
+                'memory_path': (memory_path, memory_path),
+                'task_queue_max_size': (task_queue_max_size, _safe_int(task_queue_max_size)),
+                'llm_fail_fast': (llm_fail_fast, llm_fail_fast.lower() in ('1', 'true', 'yes', 'on')),
+                'strict_config': (strict_config, strict_config.lower() in ('1', 'true', 'yes', 'on')),
+                'enable_task_decomposition': (enable_task_decomposition, enable_task_decomposition.lower() in ('1', 'true', 'yes', 'on')),
+                'task_decomposition_max_steps': (task_decomposition_max_steps, _safe_int(task_decomposition_max_steps)),
+                'task_step_max_retries': (task_step_max_retries, _safe_int(task_step_max_retries)),
+                'task_decomposition_wait_margin_cap_sec': (task_decomposition_wait_margin_cap_sec, _safe_float(task_decomposition_wait_margin_cap_sec)),
+                'camera_topic': (camera_topic, camera_topic),
+                'depth_topic': (depth_topic, depth_topic),
+                'camera_info_topic': (camera_info_topic, camera_info_topic),
+                'gripper_camera_topic': (gripper_camera_topic, gripper_camera_topic),
+                'gripper_depth_topic': (gripper_depth_topic, gripper_depth_topic),
+                'gripper_camera_info_topic': (gripper_camera_info_topic, gripper_camera_info_topic),
+                'gripper_pointcloud_topic': (gripper_pointcloud_topic, gripper_pointcloud_topic),
+            }
         )
-    if rag_vector_backend:
-        agent_parameters[-1]["rag_vector_backend"] = rag_vector_backend
-    if rag_top_k:
-        agent_parameters[-1]["rag_top_k"] = _safe_int(rag_top_k)
-    if rag_score_threshold:
-        agent_parameters[-1]["rag_score_threshold"] = _safe_float(rag_score_threshold)
-    if enable_skill_learning:
-        agent_parameters[-1]["enable_skill_learning"] = enable_skill_learning.lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
-    if skill_learning_success_sample_rate:
-        agent_parameters[-1]["skill_learning_success_sample_rate"] = _safe_float(
-            skill_learning_success_sample_rate
-        )
-    if skill_learning_reflect_interval_sec:
-        agent_parameters[-1]["skill_learning_reflect_interval_sec"] = _safe_float(
-            skill_learning_reflect_interval_sec
-        )
-    if qdrant_url:
-        agent_parameters[-1]["qdrant_url"] = qdrant_url
-    if qdrant_api_key:
-        agent_parameters[-1]["qdrant_api_key"] = qdrant_api_key
-    if qdrant_collection:
-        agent_parameters[-1]["qdrant_collection"] = qdrant_collection
-    if qdrant_timeout_sec:
-        agent_parameters[-1]["qdrant_timeout_sec"] = _safe_float(qdrant_timeout_sec)
-    if rag_local_mirror:
-        agent_parameters[-1]["rag_local_mirror"] = rag_local_mirror.lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
-    if memory_path:
-        agent_parameters[-1]["memory_path"] = memory_path
-    if task_queue_max_size:
-        agent_parameters[-1]["task_queue_max_size"] = _safe_int(task_queue_max_size)
-    if llm_fail_fast:
-        agent_parameters[-1]["llm_fail_fast"] = llm_fail_fast.lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
-    if strict_config:
-        agent_parameters[-1]["strict_config"] = strict_config.lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
-    if enable_task_decomposition:
-        agent_parameters[-1]["enable_task_decomposition"] = enable_task_decomposition.lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
-    if task_decomposition_max_steps:
-        agent_parameters[-1]["task_decomposition_max_steps"] = _safe_int(
-            task_decomposition_max_steps
-        )
-    if task_step_max_retries:
-        agent_parameters[-1]["task_step_max_retries"] = _safe_int(task_step_max_retries)
-    if task_decomposition_wait_margin_cap_sec:
-        agent_parameters[-1]["task_decomposition_wait_margin_cap_sec"] = _safe_float(
-            task_decomposition_wait_margin_cap_sec
-        )
-    if camera_topic:
-        agent_parameters[-1]["camera_topic"] = camera_topic
-    if depth_topic:
-        agent_parameters[-1]["depth_topic"] = depth_topic
-    if camera_info_topic:
-        agent_parameters[-1]["camera_info_topic"] = camera_info_topic
-    if gripper_camera_topic:
-        agent_parameters[-1]["gripper_camera_topic"] = gripper_camera_topic
-    if gripper_depth_topic:
-        agent_parameters[-1]["gripper_depth_topic"] = gripper_depth_topic
-    if gripper_camera_info_topic:
-        agent_parameters[-1]["gripper_camera_info_topic"] = gripper_camera_info_topic
-    if gripper_pointcloud_topic:
-        agent_parameters[-1]["gripper_pointcloud_topic"] = gripper_pointcloud_topic
+    )
 
     # 자가진단용 센서 토픽 오버라이드 (robot_config YAML 기본값보다 우선)
     lidar_topic_override = LaunchConfiguration("lidar_topic").perform(context)

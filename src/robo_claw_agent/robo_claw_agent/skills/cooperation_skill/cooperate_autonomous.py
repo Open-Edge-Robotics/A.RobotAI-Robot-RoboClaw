@@ -21,19 +21,24 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
+from robo_claw_agent import ros_future
 from robo_claw_agent.skill_manager import BaseSkill
 
-from . import globals as _coop_globals
 from .conversation import get_peer_conversation
-from .globals import _COOPERATE_ACTIVE, _COOPERATE_LOCK, _COOPERATE_WAKE
+from .globals import (
+    _COOPERATE_WAKE,
+    claim_cooperation,
+    clear_cooperation_thread_if_current,
+    get_cooperation_thread,
+    is_cooperation_active,
+    release_cooperation,
+    set_cooperation_thread,
+)
 from .inbox import PeerMessageInbox, get_peer_message_inbox
 from .policy import evaluate_remote_skill
 
 logger = logging.getLogger(__name__)
 
-# 동료 호출 로컬 대기 상한 (cooperate_skill 의 _DEFAULT_PEER_CALL_LOCAL_WAIT_SEC 와 동일 정신)
-_DEFAULT_PEER_CALL_LOCAL_WAIT_SEC = 300.0
-_SERVICE_CALL_MARGIN_SEC = 5.0
 _COOPERATION_MESSAGE_TYPE = "peer_cooperation"
 _DEFAULT_REMOTE_ALLOWED_SKILLS = (
     "analyze_scene",
@@ -53,31 +58,6 @@ def cooperation_start_params(message: str) -> dict[str, Any]:
     """협동 시작 메시지에서 자동 참여에 사용할 목표를 추출한다."""
     match = re.search(r"협동 목표는\s*['\"](?P<goal>[^'\"]+)['\"]", str(message or ""))
     return {"goal": match.group("goal").strip()} if match else {}
-
-
-def _local_wait_sec(timeout_sec: float) -> float:
-    return timeout_sec + _SERVICE_CALL_MARGIN_SEC if timeout_sec else _DEFAULT_PEER_CALL_LOCAL_WAIT_SEC
-
-
-def _wait_for_future(future: Any, timeout_sec: float, message: str) -> tuple[bool, Any]:
-    done = threading.Event()
-    future.add_done_callback(lambda _: done.set())
-    if not done.wait(timeout=timeout_sec):
-        return False, message
-    return True, future.result()
-
-
-def _call_service(
-    client: Any,
-    request: Any,
-    call_timeout_sec: float,
-    not_found_message: str,
-    timeout_message: str,
-) -> tuple[bool, Any]:
-    if not client.wait_for_service(timeout_sec=5.0):
-        return False, not_found_message
-    future = client.call_async(request)
-    return _wait_for_future(future, call_timeout_sec, timeout_message)
 
 
 class AutonomousCooperateSkill(BaseSkill):
@@ -182,28 +162,23 @@ class AutonomousCooperateSkill(BaseSkill):
             thread_name_prefix="cooperation-peer",
         )
 
-        with _COOPERATE_LOCK:
-            if _COOPERATE_ACTIVE.is_set() or (
-                _coop_globals._COOPERATE_THREAD is not None
-                and _coop_globals._COOPERATE_THREAD.is_alive()
-            ):
-                return {
-                    "success": False,
-                    "message": "이미 자율협동이 실행 중입니다. stop_autonomous_cooperate 로 먼저 중단하세요.",
-                }
-            _COOPERATE_ACTIVE.set()
-            self._thread = threading.Thread(
-                target=self._run_loop,
-                args=(
-                    cycle_interval,
-                    proactive_interval,
-                    max_cycles,
-                ),
-                daemon=True,
-                name="autonomous-cooperate",
-            )
-            _coop_globals._COOPERATE_THREAD = self._thread
-            self._thread.start()
+        if not claim_cooperation():
+            return {
+                "success": False,
+                "message": "이미 자율협동이 실행 중입니다. stop_autonomous_cooperate 로 먼저 중단하세요.",
+            }
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            args=(
+                cycle_interval,
+                proactive_interval,
+                max_cycles,
+            ),
+            daemon=True,
+            name="autonomous-cooperate",
+        )
+        set_cooperation_thread(self._thread)
+        self._thread.start()
 
         logger.info("[Coop] autonomous_cooperate started")
         goal_message = f" 목표: {goal}" if goal else ""
@@ -230,12 +205,12 @@ class AutonomousCooperateSkill(BaseSkill):
         consumer_id = f"autonomous_cooperate:{id(self)}"
         if self._inbox is not None and not self._inbox.claim_consumer(consumer_id):
             logger.warning("[Coop] Inbox is owned by another consumer; stopping loop")
-            _COOPERATE_ACTIVE.clear()
+            release_cooperation(wake=False)
             return
         pending: set[Future[Any]] = set()
         last_proactive = 0.0
         try:
-            while _COOPERATE_ACTIVE.is_set():
+            while is_cooperation_active():
                 cycle += 1
                 if max_cycles > 0 and cycle > max_cycles:
                     logger.info("[Coop] Reached max cycles (%d). Stopping.", max_cycles)
@@ -281,10 +256,8 @@ class AutonomousCooperateSkill(BaseSkill):
             if self._incoming_executor is not None:
                 self._incoming_executor.shutdown(wait=False, cancel_futures=True)
                 self._incoming_executor = None
-            _COOPERATE_ACTIVE.clear()
-            with _COOPERATE_LOCK:
-                if _coop_globals._COOPERATE_THREAD is threading.current_thread():
-                    _coop_globals._COOPERATE_THREAD = None
+            release_cooperation(wake=False)
+            clear_cooperation_thread_if_current()
             logger.info("[Coop] autonomous_cooperate loop ended")
             self.send_user_message("자율협동을 종료했습니다.")
 
@@ -464,7 +437,7 @@ class AutonomousCooperateSkill(BaseSkill):
             f"RAG 시멘틱 맵의 {len(places)}개 장소를 순회하며 {activity}를 확인합니다."
         )
         for index, place in enumerate(places, start=1):
-            if not _COOPERATE_ACTIVE.is_set():
+            if not is_cooperation_active():
                 return
             target = {"x": place["x"], "y": place["y"], "frame_id": "map"}
             nav_result = skills.execute("navigate_to", target, timeout_sec=180.0)
@@ -605,9 +578,9 @@ class AutonomousCooperateSkill(BaseSkill):
                 done.set()
 
         threading.Thread(target=run, daemon=True, name="cooperation-llm").start()
-        cancellable = _COOPERATE_ACTIVE.is_set()
+        cancellable = is_cooperation_active()
         while not done.wait(timeout=0.1):
-            if cancellable and not _COOPERATE_ACTIVE.is_set():
+            if cancellable and not is_cooperation_active():
                 return None
         if "error" in result:
             raise result["error"]
@@ -682,7 +655,7 @@ class AutonomousCooperateSkill(BaseSkill):
         try:
             from robo_claw_msgs.srv import ListPeers  # type: ignore[import]
 
-            ok, response = _call_service(
+            ok, response = ros_future.call_service(
                 client,
                 ListPeers.Request(),
                 call_timeout_sec=10.0,
@@ -767,7 +740,7 @@ class AutonomousCooperateSkill(BaseSkill):
 
     def _send_to_peer(self, peer_name: str, message: str) -> dict[str, Any]:
         """동료 로봇에게 메시지를 전달한다 (CallPeerRobot 서비스 경유)."""
-        if not _COOPERATE_ACTIVE.is_set():
+        if not is_cooperation_active():
             return {"success": False, "message": "자율협동이 중단되었습니다."}
         node = self.node
         if node is None or not hasattr(node, "_call_peer_client"):
@@ -791,10 +764,10 @@ class AutonomousCooperateSkill(BaseSkill):
         req.wait_for_result = False  # 대화는 비동기로 전달
         req.timeout_sec = 0.0
 
-        ok, resp = _call_service(
+        ok, resp = ros_future.call_service(
             node._call_peer_client,
             req,
-            call_timeout_sec=_local_wait_sec(0.0),
+            call_timeout_sec=ros_future.local_wait_sec(0.0),
             not_found_message="CallPeerRobot 서비스를 찾을 수 없습니다.",
             timeout_message="동료 로봇 호출 시간 초과",
         )
@@ -816,11 +789,10 @@ class StopAutonomousCooperateSkill(BaseSkill):
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         del params
-        if not _COOPERATE_ACTIVE.is_set():
+        if not is_cooperation_active():
             return {"success": False, "message": "현재 진행 중인 자율협동이 없습니다."}
-        _COOPERATE_ACTIVE.clear()
-        _COOPERATE_WAKE.set()
-        thread = _coop_globals._COOPERATE_THREAD
+        release_cooperation()
+        thread = get_cooperation_thread()
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=0.1)
         logger.info("[Coop] stop_autonomous_cooperate called")

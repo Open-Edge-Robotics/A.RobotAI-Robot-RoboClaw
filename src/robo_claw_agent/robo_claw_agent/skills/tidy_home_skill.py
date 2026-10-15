@@ -12,6 +12,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 from .autonomous_skill.globals import (
     _AUTONOMOUS_ACTIVE,
     claim_autonomous,
+    is_autonomous_active,
     release_autonomous,
 )
 from .cleanup_policy import (
@@ -282,7 +283,7 @@ class TidyHomeSkill(BaseSkill):
                 start_message += f" 안전상 최대 {_MAX_HOME_PLACES}곳만 확인합니다."
             self.send_user_message(start_message)
             for index, place in enumerate(places, start=1):
-                if not _AUTONOMOUS_ACTIVE.is_set():
+                if not is_autonomous_active():
                     results.append({"place": place["name"], "status": "cancelled"})
                     break
 
@@ -292,7 +293,7 @@ class TidyHomeSkill(BaseSkill):
                 except Exception as exc:  # noqa: BLE001
                     arrived, nav_message = False, str(exc)
                     logger.exception("[TidyHome] Navigation failed for %s", place_name)
-                if not _AUTONOMOUS_ACTIVE.is_set():
+                if not is_autonomous_active():
                     results.append({"place": place_name, "status": "cancelled"})
                     break
                 if not arrived:
@@ -303,7 +304,7 @@ class TidyHomeSkill(BaseSkill):
                     continue
 
                 scene_result = self._analyze_current_scene(place_name)
-                if not _AUTONOMOUS_ACTIVE.is_set():
+                if not is_autonomous_active():
                     results.append({"place": place_name, "status": "cancelled"})
                     break
                 if not scene_result.get("success"):
@@ -575,7 +576,7 @@ class TidyHomeSkill(BaseSkill):
 
         step_count = 0
         while step_count < _MAX_CLEANUP_ACTIONS_PER_PLACE:
-            if not _AUTONOMOUS_ACTIVE.is_set():
+            if not is_autonomous_active():
                 return "cancelled"
             if not blackboard.get("task_queue") and not blackboard.get("decided_skill"):
                 break
@@ -605,7 +606,7 @@ class TidyHomeSkill(BaseSkill):
 
     def _move_aside_for_cleanup_demo_handoff(self) -> bool:
         """Move a short Nav2-planned lateral distance before inviting a demo peer."""
-        if not _AUTONOMOUS_ACTIVE.is_set():
+        if not is_autonomous_active():
             return False
         skills = getattr(self.node, "_skills", None)
         if skills is None or not skills.has_skill("move_relative"):

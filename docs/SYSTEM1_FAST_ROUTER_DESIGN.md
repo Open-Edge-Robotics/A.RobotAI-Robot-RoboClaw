@@ -6,7 +6,7 @@
 
 ## 1. 배경과 목적
 
-robo-claw의 `LLMPlanner.run_llm_planning_loop`(`agent_node/planner.py`)는 사용자 요청마다 LLM(ollama/openai/azure/anthropic)을 호출해 skill chain을 계획합니다. 약한 로컬 LLM(예: `gemma4:e4b`)의 오라우팅을 교정하려고, planner에는 규칙 기반 판단이 계속 추가되고 있습니다.
+robo-claw의 `LLMPlanner.run_llm_planning_loop`(`agent_node/planner/llm_planner.py`)는 사용자 요청마다 LLM(ollama/openai/azure/anthropic)을 호출해 skill chain을 계획합니다. 약한 로컬 LLM(예: `gemma4:e4b`)의 오라우팅을 교정하려고, planner에는 규칙 기반 판단이 계속 추가되고 있습니다.
 
 | 위치 | 역할 |
 |---|---|
@@ -28,8 +28,8 @@ robo-claw의 `LLMPlanner.run_llm_planning_loop`(`agent_node/planner.py`)는 사�
 | 그룹 | 규칙 | 호출 위치 | 역할 | 이 설계에서의 처리 |
 |---|---|---|---|---|
 | **A. 사전 라우팅** | `check_direct_skill`, `_SIMPLE_QUERY_PATTERNS` | `execution.py:477`, `execution.py:546` (LLM 호출 전) | 경로 결정 | **Laya와 배타적으로 교체** |
-| **B. LLM 출력 교정** | `_preserve_user_navigation_target`, `_force_navigation_if_misrouted`, `_route_location_query` | `planner.py:764`, `planner.py:883~894` (LLM 응답 후) | LLM이 만든 chain 교정 | **항상 유지** |
-| **B'. 가드/추출** | `_is_likely_conversational`, `_extract_save_place`, `nav_safety`, `sensor_health` | `planner.py:863`, `planner.py:1000` 등 | 대화문 action 차단, 자유 텍스트 인자 추출, 안전 검사 | **항상 유지** |
+| **B. LLM 출력 교정** | `_preserve_user_navigation_target`, `_force_navigation_if_misrouted`, `_route_location_query` | `agent_node/planner/routing.py` (LLM 응답 후) | LLM이 만든 chain 교정 | **항상 유지** |
+| **B'. 가드/추출** | `_is_likely_conversational`, `_extract_save_place`, `nav_safety`, `sensor_health` | `agent_node/planner/routing.py` 등 | 대화문 action 차단, 자유 텍스트 인자 추출, 안전 검사 | **항상 유지** |
 
 B와 B'는 Laya의 경쟁 대상이 아닙니다. System 2(약한 로컬 LLM)의 오라우팅을 막는 안전망입니다. Laya가 System 2로 넘긴 요청도 같은 LLM이 처리하므로 이 안전망은 계속 필요합니다. 또한 Laya는 자유 텍스트를 추출할 수 없습니다.
 

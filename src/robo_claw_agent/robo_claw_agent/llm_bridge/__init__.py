@@ -1,10 +1,11 @@
 from typing import Any
 
-from .base import BaseLLMBridge, Message, DEFAULT_TIMEOUT_SEC
+from .anthropic import AnthropicBridge
+from .azure import AzureOpenAIBridge
+from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge, Message
 from .ollama import OllamaBridge
 from .openai import OpenAIBridge
-from .azure import AzureOpenAIBridge
-from .anthropic import AnthropicBridge
+
 
 def create_llm_bridge(provider: str, **kwargs: Any) -> BaseLLMBridge:
     _registry = {

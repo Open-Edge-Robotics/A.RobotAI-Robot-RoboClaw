@@ -123,7 +123,7 @@ async def test_history_service_get_battery_with_node(config):
 
 @pytest.mark.ros2
 @pytest.mark.asyncio
-async def test_servicer_delegates_ping(config):
+async def test_servicer_handles_ping_inline(config):
     from robo_claw_grpc.servicer import RoboClawGrpcServicer
 
     with mock.patch(
@@ -138,10 +138,9 @@ async def test_servicer_delegates_ping(config):
 
         servicer = RoboClawGrpcServicer(config=config)
 
-    with mock.patch.object(servicer._ping_svc, "Ping", new=mock.AsyncMock(return_value=Pong(message="Pong"))) as m:
-        result = await servicer.Ping(PingRequest(), mock.Mock())
-        assert result.message == "Pong"
-        m.assert_awaited_once()
+    # Ping 은 하위 서비스로 위임하지 않고 servicer 가 직접 Pong 을 돌려준다.
+    result = await servicer.Ping(PingRequest(message="hi"), mock.Mock())
+    assert result.message == "Pong"
 
 
 @pytest.mark.ros2

@@ -13,11 +13,12 @@ import 되도록 유지한다.
 from __future__ import annotations
 
 import logging
-import math
 import threading
 from typing import Any
 
+from robo_claw_agent.ros_future import wait_for_future as _wait_for_future_common
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills._param_utils import bounded_timeout as _bounded_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -33,31 +34,14 @@ _GOAL_ACCEPT_TIMEOUT_SEC = 10.0
 _RESULT_MARGIN_SEC = 5.0
 
 
-def _bounded_timeout(value: Any, *, default: float, minimum: float, maximum: float) -> float | None:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return None
-    try:
-        timeout = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(timeout) or timeout < minimum or timeout > maximum:
-        return None
-    return timeout
-
-
 def _wait_for_future(future: Any, timeout_sec: float) -> tuple[bool, Any]:
     """executor 가 이미 spin 중이므로 future 완료만 이벤트로 대기한다."""
-    done = threading.Event()
-    future.add_done_callback(lambda _: done.set())
-    if not done.wait(timeout=timeout_sec):
-        return False, None
-    try:
-        return True, future.result()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("CLOiD packing pose action result failed: %s", exc)
-        return False, None
+    return _wait_for_future_common(
+        future,
+        timeout_sec,
+        label="CLOiD packing pose action",
+        return_timeout_value_on_error=True,
+    )
 
 
 def _create_run_script_client(node: Any) -> tuple[Any, type[Any]]:

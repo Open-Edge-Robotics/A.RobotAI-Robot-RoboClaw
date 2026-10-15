@@ -296,7 +296,7 @@
     {
       "name": "cleanup_demo",
       "category": "other",
-      "module": "cleanup_demo_skill",
+      "module": "cleanup",
       "risk_level": "dangerous",
       "internal": true,
       "required": [
@@ -312,7 +312,7 @@
         "request_id"
       ],
       "description": "동료가 지정한 기억 장소로 이동해 폐기물 후보 하나를 다시 관찰하고, 설정된 검토 모션을 한 번 시연합니다. 물체를 집거나 배치하지 않으며 실제 정리 완료를 의미하지 않습니다. 내부 버전 관리 요청에서만 사용합니다.",
-      "source": "src/robo_claw_agent/robo_claw_agent/skills/cleanup_demo_skill.py"
+      "source": "src/robo_claw_agent/robo_claw_agent/skills/cleanup/demo_skill.py"
     },
     {
       "name": "clear_virtual_obstacles",

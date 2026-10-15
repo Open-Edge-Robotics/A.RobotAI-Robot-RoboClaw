@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from robo_claw_agent.skills._param_utils import bool_param
+
 
 def _float_param(params: dict[str, Any], name: str, default: float) -> float:
     try:
@@ -59,17 +61,8 @@ def _number_tuple_param(value: Any, default: tuple[float, ...]) -> tuple[float, 
 
 
 def _bool_param(value: Any, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-    return bool(value)
+    """bool 변환 하위 호환 래퍼. 구현은 ``skills._param_utils.bool_param`` 참조."""
+    return bool_param(value, default)
 
 
 def _is_cup_target(target_object: str) -> bool:

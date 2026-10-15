@@ -460,14 +460,14 @@ def test_delegate_task_timeout_reports_unknown_remote_state(monkeypatch):
     # Second call (get_result_async) times out
     call_count = [0]
 
-    def fake_wait_for_future(future, timeout_sec, message):
+    def fake_wait_for_future(future, timeout_sec, *, timeout_value=None):
         call_count[0] += 1
         if call_count[0] == 1:
             return True, SimpleNamespace(accepted=True, get_result_async=lambda: object())
         return False, "에이전트 작업 실행 중 시간 초과"
 
     monkeypatch.setattr(
-        "robo_claw_agent.skills.cooperate_skill._wait_for_future",
+        "robo_claw_agent.ros_future.wait_for_future",
         fake_wait_for_future,
     )
 

@@ -7,6 +7,7 @@ from sensor_msgs.msg import LaserScan
 from robo_claw_agent.skill_manager import BaseSkill
 
 from . import globals
+from ._camera import is_gripper_camera as _is_gripper_camera
 from .core import (
     _depth_point_for_pixel,
     _distance_at_bearing,
@@ -21,11 +22,6 @@ if globals._VISION_MSGS_AVAILABLE:
     from vision_msgs.msg import Detection2DArray
 
 logger = logging.getLogger(__name__)
-
-
-def _is_gripper_camera(params: dict[str, Any]) -> bool:
-    camera_source = str(params.get("camera") or params.get("camera_source") or "").strip().lower()
-    return camera_source in {"gripper", "wrist", "hand", "end_effector", "eoa"}
 
 
 def _default_detections_topic(params: dict[str, Any]) -> str:

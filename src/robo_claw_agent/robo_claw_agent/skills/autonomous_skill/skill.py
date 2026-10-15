@@ -23,7 +23,7 @@ from .actions import (
 from .bt_runner import run_reactive_tick_loop, start_bt_thread, wire_blackboard
 from .conditions import CheckAutonomousActive, CheckBatterySufficient
 from .core import BTNode, FallbackNode, NodeStatus, ParallelNode, SequenceNode
-from .globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
+from .globals import _AUTONOMOUS_ACTIVE, claim_autonomous, is_autonomous_active, release_autonomous
 from .navigation_nodes import ApproachObjectNode, ExploreNode, NavigateNode
 from .patrol_nodes import InterestingSceneGate, PatrolNextPlaceNode
 from .perception_nodes import MonitorObjectNode
@@ -132,7 +132,7 @@ class ReactiveNavigateSkill(BaseSkill):
 
             run_reactive_tick_loop(root, _AUTONOMOUS_ACTIVE, log_prefix="[ReactiveNavigate]")
 
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             logger.info("[ReactiveNavigate] BT loop ended")
             if blackboard.get("detected_target_pos"):
                 self.send_user_message(f"✅ {interrupt_object} 발견 및 접근을 완료했습니다.")
@@ -296,7 +296,7 @@ class ConditionReactiveSkill(BaseSkill):
 
             run_reactive_tick_loop(root, _AUTONOMOUS_ACTIVE, log_prefix="[ConditionalReaction]")
 
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             logger.info("[ConditionalReaction] BT loop ended")
 
             if blackboard.get("detected_target_pos"):
@@ -568,7 +568,7 @@ class AutonomousActSkill(BaseSkill):
                 "자율 행동을 시작합니다. 기억된 장소를 순찰하고, 장소가 없으면 제자리에서 주변을 관찰합니다."
             )
 
-            while _AUTONOMOUS_ACTIVE.is_set():
+            while is_autonomous_active():
                 blackboard["cycle_count"] += 1
                 cycle = blackboard["cycle_count"]
 
@@ -587,7 +587,7 @@ class AutonomousActSkill(BaseSkill):
                     logger.exception("[AutonomousAct] BT tick exception: %s", exc)
                     time.sleep(2.0)
 
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             logger.info("[AutonomousAct] BT loop ended")
             self.send_user_message("자율 행동을 종료했습니다.")
 
@@ -676,7 +676,7 @@ class AutonomousActSkill(BaseSkill):
             logger.info("[AutonomousAct] goal-mode BT loop started: %s", goal)
             self.send_user_message(f"목표 지시형 자율 행동을 시작합니다. 목표: {goal}")
 
-            while _AUTONOMOUS_ACTIVE.is_set():
+            while is_autonomous_active():
                 blackboard["cycle_count"] += 1
                 cycle = blackboard["cycle_count"]
 
@@ -705,7 +705,7 @@ class AutonomousActSkill(BaseSkill):
                     logger.exception("[AutonomousAct] BT tick exception: %s", exc)
                     time.sleep(2.0)
 
-            _AUTONOMOUS_ACTIVE.clear()
+            release_autonomous()
             logger.info("[AutonomousAct] goal-mode BT loop ended")
             self.send_user_message("자율 행동을 종료했습니다.")
 
@@ -730,7 +730,7 @@ class StopAutonomousSkill(BaseSkill):
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         del params
-        if not _AUTONOMOUS_ACTIVE.is_set():
+        if not is_autonomous_active():
             return {"success": False, "message": "현재 진행 중인 자율 행동이 없습니다."}
 
         release_autonomous()

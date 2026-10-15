@@ -34,6 +34,32 @@ from .search_skill import SearchObjectSkill
 logger = logging.getLogger(__name__)
 
 
+def _make_grasp_reacquire(
+    skill: BaseSkill,
+    runtime: Any,
+    open_preset: str,
+    servo_params: dict[str, Any],
+    deadline: float,
+    steps: list[dict[str, Any]],
+) -> Any:
+    """파지 검증 실패 시 그리퍼 서보를 재실행하는 콜백을 만든다.
+
+    두 VLA 스킬이 동일한 중첩 함수를 각자 정의하고 있었다.
+    """
+
+    def _reacquire() -> dict[str, Any]:
+        _ensure_gripper_open(runtime, open_preset)
+        reacquire_servo = ServoGripperToObjectSkill()
+        reacquire_servo.set_node(skill.node)
+        reacquire_params = dict(servo_params)
+        reacquire_params["timeout_sec"] = _remaining_timeout(deadline)
+        reacquire_result = reacquire_servo.execute(reacquire_params)
+        steps.append({"skill": "servo_gripper_to_object (재시도)", "result": reacquire_result})
+        return reacquire_result
+
+    return _reacquire
+
+
 class VLABasedPickFrontObjectSkill(BaseSkill):
     """정면 물체를 90도 정렬 후 그리퍼 RGB-D 폐루프로 보정해 집기 시도."""
 
@@ -230,18 +256,6 @@ class VLABasedPickFrontObjectSkill(BaseSkill):
             retry_on_empty_grasp = _bool_param(params.get("retry_on_empty_grasp"), True)
             max_grasp_retries = _clamp_int(params.get("max_grasp_retries", 1), 0, 5, 1)
 
-            def _reacquire() -> dict[str, Any]:
-                _ensure_gripper_open(runtime, open_preset)
-                reacquire_servo = ServoGripperToObjectSkill()
-                reacquire_servo.set_node(self.node)
-                reacquire_params = dict(servo_params)
-                reacquire_params["timeout_sec"] = _remaining_timeout(deadline)
-                reacquire_result = reacquire_servo.execute(reacquire_params)
-                steps.append(
-                    {"skill": "servo_gripper_to_object (재시도)", "result": reacquire_result}
-                )
-                return reacquire_result
-
             failed_stage = "grasp_verification"
             grasp_verified, grasp_retry_count = _close_gripper_with_grasp_verification(
                 self,
@@ -249,7 +263,9 @@ class VLABasedPickFrontObjectSkill(BaseSkill):
                 close_preset=close_preset,
                 open_preset=open_preset,
                 gripper_group=None,
-                reacquire=_reacquire,
+                reacquire=_make_grasp_reacquire(
+                    self, runtime, open_preset, servo_params, deadline, steps
+                ),
                 retry_on_empty_grasp=retry_on_empty_grasp,
                 max_grasp_retries=max_grasp_retries,
             )
@@ -461,18 +477,6 @@ class VLABasedPickGripperObjectSkill(BaseSkill):
             retry_on_empty_grasp = _bool_param(params.get("retry_on_empty_grasp"), True)
             max_grasp_retries = _clamp_int(params.get("max_grasp_retries", 1), 0, 5, 1)
 
-            def _reacquire() -> dict[str, Any]:
-                _ensure_gripper_open(runtime, open_preset)
-                reacquire_servo = ServoGripperToObjectSkill()
-                reacquire_servo.set_node(self.node)
-                reacquire_params = dict(servo_params)
-                reacquire_params["timeout_sec"] = _remaining_timeout(deadline)
-                reacquire_result = reacquire_servo.execute(reacquire_params)
-                steps.append(
-                    {"skill": "servo_gripper_to_object (재시도)", "result": reacquire_result}
-                )
-                return reacquire_result
-
             failed_stage = "grasp_verification"
             grasp_verified, grasp_retry_count = _close_gripper_with_grasp_verification(
                 self,
@@ -480,7 +484,9 @@ class VLABasedPickGripperObjectSkill(BaseSkill):
                 close_preset=close_preset,
                 open_preset=open_preset,
                 gripper_group=None,
-                reacquire=_reacquire,
+                reacquire=_make_grasp_reacquire(
+                    self, runtime, open_preset, servo_params, deadline, steps
+                ),
                 retry_on_empty_grasp=retry_on_empty_grasp,
                 max_grasp_retries=max_grasp_retries,
             )

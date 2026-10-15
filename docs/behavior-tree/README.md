@@ -37,7 +37,7 @@ flowchart TB
     cmd2 --> BT
 
     subgraph L1["① ReAct 계획 계층 (일회성 태스크)"]
-        ReAct["LLMPlanner\nagent_node/planner.py\n\n계획→실행→재계획 (최대 5라운드)\n종료형 스킬이면 조기 종료"]
+        ReAct["LLMPlanner\nagent_node/planner/llm_planner.py\n\n계획→실행→재계획 (최대 5라운드)\n종료형 스킬이면 조기 종료"]
     end
 
     subgraph L2["② Behavior Tree 계층 (자율 행동 루프)"]
@@ -52,7 +52,7 @@ flowchart TB
 
 | 구분      | ① ReAct 계획 계층                           | ② Behavior Tree 계층                                             |
 | --------- | ------------------------------------------- | ---------------------------------------------------------------- |
-| 위치      | `agent_node/planner.py` (`LLMPlanner`)      | `skills/autonomous_skill/`                                       |
+| 위치      | `agent_node/planner/` (`LLMPlanner`)        | `skills/autonomous_skill/`                                       |
 | 트리거    | 모든 일회성 명령 (`ExecuteTask` 액션)       | `autonomous_act`, `reactive_navigate`, `condition_reactive` 스킬 |
 | 제어 방식 | LLM이 매 라운드 다음 스킬 결정 (ReAct 루프) | 정적 트리 구조를 매 사이클 tick, LLM은 리프 노드로만 개입        |
 | 실행 시간 | 짧음 (요청→응답)                            | 장시간 백그라운드 데몬 스레드                                    |
@@ -194,4 +194,4 @@ flowchart TB
 
 - 프로젝트 최상위 [README.md](../../README.md) — `## 🤖 자율 행동 (autonomous_act)` 절
 - 스킬 실행 엔진: `src/robo_claw_agent/robo_claw_agent/skill_manager.py`
-- ReAct 계획 계층: `src/robo_claw_agent/robo_claw_agent/agent_node/planner.py`
+- ReAct 계획 계층: `src/robo_claw_agent/robo_claw_agent/agent_node/planner/`

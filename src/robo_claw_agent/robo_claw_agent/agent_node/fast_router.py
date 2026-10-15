@@ -89,6 +89,22 @@ class FastRouter(Protocol):
         ...
 
 
+def direct_skill_decision(direct: dict[str, Any], source: str) -> RouteDecision:
+    """legacy direct-skill dict 를 ``RouteDecision`` 으로 변환한다.
+
+    ``direct_skills`` 의 ``check_direct_skill``/``direct_cleanup_demo_skill`` 이
+    반환하는 dict 를 라우터가 공통 형식으로 감싸는 지점이다. 각 라우터가 이 변환을
+    중복 구현하지 않도록 한 곳에 둔다.
+    """
+    return RouteDecision(
+        kind=ROUTE_DIRECT_SKILL,
+        skill=str(direct.get("skill", "")),
+        params=dict(direct.get("params") or {}),
+        background=bool(direct.get("background")),
+        source=source,
+    )
+
+
 class RuleRouter:
     """기존 규칙 기반 사전 라우팅(그룹 A). 동작은 리팩터링 전과 동일하다.
 
@@ -111,13 +127,7 @@ class RuleRouter:
 
         direct_demo = direct_cleanup_demo_skill(node, instruction)
         if direct_demo is not None:
-            return RouteDecision(
-                kind=ROUTE_DIRECT_SKILL,
-                skill=direct_demo["skill"],
-                params=dict(direct_demo.get("params") or {}),
-                background=bool(direct_demo.get("background")),
-                source=self.name,
-            )
+            return direct_skill_decision(direct_demo, self.name)
 
         if looks_compound(instruction):
             node.get_logger().info(
@@ -126,13 +136,7 @@ class RuleRouter:
         else:
             direct_skill = check_direct_skill(node, instruction)
             if direct_skill is not None:
-                return RouteDecision(
-                    kind=ROUTE_DIRECT_SKILL,
-                    skill=direct_skill["skill"],
-                    params=dict(direct_skill.get("params") or {}),
-                    background=bool(direct_skill.get("background")),
-                    source=self.name,
-                )
+                return direct_skill_decision(direct_skill, self.name)
 
         if _SIMPLE_QUERY_PATTERNS.match(instruction.strip()):
             node.get_logger().info(

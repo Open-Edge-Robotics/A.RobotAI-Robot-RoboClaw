@@ -126,6 +126,12 @@ class LLMDecideAction(BTNode):
         if self._blackboard.get("task_queue"):
             return NodeStatus.SUCCESS
 
+        prompt_context = self._collect_prompt_context(node)
+        system_prompt, messages = self._build_prompt(prompt_context)
+        return self._request_decision(node, messages, system_prompt)
+
+    def _collect_prompt_context(self, node: Any) -> dict[str, Any]:
+        """LLM 판단 프롬프트에 필요한 블랙보드/노드 정보를 수집한다."""
         scene = self._blackboard.get("scene_analysis", "장면 분석 정보 없음")
         objects = self._blackboard.get("detected_objects", [])
         coverage = self._blackboard.get("current_map_coverage", "알 수 없음")
@@ -297,6 +303,52 @@ class LLMDecideAction(BTNode):
             if cleanup_task_mode
             else ""
         )
+
+        return {
+            "scene": scene,
+            "objects": objects,
+            "coverage": coverage,
+            "cycle": cycle,
+            "history_str": history_str,
+            "semantic_places_str": semantic_places_str,
+            "rag_places_str": rag_places_str,
+            "map_generated_places_str": map_generated_places_str,
+            "robot_pose_str": robot_pose_str,
+            "agents_list_str": agents_list_str,
+            "peer_conversation_ctx": peer_conversation_ctx,
+            "skill_list": skill_list,
+            "rag_context": rag_context,
+            "soul_prefix": soul_prefix,
+            "self_caps_str": self_caps_str,
+            "delegate_force_hint": delegate_force_hint,
+            "handoff_status": handoff_status,
+            "cleanup_capable": cleanup_capable,
+            "cleanup_destinations_section": cleanup_destinations_section,
+            "cleanup_mode_rule": cleanup_mode_rule,
+        }
+
+    def _build_prompt(self, ctx: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+        """수집한 컨텍스트로 시스템 프롬프트와 사용자 메시지를 구성한다."""
+        soul_prefix = ctx["soul_prefix"]
+        cleanup_mode_rule = ctx["cleanup_mode_rule"]
+        skill_list = ctx["skill_list"]
+        rag_context = ctx["rag_context"]
+        semantic_places_str = ctx["semantic_places_str"]
+        rag_places_str = ctx["rag_places_str"]
+        map_generated_places_str = ctx["map_generated_places_str"]
+        history_str = ctx["history_str"]
+        agents_list_str = ctx["agents_list_str"]
+        peer_conversation_ctx = ctx["peer_conversation_ctx"]
+        handoff_status = ctx["handoff_status"]
+        self_caps_str = ctx["self_caps_str"]
+        cleanup_capable = ctx["cleanup_capable"]
+        cleanup_destinations_section = ctx["cleanup_destinations_section"]
+        delegate_force_hint = ctx["delegate_force_hint"]
+        cycle = ctx["cycle"]
+        robot_pose_str = ctx["robot_pose_str"]
+        coverage = ctx["coverage"]
+        objects = ctx["objects"]
+        scene = ctx["scene"]
         system_prompt = f"""{soul_prefix}당신은 자율 행동 중인 로봇 에이전트입니다.
 현재까지 수집한 정보를 바탕으로 다음에 실행할 행동을 결정하세요.
 {cleanup_mode_rule}
@@ -360,6 +412,7 @@ class LLMDecideAction(BTNode):
 - 쓰레기 줍기나 정리처럼 여러 단계가 필요하면 plan 형식을 사용하세요.
 - JSON 외의 텍스트를 출력하지 마세요.
 """
+
         messages = [
             {
                 "role": "user",
@@ -373,7 +426,12 @@ class LLMDecideAction(BTNode):
                 ),
             }
         ]
+        return system_prompt, messages
 
+    def _request_decision(
+        self, node: Any, messages: list[dict[str, str]], system_prompt: str
+    ) -> NodeStatus:
+        """LLM 응답을 받아 JSON 결정으로 파싱해 블랙보드에 반영한다."""
         try:
             response = node._llm.chat(messages, system_prompt=system_prompt)
             clean = re.sub(r"```(?:json)?\s*\n?", "", response).strip()

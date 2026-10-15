@@ -24,6 +24,11 @@ HANDSHAKE_CONTENT = "client_connected"
 DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024
 DEFAULT_DEDUP_PATH = "/tmp/robo_claw_peer_dedup.sqlite3"
 
+# ChatStream 의 송신 루프가 큐를 폴링하는 주기와 수신 스레드 join 상한.
+# 테스트에서 이 값을 줄여 실제 대기 시간을 없앨 수 있도록 상수로 분리한다.
+_CHAT_STREAM_QUEUE_POLL_SEC = 1.0
+_CHAT_STREAM_JOIN_TIMEOUT_SEC = 2.0
+
 
 def rpc_error_summary(exc: grpc.RpcError) -> str:
     """RpcError의 code/details를 안전하게 요약한다.
@@ -163,13 +168,13 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
             # 큐에 쌓인 메시지를 클라이언트에게 전달
             while context.is_active():
                 try:
-                    msg = msg_queue.get(timeout=1.0)
+                    msg = msg_queue.get(timeout=_CHAT_STREAM_QUEUE_POLL_SEC)
                     yield msg
                 except queue.Empty:
                     continue
         finally:
             self._active_streams.remove(msg_queue)
-            rx_thread.join(timeout=2.0)
+            rx_thread.join(timeout=_CHAT_STREAM_JOIN_TIMEOUT_SEC)
             logger.info("gRPC ChatStream connection closed")
 
     def SendCommand(self, request, context):

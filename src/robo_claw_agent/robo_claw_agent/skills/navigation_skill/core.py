@@ -16,6 +16,7 @@ from robo_claw_agent.memory_manager.semantic import (
     _best_location_for_targets,
     _normalize_location_name,
 )
+from robo_claw_agent.ros_future import wait_for_future as _wait_for_future_common
 
 from . import globals
 
@@ -86,17 +87,9 @@ def _ensure_action_clients(
 
 def _wait_for_future(future: Any, timeout_sec: float, label: str) -> tuple[bool, Any]:
     """executor가 이미 spin 중이므로 future 완료만 이벤트로 대기한다."""
-    done = threading.Event()
-    future.add_done_callback(lambda _: done.set())
-    if not done.wait(timeout=timeout_sec):
-        logger.error("%s timed out (timeout=%.1fs)", label, timeout_sec)
-        return False, None
-
-    try:
-        return True, future.result()
-    except Exception as e:
-        logger.error("Error obtaining %s result: %s", label, e)
-        return False, None
+    return _wait_for_future_common(
+        future, timeout_sec, label=label, return_timeout_value_on_error=True
+    )
 
 
 class GoalRegistry:
@@ -118,9 +111,6 @@ class GoalRegistry:
             self._active_handle = handle
             self._active_kind = kind
             self._active_label = label
-            # Keep legacy globals updated for backward compatibility
-            globals.ACTIVE_GOAL_HANDLE = handle
-            globals.ACTIVE_GOAL_KIND = kind
             try:
                 handle._goal_token = token
             except Exception:
@@ -149,8 +139,6 @@ class GoalRegistry:
             self._active_handle = None
             self._active_kind = ""
             self._active_label = ""
-            globals.ACTIVE_GOAL_HANDLE = None
-            globals.ACTIVE_GOAL_KIND = ""
 
     def cancel_active_goal(self, token: int | None = None) -> tuple[bool, str]:
         with self._lock:

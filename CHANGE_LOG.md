@@ -3,6 +3,50 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-15 — 에이전트 코어 구조 리팩터링 (모듈 분해·중복 제거·테스트 정비)
+
+- **배경**: 최근 기능 추가가 `skill_manager.py`, `planner.py`, `skills/*` 에 집중되면서
+  1000줄 이상 단일 파일, 복사된 헬퍼, 테스트 하네스 drift 가 누적되었습니다. 기능 변경
+  없이 구조와 계약을 정리하고 재발 방지 장치를 추가했습니다.
+- **모듈 분해**
+  - `skill_manager.py`(1396줄)를 `skills/base.py`(BaseSkill/SkillResult)와
+    `skills/manager.py`(SkillManager)로 분리하고 기존 경로는 재-export shim 으로
+    유지했습니다. `SkillManager.execute()` 215줄을
+    `_validate_execution`/`_run_with_retries`/`_finalize_execution` 으로 분해했습니다.
+  - `agent_node/planner.py`(1130줄)를 `planner/{routing,classify,answers,llm_planner}`
+    패키지로 분해했습니다.
+  - `skills/cleanup_*` 3개 파일을 `skills/cleanup/` 패키지로 통합하고 기존 경로는
+    shim 으로 유지했습니다.
+- **중복 제거**
+  - ROS future/서비스 대기 헬퍼(`_wait_for_future`/`_call_service`/`_local_wait_sec`)를
+    `ros_future.py` 로 통합했습니다(4곳 → 1곳).
+  - `skills/_param_utils.py`(bool/timeout 파싱), `skills/_battery.py`(sysfs 배터리),
+    `perception_skill/_camera.py`(그리퍼 카메라 판별)를 신설해 복제를 제거했습니다.
+  - 사전 라우팅 결과를 `RouteDecision` 하나로 수렴하고 legacy dict 왕복과
+    dict→결정 변환 중복을 제거했습니다.
+- **전역 상태 정리**
+  - 미사용 전역 목표 상태(`ACTIVE_GOAL_*`)를 제거했습니다.
+  - `cooperation_skill`/`autonomous_skill` 의 실행 슬롯 점유를 claim/release API 로
+    통일했습니다. 중지 경로가 wake 이벤트를 세우지 않아 종료가 지연되던 문제도 함께
+    해소했습니다.
+- **버그 수정**
+  - `_best_detection` 폴링 루프가 구독 생성 실패 시 sleep 없이 재시도해 CPU 를 소진하고
+    에러 로그를 폭주시키던 문제(실측 3초 동안 1,464,100회)를 최소 폴링 간격으로
+    막았습니다.
+- **테스트 정비**
+  - fake node 가 백엔드를 파라미터로 전달하지 않아 모든 스킬이 moveit 으로 오판하던
+    문제 등 누적된 API drift 를 원인별로 정리해, 제외 테스트의 실패 43건을 0건으로
+    복구했습니다.
+  - 실제 타임아웃/슬립을 기다리던 테스트를 mock 으로 정리하고 coverage 를
+    `unit-test-cov` 로 분리해 `task unit-test` 를 165초에서 34초로 단축했습니다.
+  - 대형 테스트 파일을 관심사별로 분할하고 공용 하네스(`_*_helpers.py`)를 승격했습니다
+    (최대 2771줄 → 601줄).
+- **재발 방지**
+  - ruff mccabe `max-complexity=35` 게이트를 도입했습니다(초과 함수는 개별 noqa).
+  - ROS 비의존 순수 모듈 16종의 경계를 AST 로 검증하는 회귀 테스트를 추가했습니다.
+- **검증**: `task lint`, `task unit-test`(1264 passed), 전체 pytest(1419 passed),
+  `task contract-check`, `task lint-skills`(104 skills)를 통과했습니다.
+
 ## 2026-10-14 — rclaw launch 경로 CLOiD 개체 설정 launch 인자 누락 수정
 
 - **배경**: CLOiD 상황별 표현 모션 자동 재생을 AI Config Server 프로필에서

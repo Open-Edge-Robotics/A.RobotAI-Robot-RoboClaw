@@ -439,9 +439,9 @@ class AgentNode(Node, ExecutionMixin):
         """협동 메시지를 처음 받는 로봇도 목표를 이어받아 자동 참여시킨다."""
         try:
             from ..skills.cooperation_skill.cooperate_autonomous import cooperation_start_params
-            from ..skills.cooperation_skill.globals import _COOPERATE_ACTIVE
+            from ..skills.cooperation_skill.globals import is_cooperation_active
 
-            if _COOPERATE_ACTIVE.is_set() or not self._skills.has_skill("autonomous_cooperate"):
+            if not is_cooperation_active() or not self._skills.has_skill("autonomous_cooperate"):
                 return
             params = cooperation_start_params(message)
             result = self._skills.execute("autonomous_cooperate", params, timeout_sec=5.0)
@@ -461,15 +461,14 @@ class AgentNode(Node, ExecutionMixin):
         """ROS 노드 종료 전에 자율협동 백그라운드 루프를 정리한다."""
         try:
             from ..skills.cooperation_skill.globals import (
-                _COOPERATE_ACTIVE,
-                _COOPERATE_THREAD,
-                _COOPERATE_WAKE,
+                get_cooperation_thread,
+                release_cooperation,
             )
 
-            _COOPERATE_ACTIVE.clear()
-            _COOPERATE_WAKE.set()
-            if _COOPERATE_THREAD is not None:
-                _COOPERATE_THREAD.join(timeout=2.0)
+            release_cooperation()
+            thread = get_cooperation_thread()
+            if thread is not None:
+                thread.join(timeout=2.0)
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warning(f"자율협동 루프 종료 정리 실패: {exc}")
         super().destroy_node()

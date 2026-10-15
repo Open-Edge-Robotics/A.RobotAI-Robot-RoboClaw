@@ -508,15 +508,24 @@ def _find_connected_peer_with_capability(node: Any, capability: str) -> dict[str
 
     ROS 그래프에서 발견된 피어는 delegate_task, 현재 gRPC 연결이 확인된 피어는
     call_peer_robot으로 보낸다. 설정만 되어 있고 연결되지 않은 피어는 선택하지 않는다.
+
+    ListPeers gRPC 조회(``_connected_grpc_peer_names``)는 서비스 미응답 시 최대 10초
+    블로킹될 수 있으므로, ROS 그래프만으로 능력이 확인되면 호출을 지연시켜 불필요한
+    대기를 피한다(자율 행동 decide 사이클 지연 방지).
     """
     peers = _discover_peer_agents(node)
-    grpc_names = _connected_grpc_peer_names(node)
-    grpc_names_normalized = {name.casefold() for name in grpc_names}
+    grpc_names_cache: set[str] | None = None
+
+    def _grpc_names() -> set[str]:
+        nonlocal grpc_names_cache
+        if grpc_names_cache is None:
+            grpc_names_cache = _connected_grpc_peer_names(node)
+        return grpc_names_cache
 
     for peer_id, info in peers.items():
         if _is_connected_ros_peer(node, peer_id) and _peer_has_capability(info, capability):
             return {"peer_name": peer_id, "transport": "ros2"}
-        if peer_id.casefold() in grpc_names_normalized:
+        if peer_id.casefold() in {name.casefold() for name in _grpc_names()}:
             if _peer_has_capability(info, capability) or _query_grpc_peer_capability(
                 node, peer_id, capability
             ):
@@ -524,7 +533,7 @@ def _find_connected_peer_with_capability(node: Any, capability: str) -> dict[str
 
     # launch 파라미터로만 등록된 원격 피어는 환경 설정 목록에 메타데이터가 없을 수 있다.
     # 현재 연결이 확인된 피어만 대상으로 실제 스킬 목록을 조회한다.
-    for peer_name in sorted(grpc_names):
+    for peer_name in sorted(_grpc_names()):
         if peer_name.casefold() not in {
             name.casefold() for name in peers
         } and _query_grpc_peer_capability(node, peer_name, capability):

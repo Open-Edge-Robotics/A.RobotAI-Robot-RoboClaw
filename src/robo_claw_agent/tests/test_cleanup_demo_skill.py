@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
-from robo_claw_agent.skills.cleanup_demo_skill import CleanupDemoSkill
+from robo_claw_agent.skills.cleanup.demo_skill import CleanupDemoSkill
 
 pytestmark = pytest.mark.unit
 
@@ -56,7 +56,7 @@ def _configure_demo(monkeypatch, skill, *, scene_result, motions=None):
         "_analyze_current_scene",
         lambda _self, location: events.append(("observe", location)) or scene_result,
     )
-    from robo_claw_agent.skills import cleanup_demo_skill as demo_module
+    from robo_claw_agent.skills.cleanup import demo_skill as demo_module
 
     monkeypatch.setattr(demo_module, "claim_autonomous", lambda _event: True)
     monkeypatch.setattr(demo_module, "release_autonomous", lambda: None)
@@ -289,7 +289,7 @@ def test_cleanup_demo_logs_cleanup_motion_request_after_execution(monkeypatch):
         },
     )
 
-    from robo_claw_agent.skills import cleanup_demo_skill as demo_module
+    from robo_claw_agent.skills.cleanup import demo_skill as demo_module
 
     info_calls: list[tuple[str, tuple]] = []
     monkeypatch.setattr(

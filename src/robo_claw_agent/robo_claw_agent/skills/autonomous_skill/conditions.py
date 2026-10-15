@@ -4,9 +4,10 @@ import math
 import numpy as np
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills._battery import read_sysfs_battery
 
 from .core import BTNode, NodeStatus
-from .globals import _AUTONOMOUS_ACTIVE
+from .globals import is_autonomous_active
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class CheckAutonomousActive(BTNode):
         super().__init__("CheckAutonomousActive")
 
     def tick(self) -> NodeStatus:
-        return NodeStatus.SUCCESS if _AUTONOMOUS_ACTIVE.is_set() else NodeStatus.FAILURE
+        return NodeStatus.SUCCESS if is_autonomous_active() else NodeStatus.FAILURE
 
 
 class CheckBatterySufficient(BTNode):
@@ -100,16 +101,7 @@ class CheckBatterySufficient(BTNode):
         return NodeStatus.SUCCESS
 
     def _read_sysfs_battery(self) -> float:
-        from pathlib import Path
-
-        for bat_dir in Path("/sys/class/power_supply").glob("BAT*"):
-            try:
-                cap_file = bat_dir / "capacity"
-                if cap_file.exists():
-                    return float(cap_file.read_text().strip())
-            except Exception:
-                pass
-        return 0.0
+        return read_sysfs_battery()
 
 
 class CheckMapCoverage(BTNode):
