@@ -111,9 +111,6 @@ class GoalRegistry:
             self._active_handle = handle
             self._active_kind = kind
             self._active_label = label
-            # Keep legacy globals updated for backward compatibility
-            globals.ACTIVE_GOAL_HANDLE = handle
-            globals.ACTIVE_GOAL_KIND = kind
             try:
                 handle._goal_token = token
             except Exception:
@@ -142,8 +139,6 @@ class GoalRegistry:
             self._active_handle = None
             self._active_kind = ""
             self._active_label = ""
-            globals.ACTIVE_GOAL_HANDLE = None
-            globals.ACTIVE_GOAL_KIND = ""
 
     def cancel_active_goal(self, token: int | None = None) -> tuple[bool, str]:
         with self._lock:

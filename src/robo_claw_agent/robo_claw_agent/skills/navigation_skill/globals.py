@@ -4,15 +4,12 @@ from typing import Any
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 
+# Nav2 action 클라이언트 캐시(노드별 1회 생성).
 NAV_CLIENT: ActionClient | None = None
 SPIN_CLIENT: ActionClient | None = None
 WP_CLIENT: ActionClient | None = None
 CLIENT_NODE: Any = None
 CLIENT_GROUP: ReentrantCallbackGroup | None = None
-
-ACTIVE_GOAL_LOCK = threading.Lock()
-ACTIVE_GOAL_HANDLE: Any = None
-ACTIVE_GOAL_KIND: str = ""
 
 PATROL_ACTIVE = threading.Event()
 
