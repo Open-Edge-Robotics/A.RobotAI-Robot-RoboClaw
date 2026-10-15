@@ -161,10 +161,54 @@ def _make_node(params=None, manipulation_backend="stretch", **extra):
     node = SimpleNamespace(
         has_parameter=lambda name: name in values,
         get_parameter=lambda name: DummyParameter(values[name]),
+        create_subscription=lambda *a, **k: SimpleNamespace(destroy=lambda: None),
+        destroy_subscription=lambda *a, **k: None,
+        default_callback_group=SimpleNamespace(),
+        add_entity=lambda *a, **k: None,
+        remove_entity=lambda *a, **k: None,
     )
     for key, value in extra.items():
         setattr(node, key, value)
     return node
+
+
+@pytest.fixture(autouse=True)
+def _stub_joint_positions(monkeypatch):
+    """실제 joint_states 대기를 피한다.
+
+    기본은 None(현재 하네스와 동일한 "joint state 없음" 결과)이며, 특정 값이
+    필요한 테스트는 각자 monkeypatch 로 덮어쓴다(fixture 가 먼저 실행됨).
+    """
+    from robo_claw_agent.skills.manipulation_skill.sequence import (
+        ee_state,
+        grasp_verification,
+        gripper_target_skills,
+        head_assist,
+        joint_state,
+        rotation,
+    )
+
+    for module in (
+        joint_state,
+        grasp_verification,
+        gripper_target_skills,
+        head_assist,
+        ee_state,
+        rotation,
+    ):
+        monkeypatch.setattr(module, "_joint_positions", lambda skill, names: None)
+
+
+@pytest.fixture(autouse=True)
+def _stub_head_observation(monkeypatch):
+    """헤드 카메라 관측이 실제 토픽 타임아웃을 기다리지 않도록 기본 실패로 고정한다."""
+    from robo_claw_agent.skills.manipulation_skill.sequence import head_assist
+
+    monkeypatch.setattr(
+        head_assist,
+        "_observe_head_target",
+        lambda skill, params: {"success": False, "message": "head observation unavailable"},
+    )
 
 
 def _patch_stretch_mode_node(monkeypatch, future, service_ready=True):
