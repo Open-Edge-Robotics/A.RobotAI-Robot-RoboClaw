@@ -266,6 +266,12 @@ func BuildCommonLaunchArgs(lctx *LaunchContext) []string {
 	if v := env["RC_IMU_TOPIC"]; v != "" {
 		args = append(args, fmt.Sprintf("imu_topic:=%s", v))
 	}
+	if lctx.MockRobot {
+		// 기존 config는 유지하고 로봇 의존 프로세스만 최종 인자로 비활성화합니다.
+		args = append(args, "run_core:=false", "run_manipulator:=false",
+			"use_vision:=false", "use_gripper_vision:=false", "use_depth_costmap:=false",
+			"use_client:=false", "use_grpc:=false")
+	}
 
 	return args
 }

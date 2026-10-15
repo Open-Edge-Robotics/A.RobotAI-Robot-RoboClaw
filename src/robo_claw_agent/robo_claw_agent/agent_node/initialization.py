@@ -274,7 +274,7 @@ def load_skills(node, p: AgentParams) -> None:
             node.get_logger().error(f"MCP init failed: {e}")
 
     loaded_skills = [s["name"] for s in node._skills.list_skills()]
-    node.get_logger().info(f"Loaded {len(loaded_skills)} skill(s): {', '.join(loaded_skills)}")
+    node.get_logger().debug(f"Loaded {len(loaded_skills)} skill(s): {', '.join(loaded_skills)}")
 
 
 def setup_ros_interfaces(node) -> None:

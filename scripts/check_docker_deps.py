@@ -33,6 +33,7 @@ except ModuleNotFoundError:  # Python 3.10
 # 이미지가 개발 환경(uv.lock)과 정확히 같은 버전을 설치해야 하는 패키지.
 # 이미지의 pip 해석 결과가 달라지면 런타임 API가 바뀔 수 있는 패키지를 등록한다.
 LOCK_PINNED: dict[str, str] = {
+    "qdrant-client": "Qdrant 1.19.x 서버 호환성과 개발·배포 환경의 query API 일치를 유지합니다",
     "mcp": "1.x/2.x에서 list_tools 시그니처와 응답 필드명이 달라짐",
 }
 
