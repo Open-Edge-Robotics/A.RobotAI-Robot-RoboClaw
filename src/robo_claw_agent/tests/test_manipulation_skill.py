@@ -1138,7 +1138,10 @@ def test_pick_front_object_composes_stow_align_and_right_side_pick(monkeypatch):
     result = skill.execute({"align_angle_deg": 90.0, "ready_pose": "custom_ready"})
 
     assert result["success"] is True
-    assert calls == [("stow", {}), ("align", 90.0), ("pick", "custom_ready")]
+    # stow 는 deadline 여유를 timeout_sec 로 함께 넘긴다(나머지 인자는 없음).
+    assert calls[0][0] == "stow"
+    assert set(calls[0][1]) <= {"timeout_sec"}
+    assert calls[1:] == [("align", 90.0), ("pick", "custom_ready")]
 
 
 def test_pick_front_object_can_restore_heading(monkeypatch):
@@ -2451,7 +2454,8 @@ def test_adaptive_pick_object_default_max_attempts_does_not_retry(monkeypatch):
 
     assert result["success"] is False
     assert calls == ["search"]
-    assert "attempts" not in result
+    # 프로덕션이 attempts 를 결과에 포함한다. 기본 max_attempts 는 재시도하지 않으므로 1 이다.
+    assert result.get("attempts", 1) == 1
     assert not any(step.get("skill") == "retry_pending" for step in result["steps"])
 
 
