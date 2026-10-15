@@ -1,5 +1,6 @@
 import json
 import threading
+from concurrent.futures import Future
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,13 @@ from robo_claw_agent.skills.autonomous_skill.patrol_nodes import (
 )
 
 
+def _ready_failure_future():
+    """ListPeers 호출이 즉시 실패 응답을 돌려주는 future를 만든다(테스트 지연 방지)."""
+    future = Future()
+    future.set_result(SimpleNamespace(success=False, error_message="no peers", peers=[]))
+    return future
+
+
 @pytest.fixture
 def mock_node():
     node = MagicMock()
@@ -50,6 +58,11 @@ def mock_node():
     node._skills = MagicMock()
     node._skills.list_skills.return_value = [{"name": "navigate", "description": "이동"}]
     node._skills.execute.return_value = MagicMock(success=True, result_data={})
+    # peer 탐색이 실제 ListPeers gRPC 타임아웃(최대 10초)을 기다리지 않도록
+    # 즉시 실패 응답을 돌려주는 클라이언트를 준비한다.
+    node._list_peers_client = MagicMock()
+    node._list_peers_client.wait_for_service.return_value = True
+    node._list_peers_client.call_async.return_value = _ready_failure_future()
     return node
 
 

@@ -61,6 +61,22 @@ def mock_joint_state(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def mock_head_observation(monkeypatch):
+    """헤드 카메라 관측이 실제 토픽 타임아웃(수초)을 기다리지 않도록 즉시 실패시킨다.
+
+    이 파일의 테스트는 관측 결과 자체가 아니라 파지/복구 흐름을 검증한다. 실제
+    환경과 같이 관측은 실패하고 기존 폴백 경로를 타도록 고정한다.
+    """
+    from robo_claw_agent.skills.manipulation_skill.sequence import head_assist
+
+    monkeypatch.setattr(
+        head_assist,
+        "_observe_head_target",
+        lambda skill, params: {"success": False, "message": "head observation unavailable"},
+    )
+
+
 def _make_stretch_node(params=None, backend=None):
     values = {
         "manipulation_backend": "stretch",

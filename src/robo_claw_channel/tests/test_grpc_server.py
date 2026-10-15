@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import grpc
+import pytest
 from robo_claw_channel.grpc_server import (
     HANDSHAKE_CONTENT,
     HANDSHAKE_SENDER_ID,
@@ -30,6 +31,15 @@ def _make_context(max_active_calls: int) -> MagicMock:
 
     context.is_active.side_effect = is_active
     return context
+
+
+@pytest.fixture(autouse=True)
+def _fast_chat_stream_poll(monkeypatch):
+    """ChatStream 송신 루프의 큐 폴링/join 대기를 줄여 테스트가 실제 초를 기다리지 않게 한다."""
+    from robo_claw_channel import grpc_server
+
+    monkeypatch.setattr(grpc_server, "_CHAT_STREAM_QUEUE_POLL_SEC", 0.01)
+    monkeypatch.setattr(grpc_server, "_CHAT_STREAM_JOIN_TIMEOUT_SEC", 0.01)
 
 
 class TestMessengerServicerChatStream:

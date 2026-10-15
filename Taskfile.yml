@@ -178,20 +178,18 @@ tasks:
   # 테스트
   # -------------------------------------------------------------
   unit-test:
-    desc: 빠른 단위 테스트 실행 (ROS 2 및 하드웨어 의존 테스트 제외)
+    desc: 빠른 단위 테스트 실행 (ROS 2/하드웨어 제외, coverage 없음)
+    vars:
+      COVERAGE_ARGS: ""
     cmds:
       - |
         if [[ ! -f install/setup.bash ]]; then
           echo "[rc] 워크스페이스가 빌드되지 않았습니다. 먼저 'task build'를 실행하세요." >&2
           exit 1
         fi
-        COVERAGE_ARGS=""
-        if python3 -c "import pytest_cov" >/dev/null 2>&1; then
-          COVERAGE_ARGS="-p pytest_cov --cov=robo_claw_agent --cov=robo_claw_channel --cov=robo_claw_discovery --cov=robo_claw_grpc --cov-report=term-missing"
-        fi
         ./scripts/run_in_ros_env.sh --ws env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
           -p pytest_asyncio.plugin \
-          ${COVERAGE_ARGS} \
+          {{.COVERAGE_ARGS}} \
           src/robo_claw_agent/tests/ \
           src/robo_claw_channel/tests/ \
           src/robo_claw_discovery/tests/ \
@@ -203,6 +201,15 @@ tasks:
           --ignore=src/robo_claw_channel/tests/test_client_node.py \
           -m "not ros2 and not hardware" \
           -v --tb=short {{.CLI_ARGS}}
+
+  unit-test-cov:
+    desc: 단위 테스트 + coverage 리포트 (느림; TDD 루프에서는 unit-test 사용)
+    cmds:
+      - task: unit-test
+        vars:
+          COVERAGE_ARGS: >-
+            -p pytest_cov --cov=robo_claw_agent --cov=robo_claw_channel
+            --cov=robo_claw_discovery --cov=robo_claw_grpc --cov-report=term-missing
 
   test:
     desc: 전체 테스트 실행 (pytest 및 colcon test)
