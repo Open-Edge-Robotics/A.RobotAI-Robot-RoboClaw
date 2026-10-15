@@ -14,6 +14,10 @@ from typing import Any
 from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.perception_skill.core import target_class_variants
 
+# wait_for_message 가 즉시 None 을 돌려주는 경우(예: 구독 생성 실패)에도 이 간격을
+# 두어 조밀 루프를 방지한다.
+_POLL_INTERVAL_SEC = 0.05
+
 
 def _best_detection(
     skill: BaseSkill,
@@ -49,6 +53,10 @@ def _best_detection(
             Detection2DArray, detections_topic, timeout_sec=min(1.0, remaining)
         )
         if msg is None:
+            # wait_for_message 는 타임아웃뿐 아니라 "구독을 만들 수 없음"처럼 즉시
+            # None 을 돌려줄 수 있다. 이때 sleep 없이 continue 하면 deadline 동안
+            # 조밀 루프가 되어 CPU 를 소진하고 에러 로그를 폭주시킨다.
+            time.sleep(_POLL_INTERVAL_SEC)
             continue
         received_message = True
         for det in msg.detections:
