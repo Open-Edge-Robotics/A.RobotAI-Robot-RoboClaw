@@ -47,12 +47,17 @@ line-length = 100
 extend-exclude = ["*_pb2.py", "*_pb2.pyi", "*_pb2_grpc.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "G"]
+select = ["E", "F", "W", "I", "UP", "B", "G", "C90"]
 ignore = [
     "E402",   # ROS2 환경에서 sys.path 조작 후 import하는 패턴 허용
     "E501",   # line-length는 formatter가 담당
     "G004",   # f-string을 사용한 로깅 허용 (가독성 및 유지보수성 확보)
 ]
+
+[tool.ruff.lint.mccabe]
+# 함수 복잡도(mccabe) 상한. 기존 대형 함수는 개별적으로 noqa: C901 로 표시하고,
+# 리팩터링으로 복잡도를 낮춘 뒤 임계값을 단계적으로 하향한다.
+max-complexity = 35
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]  # 테스트에서 assert False 허용

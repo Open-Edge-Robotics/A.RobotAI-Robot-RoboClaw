@@ -94,6 +94,43 @@ class AdaptivePickObjectSkill(BaseSkill):
     def validate_params(self, params: dict[str, Any]) -> bool:
         return bool(str(params.get("target_object") or "").strip())
 
+    def _resolve_stretch_runtime(
+        self, executed_steps: list[str]
+    ) -> tuple[Any, dict[str, Any] | None]:
+        """Stretch 런타임을 얻고 백엔드를 확인한다. 실패 시 (runtime, 실패 결과)."""
+        try:
+            runtime = _get_runtime(self.node)
+        except (ManipulationConfigError, ManipulationRuntimeUnavailableError) as exc:
+            logger.warning("Adaptive pick failed (runtime): %s", exc)
+            return None, build_sequence_failure(
+                f"적응형 집기 실패: {exc}",
+                failed_stage="runtime_init",
+                executed_steps=executed_steps,
+                recovery_attempted=False,
+            )
+        if getattr(runtime.config, "backend", "") != "stretch":
+            return runtime, build_sequence_failure(
+                f"adaptive_pick_object는 Stretch 백엔드 전용 스킬입니다 (현재 backend: {runtime.config.backend})",
+                failed_stage="backend_check",
+                executed_steps=executed_steps,
+                recovery_attempted=False,
+            )
+        return runtime, None
+
+    def _resolve_head_assist_flag(self, params: dict[str, Any], runtime: Any) -> bool:
+        """헤드 카메라 보조 사용 여부를 판정한다.
+
+        헤드 보조는 Stretch3 전용(head_pan_tilt 및 팔 작업축 분해가 Stretch 운동학에
+        묶여 있다). 런타임을 못 얻으면 보조 없이 진행한다.
+        """
+        use_head_assist = _bool_param(params.get("use_head_assist"), True)
+        if use_head_assist:
+            try:
+                use_head_assist = runtime.config.backend == "stretch"
+            except Exception:
+                use_head_assist = False
+        return use_head_assist
+
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         target_object = str(params.get("target_object") or "cup").strip()
         skip_search = _bool_param(params.get("skip_search"), False)
@@ -103,33 +140,11 @@ class AdaptivePickObjectSkill(BaseSkill):
         executed_steps: list[str] = []
         steps: list[dict[str, Any]] = []
 
-        try:
-            runtime = _get_runtime(self.node)
-        except (ManipulationConfigError, ManipulationRuntimeUnavailableError) as exc:
-            logger.warning("Adaptive pick failed (runtime): %s", exc)
-            return build_sequence_failure(
-                f"적응형 집기 실패: {exc}",
-                failed_stage="runtime_init",
-                executed_steps=executed_steps,
-                recovery_attempted=False,
-            )
+        runtime, error_result = self._resolve_stretch_runtime(executed_steps)
+        if error_result is not None:
+            return error_result
 
-        if getattr(runtime.config, "backend", "") != "stretch":
-            return build_sequence_failure(
-                f"adaptive_pick_object는 Stretch 백엔드 전용 스킬입니다 (현재 backend: {runtime.config.backend})",
-                failed_stage="backend_check",
-                executed_steps=executed_steps,
-                recovery_attempted=False,
-            )
-
-        # 헤드 카메라 보조는 Stretch3 전용(head_pan_tilt 및 팔 작업축 분해가
-        # Stretch 운동학에 묶여 있다). 런타임을 못 얻으면 보조 없이 진행한다.
-        use_head_assist = _bool_param(params.get("use_head_assist"), True)
-        if use_head_assist:
-            try:
-                use_head_assist = runtime.config.backend == "stretch"
-            except Exception:
-                use_head_assist = False
+        use_head_assist = self._resolve_head_assist_flag(params, runtime)
         # 기본 경로(옵션 B): 근접 그리퍼 비주얼 서보 대신 헤드 3D 관측 기반 결정론적
         # 고정 패턴 파지. False로 두면 기존 그리퍼 서보 + VLA 경로로 동작한다.
         use_fixed_pattern_grasp = _bool_param(params.get("use_fixed_pattern_grasp"), True)

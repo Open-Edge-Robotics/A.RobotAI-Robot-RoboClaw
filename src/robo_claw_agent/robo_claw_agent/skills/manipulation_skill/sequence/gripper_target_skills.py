@@ -94,7 +94,8 @@ class ServoGripperToObjectSkill(BaseSkill):
     def validate_params(self, params: dict[str, Any]) -> bool:
         return bool(str(params.get("target_object") or "").strip())
 
-    def execute(self, params: dict[str, Any]) -> dict[str, Any]:
+    # 리팩터링 예정: 시각 서보 루프 상태가 많아 복잡도 상한(35)을 초과한다.
+    def execute(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         if self.node is None:
             return {"success": False, "message": "ROS 노드에 접근할 수 없습니다."}
 

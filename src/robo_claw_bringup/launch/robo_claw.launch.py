@@ -196,7 +196,8 @@ def _resolve_config_file_default(bringup_share: str, prefix: str, robot_config: 
     return ""
 
 
-def _launch_setup(context, *args, **kwargs):
+# 리팩터링 예정: 노드 선언 그룹 분리로 복잡도 상한(35) 이하로 낮춘다.
+def _launch_setup(context, *args, **kwargs):  # noqa: C901
     del args, kwargs
 
     bringup_share = get_package_share_directory("robo_claw_bringup")
