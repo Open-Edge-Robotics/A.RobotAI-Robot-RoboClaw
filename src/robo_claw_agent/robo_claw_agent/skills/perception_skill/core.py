@@ -6,6 +6,7 @@ import numpy as np
 from sensor_msgs.msg import CameraInfo, Image, LaserScan
 
 from . import depth3d, globals
+from ._camera import is_gripper_camera
 
 _TARGET_ALIASES = {
     # 음료/용기
@@ -296,15 +297,11 @@ def _fetch_depth_frame(skill: Any, params: dict[str, Any]) -> DepthFrame | None:
 
 
 def _is_gripper_camera_params(params: dict[str, Any]) -> bool:
-    """params dict에서 카메라 출처가 그리퍼 카메라인지 판별.
+    """params dict에서 카메라 출처가 그리퍼 카메라인지 판별한다.
 
-    detect.py의 _is_gripper_camera와 동일 기준. core.py가 detect.py를 역으로
-    임포트하지 않도록 로컬 복제.
+    구현은 공용 ``perception_skill._camera.is_gripper_camera`` 에 있다.
     """
-    camera_source = str(
-        params.get("camera") or params.get("camera_source") or ""
-    ).strip().lower()
-    return camera_source in {"gripper", "wrist", "hand", "end_effector", "eoa"}
+    return is_gripper_camera(params)
 
 
 def _head_rotate_deg(skill: Any, params: dict[str, Any]) -> float:

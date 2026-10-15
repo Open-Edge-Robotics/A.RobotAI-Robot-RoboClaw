@@ -32,18 +32,8 @@ def _wait_service(client: Any, timeout_sec: float) -> bool:
     return client.wait_for_service(timeout_sec=timeout_sec)
 
 
-def _coerce_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _coerce_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+from ..coercion import coerce_float as _coerce_float
+from ..coercion import coerce_int as _coerce_int
 
 
 class RosBackend:

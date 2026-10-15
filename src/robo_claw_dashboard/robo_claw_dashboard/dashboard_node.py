@@ -7,7 +7,6 @@
 import json
 import threading
 from http.server import ThreadingHTTPServer
-from typing import Any
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -39,18 +38,8 @@ def _parse_list(raw: str, default: list[str] | None = None) -> list[str]:
     )
 
 
-def _as_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+from .coercion import coerce_float as _as_float
+from .coercion import coerce_int as _as_int
 
 
 def _resolve_static_root(static_root: str, node: Node) -> str:
