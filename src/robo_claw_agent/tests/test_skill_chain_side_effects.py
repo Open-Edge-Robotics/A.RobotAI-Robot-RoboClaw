@@ -52,6 +52,25 @@ class _CallPeerSkill(BaseSkill):
         return self.success_result("called")
 
 
+class _PolicyPreludeSkill(BaseSkill):
+    """nav_safety 주행 안전 게이트가 체인에 삽입하는 prelude 더블."""
+
+    name = "cloid_navigation_pose"
+    side_effects = ("arm_motion",)
+
+    def execute(self, params):
+        return self.success_result("pose requested")
+
+
+class _SelfContainedSkill(BaseSkill):
+    name = "adaptive_pick_object"
+    allow_with_others = False
+    side_effects = ("arm_motion", "gripper_motion")
+
+    def execute(self, params):
+        return self.success_result("picked")
+
+
 class _Skills:
     def __init__(self):
         self.skills = {
@@ -63,6 +82,8 @@ class _Skills:
                 _SendMessageSkill,
                 _DelegateTaskSkill,
                 _CallPeerSkill,
+                _PolicyPreludeSkill,
+                _SelfContainedSkill,
             )
         }
 
@@ -148,3 +169,40 @@ def test_cannot_call_peer_robot_to_self():
         ]
     )
     assert error == "같은 로봇에게 자기 자신을 위임할 수 없습니다."
+
+
+def test_policy_prelude_is_exempt_from_self_contained_chaining_rule():
+    """게이트가 삽입한 주행 전 자세 prelude 는 자체완결형 스킬과 체이닝할 수 있다."""
+    error = _Node()._validate_skill_chain(
+        [
+            {"skill": "cloid_navigation_pose", "params": {}, "_policy_prelude": True},
+            {"skill": "adaptive_pick_object", "params": {}},
+        ]
+    )
+
+    assert error is None
+
+
+def test_policy_prelude_does_not_block_background_skill():
+    """백그라운드 스킬 앞에 삽입된 prelude 는 백그라운드 체이닝 규칙 위반이 아니다."""
+    error = _Node()._validate_skill_chain(
+        [
+            {"skill": "cloid_navigation_pose", "params": {}, "_policy_prelude": True},
+            {"skill": "background_test", "params": {}},
+        ]
+    )
+
+    assert error is None
+
+
+def test_user_planned_prelude_is_still_rejected_when_chained():
+    """LLM/사용자가 직접 계획한 자세 스킬은 기존 체이닝 규칙을 그대로 따른다."""
+    error = _Node()._validate_skill_chain(
+        [
+            {"skill": "cloid_navigation_pose", "params": {}},
+            {"skill": "adaptive_pick_object", "params": {}},
+        ]
+    )
+
+    assert error is not None
+    assert "체이닝" in error

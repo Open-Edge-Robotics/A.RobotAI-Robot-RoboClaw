@@ -113,6 +113,16 @@
   확인합니다. 실제 자세 도달 여부는 확인하지 않으므로 결과를 "자세 완료"로 단정하지 않습니다.
 - 자세 복원은 이 스킬에 포함되지 않습니다. 되돌리기가 필요하면 운영자에게 요청합니다.
 
+### 주행 전 boxing 자세 prelude
+
+- `cloid_navigation_pose_enabled=true` 배포에서는 베이스가 움직이는 요청
+  (`navigate_to`, `move_relative`, `rotate`, `face_direction`, `approach_object`,
+  `follow_waypoints`, `patrol`, `explore` 등) 직전에 런타임이 boxing 자세 요청을
+  자동으로 먼저 수행합니다. 자세 요청이 실패하면 이동을 거부합니다.
+- 따라서 이동 요청마다 `set_cloid_packing_pose` 를 직접 실행할 필요가 없고, 계획에
+  넣지 않습니다. 이동 후 자세 복원은 자동으로 수행하지 않습니다.
+- 팔을 움직이는 모션을 실행하면 자세 상태가 초기화되므로 다음 이동 전에 다시 요청됩니다.
+
 ---
 
 ## 상황별 표현 모션

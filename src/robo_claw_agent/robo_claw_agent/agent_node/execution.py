@@ -22,7 +22,7 @@ from .fast_router import (
     ROUTE_DIRECT_SKILL,
     ROUTE_SIMPLE_REPLY,
 )
-from .nav_safety import ensure_stretch_navigation_safety
+from .nav_safety import ensure_navigation_safety
 from .skill_result_msg import build_skill_result_msg
 from .task_queue import QueuedTask, TaskQueue
 
@@ -205,11 +205,19 @@ class ExecutionMixin:
         if not chain:
             return "실행할 스킬이 비어 있습니다."
 
+        from .nav_safety import POLICY_PRELUDE_FLAG
+
         disallow_chain = []
         background_skills: list[str] = []
+        # 정책이 삽입한 prelude 를 뺀 실제 실행 체인. 자체완결형/백그라운드 규칙은
+        # "사용자가 계획한 동작 수" 를 기준으로 판단해야 하므로 prelude 를 세지 않는다.
+        effective_chain: list[dict[str, Any]] = []
         for item in chain:
             name = str(item.get("skill") or "").strip()
             params = item.get("params", {})
+            # 주행 안전 게이트가 삽입한 prelude 는 LLM 이 만든 항목이 아니므로
+            # 체이닝/백그라운드 규칙에서 제외한다(스키마·사전조건 검증은 그대로 수행).
+            is_policy_prelude = bool(item.get(POLICY_PRELUDE_FLAG))
             if not name:
                 return "스킬 이름이 비어 있습니다."
             if not isinstance(params, dict):
@@ -225,11 +233,13 @@ class ExecutionMixin:
                 return f"{name}의 파라미터 형식이 유효하지 않습니다: {schema_error}"
             if not skill.validate_params(params):
                 return f"{name}의 파라미터가 유효하지 않습니다."
-            if not getattr(skill, "allow_with_others", True):
+            if not getattr(skill, "allow_with_others", True) and not is_policy_prelude:
                 disallow_chain.append(name)
             behavior = getattr(skill, "terminal_behavior", "terminal")
-            if behavior == "background":
+            if behavior == "background" and not is_policy_prelude:
                 background_skills.append(name)
+            if not is_policy_prelude:
+                effective_chain.append(item)
             # side_effects/exclusive_resources는 계획 설명과 관찰성에 사용한다.
             # 체인은 순차 실행되므로 같은 자원을 두 번 사용하는 것 자체는
             # 합법적일 수 있다(예: 이동 후 회전). 동시 실행 충돌로 오판해
@@ -250,10 +260,12 @@ class ExecutionMixin:
                 if target and target == my_ns:
                     return "같은 로봇에게 자기 자신을 위임할 수 없습니다."
 
-        if background_skills and len(chain) > 1:
+        if background_skills and len(effective_chain) > 1:
             allowed_pre_background = {"send_message", "say", "log_observation"}
-            last_skill_name = str(chain[-1].get("skill") or "").strip()
-            prior_skills = [str(item.get("skill") or "").strip() for item in chain[:-1]]
+            last_skill_name = str(effective_chain[-1].get("skill") or "").strip()
+            prior_skills = [
+                str(item.get("skill") or "").strip() for item in effective_chain[:-1]
+            ]
             last_skill_obj = self._skills.get_skill(last_skill_name)
             is_last_background = (
                 getattr(last_skill_obj, "terminal_behavior", "terminal") == "background"
@@ -272,7 +284,7 @@ class ExecutionMixin:
                     f"{', '.join(background_skills)}"
                 )
 
-        if disallow_chain and len(chain) > 1:
+        if disallow_chain and len(effective_chain) > 1:
             joined = ", ".join(disallow_chain)
             return f"다음 스킬은 다른 스킬과 체이닝할 수 없습니다: {joined}"
         return None
@@ -542,8 +554,11 @@ class ExecutionMixin:
                 skill_results.append(res)
             else:
                 # LLM 계획 경로와 동일한 주행 안전 규칙을 적용한다.
-                chain = ensure_stretch_navigation_safety(
-                    [{"skill": name, "params": params}], self._skills, self.get_logger()
+                chain = ensure_navigation_safety(
+                    [{"skill": name, "params": params}],
+                    self._skills,
+                    self.get_logger(),
+                    self,
                 )
 
                 res = None

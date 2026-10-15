@@ -7,7 +7,7 @@ from typing import Any
 from ...answer import looks_like_json
 from ...tracing import traceable
 from ...types import AgentState
-from ..nav_safety import ensure_stretch_navigation_safety
+from ..nav_safety import ensure_navigation_safety
 from ..utils import _omit_base64_data
 from .answers import _MAX_ANSWER_ROUNDS, _compose_result_answer
 from .classify import (
@@ -435,8 +435,8 @@ class LLMPlanner:
                 raw_chain = _route_location_query(
                     raw_chain, instruction, self.node, self.node.get_logger()
                 )
-            raw_chain = ensure_stretch_navigation_safety(
-                raw_chain, self.node._skills, self.node.get_logger()
+            raw_chain = ensure_navigation_safety(
+                raw_chain, self.node._skills, self.node.get_logger(), self.node
             )
             policy_error = self.node._validate_skill_chain(raw_chain)
             if policy_error:

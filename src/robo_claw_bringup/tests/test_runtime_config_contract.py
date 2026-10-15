@@ -53,3 +53,17 @@ def test_cloid_expression_setting_mapping() -> None:
     assert field["parameter"] == ""
     assert field["scope"] == "robot_profile"
     assert field["secret"] is False
+
+
+def test_cloid_navigation_pose_setting_mapping() -> None:
+    """주행 전 boxing 자세 prelude 스위치는 계약/launch 인자 이름이 일치해야 한다."""
+    module = _load_generated_runtime_config()
+    field = module.RUNTIME_CONFIG_FIELDS["agent.cloid_navigation_pose_enabled"]
+    assert field["env"] == "RC_CLOID_NAVIGATION_POSE_ENABLED"
+    assert field["launch_argument"] == "cloid_navigation_pose_enabled"
+    assert field["parameter"] == ""
+    assert field["scope"] == "robot_profile"
+    assert field["secret"] is False
+    assert module.ENV_TO_LAUNCH_ARGUMENT["RC_CLOID_NAVIGATION_POSE_ENABLED"] == (
+        "cloid_navigation_pose_enabled"
+    )

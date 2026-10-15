@@ -106,6 +106,21 @@
           "config_server"
         ]
     },
+    "agent.cloid_navigation_pose_enabled": {
+      "type": "boolean",
+      "scope": "robot_profile",
+      "secret": false,
+      "env": "RC_CLOID_NAVIGATION_POSE_ENABLED",
+      "api_json": "cloid_navigation_pose_enabled",
+      "launch_argument": "cloid_navigation_pose_enabled",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "rag.enabled": {
       "type": "boolean",
       "scope": "runtime",

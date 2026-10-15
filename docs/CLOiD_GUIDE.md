@@ -187,15 +187,57 @@ CLOiD 는 출하 포장처럼 로봇 부피를 최소로 줄여야 할 때 boxin
 - **한계**: `cloid.move_boxing` 은 실행 완료 피드백을 주지 않습니다. 이 스킬은 스크립트
   정상 종료(`exit_code=0`)만 확인하고 실제 자세 도달은 확인하지 않습니다
   (`completion_confirmed=false`).
-- **사용**: 정지 상태에서 사용자의 명시적 요청(`confirm=true`)으로만 실행합니다. 허리를
-  크게 숙인 자세는 무게 중심이 앞으로 쏠려 주행에 부적합하므로 주행 중에는 사용하지
-  않습니다. 자세 복원은 이 스킬에 포함되지 않습니다.
+- **사용**: 수동 실행은 정지 상태에서 사용자의 명시적 요청(`confirm=true`)으로만 실행합니다.
+  주행 전 자세 준비는 아래 "주행 전 boxing 자세 prelude" 가 internal 스킬로 담당하므로,
+  사용자 명령으로 이동할 때 이 스킬을 계획에 넣을 필요가 없습니다.
 - **등록 범위**: `robot_config:=cloid` 프로필이면 개체(1호/2호) 구분 없이 등록됩니다.
 - **대안 스크립트 주의**: `hmc.boxing` 은 손가락을 쥐고 10초 뒤 양팔 gain 을 0으로 풀어
   힘을 빼므로, 자세 유지가 필요한 포장 용도로는 사용하지 않습니다.
 - **한계값 확인**: `cloid.move_boxing` 의 허리 `waist_joint_3`(-67°)는 RoboClaw 한계 파일의
   하한(-66.0°)보다 약 1° 크므로, 로봇의 `use_limits` 가 켜진 배포에서는 자세가 제한될 수
   있습니다. 실측 CLOiD 1호는 `TOFU_USE_LIMITS=false` 로 동작합니다.
+
+## 주행 전 boxing 자세 prelude
+
+CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 몸 밖으로 나올 수 있습니다. 그
+상태로 베이스가 움직이면 벽·문틀·가구에 팔이 걸릴 수 있으므로, Stretch3 의
+`stow_for_navigation` 과 같은 위치에서 **베이스 이동 직전에 boxing 자세를 먼저
+요청**합니다.
+
+- **스킬**: internal 스킬 `cloid_navigation_pose`(`is_internal=true`, LLM/사용자
+  비노출). tofu 실행 계약은 `set_cloid_packing_pose` 와 동일하며 공용 헬퍼를 씁니다.
+- **삽입 지점**: `agent_node/nav_safety.py` 의 `ensure_navigation_safety()` 가
+  베이스가 움직이는 스킬(`navigate_to`, `move_relative`, `rotate`, `face_direction`,
+  `approach_object`, `follow_waypoints`, `patrol`, `explore`, `reactive_navigate`,
+  `condition_reactive` 등) 직전마다 삽입합니다. 삽입된 항목은
+  `_policy_prelude` 표시로 자체완결형/백그라운드 체이닝 규칙에서 제외됩니다.
+- **Raw Nav2 경로**: 자율행동 frontier 탐험, 순찰 방문, 제자리 관찰처럼 스킬 체인을
+  거치지 않고 Nav2 goal 을 직접 보내는 경로는 `prepare_navigation()` 이 같은 절차를
+  수행합니다.
+- **fail closed**: 자세 요청이 실패하거나 준비 상태를 기록할 수 없으면 이동을
+  거부합니다. 조용히 주행하지 않습니다.
+- **반복 방지와 무효화**: 같은 이동 구간에서 매 tick 재요청하지 않도록 준비 상태를
+  노드에 기록하고, 팔/그리퍼를 움직이는 스킬이 성공하면(SkillManager 성공 후처리 훅)
+  그 상태를 지웁니다. 다음 이동 전에 자동으로 다시 요청합니다.
+- **직접 호출 경로**: HTTP/gRPC/메신저로 베이스 스킬을 곧바로 호출하면 체인 삽입이
+  없으므로, `NavigationSafetyGate` 가 준비 상태를 확인해 준비 전이면 이동을
+  거부합니다.
+- **confirm 없음**: 런타임 안전 절차이므로 confirm 을 요구하지 않습니다. 공개 스킬
+  `set_cloid_packing_pose` 의 confirm 게이트는 그대로 유지됩니다.
+- **스위치**: contract `agent.cloid_navigation_pose_enabled`(env
+  `RC_CLOID_NAVIGATION_POSE_ENABLED`, launch `cloid_navigation_pose_enabled`, 기본
+  `false`)로 켭니다. 스킬 모듈이 등록되지 않으면 게이트도 함께 비활성화됩니다.
+- **개체 적용**: 1호/2호 구분 없이 등록되며, 상체 구동 오류가 있는 개체는 운영 설정에서
+  스위치를 `false` 로 두어 비활성화합니다.
+- **미적용 경로**: `scan_room`(제자리 360° 스캔)과 `self_localize` 는 Nav2 spin/navigate 를
+  직접 호출하고 메타데이터에 베이스 모션 부작용이 없어 현재 prelude 삽입 대상이 아닙니다.
+  이 두 스킬을 주행 전 자세와 함께 쓰려면 운영자가 먼저 자세 요청을 수행해야 합니다.
+- **한계**: `cloid.move_boxing` 은 완료 피드백을 주지 않으므로 실제 자세 도달은 확인하지
+  않습니다(`completion_confirmed=false`). 자세 준비 상태는 "요청 성공 후 상체를 움직이지
+  않음"까지만 보장합니다. boxing 자세 자체의 주행 안전성(무게 중심·전고·라이다 가림)은
+  실기에서 검증이 필요합니다.
+- **복원 없음**: 도착 후 자세를 되돌리지 않습니다. 복원이 필요하면 운영자가
+  `set_cloid_packing_pose` 이외의 복원 수단을 준비해야 합니다.
 
 ## 상황별 표현 모션 자동 재생
 

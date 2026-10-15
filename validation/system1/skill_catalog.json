@@ -337,6 +337,19 @@
       "source": "src/robo_claw_agent/robo_claw_agent/skills/cloid_express_skill.py"
     },
     {
+      "name": "cloid_navigation_pose",
+      "category": "other",
+      "module": "cloid_navigation_pose_skill",
+      "risk_level": "dangerous",
+      "internal": true,
+      "required": [],
+      "properties": [
+        "timeout_sec"
+      ],
+      "description": "CLOiD 를 주행 전 최소 부피(boxing) 자세로 만드는 실행을 tofu script_runner 에 요청합니다. 주행 안전 게이트가 베이스 이동 직전에 내부적으로 호출하며, 스크립트 정상 종료만 확인하고 실제 자세 도달은 확인하지 않습니다.",
+      "source": "src/robo_claw_agent/robo_claw_agent/skills/cloid_navigation_pose_skill.py"
+    },
+    {
       "name": "close_gripper",
       "category": "manipulation",
       "module": "manipulation_skill",

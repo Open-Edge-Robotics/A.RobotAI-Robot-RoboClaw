@@ -44,17 +44,10 @@ class SkillChainNode(BTNode):
             self._done.set()
             return
 
-        from robo_claw_agent.agent_node.nav_safety import (
-            _uses_stretch_backend,
-            ensure_stretch_navigation_safety,
-        )
+        from robo_claw_agent.agent_node.nav_safety import ensure_navigation_safety
 
-        backend = getattr(node, "_manipulation_backend", None)
-        chain = (
-            ensure_stretch_navigation_safety(list(self._chain), node._skills, logger)
-            if backend is not None and _uses_stretch_backend(node, backend)
-            else list(self._chain)
-        )
+        # 로봇 프로필별 주행 전 안전 절차(stow/boxing prelude)를 체인에 삽입한다.
+        chain = ensure_navigation_safety(list(self._chain), node._skills, logger, node)
         for step in chain:
             skill_name = step.get("skill", "")
             params = step.get("params", {})

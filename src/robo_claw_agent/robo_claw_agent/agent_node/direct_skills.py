@@ -5,7 +5,7 @@ from typing import Any
 
 from ..skill_manager import SkillResult
 from ..types import AgentState
-from .nav_safety import ensure_stretch_navigation_safety
+from .nav_safety import ensure_navigation_safety
 
 logger = logging.getLogger(__name__)
 
@@ -204,11 +204,12 @@ def start_background_direct_skill(
         )
         node._set_state(AgentState.EXECUTING, skill_name, f"{skill_name} 실행 중")
         try:
-            # LLM 계획 경로와 동일한 Stretch3 안전 게이트를 직접 라우팅에도 적용한다.
-            chain = ensure_stretch_navigation_safety(
+            # LLM 계획 경로와 동일한 주행 안전 게이트를 직접 라우팅에도 적용한다.
+            chain = ensure_navigation_safety(
                 [{"skill": skill_name, "params": params}],
                 node._skills,
                 node.get_logger(),
+                node,
             )
             res = None
             for item in chain:

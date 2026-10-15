@@ -8,6 +8,7 @@ import inspect
 import logging
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING, Any, Optional
@@ -45,8 +46,18 @@ class SkillManager:
         self._blocked_skills: set[str] = set()
         self._active_executions: dict[str, dict[str, Any]] = {}
         self._active_lock = threading.Lock()
+        # 스킬 성공 후처리 훅. 스킬 계층이 주행 안전 규칙을 알지 않도록 주입식으로 둔다.
+        # 예: 팔을 움직인 스킬이 성공하면 nav_safety 의 주행 전 자세 준비 상태를 지운다.
+        self._post_skill_success_hook: Callable[[BaseSkill], None] | None = None
         # 재사용 가능한 작업 스레드 풀 — 매 호출마다 스레드 생성/소멸 오버헤드를 줄이고 중첩 스킬 호출 데드락 방지
         self._executor = ThreadPoolExecutor(max_workers=16, thread_name_prefix="skill-exec")
+
+    def set_post_skill_success_hook(self, hook: Callable[["BaseSkill"], None] | None) -> None:
+        """스킬이 성공한 뒤 호출할 후처리 훅을 등록한다(주행 안전 상태 무효화 등).
+
+        훅은 스킬 실행/정리 흐름을 방해해선 안 되므로 예외를 모두 삼킨다.
+        """
+        self._post_skill_success_hook = hook
 
     def set_skill_policy(
         self, allowed: list[str] | None = None, blocked: list[str] | None = None
@@ -396,6 +407,12 @@ class SkillManager:
         self._metrics.record(skill_name, success=success, duration_sec=duration)
         logger.info("Skill completed: %s (%.2fs)", skill_name, duration)
 
+        if success and self._post_skill_success_hook is not None:
+            try:
+                self._post_skill_success_hook(skill)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Post-skill success hook failed for %s: %s", skill_name, e)
+
         if not success:
             try:
                 skill.recover(params, message)
@@ -405,7 +422,6 @@ class SkillManager:
         with self._active_lock:
             self._active_executions.pop(skill_name, None)
         return SkillResult(skill_name, success, message, duration, result_data)
-
 
     def active_executions(self) -> list[dict[str, Any]]:
         """현재 SkillManager가 실행 중인 스킬의 안전한 스냅샷을 반환한다."""

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.7.0",
+  "contract_version": "2.8.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -152,6 +152,28 @@
       "env": "RC_CLOID_EXPRESSION_ENABLED",
       "api_json": "cloid_expression_enabled",
       "launch_argument": "cloid_expression_enabled",
+      "ros_parameter": "",
+      "value_type": "bool",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "agent.cloid_navigation_pose_enabled",
+      "type": "boolean",
+      "scope": "robot_profile",
+      "default": false,
+      "secret": false,
+      "description": "CLOiD pre-navigation posture switch. When enabled, the runtime requests the compact boxing posture (tofu script_runner cloid.move_boxing) once before every base motion skill and rejects the motion when the request fails. Registered for the cloid profile only; the packing posture is not restored automatically.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_CLOID_NAVIGATION_POSE_ENABLED",
+      "api_json": "cloid_navigation_pose_enabled",
+      "launch_argument": "cloid_navigation_pose_enabled",
       "ros_parameter": "",
       "value_type": "bool",
       "modes": [

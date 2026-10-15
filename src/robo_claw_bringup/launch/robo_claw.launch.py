@@ -305,6 +305,13 @@ def _launch_setup(context, *args, **kwargs):
         LaunchConfiguration("cloid_expression_enabled").perform(context).strip().lower()
         in ("1", "true", "yes", "on")
     )
+    cloid_navigation_pose_enabled = (
+        LaunchConfiguration("cloid_navigation_pose_enabled")
+        .perform(context)
+        .strip()
+        .lower()
+        in ("1", "true", "yes", "on")
+    )
     cleanup_demo_agent_id = "".join(
         character
         for character in LaunchConfiguration("agent_id").perform(context).casefold()
@@ -498,6 +505,10 @@ def _launch_setup(context, *args, **kwargs):
         # 상황별 표현 모션 자동 재생은 환경변수 스위치로만 켜고 끈다(기본 꺼짐).
         if cloid_expression_enabled:
             skill_modules.append("robo_claw_agent.skills.cloid_express_skill")
+        # 주행 전 boxing 자세 prelude 는 환경변수 스위치로만 켜고 끈다(기본 꺼짐).
+        # 스킬 모듈 자체를 등록하지 않으면 nav_safety 게이트도 함께 비활성화된다.
+        if cloid_navigation_pose_enabled:
+            skill_modules.append("robo_claw_agent.skills.cloid_navigation_pose_skill")
         if cleanup_demo_enabled and is_cloid1_profile:
             skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
             agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
@@ -865,6 +876,11 @@ def generate_launch_description() -> LaunchDescription:
                 "cloid_expression_enabled",
                 default_value="false",
                 description="CLOiD 상황별 표현 모션 자동 재생 스위치(기본 false). 활성화하면 태스크당 최대 한 번 상황에 맞는 등록 모션을 재생하며, 베이스 주행 중에는 재생하지 않습니다.",
+            ),
+            DeclareLaunchArgument(
+                "cloid_navigation_pose_enabled",
+                default_value="false",
+                description="CLOiD 주행 전 boxing 자세 prelude 스위치(기본 false). 활성화하면 베이스 이동·회전 스킬 직전에 cloid.move_boxing 실행을 한 번 요청하고 실패 시 이동을 거부합니다. 상체 구동 오류 개체는 false 로 둡니다.",
             ),
             DeclareLaunchArgument(
                 "scan_interval_sec",

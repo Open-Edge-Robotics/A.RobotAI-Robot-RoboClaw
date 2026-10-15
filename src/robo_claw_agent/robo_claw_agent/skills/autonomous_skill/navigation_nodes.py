@@ -155,7 +155,7 @@ class ExploreNode(BTNode):
             import numpy as np
             from nav_msgs.msg import OccupancyGrid
 
-            from robo_claw_agent.agent_node.nav_safety import prepare_stretch_navigation
+            from robo_claw_agent.agent_node.nav_safety import prepare_navigation
             from robo_claw_agent.skills.explore_skill import (
                 _cluster_frontiers,
                 _extract_frontiers,
@@ -198,7 +198,7 @@ class ExploreNode(BTNode):
         tx, ty = target
         logger.info("[BT] ExploreNode: moving to next frontier -> (%.2f, %.2f)", tx, ty)
 
-        ready, reason = prepare_stretch_navigation(self._skill.node)
+        ready, reason = prepare_navigation(self._skill.node)
         if not ready:
             logger.warning("[BT] ExploreNode: navigation safety rejected - %s", reason)
             return NodeStatus.FAILURE

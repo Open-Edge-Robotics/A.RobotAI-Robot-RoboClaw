@@ -37,9 +37,9 @@ def visit_place(node: Any, place_name: str, *, timeout_sec: float = 120.0) -> tu
     metadata = obj_info.get("metadata", {})
     frame = metadata.get("frame_id", "map") if isinstance(metadata, dict) else "map"
 
-    from robo_claw_agent.agent_node.nav_safety import prepare_stretch_navigation
+    from robo_claw_agent.agent_node.nav_safety import prepare_navigation
 
-    ready, reason = prepare_stretch_navigation(node)
+    ready, reason = prepare_navigation(node)
     if not ready:
         return False, reason
 

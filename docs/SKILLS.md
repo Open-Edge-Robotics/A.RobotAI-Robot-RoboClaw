@@ -84,7 +84,8 @@
 | Motion | `execute_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 실행(선행 동작은 확인된 요청에서 10초 간격으로 순차 요청) |
 | Motion | `list_cloid_motions` | Public | read | CLOiD | CLOi ScenarioManager 모션 카탈로그 조회 |
 | Motion | `stop_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 정지 요청 |
-| Motion | `set_cloid_packing_pose` | Public | dangerous | CLOiD | 포장용 최소 부피 boxing 자세 실행 요청(정지 상태, confirm 필요) |
+| Motion | `set_cloid_packing_pose` | Public | dangerous | CLOiD | 포장용 최소 부피 boxing 자세 실행 요청(정지 상태, confirm 필요). 주행 전에는 prelude 스킬이 자동 수행 |
+| Motion | `cloid_navigation_pose` | Internal | dangerous | CLOiD | 주행 전 boxing 자세 prelude(게이트가 베이스 이동 직전 자동 삽입, confirm 없음, cloid_navigation_pose_enabled 필요) |
 | Motion | `cloid_express` | Internal | action | CLOiD | 상황별 표현 모션 자동 재생(태스크당 1회, 주행 태스크 제외) |
 | Collaboration | `autonomous_cooperate` | Public | action | 공통 | 동료 로봇과 지속적 자연어 협동 |
 | Collaboration | `broadcast_to_peers` | Public | action | 공통 | 모든 동료 로봇에 메시지 전송 |

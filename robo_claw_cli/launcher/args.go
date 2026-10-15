@@ -67,6 +67,7 @@ func BuildCommonLaunchArgs(lctx *LaunchContext) []string {
 		"agent.cloid_cleanup_demo_enabled",
 		"agent.cloid_cleanup_demo_motion_ids_json",
 		"agent.cloid_expression_enabled",
+		"agent.cloid_navigation_pose_enabled",
 	} {
 		field, ok := contract.RuntimeFields[canonical]
 		if !ok || field.LaunchArgument == "" {

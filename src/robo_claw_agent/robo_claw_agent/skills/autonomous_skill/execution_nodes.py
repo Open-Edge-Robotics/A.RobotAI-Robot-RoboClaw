@@ -141,9 +141,9 @@ class LocalObservationNode(BTNode):
 
         self._skill.send_user_message("기억된 순찰 장소가 없어 제자리에서 주변을 관찰합니다.")
         try:
-            from robo_claw_agent.agent_node.nav_safety import prepare_stretch_navigation
+            from robo_claw_agent.agent_node.nav_safety import prepare_navigation
 
-            ready, reason = prepare_stretch_navigation(node)
+            ready, reason = prepare_navigation(node)
             if not ready:
                 self._blackboard["stationary_scan_result"] = {
                     "success": False,
@@ -554,20 +554,14 @@ class ExecuteDecidedAction(BTNode):
         success = False
         result = None
         try:
-            from robo_claw_agent.agent_node.nav_safety import (
-                _uses_stretch_backend,
-                ensure_stretch_navigation_safety,
-            )
+            from robo_claw_agent.agent_node.nav_safety import ensure_navigation_safety
 
-            backend = getattr(node, "_manipulation_backend", None)
-            chain = (
-                ensure_stretch_navigation_safety(
-                    [{"skill": skill_name, "params": params}],
-                    node._skills,
-                    logger,
-                )
-                if backend is not None and _uses_stretch_backend(node, backend)
-                else [{"skill": skill_name, "params": params}]
+            # 로봇 프로필별 주행 전 안전 절차(stow/boxing prelude)를 체인에 삽입한다.
+            chain = ensure_navigation_safety(
+                [{"skill": skill_name, "params": params}],
+                node._skills,
+                logger,
+                node,
             )
             result = None
             skill_timeout_sec = 120.0

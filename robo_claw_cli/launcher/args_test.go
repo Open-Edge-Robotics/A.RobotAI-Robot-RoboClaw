@@ -337,6 +337,7 @@ func TestBuildCommonLaunchArgsTaskDecompositionOmitted(t *testing.T) {
 func TestBuildCommonLaunchArgsCloidProfileSettings(t *testing.T) {
 	lctx := baseCtx(map[string]string{
 		"RC_CLOID_EXPRESSION_ENABLED":           "true",
+		"RC_CLOID_NAVIGATION_POSE_ENABLED":      "true",
 		"RC_CLOID_CLEANUP_DEMO_ENABLED":         "true",
 		"RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22]",
 	})
@@ -344,6 +345,7 @@ func TestBuildCommonLaunchArgsCloidProfileSettings(t *testing.T) {
 	joined := strings.Join(BuildCommonLaunchArgs(lctx), " ")
 	for _, want := range []string{
 		"cloid_expression_enabled:=true",
+		"cloid_navigation_pose_enabled:=true",
 		"cloid_cleanup_demo_enabled:=true",
 		"cloid_cleanup_demo_motion_ids_json:=[22]",
 	} {
@@ -358,6 +360,7 @@ func TestBuildCommonLaunchArgsCloidSettingsOmitted(t *testing.T) {
 	joined := strings.Join(BuildCommonLaunchArgs(baseCtx(map[string]string{})), " ")
 	for _, notWant := range []string{
 		"cloid_expression_enabled:=",
+		"cloid_navigation_pose_enabled:=",
 		"cloid_cleanup_demo_enabled:=",
 		"cloid_cleanup_demo_motion_ids_json:=",
 	} {

@@ -391,6 +391,7 @@ else
   add_param "${RC_ROBOT_DESCRIPTION_FILE:-}" "robot_description_file"
   add_param "${RC_CLOID_CLEANUP_DEMO_ENABLED:-}" "cloid_cleanup_demo_enabled"
   add_param "${RC_CLOID_EXPRESSION_ENABLED:-}" "cloid_expression_enabled"
+  add_param "${RC_CLOID_NAVIGATION_POSE_ENABLED:-}" "cloid_navigation_pose_enabled"
   cleanup_demo_motion_ids_json="${RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON:-}"
   add_param "${cleanup_demo_motion_ids_json//[[:space:]]/}" "cloid_cleanup_demo_motion_ids_json"
   add_param "${RC_LIDAR_TOPIC:-}" "lidar_topic"

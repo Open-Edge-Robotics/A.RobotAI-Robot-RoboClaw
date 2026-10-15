@@ -26,14 +26,15 @@ func TestSimCmdCreation(t *testing.T) {
 
 func TestBuildRunLaunchArgs(t *testing.T) {
 	envMap := map[string]string{
-		"RC_LLM_PROVIDER":   "ollama",
-		"RC_LLM_MODEL":      "qwen2.5:7b",
-		"RC_CAMERA_TOPIC":   "/my_cam",
-		"RC_USE_DASHBOARD":  "true",
-		"RC_DASHBOARD_HOST": "10.0.0.5",
-		"RC_DASHBOARD_PORT":                       "9099",
-		"RC_CLOID_CLEANUP_DEMO_ENABLED":          "true",
+		"RC_LLM_PROVIDER":                       "ollama",
+		"RC_LLM_MODEL":                          "qwen2.5:7b",
+		"RC_CAMERA_TOPIC":                       "/my_cam",
+		"RC_USE_DASHBOARD":                      "true",
+		"RC_DASHBOARD_HOST":                     "10.0.0.5",
+		"RC_DASHBOARD_PORT":                     "9099",
+		"RC_CLOID_CLEANUP_DEMO_ENABLED":         "true",
 		"RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22,60]",
+		"RC_CLOID_NAVIGATION_POSE_ENABLED":      "true",
 	}
 	args := BuildRunLaunchArgs(envMap, "azure", "gpt-4.1", "true", []string{"extra_arg:=123"})
 
@@ -47,6 +48,7 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 	foundDashPort := false
 	foundCleanupDemoEnabled := false
 	foundCleanupDemoMotionIDs := false
+	foundNavigationPose := false
 
 	for _, a := range args {
 		if a == "llm_provider:=azure" {
@@ -76,6 +78,9 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 		if a == "cloid_cleanup_demo_motion_ids_json:=[22,60]" {
 			foundCleanupDemoMotionIDs = true
 		}
+		if a == "cloid_navigation_pose_enabled:=true" {
+			foundNavigationPose = true
+		}
 	}
 
 	if !foundProvider {
@@ -104,5 +109,8 @@ func TestBuildRunLaunchArgs(t *testing.T) {
 	}
 	if !foundCleanupDemoMotionIDs {
 		t.Errorf("expected CLOi cleanup-demo allowlist in args: %v", args)
+	}
+	if !foundNavigationPose {
+		t.Errorf("expected CLOi navigation-pose switch in args: %v", args)
 	}
 }

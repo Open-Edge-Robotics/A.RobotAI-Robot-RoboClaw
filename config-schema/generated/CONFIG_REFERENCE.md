@@ -13,6 +13,7 @@ Schema version: `2.0`
 | `agent.cloid_cleanup_demo_enabled` | `RC_CLOID_CLEANUP_DEMO_ENABLED` | `cloid_cleanup_demo_enabled` | `boolean` | `True` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_cleanup_demo_motion_ids_json` | `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON` | `cloid_cleanup_demo_motion_ids_json` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_expression_enabled` | `RC_CLOID_EXPRESSION_ENABLED` | `cloid_expression_enabled` | `boolean` | `False` | `robot_profile` | `false` | local, docker, simulation, config_server |
+| `agent.cloid_navigation_pose_enabled` | `RC_CLOID_NAVIGATION_POSE_ENABLED` | `cloid_navigation_pose_enabled` | `boolean` | `False` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `rag.enabled` | `RC_ENABLE_RAG` | `enable_rag` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `rag.top_k` | `RC_RAG_TOP_K` | `rag_top_k` | `integer` | `2` | `runtime` | `false` | local, docker, simulation, config_server |
 | `task.strict_config` | `RC_STRICT_CONFIG` | `strict_config` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -110,6 +111,10 @@ Optional JSON array allowlist of reviewed CLOi cleanup-demo motion IDs. An empty
 ### `agent.cloid_expression_enabled`
 
 CLOiD situation-based expression motion switch. When enabled, the agent plays at most one registered CLOiD motion per task that matches the situation (greeting, talking, scanning, idle, success, fail). Motions are never played while the base is navigating. RoboClaw only registers the path for the cloid profile.
+
+### `agent.cloid_navigation_pose_enabled`
+
+CLOiD pre-navigation posture switch. When enabled, the runtime requests the compact boxing posture (tofu script_runner cloid.move_boxing) once before every base motion skill and rejects the motion when the request fails. Registered for the cloid profile only; the packing posture is not restored automatically.
 
 ### `rag.enabled`
 

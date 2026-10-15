@@ -62,6 +62,7 @@ func BuildRunLaunchArgs(envMap map[string]string, llmProvider, llmModel, channel
 		{"RC_CLOID_CLEANUP_DEMO_ENABLED", "cloid_cleanup_demo_enabled"},
 		{"RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON", "cloid_cleanup_demo_motion_ids_json"},
 		{"RC_CLOID_EXPRESSION_ENABLED", "cloid_expression_enabled"},
+		{"RC_CLOID_NAVIGATION_POSE_ENABLED", "cloid_navigation_pose_enabled"},
 		{"RC_AGENT_ID", "agent_id"},
 		{"GRPC_PEER_TOKEN", "grpc_peer_token"},
 		{"GRPC_PEER_TOKENS_JSON", "grpc_peer_tokens_json"},

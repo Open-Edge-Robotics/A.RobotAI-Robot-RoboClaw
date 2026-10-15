@@ -89,6 +89,14 @@
           "x-scope": "robot_profile",
           "x-secret": false
         },
+        "cloid_navigation_pose_enabled": {
+          "type": "boolean",
+          "description": "CLOiD pre-navigation posture switch. When enabled, the runtime requests the compact boxing posture (tofu script_runner cloid.move_boxing) once before every base motion skill and rejects the motion when the request fails. Registered for the cloid profile only; the packing posture is not restored automatically.",
+          "default": false,
+          "x-canonical-name": "agent.cloid_navigation_pose_enabled",
+          "x-scope": "robot_profile",
+          "x-secret": false
+        },
         "enable_rag": {
           "type": "boolean",
           "description": "Enable retrieval augmented generation.",

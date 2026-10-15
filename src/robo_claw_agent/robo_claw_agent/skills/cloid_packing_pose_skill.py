@@ -53,6 +53,107 @@ def _create_run_script_client(node: Any) -> tuple[Any, type[Any]]:
     return ActionClient(node, RunScript, SCRIPT_RUNNER_ACTION), RunScript
 
 
+def request_packing_pose(skill: Any, timeout_sec: float) -> dict[str, Any]:
+    """tofu script_runner 로 ``cloid.move_boxing`` 실행을 요청하고 스크립트 종료만 확인한다.
+
+    공개 스킬(``set_cloid_packing_pose``)과 주행 전 prelude 스킬
+    (``cloid_navigation_pose``)이 같은 tofu 실행 계약을 공유하도록 분리한 헬퍼다.
+    confirm/timeout/동시 실행 잠금 검증은 호출한 스킬이 담당하며, 이 함수는 검증 없이
+    요청과 결과 대기만 수행한다.
+    """
+    client = None
+    try:
+        try:
+            client, message_type = _create_run_script_client(skill.node)
+        except (ImportError, AttributeError) as exc:
+            logger.error("CLOiD script_runner interface is unavailable: %s", exc)
+            return skill.fail_result(
+                "tofu_msgs/action/RunScript 인터페이스를 사용할 수 없습니다. "
+                "CLOiD 메시지 패키지를 RoboClaw 런타임에 설치해야 합니다.",
+                failure_reason="motion_interface_unavailable",
+            )
+
+        if not client.wait_for_server(timeout_sec=_SERVER_WAIT_SEC):
+            return skill.fail_result(
+                f"tofu script_runner 서버를 찾을 수 없습니다: {SCRIPT_RUNNER_ACTION}",
+                failure_reason="script_runner_unavailable",
+                executable=PACKING_POSE_EXECUTABLE,
+            )
+
+        goal = message_type.Goal()
+        goal.package = TOFUPY_PACKAGE
+        goal.executable = PACKING_POSE_EXECUTABLE
+        goal.args = []
+        goal.timeout = timeout_sec
+        goal.stream_output = False
+
+        ok, goal_handle = _wait_for_future(client.send_goal_async(goal), _GOAL_ACCEPT_TIMEOUT_SEC)
+        if not ok:
+            return skill.fail_result(
+                "CLOiD 포장 자세 요청 전송 시간이 초과되었습니다.",
+                failure_reason="action_timeout",
+                status="timeout",
+                executable=PACKING_POSE_EXECUTABLE,
+                completion_confirmed=False,
+                recoverable=True,
+            )
+        if goal_handle is None or not goal_handle.accepted:
+            return skill.fail_result(
+                "CLOiD script_runner 가 포장 자세 요청을 거절했습니다.",
+                failure_reason="goal_rejected",
+                executable=PACKING_POSE_EXECUTABLE,
+            )
+
+        ok, wrapped = _wait_for_future(
+            goal_handle.get_result_async(), timeout_sec + _RESULT_MARGIN_SEC
+        )
+        if not ok or wrapped is None:
+            return skill.fail_result(
+                "CLOiD 포장 자세 실행 결과를 시간 내에 받지 못했습니다. "
+                "이미 시작된 동작의 상태는 별도로 확인해야 합니다.",
+                failure_reason="action_timeout",
+                status="timeout",
+                executable=PACKING_POSE_EXECUTABLE,
+                completion_confirmed=False,
+                recoverable=True,
+            )
+
+        result = wrapped.result
+        result_message = str(getattr(result, "message", ""))
+        exit_code = int(getattr(result, "exit_code", -1))
+        output_tail = str(getattr(result, "output_tail", ""))
+
+        if not bool(getattr(result, "success", False)):
+            return skill.fail_result(
+                f"CLOiD 포장 자세 실행이 실패했습니다: {result_message or '알 수 없는 오류'}",
+                failure_reason=(
+                    "action_timeout" if "timeout" in result_message.lower() else "motion_failed"
+                ),
+                status="failed",
+                executable=PACKING_POSE_EXECUTABLE,
+                exit_code=exit_code,
+                output_tail=output_tail,
+                completion_confirmed=False,
+            )
+
+        return skill.success_result(
+            "CLOiD 포장용 최소(boxing) 자세 실행 요청을 완료했습니다. "
+            "스크립트는 정상 종료했지만 실제 자세 도달은 확인하지 않았습니다.",
+            status="completed",
+            pose="packing",
+            executable=PACKING_POSE_EXECUTABLE,
+            exit_code=exit_code,
+            output_tail=output_tail,
+            completion_confirmed=False,
+        )
+    finally:
+        if client is not None:
+            try:
+                client.destroy()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("CLOiD script_runner client destroy failed: %s", exc)
+
+
 class SetCloidPackingPoseSkill(BaseSkill):
     """CLOiD 를 포장용 최소 부피(boxing) 자세로 만드는 실행을 요청한다."""
 
@@ -120,97 +221,7 @@ class SetCloidPackingPoseSkill(BaseSkill):
                 recoverable=True,
             )
 
-        client = None
         try:
-            try:
-                client, message_type = _create_run_script_client(self.node)
-            except (ImportError, AttributeError) as exc:
-                logger.error("CLOiD script_runner interface is unavailable: %s", exc)
-                return self.fail_result(
-                    "tofu_msgs/action/RunScript 인터페이스를 사용할 수 없습니다. "
-                    "CLOiD 메시지 패키지를 RoboClaw 런타임에 설치해야 합니다.",
-                    failure_reason="motion_interface_unavailable",
-                )
-
-            if not client.wait_for_server(timeout_sec=_SERVER_WAIT_SEC):
-                return self.fail_result(
-                    f"tofu script_runner 서버를 찾을 수 없습니다: {SCRIPT_RUNNER_ACTION}",
-                    failure_reason="script_runner_unavailable",
-                    executable=PACKING_POSE_EXECUTABLE,
-                )
-
-            goal = message_type.Goal()
-            goal.package = TOFUPY_PACKAGE
-            goal.executable = PACKING_POSE_EXECUTABLE
-            goal.args = []
-            goal.timeout = timeout_sec
-            goal.stream_output = False
-
-            ok, goal_handle = _wait_for_future(
-                client.send_goal_async(goal), _GOAL_ACCEPT_TIMEOUT_SEC
-            )
-            if not ok:
-                return self.fail_result(
-                    "CLOiD 포장 자세 요청 전송 시간이 초과되었습니다.",
-                    failure_reason="action_timeout",
-                    status="timeout",
-                    executable=PACKING_POSE_EXECUTABLE,
-                    completion_confirmed=False,
-                    recoverable=True,
-                )
-            if goal_handle is None or not goal_handle.accepted:
-                return self.fail_result(
-                    "CLOiD script_runner 가 포장 자세 요청을 거절했습니다.",
-                    failure_reason="goal_rejected",
-                    executable=PACKING_POSE_EXECUTABLE,
-                )
-
-            ok, wrapped = _wait_for_future(
-                goal_handle.get_result_async(), timeout_sec + _RESULT_MARGIN_SEC
-            )
-            if not ok or wrapped is None:
-                return self.fail_result(
-                    "CLOiD 포장 자세 실행 결과를 시간 내에 받지 못했습니다. "
-                    "이미 시작된 동작의 상태는 별도로 확인해야 합니다.",
-                    failure_reason="action_timeout",
-                    status="timeout",
-                    executable=PACKING_POSE_EXECUTABLE,
-                    completion_confirmed=False,
-                    recoverable=True,
-                )
-
-            result = wrapped.result
-            result_message = str(getattr(result, "message", ""))
-            exit_code = int(getattr(result, "exit_code", -1))
-            output_tail = str(getattr(result, "output_tail", ""))
-
-            if not bool(getattr(result, "success", False)):
-                return self.fail_result(
-                    f"CLOiD 포장 자세 실행이 실패했습니다: {result_message or '알 수 없는 오류'}",
-                    failure_reason=(
-                        "action_timeout" if "timeout" in result_message.lower() else "motion_failed"
-                    ),
-                    status="failed",
-                    executable=PACKING_POSE_EXECUTABLE,
-                    exit_code=exit_code,
-                    output_tail=output_tail,
-                    completion_confirmed=False,
-                )
-
-            return self.success_result(
-                "CLOiD 포장용 최소(boxing) 자세 실행 요청을 완료했습니다. "
-                "스크립트는 정상 종료했지만 실제 자세 도달은 확인하지 않았습니다.",
-                status="completed",
-                pose="packing",
-                executable=PACKING_POSE_EXECUTABLE,
-                exit_code=exit_code,
-                output_tail=output_tail,
-                completion_confirmed=False,
-            )
+            return request_packing_pose(self, timeout_sec)
         finally:
-            if client is not None:
-                try:
-                    client.destroy()
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("CLOiD script_runner client destroy failed: %s", exc)
             self._publish_lock.release()

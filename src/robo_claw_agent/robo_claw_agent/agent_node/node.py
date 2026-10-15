@@ -30,6 +30,7 @@ from .initialization import (
     setup_ros_interfaces,
     setup_tf,
 )
+from .nav_safety import register_cloid_navigation_pose_invalidation
 from .params import declare_agent_parameters, read_agent_parameters
 from .planner import LLMPlanner
 from .prompts import (
@@ -140,6 +141,9 @@ class AgentNode(Node, ExecutionMixin):
         self._startup_knowledge_ctx = self._load_startup_knowledge()
 
         load_skills(self, p)
+        # 주행 전 상체 자세 준비 상태는 팔을 움직인 스킬이 성공하면 무효화된다.
+        # 스킬 계층이 주행 안전 규칙을 알지 않도록 nav_safety 훅을 주입한다.
+        register_cloid_navigation_pose_invalidation(self, self._skills)
         setup_ros_interfaces(self)
 
         # 태스크 큐 초기화 — 순차 실행 보장 (max_size=0 이면 큐 비활성화)

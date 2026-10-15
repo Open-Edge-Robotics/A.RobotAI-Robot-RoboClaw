@@ -85,6 +85,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "",
 		Secret:         false,
 	},
+	"agent.cloid_navigation_pose_enabled": {
+		Canonical:      "agent.cloid_navigation_pose_enabled",
+		Type:           "boolean",
+		Scope:          "robot_profile",
+		Env:            "RC_CLOID_NAVIGATION_POSE_ENABLED",
+		APIJSON:        "cloid_navigation_pose_enabled",
+		LaunchArgument: "cloid_navigation_pose_enabled",
+		ROSParameter:   "",
+		Secret:         false,
+	},
 	"rag.enabled": {
 		Canonical:      "rag.enabled",
 		Type:           "boolean",

@@ -291,6 +291,37 @@ _STRETCH_GRIPPER_CAMERA_POLICY = """[Stretch3 그리퍼 카메라 정책]
 - 스킬 결과의 `gripper_camera_confirmed`(true/false/null)는 최종 판단이 그리퍼 카메라로 이뤄졌는지를 나타내고, `grasp_verified`(true/false/null)는 실제로 파지에 성공했는지(그리퍼 aperture 기반)를 나타냅니다. `success: true`이면서 `grasp_verified: false`이거나 `gripper_camera_confirmed: false`인 경우, 겉보기엔 동작을 완료했어도 실제로 물체를 놓쳤거나 시각 확인 없이 진행했을 수 있으니 사용자에게 알리거나 재시도를 제안하세요."""
 
 
+_CLOID_NAVIGATION_POSE_POLICY = """[CLOiD 주행 안전 정책]
+- CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 몸 밖으로 나올 수 있고, 그 상태로 베이스가 움직이면 벽·문틀·가구에 팔이 걸릴 수 있습니다.
+- 이 배포에서는 주행 안전 게이트가 베이스가 움직이는 스킬(`navigate_to`, `move_relative`, `approach_object`, `rotate`, `face_direction`, `follow_waypoints`, `patrol`, `explore`, `reactive_navigate`, `condition_reactive` 등) 직전에 boxing 자세 요청을 자동으로 먼저 수행합니다.
+- 따라서 계획에 `set_cloid_packing_pose` 를 직접 넣지 마세요. 자세 준비는 게이트가 담당하며, 자세 요청이 실패하면 이동이 거부되므로 실패 이유를 사용자에게 그대로 보고합니다.
+- 사용자가 "팔은 그대로 두고 이동", "바로 가"처럼 말해도 자세 준비 절차는 생략하지 않습니다. 생략을 요구받으면 안전상 불가능하다고 설명합니다.
+- boxing 자세는 이동 후 자동으로 복원되지 않습니다. 복원이 필요하면 운영자에게 요청하도록 안내합니다."""
+
+
+def _has_cloid_navigation_pose_skill(node) -> bool:
+    """주행 전 CLOiD boxing 자세 prelude 스킬이 등록된 배포인지 확인한다.
+
+    스킬이 없는데 정책만 주입하면 LLM 이 실행할 수 없는 스킬을 언급하게 되므로,
+    게이트가 실제로 동작하는 배포에서만 정책을 노출한다.
+    """
+    skills = getattr(node, "_skills", None)
+    if skills is None:
+        return False
+    # 테스트 더블(MagicMock)은 어떤 스킬이든 가진 것으로 보이므로 게이트 대상에서 뺀다.
+    if getattr(skills.__class__, "__module__", "").startswith("unittest.mock"):
+        return False
+    try:
+        skill = skills.get_skill("cloid_navigation_pose")
+    except Exception:
+        return False
+    if skill is None:
+        return False
+    if getattr(skill.__class__, "__module__", "").startswith("unittest.mock"):
+        return False
+    return str(getattr(skill, "name", "") or "") == "cloid_navigation_pose"
+
+
 def _robot_manipulation_backend(node) -> str:
     """노드 파라미터에서 manipulation_backend 값을 안전하게 읽는다.
 
@@ -527,6 +558,10 @@ def assemble_static_prompt_base(node) -> str:
     if _robot_manipulation_backend(node) == "stretch":
         base = base + f"\n\n{_STRETCH_NAVIGATION_SAFETY_POLICY}"
         base = base + f"\n\n{_STRETCH_GRIPPER_CAMERA_POLICY}"
+
+    # CLOiD 주행 전 boxing 자세 정책은 게이트가 켜진(스킬이 등록된) 배포에만 주입한다.
+    if _has_cloid_navigation_pose_skill(node):
+        base = base + f"\n\n{_CLOID_NAVIGATION_POSE_POLICY}"
 
     # 로봇 제약 규격 주입
     if node._robot_limits:

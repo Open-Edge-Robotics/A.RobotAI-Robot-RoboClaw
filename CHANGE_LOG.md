@@ -3,6 +3,51 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-15 — CLOiD 주행 전 boxing 자세 자동 prelude 및 설정 계약 추가
+
+- **배경**: CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 몸 밖으로 나올 수
+  있고, 그 상태로 베이스가 움직이면 벽·문틀·가구에 팔이 걸릴 수 있습니다. Stretch3 는
+  `stow_for_navigation` 을 베이스 이동 직전에 자동 삽입해 이 위험을 막고 있지만,
+  CLOiD 에는 같은 절차가 없어 주행 전 자세가 보장되지 않았습니다.
+- **조치**
+  - `skills/cloid_navigation_pose_skill.py` 추가 — internal 스킬
+    `cloid_navigation_pose`. `is_internal=true` 로 LLM/사용자에게 노출하지 않고,
+    공개 스킬의 `confirm=true` 게이트 대신 주행 안전 게이트가 내부에서만 호출합니다.
+  - `skills/cloid_packing_pose_skill.py` — tofu 실행 본문을 `request_packing_pose()`
+    로 분리해 두 스킬이 같은 실행 계약을 공유합니다(공개 스킬 계약은 그대로 유지).
+  - `agent_node/nav_safety.py` — `has_cloid_navigation_pose_skill()`,
+    `ensure_cloid_navigation_safety()`, `prepare_cloid_navigation()`,
+    `prepare_navigation()` 디스패처, 준비 상태 latch(`is/mark/invalidate`)와
+    성공 후처리 훅(`on_skill_succeeded`)을 추가했습니다. 팔 정책이 없는 로봇과
+    테스트 더블(MagicMock)은 게이트 대상에서 제외합니다.
+  - `skills/manager.py` — 스킬 성공 후 실행할 훅을 주입식으로 받도록 했습니다
+    (`set_post_skill_success_hook`). 팔/그리퍼를 움직인 스킬이 성공하면 주행 전 자세
+    준비 상태가 무효화되어 다음 이동 전에 다시 요청합니다.
+  - `agent_node/execution.py` — 게이트가 삽입한 `_policy_prelude` 항목을 자체완결형/
+    백그라운드 체이닝 규칙에서 제외하고, 실제 실행 체인 기준으로 규칙을 판단합니다.
+  - 호출부를 디스패처로 통일했습니다: `planner/llm_planner.py`, `execution.py`,
+    `direct_skills.py`, `autonomous_skill/{action_nodes,execution_nodes,navigation_nodes}.py`,
+    `navigation_skill/patrol.py`. 이제 호출부가 로봇 종류를 판단하지 않습니다.
+  - `agent_node/prompts.py` — 게이트가 켜진 배포에만 `[CLOiD 주행 안전 정책]` 을
+    주입해, LLM 이 자세 스킬을 계획에 넣지 않고 실패 시 이동하지 않도록 안내합니다.
+- **설정 계약**: `agent.cloid_navigation_pose_enabled`(env
+  `RC_CLOID_NAVIGATION_POSE_ENABLED`, launch `cloid_navigation_pose_enabled`, 기본
+  `false`)를 contract v2.8.0 에 등록하고, 생성 아티팩트 6개(Go/Python/shell/schema/reference)를
+  `./rclaw contract update --from` 으로 동기화했습니다. CLI 소비자(launcher `args.go`,
+  `cmd/run.go`), `scripts/run_robo_claw_docker.sh`, `.env.example` 도 같이 반영했습니다.
+- **기본값**: 스위치 기본값은 `false` 입니다. 스킬 모듈이 등록되지 않으면 게이트가
+  비활성화되어 기존 동작이 그대로 유지됩니다. 1호/2호 구분 없이 켤 수 있고, 상체 구동
+  오류 개체(2호)는 설정에서 끄도록 문서화했습니다.
+- **한계**: `cloid.move_boxing` 완료 피드백이 없어 실제 자세 도달은 확인하지 않습니다.
+  준비 상태는 "요청 성공 후 상체를 움직이지 않음"까지만 보장합니다. 자세 복원은
+  수행하지 않습니다. boxing 자세 자체의 주행 안전성(무게 중심·전고·라이다 가림)은
+  실기 검증이 필요합니다.
+- **검증**: `task unit-test` 전건 통과, `task lint`(ruff/스킬 카탈로그/프롬프트 톤/의존성),
+  `./rclaw contract check`, `go test ./...`(robo_claw_cli) 통과. 신규 테스트:
+  `test_cloid_navigation_pose_skill.py`, `test_skill_manager_post_hook.py`,
+  `test_nav_safety.py`(CLOiD 게이트/latch 13건), `test_skill_chain_side_effects.py`
+  (policy prelude 예외), bringup 계약/launch 등록 테스트.
+
 ## 2026-10-15 — 에이전트 코어 구조 리팩터링 (모듈 분해·중복 제거·테스트 정비)
 
 - **배경**: 최근 기능 추가가 `skill_manager.py`, `planner.py`, `skills/*` 에 집중되면서

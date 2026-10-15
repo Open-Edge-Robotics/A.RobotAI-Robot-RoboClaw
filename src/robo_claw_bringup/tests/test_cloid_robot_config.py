@@ -439,3 +439,31 @@ def test_cloid_expression_skill_is_registered_only_when_enabled() -> None:
     assert "robo_claw_agent.skills.cloid_express_skill" not in _modules(
         {"robot_config": "sim", "cloid_expression_enabled": "true"}
     )
+
+
+def test_cloid_navigation_pose_skill_is_registered_only_when_enabled() -> None:
+    """주행 전 boxing 자세 prelude 는 cloid + cloid_navigation_pose_enabled=true 일 때만 등록된다."""
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+
+    def _modules(overrides: dict[str, str]) -> list[str]:
+        context = _build_context(launch_description, overrides)
+        entities = module._launch_setup(context)  # noqa: SLF001
+        agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+        return agent["skill_modules"]
+
+    # 기본값은 꺼짐이므로 스킬 모듈도 등록되지 않는다(게이트가 동작하지 않는다).
+    assert "robo_claw_agent.skills.cloid_navigation_pose_skill" not in _modules(
+        {"robot_config": "cloid"}
+    )
+    # 개체 구분 없이 cloid 프로필이면 스위치로 켤 수 있다(2호는 설정에서 끈다).
+    for agent_id in ("cloid01", "cloi02"):
+        assert "robo_claw_agent.skills.cloid_navigation_pose_skill" in _modules(
+            {"robot_config": "cloid", "cloid_navigation_pose_enabled": "true", "agent_id": agent_id}
+        )
+    assert "robo_claw_agent.skills.cloid_navigation_pose_skill" not in _modules(
+        {"robot_config": "sim", "cloid_navigation_pose_enabled": "true"}
+    )
+    assert "robo_claw_agent.skills.cloid_navigation_pose_skill" not in _modules(
+        {"robot_config": "former", "cloid_navigation_pose_enabled": "true"}
+    )
