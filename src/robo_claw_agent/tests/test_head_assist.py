@@ -53,10 +53,45 @@ def _make_node(params=None, manipulation_backend="stretch", **extra):
     node = SimpleNamespace(
         has_parameter=lambda name: name in values,
         get_parameter=lambda name: DummyParameter(values[name]),
+        create_subscription=lambda *a, **k: SimpleNamespace(destroy=lambda: None),
+        destroy_subscription=lambda *a, **k: None,
+        default_callback_group=SimpleNamespace(
+            add_entity=lambda *a, **k: None, remove_entity=lambda *a, **k: None
+        ),
+        add_entity=lambda *a, **k: None,
+        remove_entity=lambda *a, **k: None,
     )
     for key, value in extra.items():
         setattr(node, key, value)
     return node
+
+
+@pytest.fixture(autouse=True)
+def _stub_joint_positions(monkeypatch):
+    """실제 joint_states 대기를 피하기 위해 joint 조회를 기본값으로 고정한다.
+
+    개별 테스트가 특정 값을 필요로 하면 monkeypatch 로 덮어쓴다(fixture 가 먼저 실행됨).
+    """
+    from robo_claw_agent.skills.manipulation_skill.sequence import (
+        ee_state,
+        grasp_verification,
+        gripper_target_skills,
+        joint_state,
+        rotation,
+    )
+
+    defaults = {
+        "gripper_aperture": 0.03,
+        "joint_lift": 0.5,
+        "wrist_extension": 0.1,
+        "joint_wrist_yaw": 0.0,
+    }
+
+    def _fake_positions(skill, names):
+        return {name: defaults.get(name, 0.0) for name in names}
+
+    for module in (joint_state, grasp_verification, gripper_target_skills, ee_state, rotation):
+        monkeypatch.setattr(module, "_joint_positions", _fake_positions)
 
 
 def _stretch_node(backend=None, extra_params=None):
@@ -142,7 +177,7 @@ def test_head_assist_disabled_keeps_blind_lift_recovery(monkeypatch):
 def test_head_assist_skipped_on_non_stretch_backend(monkeypatch):
     """moveit 등 비-Stretch 백엔드에서는 헤드 보조가 아예 켜지지 않는다."""
     backend = FakeBackend()
-    node = _make_node({}, _manipulation_backend=backend)  # backend 기본값 = moveit
+    node = _make_node({}, manipulation_backend="moveit", _manipulation_backend=backend)
     observations = [
         {"success": True, "ready_to_grasp": False, "depth_m": 0.55,
          "image_error_px": {"x": 0.0, "y": 0.0}},
