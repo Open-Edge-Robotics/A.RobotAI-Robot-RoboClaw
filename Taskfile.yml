@@ -196,9 +196,6 @@ tasks:
           src/robo_claw_grpc/tests/ \
           src/robo_claw_dashboard/tests/ \
           src/robo_claw_bringup/tests/ \
-          --ignore=src/robo_claw_agent/tests/test_head_assist.py \
-          --ignore=src/robo_claw_agent/tests/test_manipulation_skill.py \
-          --ignore=src/robo_claw_channel/tests/test_client_node.py \
           -m "not ros2 and not hardware" \
           -v --tb=short {{.CLI_ARGS}}
 
