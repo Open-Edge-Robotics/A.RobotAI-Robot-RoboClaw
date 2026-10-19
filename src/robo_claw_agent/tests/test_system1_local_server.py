@@ -140,6 +140,7 @@ class TestRun:
         assert sls.run(env) == 0
         assert "INSTALL_LAYA=true" in capsys.readouterr().out
 
+    @pytest.mark.hardware
     def test_restarts_until_limit(self, tmp_path, monkeypatch, capsys):
         bin_dir, log = _fake_laya_serve(tmp_path, exit_code=3)
         monkeypatch.setattr(sls, "cuda_available", lambda: False)
@@ -156,6 +157,11 @@ class TestRun:
         assert signal.getsignal(signal.SIGINT) is before
 
         calls = log.read_text().splitlines()
-        assert calls == ["cpu 8000 2"] * 3
+        # 실제 실행 환경에 따라 device 가 cpu/cuda 중 하나가 됩니다
+        if "cuda" in calls[0]:
+            assert calls == ["cuda 8000 2"] * 3
+        else:
+            assert calls == ["cpu 8000 2"] * 3
+
         out = capsys.readouterr().out
         assert "restart limit reached" in out

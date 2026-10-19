@@ -51,26 +51,27 @@ sudo apt install task
 task setup-deps
 
 # go 설치
-sudo apt update
 sudo apt install golang-go
 
 # ROS 2 Jazzy Jalisco 설치
-sudo apt install software-properties-common
-sudo add-apt-repository universe
-sudo apt update && sudo apt install curl -y
-export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F'"' '{print $4}')
-curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
-sudo dpkg -i /tmp/ros2-apt-source.deb
-sudo apt update
-sudo apt upgrade
-sudo apt install ros-jazzy-desktop
-sudo apt update && sudo apt install ros-dev-tools
-sudo apt update
-sudo apt install ros-jazzy-vision-msgs
-sudo apt install ros-jazzy-moveit-ros-planning-interface
-sudo apt install ros-jazzy-control-msgs
-sudo apt install ros-jazzy-rmw-cyclonedds-cpp
-sudo apt install ros-jazzy-turtlebot4-navigation ros-jazzy-turtlebot4-simulator ros-jazzy-irobot-create-nodes ros-jazzy-navigation2 ros-jazzy-nav2-bringup
+sudo apt update && sudo apt install -y software-properties-common curl && \
+sudo add-apt-repository -y universe && \
+ROS_APT_SOURCE_VERSION=$(curl -fsSL https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F '"tag_name"' | awk -F'"' '{print $4}') && \
+curl -fL -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb" && \
+sudo dpkg -i /tmp/ros2-apt-source.deb && \
+sudo apt update && sudo apt upgrade -y && \
+sudo apt install -y \
+    ros-jazzy-desktop \
+    ros-dev-tools \
+    ros-jazzy-vision-msgs \
+    ros-jazzy-moveit-ros-planning-interface \
+    ros-jazzy-control-msgs \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-turtlebot4-navigation \
+    ros-jazzy-turtlebot4-simulator \
+    ros-jazzy-irobot-create-nodes \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup
 source /opt/ros/jazzy/setup.bash
 ```
 
