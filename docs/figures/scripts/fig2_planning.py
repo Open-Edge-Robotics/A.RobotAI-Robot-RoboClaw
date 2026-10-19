@@ -73,7 +73,15 @@ sk = ["Navigation", "Manipulation", "Vision", "Map", "System/HRI", "Cooperate"]
 w = 1.48
 for i, t in enumerate(sk):
     box(ax, 6.0 + i * (w + 0.13), 0.95, w, 1.0, t, "item", fs=6)
-arrow(ax, (13.9, 3.7), (13.9, 2.9))
+arrow(ax, (13.6, 3.7), (13.6, 2.9))
+label(ax, 13.45, 3.3, "execute", fs=5.8, ha="right")
+# skill -> Skill Manager result
+arrow(ax, (14.4, 2.9), (14.4, 3.7), ls="--", lw=1.1, head=6)
+label(ax, 14.55, 3.3, "SkillResult", fs=5.8, ha="left")
+# direct_skill path: Skill Manager result goes straight to Task Result
+poly(ax, [(12.4, 3.7), (12.4, 3.25), (4.3, 3.25), (4.3, 2.9)], ls="--", lw=1.1, head=6)
+label(ax, 8.4, 3.45, "direct_skill result (System 1 path)", fs=5.8)
+label(ax, 2.95, 3.3, "final answer", fs=5.8, ha="left")
 
 label(ax, 8.0, 12.25, "", fs=1)
 save(fig, "fig2_task_planning", OUT)
