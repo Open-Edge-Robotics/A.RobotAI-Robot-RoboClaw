@@ -28,6 +28,11 @@ class AgentParams:
     anthropic_key: str = ""
     ollama_options_json: str = "{}"
     llm_timeout_sec: float = 120.0
+    # 네이티브 도구(tool) 호출 사용 여부.
+    # True: 스킬을 LLM API 의 tools 파라미터로 등록하고 응답 형식 강제(JSON)를
+    #       제거한다. False: 기존 JSON 응답 경로(기준선)를 그대로 쓴다.
+    # A/B 비교는 scripts/eval_tool_calling.py 참고.
+    llm_tool_calling: bool = True
     camera_topic: str = ""
     depth_topic: str = ""
     camera_info_topic: str = ""
@@ -121,6 +126,8 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("llm_embedding_api_key", "")
     node.declare_parameter("ollama_options_json", "{}")
     node.declare_parameter("llm_timeout_sec", 120.0)
+    # 네이티브 도구(tool) 호출 on/off (A/B 비교용 스위치)
+    node.declare_parameter("llm_tool_calling", True)
     node.declare_parameter("azure_openai_endpoint", "")
     node.declare_parameter("azure_openai_api_key", "")
     node.declare_parameter("openai_api_key", "")
@@ -262,6 +269,7 @@ def read_agent_parameters(node) -> AgentParams:
         anthropic_key=_s(node, "anthropic_api_key"),
         ollama_options_json=_s(node, "ollama_options_json"),
         llm_timeout_sec=_d(node, "llm_timeout_sec"),
+        llm_tool_calling=_b(node, "llm_tool_calling"),
         camera_topic=_s(node, "camera_topic"),
         depth_topic=_s(node, "depth_topic"),
         camera_info_topic=_s(node, "camera_info_topic"),

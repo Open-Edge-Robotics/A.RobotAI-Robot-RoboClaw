@@ -1,5 +1,13 @@
 robo_claw_agent_node:
   ros__parameters:
+    # ── LLM 호출 방식 ────────────────────────────────────────────────
+    # true: 스킬을 provider 네이티브 tool 로 등록해 호출시킨다(기본).
+    #       스킬 목록을 평문 프롬프트에 나열하지 않아 토큰이 줄고,
+    #       모델이 스킬을 고르는 정확도가 올라간다.
+    # false: 기존 방식(스킬 목록을 프롬프트에 나열 + JSON 응답 강제).
+    #        provider 가 tool calling 을 지원하지 않으면 자동으로 이쪽으로 fallback 한다.
+    llm_tool_calling: true
+
     # ── Memory (로컬 스토리지형 메모리 설정) ─────────────────────────
     memory_backend: "json"
     memory_path: ""

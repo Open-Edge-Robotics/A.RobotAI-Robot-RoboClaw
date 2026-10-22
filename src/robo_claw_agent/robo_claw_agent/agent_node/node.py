@@ -53,6 +53,7 @@ from .skill_result_msg import build_failure_skill_result_msg, build_skill_result
 from .system1_router import System1Config, build_router
 from .task_planner import TaskDecomposer
 from .task_queue import bypasses_queue
+from .utils import tool_calling_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,12 @@ class AgentNode(Node, ExecutionMixin):
         self._skill_lessons_dirty = True
         # 정적 시스템 프롬프트 캐시 (스킬/가이드 영역 1회 조립)
         self._system_prompt_base_cache = None
+        # 툴 호출 모드 정적 프롬프트 캐시 (JSON 응답 강제 섹션을 제거한 별도 베이스)
+        self._tool_prompt_base_cache = None
+        # 네이티브 도구 스펙 캐시 (스킬 목록이 고정이라 1회만 조립)
+        self._tool_specs_cache: list[dict[str, Any]] | None = None
+        # 네이티브 도구(tool) 호출 사용 여부. False 면 기존 JSON 응답 경로를 쓴다.
+        self._llm_tool_calling = bool(p.llm_tool_calling)
         # 센서 점검 캐시 (매 태스크마다 동기 대기 방지)
         self._sensor_cache: dict[str, bool] | None = None
         self._sensor_cache_ts: float = 0.0
@@ -290,8 +297,27 @@ class AgentNode(Node, ExecutionMixin):
         return assemble_static_prompt_base(self)
 
     def _build_system_prompt(self) -> str:
-        """최종 시스템 프롬프트 조립. 구현은 prompts.assemble_system_prompt."""
-        return assemble_system_prompt(self)
+        """최종 시스템 프롬프트 조립. 구현은 prompts.assemble_system_prompt.
+
+        툴 호출 모드 여부는 planner 가 쓰는 판정과 같은 로직을 쓴다 —
+        프롬프트만 툴 모드인데 실행은 JSON 경로로 가면 응답 형식이 어긋난다.
+        """
+        return assemble_system_prompt(
+            self, tool_mode=tool_calling_enabled(self._llm_tool_calling, self._llm)
+        )
+
+    def _tool_specs(self) -> list[dict[str, Any]]:
+        """스킬 목록을 네이티브 도구 스펙으로 변환한다(캐시 포함).
+
+        스킬 구성은 초기화 이후 바뀌지 않으므로 1회만 조립해 재사용한다.
+        """
+        if self._tool_specs_cache is None:
+            from ..skills.tool_specs import build_tool_specs
+
+            self._tool_specs_cache = build_tool_specs(
+                self._skills.list_skills(include_internal=False)
+            )
+        return self._tool_specs_cache
 
     def _set_state(self, state: AgentState, skill: str = "", msg: str = "") -> None:
         self._state = state

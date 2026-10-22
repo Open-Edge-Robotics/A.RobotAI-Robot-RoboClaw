@@ -6,9 +6,9 @@ from typing import Any
 
 from ...answer import looks_like_json
 from ...tracing import traceable
-from ...types import AgentState
+from ...types import AgentState, LLMPlanResult, SkillChainItem
 from ..nav_safety import ensure_navigation_safety
-from ..utils import _omit_base64_data
+from ..utils import _omit_base64_data, tool_calling_enabled
 from .answers import _MAX_ANSWER_ROUNDS, _compose_result_answer
 from .classify import (
     _ACTION_TERMINAL_SKILLS,
@@ -23,6 +23,23 @@ from .routing import (
     _preserve_user_navigation_target,
     _route_location_query,
 )
+
+
+def _render_tool_calls(skills: list[SkillChainItem]) -> str:
+    """도구 호출 목록을 사람이 읽을 수 있는 요약으로 렌더링한다.
+
+    대화 이력에 assistant 메시지로 남겨 모델이 "무엇을 호출했는지" 다시 볼 수
+    있게 한다. 프로바이더별 네이티브 tool 메시지 형식 차이를 흡수하는 목적도
+    있다. 실행되지 않는(등록되지 않은) 호출은 이미 걸러진 상태다.
+    """
+    parts: list[str] = []
+    for item in skills:
+        try:
+            args_text = json.dumps(item.params, ensure_ascii=False)
+        except (TypeError, ValueError):
+            args_text = str(item.params)
+        parts.append(f"[{item.skill}] {args_text}")
+    return "\n".join(parts)
 
 
 class LLMPlanner:
@@ -232,6 +249,150 @@ class LLMPlanner:
 
         return messages, robot_summary
 
+    def _tool_mode_enabled(self) -> bool:
+        """네이티브 도구(tool) 호출 모드 사용 여부.
+
+        설정(``llm_tool_calling``)이 켜져 있고, 연결된 프로바이더가 도구
+        호출을 지원해야 실제 툴 경로를 쓴다. 지원하지 않는 프로바이더에서는
+        자동으로 기존 JSON 응답 경로로 폴백한다.
+
+        프롬프트 조립(node._build_system_prompt)도 같은 판정 함수를 쓰므로
+        두 경로가 어긋나지 않는다.
+        """
+        return tool_calling_enabled(
+            getattr(self.node, "_llm_tool_calling", False),
+            getattr(self.node, "_llm", None),
+        )
+
+    def _resolve_tool_skill_name(self, name: str) -> str | None:
+        """툴 호출 이름을 등록된 스킬 이름으로 정규화한다.
+
+        대소문자만 다른 표기는 등록된 실제 이름으로 바꿔 주고, 등록되지 않은
+        이름이면 None 을 돌려준다(오픈된 스킬 목록에 없는 도구 호출은
+        실행하지 않는다).
+        """
+        if not name:
+            return None
+        try:
+            specs = self.node._tool_specs()
+        except Exception:
+            return name
+        names = [
+            str(spec.get("function", {}).get("name", ""))
+            for spec in specs
+            if isinstance(spec, dict)
+        ]
+        names = [value for value in names if value]
+        if not names:
+            return name
+        if name in names:
+            return name
+        lowered = name.strip().lower()
+        for candidate in names:
+            if candidate.lower() == lowered:
+                return candidate
+        return None
+
+    async def _request_plan(
+        self, messages: list[dict[str, str]], timeout: float
+    ) -> tuple[LLMPlanResult, str]:
+        """LLM 에게 계획을 요청하고 정규화된 계획과 원문 응답을 돌려준다.
+
+        툴 호출 모드에서는 스킬을 LLM API 의 ``tools`` 로 등록해 도구 호출
+        요청을 받고, 호출 이름/인자를 스킬 체인으로 정규화한다. 최종 답변은
+        평문이다 — JSON envelope 파싱이 필요 없다.
+
+        JSON 모드에서는 기존 envelope(``{"skill"|"skills", ...}``)를 파싱한다.
+
+        두 경로 모두 동일한 ``LLMPlanResult`` 로 정규화되므로 이후의
+        (체인 검증 → 안전 보정 → 실행) 로직은 완전히 공유된다.
+        """
+        if not self._tool_mode_enabled():
+            from ..utils import parse_llm_plan
+
+            llm_resp = await self.node._run_blocking(
+                "llm_chat",
+                self.node._llm.chat,
+                messages,
+                system_prompt=self.node._build_system_prompt(),
+                response_format={"type": "json_object"},
+                timeout_sec=getattr(self.node, "_llm_timeout_sec", timeout),
+            )
+            return parse_llm_plan(llm_resp), llm_resp
+
+        turn = await self.node._run_blocking(
+            "llm_chat_tools",
+            self.node._llm.chat_with_tools,
+            messages,
+            system_prompt=self.node._build_system_prompt(),
+            tools=self.node._tool_specs(),
+            timeout_sec=getattr(self.node, "_llm_timeout_sec", timeout),
+        )
+
+        skills: list[SkillChainItem] = []
+        unknown: list[str] = []
+        for call in turn.tool_calls:
+            resolved = self._resolve_tool_skill_name(call.name)
+            if resolved is None:
+                unknown.append(call.name)
+                continue
+            skills.append(SkillChainItem(skill=resolved, params=dict(call.arguments or {})))
+        if unknown:
+            self.node.get_logger().warning(
+                "LLM requested unknown tool(s) %s — dropped. "
+                "Only tools registered in the tool list are executable.",
+                ", ".join(unknown),
+            )
+
+        if skills:
+            rendered = _render_tool_calls(skills)
+            return LLMPlanResult(skills=skills, final=False, reason=rendered), rendered
+
+        # 도구 호출이 없으면 모델이 직접 답한 것이다. 툴 호출 모드에서는
+        # 최종 답변이 평문이므로 JSON 파싱 실패 같은 형식 오류가 없다.
+        content = (turn.content or "").strip()
+        return (
+            LLMPlanResult(
+                skills=[],
+                response=content,
+                final=bool(content),
+                # 도구 호출도 평문 답변도 없으면 형식 오류로 보고 교정 재시도를 건다.
+                parse_failed=not content,
+            ),
+            content,
+        )
+
+    def _format_correction_instruction(self) -> str:
+        """형식 교정 재시도 지시문(응답 방식에 맞춰 분기)."""
+        if self._tool_mode_enabled():
+            return (
+                "도구 호출이 필요하면 반드시 도구를 호출하고, 필요 없으면 "
+                "설명 없이 최종 답변만 남기세요. 도구 호출 형식 외에 다른 형식은 "
+                "사용하지 마세요. 등록된 도구 목록에 있는 도구만 호출하세요."
+            )
+        return (
+            "응답이 올바른 JSON 형식이 아닙니다. "
+            "반드시 다음 형식 중 하나로만 다시 응답해 주세요.\n"
+            '{"skill": "<스킬명>", "params": {...}, "reason": "..."}\n'
+            '또는 {"skills": [{"skill": "<스킬명>", "params": {...}}], "reason": "..."}\n'
+            '또는 {"skill": null, "response": "<답변>"}\n'
+            "tool_calls 형식은 사용하지 마세요. "
+            "[사용 가능한 스킬]에 있는 스킬명만 사용하세요. "
+            "장소/좌표 지식 조회는 get_location, 현재 로봇 좌표 조회는 get_status를 사용하세요."
+        )
+
+    def _conversational_retry_instruction(self) -> str:
+        """대화형 쿼리 재요구 지시문(응답 방식에 맞춰 분기)."""
+        if self._tool_mode_enabled():
+            return (
+                "사용자의 요청은 도구가 필요하지 않은 대화형 질문입니다. "
+                "도구를 호출하지 말고 평문으로만 답변하세요."
+            )
+        return (
+            "사용자의 요청은 스킬이 필요하지 않은 대화형 질문입니다. "
+            '반드시 {"skill": null, "response": "<답변>"} 형식으로만 응답하세요.'
+        )
+
     @traceable(name="run_llm_planning_loop")
     async def run_llm_planning_loop(
         self,
@@ -270,22 +431,12 @@ class LLMPlanner:
 
             try:
                 self.node.get_logger().info(f"Starting LLM planning (round {current_round})")
-                llm_resp = await self.node._run_blocking(
-                    "llm_chat",
-                    self.node._llm.chat,
-                    messages,
-                    system_prompt=self.node._build_system_prompt(),
-                    response_format={"type": "json_object"},
-                    timeout_sec=getattr(self.node, "_llm_timeout_sec", timeout),
-                )
-                from ..utils import parse_llm_plan
-
-                plan = parse_llm_plan(llm_resp)
+                plan, llm_resp = await self._request_plan(messages, timeout)
                 self.node.get_logger().info(
                     f"LLM planning complete: {len(plan.skills)} skills planned, final={plan.final}"
                 )
             except Exception as e:
-                self.node.get_logger().error(f"Failed to parse LLM response: {e}")
+                self.node.get_logger().error(f"Failed to obtain LLM plan: {e}")
                 result_msg = f"해석 오류: {e}"
                 task_success = False
                 self.node._set_state(AgentState.ERROR, "", f"LLM 에러: {e}")
@@ -367,16 +518,7 @@ class LLMPlanner:
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "응답이 올바른 JSON 형식이 아닙니다. "
-                                "반드시 다음 형식 중 하나로만 다시 응답해 주세요.\n"
-                                '{"skill": "<스킬명>", "params": {...}, "reason": "..."}\n'
-                                '또는 {"skills": [{"skill": "<스킬명>", "params": {...}}], "reason": "..."}\n'
-                                '또는 {"skill": null, "response": "<답변>"}\n'
-                                "tool_calls 형식은 사용하지 마세요. "
-                                "[사용 가능한 스킬]에 있는 스킬명만 사용하세요. "
-                                "장소/좌표 지식 조회는 get_location, 현재 로봇 좌표 조회는 get_status를 사용하세요."
-                            ),
+                            "content": self._format_correction_instruction(),
                         }
                     )
                     # 형식 교정 재시도는 계획 라운드 예산을 소모하지 않는다.
@@ -426,10 +568,7 @@ class LLMPlanner:
                 messages.append(
                     {
                         "role": "user",
-                        "content": (
-                            "사용자의 요청은 스킬이 필요하지 않은 대화형 질문입니다. "
-                            '반드시 {"skill": null, "response": "<답변>"} 형식으로만 응답하세요.'
-                        ),
+                        "content": self._conversational_retry_instruction(),
                     }
                 )
                 continue
@@ -670,15 +809,22 @@ class LLMPlanner:
 
         if chain_success:
             results_summary = "\n".join(executed_reports)
+            if self._tool_mode_enabled():
+                next_step = (
+                    "요청된 도구들이 성공적으로 수행되었습니다. "
+                    "다음 행동이 필요하면 도구를 다시 호출하고, 완료됐으면 도구를 호출하지 말고 "
+                    "평문으로만 최종 답변을 남기세요."
+                )
+            else:
+                next_step = (
+                    "요청된 스킬들이 성공적으로 수행되었습니다. "
+                    "다음 행동이 필요하면 스킬을 실행하고, 완료됐으면 반드시 JSON 형식으로만 최종 답변하세요: "
+                    '{"skill": null, "response": "<최종 답변>"}'
+                )
             messages.append(
                 {
                     "role": "user",
-                    "content": (
-                        f"스킬 체인 실행 결과:\n{results_summary}\n\n"
-                        "요청된 스킬들이 성공적으로 수행되었습니다. "
-                        "다음 행동이 필요하면 스킬을 실행하고, 완료됐으면 반드시 JSON 형식으로만 최종 답변하세요: "
-                        '{"skill": null, "response": "<최종 답변>"}'
-                    ),
+                    "content": f"스킬 체인 실행 결과:\n{results_summary}\n\n{next_step}",
                 }
             )
 
