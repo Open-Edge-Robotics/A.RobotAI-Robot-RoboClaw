@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
+	"os"
+	"time"
 
 	"github.com/wkqco33/wcli"
 	"github.com/wkqco33/wcli/logging"
+	"github.com/wkqco33/wcli/rich"
 	"robo_claw_cli/launcher"
 )
 
@@ -24,6 +26,7 @@ func LaunchCmd() *wcli.Command {
 	var pull bool
 	var useGrpc bool
 	var dryRun bool
+	var noConfigSummary bool
 
 	cmd := &wcli.Command{
 		Use:   "launch [robot_name] [environment]",
@@ -54,13 +57,19 @@ func LaunchCmd() *wcli.Command {
 				logging.Error("launch 환경 구성 실패: %v", err)
 				return err
 			}
+
+			// 적용 설정 요약: 어떤 설정으로 구동되었는지 나중에 확인할 수 있도록
+			// 콘솔에 출력하고 캐시 디렉터리에 로그로도 남긴다.
+			if !noConfigSummary {
+				printConfigSummary(lctx)
+			}
 			if dryRun {
 				if docker {
-					logging.Info("dry-run Docker launch: %s", joinCommand(launcher.BuildDockerLaunchCommand(lctx)))
+					logging.Info("dry-run Docker launch: %s", launcher.MaskCommandSecrets(launcher.BuildDockerLaunchCommand(lctx)))
 				} else {
-					logging.Info("dry-run local launch: %s", joinCommand(launcher.BuildLocalLaunchCommand(lctx)))
+					logging.Info("dry-run local launch: %s", launcher.MaskCommandSecrets(launcher.BuildLocalLaunchCommand(lctx)))
 				}
-				logging.Info("config source: cache=%s env=%s revision은 config-effective/config-doctor로 확인하세요", lctx.CacheDir, lctx.EnvFilePath)
+				logging.Info("config source: cache=%s env=%s (적용 값 상세는 위 요약 또는 cache/logs/applied_config_*.log 참고)", lctx.CacheDir, lctx.EnvFilePath)
 				return nil
 			}
 
@@ -86,10 +95,21 @@ func LaunchCmd() *wcli.Command {
 	cmd.Flags().BoolVar(&pull, "pull", "", false, "(Docker) 실행 직전 이미지를 레지스트리에서 pull")
 	cmd.Flags().BoolVar(&useGrpc, "use-grpc", "", false, "gRPC 서버 노드 활성화 (robo_claw_cli test 연동 시 필요)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", "", false, "실행하지 않고 최종 launch command만 출력")
+	cmd.Flags().BoolVar(&noConfigSummary, "no-config-summary", "", false, "적용 설정 요약 출력과 요약 로그 저장을 생략")
 
 	return cmd
 }
 
-func joinCommand(args []string) string {
-	return strings.Join(args, " ")
+// printConfigSummary 적용 설정 요약을 콘솔에 출력하고 로그 파일로 저장합니다.
+func printConfigSummary(lctx *launcher.LaunchContext) {
+	sections := launcher.BuildConfigSummary(lctx)
+	launcher.PrintConfigSummary(os.Stdout, sections)
+
+	path, err := launcher.WriteConfigSummaryLog(lctx, sections, time.Now())
+	if err != nil {
+		logging.Warn("적용 설정 로그 저장 실패: %v", err)
+		return
+	}
+	logging.Info("적용 설정 로그 저장: %s", path)
+	rich.Println("[dim]ℹ 적용 설정 로그: %s[/dim]", path)
 }

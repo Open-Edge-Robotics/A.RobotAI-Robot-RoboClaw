@@ -3,6 +3,39 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-22 — 구동 시 적용 설정 상세 요약 및 요약 로그 추가
+
+- **배경**: `rclaw launch` 는 설정 서버에서 받은 값을 docker 실행 명령(`--env-file`)
+  형태로만 보여 주어, 실제로 어떤 LLM 옵션·RAG·채널·센서 설정으로 구동했는지 확인하기
+  어려웠습니다. 특히 `--env-file` 방식은 `.env` 값이 출력되지 않아 구동 후 재현이
+  불가능했습니다. 실행 명령 로그에는 `telegram_token` 같은 secret 인자가 그대로 찍히는
+  문제도 있었습니다.
+- **조치**
+  - `robo_claw_cli/launcher/config_summary.go` 추가 — 캐시된 `config.json`/`.env` 로
+    실제 구동에 적용되는 값을 7개 섹션(실행 프로파일, LLM, 임베딩·RAG, 채널·HTTP·gRPC,
+    센서·비전, 에이전트·태스크, 설정 파일)으로 정리합니다. 각 항목에 값의 출처
+    (`config.json` / `.env` / `runtime`)를 함께 표시하고, `ollama_options_json` 은 키별
+    항목으로 펼칩니다. launch 경로가 사용하지 않는 `.env` 값(예: `RC_LLM_MODEL`)은
+    무시된다는 안내를 덧붙입니다.
+  - `rclaw launch` 는 기동 직전에 요약을 출력하고
+    `<cache>/logs/applied_config_<YYYYmmdd_HHMMSS>.log`(0600, 최근 30개 보관)로
+    저장합니다. `--no-config-summary` 로 생략할 수 있습니다.
+  - `rclaw config-summary <robot> <env>` 서브커맨드 추가 — 원격 동기화 없이 캐시 기준
+    요약을 다시 확인합니다(`--write-log` 로 파일 저장).
+  - `launcher/types.go` — `LaunchContext` 에 설정 프로비넌스(`ConfigSource`,
+    `ConfigRevision`, `ConfigCachedAt`)를 추가하고, 동기화 없이 캐시만으로 컨텍스트를
+    만드는 `NewLaunchContextFromCache`/`DefaultCacheDir` 를 분리했습니다.
+  - secret 마스킹 — `MaskSecretValue`/`MaskCommandSecrets` 를 추가해 요약과 실행 명령
+    로그(`launch`, `--dry-run`)에서 token/API key 를 `********` 로 가립니다.
+    `target_peers_json`/`mcp_servers_json` 은 구조를 유지하고 내부 secret 키만
+    마스킹합니다.
+- **문서**: `docs/CONFIGURATION_GUIDE.md`(적용 설정 요약·로그, 구동 당시 설정 확인 절차,
+  체크리스트), `robo_claw_cli/README.md`(`config-summary`, `--no-config-summary`).
+- **검증**: `cd robo_claw_cli && go test ./...`, `go vet ./...` 통과. 신규 테스트
+  `launcher/config_summary_test.go` 9건(masking, ollama 옵션 펼치기, `.env` 출처 표시,
+  무시되는 `.env` 안내, 프로파일 메타데이터, 설정 파일 목록, 로그 파일 생성/보관 개수,
+  실행 명령 secret 마스킹). 가짜 캐시로 `rclaw config-summary`/`launch --dry-run` 출력 확인.
+
 ## 2026-10-15 — CLOiD 주행 전 boxing 자세 자동 prelude 및 설정 계약 추가
 
 - **배경**: CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 몸 밖으로 나올 수

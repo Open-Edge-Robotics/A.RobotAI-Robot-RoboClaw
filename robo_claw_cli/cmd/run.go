@@ -196,8 +196,8 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	}
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", launchFile}, launchArgs...)
-	logging.Info("실행 명령어: ros2 %s", strings.Join(argsToExec, " "))
-	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", strings.Join(argsToExec, " "))
+	logging.Info("실행 명령어: ros2 %s", launcher.MaskCommandSecrets(argsToExec))
+	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", launcher.MaskCommandSecrets(argsToExec))
 
 	helperScript := filepath.Join(projectRoot, "scripts", "run_in_ros_env.sh")
 	var cmd *exec.Cmd

@@ -86,8 +86,8 @@ func RunDockerMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	dockerRunArgs = append(dockerRunArgs, image)
 	dockerRunArgs = append(dockerRunArgs, buildContainerCmd(lctx)...)
 
-	logging.Info("실행 명령어: docker %s", strings.Join(dockerRunArgs[1:], " "))
-	rich.Println("[green]▶[/green] 실행 명령어: [bold]docker %s[/bold]", strings.Join(dockerRunArgs[1:], " "))
+	logging.Info("실행 명령어: docker %s", MaskCommandSecrets(dockerRunArgs[1:]))
+	rich.Println("[green]▶[/green] 실행 명령어: [bold]docker %s[/bold]", MaskCommandSecrets(dockerRunArgs[1:]))
 
 	cmdDocker := exec.Command("docker", dockerRunArgs...)
 	cmdDocker.Stdout = os.Stdout

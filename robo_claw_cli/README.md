@@ -112,6 +112,32 @@ ROS를 실행하지 않고 v2 runtime manifest의 schema, revision, LLM, ROS dom
 운영 서버 연결은 HTTPS가 기본입니다. 로컬 개발 서버에서만
 `server.allow_insecure_http: true`를 명시하세요.
 
+### 적용 설정 요약 (`config-summary`)
+
+`launch`는 기동 직전에 설정 서버에서 받아 실제로 적용한 값을 섹션별로 정리해
+출력하고, 같은 내용을 `~/.robo_claw/config_cache/<robot>_<env>/logs/applied_config_<YYYYmmdd_HHMMSS>.log`
+에 남깁니다. 어떤 설정으로 구동했는지 나중에 확인할 때 이 로그를 사용합니다.
+
+```bash
+# 캐시된 설정 기준으로 요약만 다시 확인 (원격 동기화 없음)
+./rclaw config-summary butler office
+
+# 요약을 로그 파일로도 저장
+./rclaw config-summary butler office --write-log
+```
+
+요약에 포함되는 정보:
+
+- 실행 프로파일: 설정 출처(원격/캐시), `config_revision`, 캐시 동기화 시각, 로봇/환경, `ROS_DOMAIN_ID`, `agent_id`, 실행 모드
+- LLM: 공급자/모델/엔드포인트와 `ollama_options_json`의 키별 값(`num_ctx`, `temperature` 등)
+- 임베딩/RAG, 채널·HTTP·gRPC, 센서·비전, 에이전트·태스크 설정
+- 마운트되는 설정 파일(`ROBOT.md`, `SKILLS.md`, `TROUBLESHOOTING.md`, `ROBOT_LIMITS.json`)의 존재 여부와 크기
+
+각 항목에는 값의 출처(`config.json`, `.env`, `runtime`)가 함께 표시되므로 서버 값이
+`.env` override로 바뀐 항목을 바로 구분할 수 있습니다. 토큰/API 키는 `********`로
+마스킹되고, 실행 명령 로그(`launch`/`--dry-run`)의 secret 인자도 같은 방식으로
+가려집니다. 요약 로그는 최근 30개만 보관합니다.
+
 ### 1. 원격 설정 목록 조회 (`list`)
 
 설정 서버에 등록된 설정 프로필 목록을 표로 조회합니다. 로봇 이름과 환경명이 모두 필요합니다.
@@ -161,9 +187,12 @@ AI config의 `agent_id`는 `agent_id:=...` launch 인자로 전달되고, `grpc_
 - `--slam`: (시뮬레이션) SLAM + Nav2 동시 활성화 (`--nav2`보다 우선)
 - `--world <name>`, `--model <name>`, `--map <file>`: (시뮬레이션) 월드/로봇 모델/맵 파일 지정
 - `-d, --debug`: ROS 2 디버그 로깅 활성화
+- `--no-config-summary`: 기동 직전 적용 설정 요약 출력과 요약 로그 저장 생략
 
 동작 방식 메모:
 
+- 기동 직전에 적용 설정 요약을 출력하고 `~/.robo_claw/config_cache/<robot>_<env>/logs/`에
+  요약 로그를 남깁니다(최근 30개 보관). 자세한 내용은 위의 `config-summary` 항목을 참고하세요.
 - HTTP 채널 포트(`RC_HTTP_PORT`, 기본 8080)가 이미 사용 중이면 자동으로 다른 포트를 찾아 사용합니다.
 - Docker 모드는 `lgecloudroboticstask/robo-claw:latest` 이미지를 `--network host --privileged`로 실행하며, X11 포워딩(`xhost +local:docker`)과 시리얼 장치(`/dev/ttyUSB0`, `/dev/ttyACM0`) 마운트를 자동 처리합니다.
 - 비전 모델 경로(`RC_VISION_MODEL_PATH`)가 Docker 모드에서 프로젝트 `models/` 아래 있으면 컨테이너 경로(`/ros2_ws/models/...`)로 자동 변환됩니다.
@@ -282,8 +311,9 @@ QDRANT_URL=http://10.159.172.74:6333 COLLECTION=robo_claw_former_0045_w2_2f ./rc
 
 ## 내부 구조 참고
 
-- `cmd/`: 각 서브커맨드(`list`, `fetch`, `launch`, `test`, `version`) 구현
-- `launcher/`: `launch` 커맨드의 로컬/Docker 기동 로직, 원격 설정 → ROS launch 인자 변환
+- `cmd/`: 각 서브커맨드(`list`, `fetch`, `launch`, `config-summary`, `test`, `version`) 구현
+- `launcher/`: `launch` 커맨드의 로컬/Docker 기동 로직, 원격 설정 → ROS launch 인자 변환,
+  적용 설정 요약(`config_summary.go`) 및 요약 로그 저장
 - `tester/`: `test` 커맨드의 시나리오 실행기 및 마크다운 리포트 생성
 - `proto/`: gRPC 클라이언트 스텁 (`messenger_pb`, `robo_pb`) — 테스트 도구가 내부적으로 사용
 - `wcli`: CLI 프레임워크 ([github.com/wkqco33/wcli](https://github.com/wkqco33/wcli)). 외부 Go 모듈 의존성으로 사용됩니다.

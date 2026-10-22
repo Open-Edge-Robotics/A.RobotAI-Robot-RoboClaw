@@ -20,8 +20,8 @@ func RunLocalMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	launchArgs := buildLocalLaunchArgs(lctx)
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", lctx.LaunchTarget}, launchArgs...)
-	logging.Info("실행 명령어: ros2 %s", strings.Join(argsToExec, " "))
-	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", strings.Join(argsToExec, " "))
+	logging.Info("실행 명령어: ros2 %s", MaskCommandSecrets(argsToExec))
+	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", MaskCommandSecrets(argsToExec))
 
 	cmdLaunch := exec.Command("ros2", argsToExec...)
 	cmdLaunch.Env = mergedEnv

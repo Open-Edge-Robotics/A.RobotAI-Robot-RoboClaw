@@ -112,7 +112,42 @@ Docker 실행:
 - secret masking 상태
 
 `--dry-run`은 ROS 또는 Docker를 실행하지 않고 최종 launch command를 출력합니다.
-실제 로봇 실행 전에 반드시 사용하세요.
+실제 로봇 실행 전에 반드시 사용하세요. command 인자 중 token/API key는 `********`로
+마스킹되어 출력됩니다.
+
+#### 구동 시 적용 설정 요약과 로그
+
+`./rclaw launch`는 기동 직전에 설정 서버에서 받아 실제로 적용한 값을 섹션별로
+콘솔에 출력하고, 같은 내용을 아래 경로에 로그로 남깁니다.
+
+```text
+~/.robo_claw/config_cache/<robot>_<env>/logs/applied_config_<YYYYmmdd_HHMMSS>.log
+```
+
+로그에는 다음이 포함됩니다.
+
+| 항목           | 예시                                                           |
+| :------------- | :------------------------------------------------------------- |
+| 실행 프로파일  | 설정 출처(원격/캐시), `config_revision`, 캐시 동기화 시각, 로봇/환경, `ROS_DOMAIN_ID`, `agent_id`, 실행 모드 |
+| LLM            | 공급자/모델/엔드포인트, `ollama_options_json`의 키별 값(`num_ctx`, `temperature` 등) |
+| 임베딩 · RAG   | 임베딩 모델/엔드포인트, 벡터 백엔드, Qdrant URL/컬렉션/타임아웃, Top-K, 유사도 임계값 |
+| 채널 · HTTP · gRPC | Discord/Telegram/Slack 활성화, gRPC 서버/클라이언트와 peer 수, HTTP 포트/속도 제한/스킬 allowlist 수 |
+| 센서 · 비전    | 카메라·그리퍼·LiDAR·IMU 토픽, 비전 사용 여부와 모델 경로 |
+| 에이전트 · 태스크 | 태스크 큐/분해/strict config/자가학습, 메모리·워크스페이스 경로, CLOiD 스위치 |
+| 설정 파일      | 마운트되는 `ROBOT.md`, `SKILLS.md`, `TROUBLESHOOTING.md`, `ROBOT_LIMITS.json`의 존재 여부와 크기 |
+
+각 줄에는 값의 출처(`config.json`, `.env`, `runtime`)가 함께 표시됩니다. 서버 값이
+`.env` override로 바뀐 항목과, launch 경로가 사용하지 않는 `.env` 값(예: `RC_LLM_MODEL`)을
+바로 구분할 수 있습니다. token/API key는 `********`로 마스킹되며 로그 파일 권한은 `0600`,
+보관 개수는 최근 30개입니다.
+
+```bash
+# 기동 없이 캐시된 설정의 요약만 다시 확인
+./rclaw config-summary butler office
+
+# 요약 출력을 생략하고 기동
+./rclaw launch butler office --no-config-summary
+```
 
 ### 3. 직접 `ros2 launch`
 
@@ -266,6 +301,21 @@ token이 없으면 RoboMessenger는 loopback에만 bind됩니다. 원격 peer를
 `./rclaw sim`을 사용하고, 직접 launch를 사용한다면 `camera_topic`, `depth_topic`,
 `pointcloud_topic`, `lidar_topic`, `imu_topic`을 명시적으로 전달하세요.
 
+### 구동 당시 어떤 설정이었는지 확인
+
+기동할 때마다 적용 설정 요약이 `~/.robo_claw/config_cache/<robot>_<env>/logs/`에
+`applied_config_<YYYYmmdd_HHMMSS>.log`로 남습니다. 최신 로그를 확인한 뒤, 현재
+캐시 상태와 비교합니다.
+
+```bash
+ls -1t ~/.robo_claw/config_cache/<robot>_<env>/logs | head
+./rclaw config-summary <robot> <env>
+```
+
+로그의 `config_revision`과 캐시 동기화 시각으로 어느 설정을 받아 구동했는지
+확인할 수 있고, 항목별 출처(`config.json` / `.env` / `runtime`)로 override 경로를
+추적할 수 있습니다. 로그에 secret 값은 기록되지 않습니다.
+
 ### secret이 노출된 것 같음
 
 - CLI 출력에 secret을 직접 넣지 마세요.
@@ -283,6 +333,7 @@ token이 없으면 RoboMessenger는 loopback에만 bind됩니다. 원격 peer를
 - [ ] HTTP/gRPC bind와 token이 안전한가
 - [ ] `config-doctor`가 통과했는가
 - [ ] `launch --dry-run` 결과를 검토했는가
+- [ ] 적용 설정 요약의 `config_revision`과 `.env` override가 의도한 값인가
 - [ ] simulation 또는 mock 환경에서 먼저 검증했는가
 
 ## 새 설정 추가 시 수정 위치
