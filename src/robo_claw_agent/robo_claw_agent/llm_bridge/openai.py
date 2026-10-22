@@ -15,10 +15,12 @@ class OpenAIBridge(BaseLLMBridge):
         model: str = "gpt-4o-mini",
         embedding_model: str = "text-embedding-3-small",
         api_key: str | None = None,
+        timeout_sec: float = DEFAULT_TIMEOUT_SEC,
     ) -> None:
         self._model = model
         self._embedding_model = embedding_model
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self._timeout_sec = float(timeout_sec)
         self._client = None
 
     def _get_client(self):
@@ -27,7 +29,7 @@ class OpenAIBridge(BaseLLMBridge):
 
             # LangSmith 트레이싱 활성 시 클라이언트를 감싸 토큰/지연시간을 캡처한다.
             self._client = wrap_openai_client(
-                OpenAI(api_key=self._api_key, timeout=DEFAULT_TIMEOUT_SEC)
+                OpenAI(api_key=self._api_key, timeout=self._timeout_sec)
             )
         return self._client
 

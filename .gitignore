@@ -373,3 +373,7 @@ validation/talk/config-*.bak.json
 
 .codex
 graphify-out
+qdrant_storage
+.claude
+CLAUDE.md
+chat_history
