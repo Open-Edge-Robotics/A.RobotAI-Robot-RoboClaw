@@ -176,7 +176,19 @@ class LLMPlanner:
         messages: list[dict[str, str]] = []
         if self.node._llm:
             history = self.node._memory.get_conversation_history(self.node._multiturn_n)
-            messages = history + [{"role": "user", "content": instruction}]
+            # 현재 지시문은 이미 execution.py 의 _handle_execute_task 에서
+            # "task_received" 이벤트로 대화 이력에 들어 있다(get_conversation_history
+            # 가 이 이벤트를 user 메시지로 되살린다). 여기서 또 붙이면 같은
+            # 메시지가 두 번 들어가 모델이 중복 질문을 받은 것처럼 보이므로,
+            # 마지막 이력이 동일 문구면 추가하지 않는다.
+            if (
+                history
+                and history[-1].get("role") == "user"
+                and history[-1].get("content") == instruction
+            ):
+                messages = list(history)
+            else:
+                messages = list(history) + [{"role": "user", "content": instruction}]
 
             health_state = self.node._get_robot_health_state(robot_summary)
             messages.insert(
