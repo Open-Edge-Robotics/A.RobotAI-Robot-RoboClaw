@@ -3,12 +3,12 @@ Discovery 노드 — ROS2 토픽/서비스/액션을 자동 탐색해 에이전�
 """
 
 import json
-import subprocess
 import threading
 import time
 from typing import Any
 
 import rclpy
+from rclpy.action import get_action_names_and_types
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
@@ -33,11 +33,12 @@ class DiscoveryNode(Node):
         interval = (
             self.get_parameter("scan_interval_sec").get_parameter_value().double_value
         )
-        # 요약 로그 간격. 스캔 주기와 독립적이며 기본 60초로 다른 로그를 가리지 않게 한다.
+        # 요약 로그 간격. 스캔 주기와 독립적이며 기본 600초로 다른 로그를 가리지 않게 한다.
         self.declare_parameter("log_interval_sec", log_interval_sec)
         log_interval = self.get_parameter("log_interval_sec").get_parameter_value().double_value
         self._log_interval_sec = max(0.0, log_interval)
         self._last_summary_log_time: float | None = None
+        self._last_capability_signature = None
 
         qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE)
 
@@ -50,7 +51,7 @@ class DiscoveryNode(Node):
         self._timer = self.create_timer(interval, self._scan)
         self.get_logger().info(
             f"DiscoveryNode ready ({interval:.1f}s interval, "
-            f"summary log every {self._log_interval_sec:.0f}s)"
+            f"summary on change or every {self._log_interval_sec:.0f}s)"
         )
         self._scan()  # 시작 시 즉시 실행
 
@@ -86,7 +87,16 @@ class DiscoveryNode(Node):
         self._pub.publish(msg)
 
         now = time.monotonic()
-        if should_log_summary(self._last_summary_log_time, now, self._log_interval_sec):
+        # 이름과 타입까지 비교하여 개수가 같은 인터페이스 교체도 감지합니다.
+        signature = tuple(
+            (key, tuple(sorted(json.dumps(item, sort_keys=True) for item in values)))
+            for key, values in sorted(capabilities.items())
+        )
+        changed = signature != self._last_capability_signature
+        self._last_capability_signature = signature
+        if should_log_summary(
+            self._last_summary_log_time, now, self._log_interval_sec, changed=changed
+        ):
             self._last_summary_log_time = now
             self.get_logger().info(
                 f"Discovery complete: topics {len(capabilities['topics'])}, "
@@ -115,21 +125,12 @@ class DiscoveryNode(Node):
 
     def _get_actions_api(self) -> list[dict[str, Any]]:
         try:
-            # Action은 rclpy에 직접적인 get_action_names_and_types가 없으므로
-            # 토픽 이름 패턴(/_action/feedback 등)으로 추론하거나 subprocess 유지
-            # 여기서는 안정성을 위해 subprocess를 쓰되 timeout을 짧게 잡음
-            result = subprocess.run(
-                ["ros2", "action", "list", "-t"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            actions = []
-            for line in result.stdout.strip().splitlines():
-                parts = line.strip().split(" ")
-                if len(parts) == 2:
-                    actions.append({"name": parts[0], "type": parts[1].strip("[]")})
-            return actions
+            # 현재 노드의 그래프 캐시를 조회하므로 CLI/daemon 기동을 기다리지 않습니다.
+            return [
+                {"name": name, "type": types[0]}
+                for name, types in get_action_names_and_types(self)
+                if types
+            ]
         except Exception as e:
             self.get_logger().error(f"Action discovery failed: {e}")
             return []

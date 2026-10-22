@@ -43,6 +43,15 @@ RoboClaw local Registry snapshot은 compatibility 비교용입니다.
 
 ## 실행 방식
 
+`rclaw launch`의 네이티브 실행은 `RMW_IMPLEMENTATION`이 지정되지 않으면
+`rmw_cyclonedds_cpp`를 기본으로 사용합니다. 캐시 `.env`의 비어 있지 않은 설정은
+호스트 환경변수보다 우선하며, 명시한 `CYCLONEDDS_URI`는 유지합니다. 시작 로그의
+`ROS 2 RMW 구현` 항목에서 선택된 구현을 확인합니다.
+
+discovery의 토픽·서비스·액션 목록은 실행 중인 노드의 ROS 그래프에서 직접
+조회합니다. 액션 탐색은 별도의 `ros2 action list` 프로세스나 CLI daemon을 사용하지
+않습니다. 시작 직후 목록이 비어 있으면 다음 주기에서 다시 탐색합니다.
+
 ### 1. 로컬 개발: `./rclaw run` / `./rclaw sim`
 
 ```bash
@@ -113,6 +122,32 @@ Docker 실행:
 
 `--dry-run`은 ROS 또는 Docker를 실행하지 않고 최종 launch command를 출력합니다.
 실제 로봇 실행 전에 반드시 사용하세요.
+
+#### 로봇 없이 gRPC와 LLM을 실행합니다
+
+`--mock-robot`은 기존 서버 동기화·캐시·모델·프롬프트·인증·RAG 설정을 유지하면서
+로봇 의존 스킬을 가짜 성공으로 대체합니다. 로컬 네이티브 실행에서만 지원하며,
+Gazebo·Nav2·Docker 옵션과 함께 사용하지 않습니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+./rclaw launch former seongmin_local --mock-robot
+```
+
+core·manipulator·vision·깊이 relay·peer client 및 하드웨어용 RosGrpc(50051)를
+비활성화합니다. RoboMessenger(기본 50052)는 기존 `enable_grpc`와 토큰 설정을
+따르므로 talk에서 같은 IP·포트·토큰으로 연결합니다.
+
+로봇 의존 스킬은 정책과 입력 스키마를 검증한 뒤 실제 실행·로봇 사전조건 확인 없이
+`success=true`, `mocked=true`, `executed=false`와 호출 인자를 반환합니다.
+배터리·좌표·카메라 값이나 파일을 만들어 반환하지 않습니다. 시간·로컬 파일·RAG
+스킬은 실제 실행하되, 임의 스크립트·현재 위치 조회·외부 플러그인은 보수적으로
+대체합니다. 가짜 스킬 결과는 스킬 학습 이력에 기록하지 않습니다.
+
+이 옵션은 스킬 성공 처리 경로를 확인하는 용도이며 실제 로봇 동작 검증을 대신하지
+않습니다. RAG·MCP 초기화와 LLM 서버 등 로봇 이외의 외부 의존성은 기존 config를
+그대로 사용합니다. 옵션을 빼면 기존 실제 실행으로 돌아갑니다.
 
 ### 3. 직접 `ros2 launch`
 

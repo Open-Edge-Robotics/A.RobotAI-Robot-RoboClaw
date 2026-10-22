@@ -1,4 +1,6 @@
-# RAG / Qdrant 설정 및 스킬 자가 학습
+# 검색 증강 생성과 Qdrant 및 스킬 자가 학습
+
+이 문서는 로컬·Qdrant RAG 설정과 스킬 자가 학습의 운영 방법을 설명합니다.
 
 ## 1. 로컬 RAG
 
@@ -27,6 +29,19 @@ robo_claw_agent_node:
     rag_top_k: 2
     rag_score_threshold: 0.7
 ```
+
+### Qdrant 클라이언트 버전 관리
+
+Qdrant 서버 1.19.x에 맞춰 Python 클라이언트는 1.19.1을 사용합니다.
+`pyproject.toml`은 `>=1.19.1,<1.20` 범위를 선언하고, `uv.lock`과
+`Dockerfile`은 1.19.1로 고정합니다. 서버 버전과 클라이언트 버전의 patch 번호는
+같을 필요가 없습니다.
+
+클라이언트 버전을 변경하면 세 파일을 함께 갱신하고 `task deps-check`와
+벡터 저장소 테스트로 개발 환경과 배포 이미지의 일치를 확인합니다.
+`uv sync --locked --inexact --no-dev`로 실행 환경을 동기화한 뒤 에이전트를
+재시작합니다. Docker 실행 환경은 변경된 Dockerfile로 이미지를 다시 빌드합니다.
+호환성 경고를 숨기는 `check_compatibility=False` 대신 버전을 맞춥니다.
 
 ## 3. 관련 파라미터
 

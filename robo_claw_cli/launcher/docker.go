@@ -86,12 +86,13 @@ func RunDockerMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	dockerRunArgs = append(dockerRunArgs, image)
 	dockerRunArgs = append(dockerRunArgs, buildContainerCmd(lctx)...)
 
-	logging.Info("실행 명령어: docker %s", strings.Join(dockerRunArgs[1:], " "))
-	rich.Println("[green]▶[/green] 실행 명령어: [bold]docker %s[/bold]", strings.Join(dockerRunArgs[1:], " "))
-
 	cmdDocker := exec.Command("docker", dockerRunArgs...)
-	cmdDocker.Stdout = os.Stdout
-	cmdDocker.Stderr = os.Stderr
+	consoleOut := NewConsoleLogWriter(os.Stdout)
+	consoleErr := NewConsoleLogWriter(os.Stderr)
+	defer consoleOut.Flush()
+	defer consoleErr.Flush()
+	cmdDocker.Stdout = consoleOut
+	cmdDocker.Stderr = consoleErr
 	cmdDocker.Stdin = os.Stdin
 
 	logging.Info("Docker 컨테이너 기동 시작...")
@@ -106,7 +107,7 @@ func RunDockerMode(ctx *wcli.Context, lctx *LaunchContext) error {
 		return fmt.Errorf("Docker 컨테이너 시작 에러: %w", err)
 	}
 
-	logging.Info("Docker 컨테이너 기동 성공 (PID: %d)", cmdDocker.Process.Pid)
+	logging.Info("Docker 컨테이너 프로세스 시작 (서비스 초기화 대기) (PID: %d)", cmdDocker.Process.Pid)
 
 	// 프로세스 종료 대기 채널
 	done := make(chan error, 1)

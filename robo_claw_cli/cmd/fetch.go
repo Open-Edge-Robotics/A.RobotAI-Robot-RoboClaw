@@ -196,11 +196,11 @@ func fetchConfig(ctx *wcli.Context, robotName, envName string) error {
 				_ = os.WriteFile(scenFilePath, scenBytes, 0644)
 			}
 		} else {
-			serverMsg := readServerError(scenResp)
-			if serverMsg != "" {
-				logging.Warn("시나리오 서버 반환 오류 (상태 코드 %d): %s. 시나리오 동기화를 건너뜁니다.", scenResp.StatusCode, serverMsg)
+			level, message := scenarioSyncMessage(scenResp.StatusCode, readServerError(scenResp))
+			if level == "info" {
+				logging.Info("%s", message)
 			} else {
-				logging.Warn("시나리오 서버 반환 오류 (상태 코드 %d). 시나리오 동기화를 건너뜁니다.", scenResp.StatusCode)
+				logging.Warn("%s", message)
 			}
 		}
 	}
@@ -290,4 +290,15 @@ func doGetRequest(ctx context.Context, client *http.Client, url string) (*http.R
 		logging.Warn("DeviceToken이 비어 있어 Authorization 헤더를 추가하지 않습니다.")
 	}
 	return client.Do(req)
+}
+
+// scenarioSyncMessage는 선택적 시나리오 부재와 실제 서버 오류를 구분합니다.
+func scenarioSyncMessage(status int, serverMessage string) (string, string) {
+	if status == http.StatusNotFound {
+		return "info", "활성 테스트 시나리오 없음 · 동기화 생략"
+	}
+	if serverMessage != "" {
+		return "warn", fmt.Sprintf("시나리오 서버 반환 오류 (상태 코드 %d): %s. 시나리오 동기화를 건너뜁니다.", status, serverMessage)
+	}
+	return "warn", fmt.Sprintf("시나리오 서버 반환 오류 (상태 코드 %d). 시나리오 동기화를 건너뜁니다.", status)
 }

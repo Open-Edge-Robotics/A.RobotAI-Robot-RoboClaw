@@ -34,10 +34,45 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 | `robo_claw_vision`    | **C++**    | ONNX Runtime + YOLOv8 실시간 객체 인식, Detection2DArray 발행                                                                                                    |
 
 ## 🛠️ 설치 및 의존성
+```cmd
+# ROS 2 Jazzy와의 의존성 때문에 Ubuntu 24.04 버전이 필요하다.
+wsl --install -d Ubuntu-24.04
+```
 
 ```bash
+# uv 설치
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# task 설치
+curl -1sLf 'https://dl.cloudsmith.io/public/task/task/setup.deb.sh' | sudo bash
+sudo apt install task
+
 # 개발 도구 및 필수 라이브러리 설치
 task setup-deps
+
+# go 설치
+sudo apt install golang-go
+
+# ROS 2 Jazzy Jalisco 설치
+sudo apt update && sudo apt install -y software-properties-common curl && \
+sudo add-apt-repository -y universe && \
+ROS_APT_SOURCE_VERSION=$(curl -fsSL https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F '"tag_name"' | awk -F'"' '{print $4}') && \
+curl -fL -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb" && \
+sudo dpkg -i /tmp/ros2-apt-source.deb && \
+sudo apt update && sudo apt upgrade -y && \
+sudo apt install -y \
+    ros-jazzy-desktop \
+    ros-dev-tools \
+    ros-jazzy-vision-msgs \
+    ros-jazzy-moveit-ros-planning-interface \
+    ros-jazzy-control-msgs \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-turtlebot4-navigation \
+    ros-jazzy-turtlebot4-simulator \
+    ros-jazzy-irobot-create-nodes \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup
+source /opt/ros/jazzy/setup.bash
 ```
 
 ## 🚀 빠른 시작 (`task` & `rclaw`)
@@ -65,7 +100,7 @@ task unit-test
 ./rclaw run camera_topic:=/camera/color/image_raw
 
 # 6. 시뮬레이션 실행 (Nav2/AMCL 포함)
-./rclaw sim --nav2
+./rclaw sim --nav2 sim_engine:=gz
 
 # 7. 실행 프로세스 및 점유 포트 강제 정리
 ./rclaw kill

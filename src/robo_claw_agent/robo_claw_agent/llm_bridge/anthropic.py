@@ -31,10 +31,14 @@ class AnthropicBridge(BaseLLMBridge):
     """Anthropic Claude 브릿지"""
 
     def __init__(
-        self, model: str = "claude-3-5-sonnet-20241022", api_key: str | None = None
+        self,
+        model: str = "claude-3-5-sonnet-20241022",
+        api_key: str | None = None,
+        timeout_sec: float = DEFAULT_TIMEOUT_SEC,
     ) -> None:
         self._model = model
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self._timeout_sec = float(timeout_sec)
 
     def validate_config(self) -> str | None:
         if not self._api_key:
@@ -64,7 +68,7 @@ class AnthropicBridge(BaseLLMBridge):
         logger.debug("Anthropic call: messages=%s, system='%s'", messages, system_prompt)
         # LangSmith 트레이싱 활성 시 클라이언트를 감싸 토큰/지연시간을 캡처한다.
         client = wrap_anthropic_client(
-            anthropic.Anthropic(api_key=self._api_key, timeout=DEFAULT_TIMEOUT_SEC)
+            anthropic.Anthropic(api_key=self._api_key, timeout=self._timeout_sec)
         )
 
         if "response_format" in kwargs:
@@ -105,7 +109,7 @@ class AnthropicBridge(BaseLLMBridge):
 
         logger.debug("Anthropic image analysis call: prompt='%s'", prompt)
         client = wrap_anthropic_client(
-            anthropic.Anthropic(api_key=self._api_key, timeout=DEFAULT_TIMEOUT_SEC)
+            anthropic.Anthropic(api_key=self._api_key, timeout=self._timeout_sec)
         )
         resp = client.messages.create(
             model=self._model,

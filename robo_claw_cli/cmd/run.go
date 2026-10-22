@@ -9,7 +9,6 @@ import (
 
 	"github.com/wkqco33/wcli"
 	"github.com/wkqco33/wcli/logging"
-	"github.com/wkqco33/wcli/rich"
 	"robo_claw_cli/contract"
 	"robo_claw_cli/launcher"
 )
@@ -196,8 +195,7 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	}
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", launchFile}, launchArgs...)
-	logging.Info("실행 명령어: ros2 %s", strings.Join(argsToExec, " "))
-	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", strings.Join(argsToExec, " "))
+	logging.Debug("실행 명령어: ros2 %s", launcher.FormatLaunchLogArgs(argsToExec))
 
 	helperScript := filepath.Join(projectRoot, "scripts", "run_in_ros_env.sh")
 	var cmd *exec.Cmd
@@ -209,8 +207,12 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	}
 
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	consoleOut := launcher.NewConsoleLogWriter(os.Stdout)
+	consoleErr := launcher.NewConsoleLogWriter(os.Stderr)
+	defer consoleOut.Flush()
+	defer consoleErr.Flush()
+	cmd.Stdout = consoleOut
+	cmd.Stderr = consoleErr
 	cmd.Stdin = os.Stdin
 
 	return cmd.Run()

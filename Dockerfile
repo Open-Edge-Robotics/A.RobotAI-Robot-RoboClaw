@@ -107,7 +107,7 @@ RUN pip3 install \
     "lark>=1.3.1" \
     "lxml>=6.0.2" \
     "mcp==1.27.0" \
-    "qdrant-client>=1.17.1" \
+    "qdrant-client==1.19.1" \
     "sqlmodel>=0.0.21" \
     "aiosqlite>=0.19.0" \
     "psutil>=5.9.0"
