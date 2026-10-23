@@ -12,6 +12,8 @@
 | [`former_slam_run.sh`](former_slam_run.sh) | SLAM 지도 작성 백그라운드 구동 래퍼 | `slam --daemon` 자동 적용 |
 | [`former_slam_rviz.sh`](former_slam_rviz.sh) | SLAM RViz 시각화 모니터링 | SLAM 전용 RViz 뷰 적용 |
 | [`run_former_docker.sh`](run_former_docker.sh) | Former0045용 RoboClaw 에이전트 구동 런처 | 카메라 토픽: `/former0045/camera/color/image_raw` |
+| [`run_nav_stable.sh`](run_nav_stable.sh) | 실기용 Navigation2 기동 (권장) | `use_composition:=False`, cmd_vel 리맵, 스캔 재스탬프 핫픽스 적용 |
+| [`restart_nav.sh`](restart_nav.sh) | nav2 컨테이너만 지우고 `run_nav_stable.sh` 로 재기동 | 베이스/센서 컨테이너는 유지 |
 
 ## 경로 설정 및 자동 감지 안내
 
