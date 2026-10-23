@@ -148,4 +148,11 @@ former/
 
 ## 7. 맵 파일 (`maps/`)
 
-`maps/`에는 사전 작성된 지도 3세트(`w2_2f`, `w2_2f_2`, `w2_5f`, 각각 `.pgm` + `.yaml`)가 포함되어 있습니다. 스크립트 실행 시 `-m/--map <파일명>` 옵션으로 자유롭게 지정할 수 있습니다.
+`maps/`에는 사전 작성된 지도 세트(`w2_2f`, `w2_2f_2`, `w2_5f`, `map_konjiam_L_107-1`, 각각 `.pgm` + `.yaml`)가 포함되어 있습니다. 스크립트 실행 시 `-m/--map <파일명>` 옵션으로 자유롭게 지정할 수 있습니다.
+
+| 맵 | 해상도 | 크기 | 비고 |
+| --- | --- | --- | --- |
+| `w2_2f`, `w2_2f_2`, `w2_5f` | 0.025 m/px | 12~16 m | W2 빌딩 구역 |
+| `map_konjiam_L_107-1` | 0.05 m/px | 16.2 × 15.35 m | RTAB-Map(3D SLAM) grid map 기반. 미관측 영역은 unknown(205)으로 남습니다. |
+
+`map_konjiam_L_107-1` 은 RTAB-Map 결과(`grid_map.pgm`)를 그대로 사용하며, 이전 SLAM 맵과 **원점·해상도가 다릅니다**. 따라서 `set_initial_pose` 는 `false` 로 두고, 주행 전 RViz의 `2D Pose Estimate` 로 실제 위치를 지정해야 합니다. 매번 같은 지점에서 출발한다면 그 좌표를 `former/initpose.md` 로 기록해 초기 자세 자동 주입을 다시 켜면 됩니다(`set_initial_pose: true`).
