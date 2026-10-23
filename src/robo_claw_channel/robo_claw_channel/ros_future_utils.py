@@ -7,6 +7,7 @@
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from robo_claw_msgs.action import ExecuteTask
@@ -45,7 +46,11 @@ def await_future_result(
 
 
 def send_execute_task(
-    task_client: Any, instruction: str, context_json: str, timeout: float
+    task_client: Any,
+    instruction: str,
+    context_json: str,
+    timeout: float,
+    on_assistant: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """ExecuteTask 액션 전송 후 결과 반환. goal 거부 시 1회 재시도.
 
@@ -63,9 +68,21 @@ def send_execute_task(
     goal.context_json = context_json
     goal.timeout_sec = timeout
 
+    def on_feedback(message: Any) -> None:
+        step = str(getattr(message.feedback, "current_step", "") or "")
+        prefix = "assistant: "
+        if on_assistant is not None and step.startswith(prefix):
+            text = step[len(prefix) :].strip()
+            if text:
+                on_assistant(text)
+
     # goal이 거부되면 한 번 재시도 (stale action server 응답 방지)
     for attempt in range(2):
-        future = task_client.send_goal_async(goal)
+        future = (
+            task_client.send_goal_async(goal, feedback_callback=on_feedback)
+            if on_assistant is not None
+            else task_client.send_goal_async(goal)
+        )
         ok, goal_result = await_future_result(
             future,
             timeout_sec=timeout,

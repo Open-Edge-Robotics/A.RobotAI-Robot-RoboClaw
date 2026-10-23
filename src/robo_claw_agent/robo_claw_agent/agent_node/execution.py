@@ -25,6 +25,7 @@ from .fast_router import (
 from .nav_safety import ensure_navigation_safety
 from .skill_result_msg import build_skill_result_msg
 from .task_queue import QueuedTask, TaskQueue
+from .utils import tool_calling_enabled
 
 if TYPE_CHECKING:
     pass
@@ -268,9 +269,7 @@ class ExecutionMixin:
         if background_skills and len(effective_chain) > 1:
             allowed_pre_background = {"send_message", "say", "log_observation"}
             last_skill_name = str(effective_chain[-1].get("skill") or "").strip()
-            prior_skills = [
-                str(item.get("skill") or "").strip() for item in effective_chain[:-1]
-            ]
+            prior_skills = [str(item.get("skill") or "").strip() for item in effective_chain[:-1]]
             last_skill_obj = self._skills.get_skill(last_skill_name)
             is_last_background = (
                 getattr(last_skill_obj, "terminal_behavior", "terminal") == "background"
@@ -627,6 +626,8 @@ class ExecutionMixin:
 
         if (
             self._llm
+            # 네이티브 도구 루프는 원본 요청과 도구 결과를 한 대화에서 유지합니다.
+            and not tool_calling_enabled(getattr(self, "_llm_tool_calling", False), self._llm)
             and getattr(self, "_enable_task_decomposition", True)
             and (self._task_decomposer.looks_compound(instruction))
         ):

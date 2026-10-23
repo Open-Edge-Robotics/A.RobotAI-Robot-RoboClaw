@@ -16,10 +16,12 @@ class ToolCall:
 
     ``arguments`` 는 프로바이더 응답의 원본(JSON 문자열)을 파싱한 dict 다.
     인자가 JSON 이 아닌 형태(빈 문자열 등)로 오면 빈 dict 로 정규화된다.
+    ``id`` 는 프로바이더가 부여한 호출 고유 ID (네이티브 tool 결과 매핑용).
     """
 
     name: str
     arguments: dict[str, Any] = field(default_factory=dict)
+    id: str | None = None
 
 
 @dataclass(slots=True)
@@ -32,6 +34,8 @@ class ToolTurn:
 
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    # 다음 도구 라운드에 전달할 프로바이더 원본 assistant 메시지입니다.
+    assistant_message: dict[str, Any] | None = None
 
     @property
     def has_tool_calls(self) -> bool:

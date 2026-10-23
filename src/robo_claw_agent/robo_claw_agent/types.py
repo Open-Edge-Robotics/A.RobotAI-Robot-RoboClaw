@@ -66,3 +66,6 @@ class LLMPlanResult:
     # (병합 시 파서는 이 인자를 넘기는데 데이터클래스엔 누락돼 매 파싱이 TypeError로 실패 →
     #  원시 LLM 출력이 그대로 노출되던 회귀를 유발했음)
     parse_failed: bool = False
+    # 네이티브 tool calling 모드에서 LLM이 반환한 tool_call_id 들.
+    # 스킬 실행 후 네이티브 형식(role="tool", tool_call_id=...)으로 결과 전달 시 사용.
+    tool_call_ids: list[str] = field(default_factory=list)

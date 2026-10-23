@@ -287,7 +287,8 @@ class TestMessengerServicerChatStream:
         assert resp.success is False
         assert resp.message == "gRPC 인증 실패 (인증 토큰 누락 또는 불일치)"
         assert any(
-            "Unauthorized command rejected" in r.getMessage() and "reason=token_mismatch" in r.getMessage()
+            "Unauthorized command rejected" in r.getMessage()
+            and "reason=token_mismatch" in r.getMessage()
             for r in caplog.records
         )
 
@@ -498,3 +499,49 @@ def test_grpc_server_bind_host_configuration():
         bind_host="0.0.0.0",
     )
     assert custom_server._bind_host == "0.0.0.0"
+
+
+@pytest.mark.unit
+def test_chat_stream_delivers_assistant_messages_only_to_requesting_stream():
+    import queue
+    import threading
+
+    first_received = threading.Event()
+
+    def on_stream(text, emit):
+        emit("먼저 상태를 확인합니다.")
+        assert first_received.wait(timeout=2), "작업 완료 전에 중간 문장을 전달해야 합니다."
+        emit("상태를 확인했습니다.")
+        return True, "완료", ""
+
+    servicer = MessengerServicer(lambda text: "완료", on_stream_message_cb=on_stream)
+    unrelated = queue.Queue()
+    servicer._active_streams.append(unrelated)
+    requests = iter([pb2.ChatMessage(sender_id="user", content="확인해줘")])
+    stream = servicer.ChatStream(requests, _make_context(6))
+    first = next(stream)
+    first_received.set()
+    responses = [first, *stream]
+    assert [m.content for m in responses] == [
+        "먼저 상태를 확인합니다.",
+        "상태를 확인했습니다.",
+        "완료",
+    ]
+    assert responses[0].metadata["type"] == "assistant"
+    assert unrelated.empty()
+    servicer._dedup_db.close()
+
+
+@pytest.mark.unit
+def test_send_command_includes_intermediate_assistant_messages():
+    def on_stream(text, emit):
+        emit("상태를 확인합니다.")
+        return True, "확인 완료", ""
+
+    servicer = MessengerServicer(lambda text: "확인 완료", on_stream_message_cb=on_stream)
+    response = servicer.SendCommand(
+        pb2.ChatMessage(sender_id="user", content="확인해줘"), MagicMock()
+    )
+    assert response.success is True
+    assert response.message == "상태를 확인합니다.\n\n확인 완료"
+    servicer._dedup_db.close()

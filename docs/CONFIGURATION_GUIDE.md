@@ -462,3 +462,13 @@ DB model
  -> ROS parameter
  -> node consumer
 ```
+
+
+### Ollama 도구 호출의 대화 컨텍스트
+
+Ollama 네이티브 도구 호출은 [공식 agent loop 예제](https://docs.ollama.com/capabilities/tool-calling#python)에 따라 assistant 메시지의 `thinking`, `content`, `tool_calls`를 같은 작업의 후속 요청에 함께 전달합니다. 사용자에게 보여주는 답변에서는 사고 과정 태그를 제거하지만, 후속 도구 호출에 사용하는 원본 메시지는 보존합니다.
+
+각 도구 결과는 `role: tool`, `tool_name`, `content`로 연결합니다. 실행 실패와 안전 차단도 도구 결과로 기록하고, 체인이 실패하여 후속 호출을 실행하지 않은 경우에는 `NotExecuted` 결과를 전달합니다. 컨텍스트 보존은 기존 스킬 검증과 안전 정책을 거친 실행 흐름에 적용합니다.
+
+
+네이티브 도구 호출이 활성화되어 있고 프로바이더가 이를 지원하면, 복합 요청도 원문 그대로 하나의 도구 루프에서 처리합니다. 별도 명령 분해기를 호출하거나 단계마다 대화를 새로 만들지 않습니다. 따라서 도구 호출과 결과 이력이 다음 라운드에 이어지며, 단계 전환을 위한 `[전체 명령]`·`[이전 단계 요약]` system 메시지를 추가하지 않습니다. 네이티브 도구 호출을 사용하지 않는 경로에서는 기존 `enable_task_decomposition` 설정을 적용합니다.

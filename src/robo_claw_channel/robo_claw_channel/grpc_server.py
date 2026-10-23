@@ -58,7 +58,9 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
         peer_auth_tokens: dict[str, str] | None = None,
         max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
         dedup_path: str = DEFAULT_DEDUP_PATH,
+        on_stream_message_cb: Callable | None = None,
     ):
+        self._on_stream_message_cb = on_stream_message_cb
         self._on_message_cb = on_message_cb
         self._on_peer_message_cb = on_peer_message_cb
         self._peer_auth_token = peer_auth_token
@@ -138,6 +140,20 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                             continue
                         if message_type == "peer_cooperation" and self._on_peer_message_cb:
                             res_result = self._on_peer_message_cb(req.sender_id, req.content)
+                        elif self._on_stream_message_cb:
+
+                            def emit_assistant(text: str) -> None:
+                                if text.strip() and context.is_active():
+                                    msg_queue.put(
+                                        pb2.ChatMessage(
+                                            sender_id="robot",
+                                            content=text,
+                                            timestamp=int(time.time()),
+                                            metadata={"type": "assistant"},
+                                        )
+                                    )
+
+                            res_result = self._on_stream_message_cb(req.content, emit_assistant)
                         else:
                             res_result = self._on_message_cb(req.content)
                         _, res_text, _ = unpack_callback_result(res_result)
@@ -198,6 +214,11 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
             return pb2.CommandResponse(success=True, message="중복 협동 메시지를 무시했습니다.")
         if request.metadata.get("type", "") == "peer_cooperation" and self._on_peer_message_cb:
             res_result = self._on_peer_message_cb(request.sender_id, request.content)
+        elif self._on_stream_message_cb:
+            assistant_messages: list[str] = []
+            res_result = self._on_stream_message_cb(request.content, assistant_messages.append)
+            success, res_text, result_json = unpack_callback_result(res_result)
+            res_result = success, "\n\n".join([*assistant_messages, res_text]), result_json
         else:
             res_result = self._on_message_cb(request.content)
         success, res_text, result_json = unpack_callback_result(res_result)
@@ -251,7 +272,12 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
         # 피어별 맵에 해당 피어가 없더라도 공통 토큰이 있으면 fallback으로 허용
         if not expected and self._peer_auth_token:
             expected = self._peer_auth_token
-        elif not expected and self._peer_auth_tokens and supplied and peer_id.lower() in ("user", "robo_talk"):
+        elif (
+            not expected
+            and self._peer_auth_tokens
+            and supplied
+            and peer_id.lower() in ("user", "robo_talk")
+        ):
             # 채팅앱(sender_id='user' 등)처럼 피어 맵에 명시되지 않은 일반 발신자가
             # 등록된 유효 피어 토큰 중 하나와 일치하는 토큰을 제출한 경우 승인한다.
             for candidate in self._peer_auth_tokens.values():
@@ -473,6 +499,7 @@ class GrpcServer:
         max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
         dedup_path: str = DEFAULT_DEDUP_PATH,
         bind_host: str = "127.0.0.1",
+        on_stream_message_cb: Callable | None = None,
     ):
         self._port = port
         self._bind_host = bind_host
@@ -483,6 +510,7 @@ class GrpcServer:
             peer_auth_tokens,
             max_file_bytes,
             dedup_path,
+            on_stream_message_cb=on_stream_message_cb,
         )
         self._server = None
 

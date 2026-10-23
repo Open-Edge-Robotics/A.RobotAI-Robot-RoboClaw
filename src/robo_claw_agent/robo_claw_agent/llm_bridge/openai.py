@@ -105,6 +105,7 @@ class OpenAIBridge(BaseLLMBridge):
             ToolCall(
                 name=str(call.function.name),
                 arguments=parse_tool_arguments(call.function.arguments),
+                id=str(getattr(call, "id", "") or "").strip() or None,
             )
             for call in (message.tool_calls or [])
             if getattr(call.function, "name", None)

@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from collections.abc import Mapping
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ def _jsonable(value: Any) -> Any:
         except Exception:  # noqa: BLE001 — 직렬화 실패 시 str 로 강제 변환
             pass
     return str(value)
+
 
 # think=true 시 일부 모델이 content에 <think>...</think>를 섞어 반환한다.
 # 닫는 태그가 없는 경우(토큰 한도로 잘림)도 있으므로 두 패턴을 모두 처리한다.
@@ -212,11 +214,11 @@ class OllamaBridge(BaseLLMBridge):
 
                 import ollama
 
-                self._think_supported = "think" in inspect.signature(
-                    ollama.Client.chat
-                ).parameters
+                self._think_supported = "think" in inspect.signature(ollama.Client.chat).parameters
             except Exception as e:
-                logger.debug("OllamaBridge: failed to detect think support (%s) → treating as unsupported", e)
+                logger.debug(
+                    "OllamaBridge: failed to detect think support (%s) → treating as unsupported", e
+                )
                 self._think_supported = False
         return self._think_supported
 
@@ -235,9 +237,7 @@ class OllamaBridge(BaseLLMBridge):
     @traceable(run_type="llm", name="OllamaBridge.chat")
     def chat(self, messages, system_prompt=None, **kwargs):
         client = self._get_client()
-        payload = (
-            [{"role": "system", "content": system_prompt}] if system_prompt else []
-        )
+        payload = [{"role": "system", "content": system_prompt}] if system_prompt else []
         payload.extend(messages)
         logger.debug("Ollama call: messages=%s", payload)
 
@@ -279,8 +279,11 @@ class OllamaBridge(BaseLLMBridge):
         # 추출하므로 think 블록을 제거한 후 반환한다.
         cleaned = _strip_think(content)
         if cleaned != content:
-            logger.debug("Stripped <think> block from Ollama response (%d → %d chars)",
-                         len(content), len(cleaned))
+            logger.debug(
+                "Stripped <think> block from Ollama response (%d → %d chars)",
+                len(content),
+                len(cleaned),
+            )
             content = cleaned
 
         logger.debug("Ollama response: %s", content)
@@ -306,22 +309,42 @@ class OllamaBridge(BaseLLMBridge):
         따라서 원본 ``input_schema`` 를 그대로 넘겨도 호출 계약은 보존된다.
         """
         client = self._get_client()
-        payload = (
-            [{"role": "system", "content": system_prompt}] if system_prompt else []
-        )
+        payload = [{"role": "system", "content": system_prompt}] if system_prompt else []
         payload.extend(messages)
         logger.debug("Ollama tool call: messages=%s, tools=%d", payload, len(tools or []))
 
-        chat_kwargs: dict = {"model": self._model, "messages": payload}
+        # Ollama expects tool_calls.arguments to be a dict, not a JSON string.
+        # The planner stores arguments as JSON strings (OpenAI format), so convert.
+        sanitized_payload = []
+        for msg in payload:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                sanitized_tool_calls = []
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function", {})
+                    args = fn.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, ValueError):
+                            args = {}
+                    sanitized_tool_calls.append(
+                        {
+                            **tc,
+                            "function": {**fn, "arguments": args},
+                        }
+                    )
+                sanitized_payload.append({**msg, "tool_calls": sanitized_tool_calls})
+            else:
+                sanitized_payload.append(msg)
+
+        chat_kwargs: dict = {"model": self._model, "messages": sanitized_payload}
         if self._options:
             chat_kwargs["options"] = self._options
         self._apply_think(chat_kwargs)
         if tools:
             chat_kwargs["tools"] = list(tools)
 
-        resp = self._invoke(
-            "chat_with_tools", chat_kwargs, lambda: client.chat(**chat_kwargs)
-        )
+        resp = self._invoke("chat_with_tools", chat_kwargs, lambda: client.chat(**chat_kwargs))
         msg = resp.get("message", {}) or {}
         content = _strip_think(msg.get("content", "") or "")
 
@@ -332,7 +355,11 @@ class OllamaBridge(BaseLLMBridge):
             if not name:
                 continue
             tool_calls.append(
-                ToolCall(name=name, arguments=parse_tool_arguments(fn.get("arguments")))
+                ToolCall(
+                    name=name,
+                    arguments=parse_tool_arguments(fn.get("arguments")),
+                    id=str(raw.get("id") or "").strip() or None,
+                )
             )
 
         logger.debug(
@@ -340,7 +367,11 @@ class OllamaBridge(BaseLLMBridge):
             len(tool_calls),
             len(content),
         )
-        return ToolTurn(content=content, tool_calls=tool_calls)
+        return ToolTurn(
+            content=content,
+            tool_calls=tool_calls,
+            assistant_message=deepcopy(_jsonable(msg)),
+        )
 
     @traceable(run_type="llm", name="OllamaBridge.embed")
     def embed(self, text: str, *, _request_kind: str = "embed") -> list[float]:

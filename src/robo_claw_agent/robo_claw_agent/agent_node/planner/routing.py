@@ -219,27 +219,18 @@ _MOVEMENT_SKILLS: frozenset[str] = frozenset(
 def _force_navigation_if_misrouted(
     chain: list[dict[str, Any]], instruction: str, logger_obj: Any
 ) -> list[dict[str, Any]]:
-    """ "<장소>로 이동해" 를 조회 스킬로 오라우팅한 계획을 navigate_to 로 교정한다.
+    """이동 명령 오라우팅 교정 — **비활성화됨**.
 
-    실측(2026-08-14, gemma4:e4b): "키친으로 이동해" 를 `get_status` 단독으로 계획해
-    로봇이 움직이지 않았고, 이후 역방향 조회(tc16/17)가 옛 위치를 보고해 연쇄 실패했다.
-    tc13/14(충전대로/거실로)는 통과했으므로 **모델의 비결정적 라우팅**이며, 이동 명령은
-    실패 비용이 크므로(이동이 아예 일어나지 않음) 규칙으로 고정한다.
+    과거(2026-08-14, gemma4:e4b)에는 약한 LLM이 "키친으로 이동해" 를
+    `get_status` 단독으로 계획해 이동이 아예 안 일어나는 문제가 있었다.
+    네이티브 tool calling 과 강한 LLM(qwen3 등) 환경에서는 LLM이
+    `get_location` → `navigate_to` 같은 순차 계획을 스스로 짜므로,
+    결정론적 규칙이 LLM 계획을 덮어쓰는 것을 막고 LLM의 자연스러운
+    멀티라운드 실행을 신뢰한다.
 
-    `_LOC_INTENT_RE` 기반 위치질의 라우팅은 "위치/좌표" 같은 단어를 요구해 여기에 걸리지
-    않는다("키친으로 이동해" 에는 그런 단어가 없다). 그래서 별도 교정이 필요하다.
+    필요 시 이 함수 본문을 복원하면 된다.
     """
-    target = _extract_requested_navigation_target(instruction)
-    if not target:
-        return chain
-    # 이미 이동 스킬이 계획돼 있으면 그대로 둔다.
-    if any(str(item.get("skill") or "") in _MOVEMENT_SKILLS for item in chain):
-        return chain
-    # 조회만 하는 계획(또는 빈 계획)일 때만 개입한다. 그 외 물리 스킬이 섞였으면 손대지 않는다.
-    if chain and not all(str(item.get("skill") or "") in _LOC_READ_SKILLS for item in chain):
-        return chain
-    logger_obj.info(f"Routing misrouted navigation command to navigate_to(target_name='{target}')")
-    return [{"skill": "navigate_to", "params": {"target_name": target}}]
+    return chain
 
 
 def _known_place_in_text(text: str, node: Any) -> str:

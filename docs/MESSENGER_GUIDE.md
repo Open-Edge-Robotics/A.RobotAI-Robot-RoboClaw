@@ -69,3 +69,10 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 각 메신저 채널은 별도 스레드에서 동시에 실행되므로, 한 대의 로봇을 텔레그램, 슬랙, 디스코드에서 동시에 제어할 수 있습니다.
 
 토큰은 `.env`에만 넣고 커밋하지 마세요. 운영 배포에서는 AI Config Server profile + secret으로 관리하는 것을 권장합니다([CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) 참고).
+
+
+## gRPC assistant 응답 전달
+
+네이티브 도구 호출 중 assistant가 생성한 사용자용 문장도 gRPC로 전달합니다. `ChatStream`은 각 중간 문장을 `sender_id: robot`, `metadata.type: assistant`인 메시지로 즉시 전송하고, 최종 답변은 기존 완료 응답으로 한 번 전달합니다. 중간 문장은 요청한 스트림에만 전달합니다.
+
+`SendCommand`는 단일 응답 RPC이므로 중간 문장과 최종 답변을 생성 순서대로 빈 줄로 연결하여 `CommandResponse.message`에 반환합니다. `success`와 `result_json`은 기존 실행 결과를 유지합니다. 모델의 `thinking` 필드와 진행 상태 알림은 assistant 문장에 포함하지 않습니다.

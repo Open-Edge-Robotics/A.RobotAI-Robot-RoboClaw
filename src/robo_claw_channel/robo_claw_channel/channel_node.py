@@ -71,9 +71,7 @@ class ChannelNode(Node):
         self.declare_parameter("request_timeout_sec", 600.0)
         self.declare_parameter("http_readonly_token", "")
         self.declare_parameter("http_control_token", "")
-        self.declare_parameter(
-            "http_allowed_cidrs_json", '["127.0.0.1/32", "::1/128"]'
-        )
+        self.declare_parameter("http_allowed_cidrs_json", '["127.0.0.1/32", "::1/128"]')
         self.declare_parameter("http_rate_limit_per_minute", 60)
         self.declare_parameter("http_allowed_skills_json", "[]")
         self.declare_parameter(
@@ -159,17 +157,15 @@ class ChannelNode(Node):
         )
 
         self._http_server = ThreadingHTTPServer((host, port), self._make_handler())
-        self._http_thread = threading.Thread(
-            target=self._http_server.serve_forever, daemon=True
-        )
+        self._http_thread = threading.Thread(target=self._http_server.serve_forever, daemon=True)
         self._http_thread.start()
 
         enable_grpc = param_bool(self, "enable_grpc")
         if enable_grpc:
 
-            def on_msg(text: str) -> tuple[bool, str, str]:
+            def on_msg(text: str, on_assistant=None) -> tuple[bool, str, str]:
                 self.get_logger().info(f"[gRPC call] {text}")
-                result = self.send_task(text)
+                result = self.send_task(text, on_assistant=on_assistant)
                 success = bool(result.get("success"))
                 # 스킬별 result_data 를 result_json 으로 함께 반환한다(진단용).
                 # 예: rag_search 의 referenced → 클라이언트 리포트의 "참조 Qdrant 항목".
@@ -185,6 +181,7 @@ class ChannelNode(Node):
                 grpc_port,
                 on_msg,
                 on_peer_message_cb=self.on_peer_message,
+                on_stream_message_cb=on_msg,
                 peer_auth_token=grpc_peer_token,
                 peer_auth_tokens=grpc_peer_tokens,
                 max_file_bytes=grpc_max_file_bytes,
@@ -320,9 +317,7 @@ class ChannelNode(Node):
             name: {
                 **stat,
                 "avg_duration_sec": (
-                    stat["total_duration_sec"] / stat["count"]
-                    if stat["count"]
-                    else 0.0
+                    stat["total_duration_sec"] / stat["count"] if stat["count"] else 0.0
                 ),
             }
             for name, stat in self._rpc_metrics.items()
@@ -336,16 +331,20 @@ class ChannelNode(Node):
     ) -> tuple[bool, Any]:
         return await_future_result(future, timeout_sec, timeout_error, none_error)
 
-    def send_task(self, instruction: str, context_json: str = "") -> dict[str, Any]:
+    def send_task(
+        self, instruction: str, context_json: str = "", on_assistant=None
+    ) -> dict[str, Any]:
         """ExecuteTask 액션 전송 후 결과 반환 (공통 send_execute_task + RPC 메트릭 기록)"""
         start = time.monotonic()
         response = send_execute_task(
-            self._task_client, instruction, context_json, self._timeout
+            self._task_client,
+            instruction,
+            context_json,
+            self._timeout,
+            **({"on_assistant": on_assistant} if on_assistant is not None else {}),
         )
         success = bool(response.get("success"))
-        error = "" if success else str(
-            response.get("error") or response.get("message") or ""
-        )
+        error = "" if success else str(response.get("error") or response.get("message") or "")
         if not success:
             logger.error(f"send_task failed: {error}")
         self._record_rpc(

@@ -374,10 +374,29 @@ async def test_tool_mode_planner_executes_tool_call_chain():
 
         def chat_with_tools(self, messages, system_prompt=None, tools=None, **kwargs):
             self.calls.append({"messages": list(messages), "tools": tools})
-            return ToolTurn(
-                content="",
-                tool_calls=[ToolCall(name="navigate_to", arguments={"target_name": "거실"})],
-            )
+            # First call: return tool call
+            if len(self.calls) == 1:
+                return ToolTurn(
+                    content="이동을 시작합니다.",
+                    assistant_message={
+                        "role": "assistant",
+                        "content": "이동을 시작합니다.",
+                        "thinking": "목적지를 확인합니다.",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "navigate_to",
+                                    "arguments": {"target_name": "거실"},
+                                }
+                            }
+                        ],
+                    },
+                    tool_calls=[
+                        ToolCall(name="navigate_to", arguments={"target_name": "거실"}, id="call_1")
+                    ],
+                )
+            # Second call: return final answer after seeing tool result
+            return ToolTurn(content="거실로 이동 완료했습니다.", tool_calls=[])
 
     class _FakeNode:
         def __init__(self):
@@ -430,16 +449,25 @@ async def test_tool_mode_planner_executes_tool_call_chain():
 
     node = _FakeNode()
     planner = LLMPlanner(node)
+    feedback = []
     result_msg, skill_results, task_success, _ = await planner.run_llm_planning_loop(
-        _FakeGoalHandle(), "거실로 가줘", [], {}, 30.0, lambda *a, **kw: None
+        _FakeGoalHandle(), "거실로 가줘", [], {}, 30.0, lambda text, progress: feedback.append(text)
     )
 
+    assert [text for text in feedback if text.startswith("assistant: ")] == [
+        "assistant: 이동을 시작합니다."
+    ]
     assert task_success is True
     assert len(skill_results) == 1
     assert skill_results[0].skill_name == "navigate_to"
     assert skill_results[0].result_data["echo"] == {"target_name": "거실"}
     # 툴 목록이 LLM 에 전달되었어야 한다.
     assert node._llm.calls[0]["tools"][0]["function"]["name"] == "navigate_to"
+    followup = node._llm.calls[1]["messages"]
+    assistant = next(m for m in followup if m.get("tool_calls"))
+    assert assistant["thinking"] == "목적지를 확인합니다."
+    assert assistant["content"] == "이동을 시작합니다."
+    assert followup[followup.index(assistant) + 1]["tool_name"] == "navigate_to"
 
 
 @pytest.mark.asyncio
@@ -679,3 +707,176 @@ def test_prompt_mode_matches_planner_mode_when_provider_lacks_tools():
     # JSON 강제 섹션이 남아 있어야 한다 (툴 모드였다면 제거된다).
     assert "[응답 형식 (JSON만 반환, 설명 없이)]" in prompt
     assert "[도구 사용 규칙]" not in prompt
+
+
+@pytest.mark.unit
+def test_ollama_preserves_assistant_context(monkeypatch):
+    from copy import deepcopy
+
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    message = {
+        "role": "assistant",
+        "thinking": "도구 결과를 확인해야 합니다.",
+        "content": "<think>내부 추론</think>조회합니다.",
+        "tool_calls": [{"function": {"index": 0, "name": "get_status", "arguments": {}}}],
+    }
+    captured = []
+
+    class FakeClient:
+        def chat(self, **kwargs):
+            captured.append(deepcopy(kwargs["messages"]))
+            return {"message": message}
+
+    bridge = create_llm_bridge("ollama", model="fake")
+    monkeypatch.setattr(bridge, "_get_client", lambda: FakeClient())
+    turn = bridge.chat_with_tools([], tools=[])
+    assert turn.content == "조회합니다."
+    assert turn.assistant_message == message
+    history = [turn.assistant_message, {"role": "tool", "tool_name": "get_status", "content": "{}"}]
+    original = deepcopy(history)
+    bridge.chat_with_tools(history, tools=[])
+    assert captured[1] == original
+    assert history == original
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_native_tool_failure_reports_unexecuted_calls():
+    pytest.importorskip("rclpy")
+    import logging
+    from types import SimpleNamespace
+
+    from robo_claw_agent.agent_node.planner import LLMPlanner
+    from robo_claw_agent.skill_manager import SkillResult
+
+    executed = []
+
+    def execute(name, params, timeout):
+        executed.append(name)
+        return SkillResult(name, False, "timeout", 0.01, {"error_type": "Timeout"})
+
+    class Node:
+        _skills = SimpleNamespace(execute=execute, _skills={})
+        _enable_skill_learning = False
+
+        def get_logger(self):
+            return logging.getLogger("test_context")
+
+        def _set_state(self, *args):
+            pass
+
+        async def _run_blocking(self, op, func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+    planner = LLMPlanner(Node())
+    calls = [
+        {"id": str(i), "function": {"name": name, "arguments": {}}}
+        for i, name in enumerate(["get_status", "get_location"])
+    ]
+    messages = []
+    success, _ = await planner.execute_skill_chain(
+        [{"skill": "get_status"}, {"skill": "get_location"}],
+        messages,
+        "상태를 확인해줘",
+        1,
+        [],
+        [],
+        False,
+        lambda *args: None,
+        native_tool_calls=calls,
+    )
+    assert success is False
+    assert executed == ["get_status"]
+    results = [m for m in messages if m["role"] == "tool"]
+    assert [m["tool_name"] for m in results] == ["get_status", "get_location"]
+    assert json.loads(results[0]["content"])["success"] is False
+    assert json.loads(results[1]["content"])["error_type"] == "NotExecuted"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_battery_and_scene_share_native_tool_history():
+    pytest.importorskip("rclpy")
+    import logging
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from robo_claw_agent.agent_node.planner import LLMPlanner
+    from robo_claw_agent.skill_manager import SkillResult
+
+    instruction = "배터리 상태를 확인하고 주변 환경을 분석해줘."
+    requests = []
+    turns = iter(
+        [
+            ToolTurn(content="배터리를 확인합니다.", tool_calls=[ToolCall(name="get_status")]),
+            ToolTurn(
+                content="배터리는 80%입니다. 주변을 분석합니다.",
+                tool_calls=[ToolCall(name="analyze_scene")],
+            ),
+            ToolTurn(content="배터리는 80%이며 주변 통로는 비어 있습니다."),
+        ]
+    )
+
+    class LLM:
+        def supports_tools(self):
+            return True
+
+        def chat_with_tools(self, messages, **kwargs):
+            requests.append(deepcopy(messages))
+            return next(turns)
+
+    executed = []
+
+    def execute(name, params, timeout):
+        executed.append(name)
+        data = {"battery_pct": 80} if name == "get_status" else {"scene": "통로가 비어 있습니다."}
+        return SkillResult(name, True, "완료", 0.01, data)
+
+    class Node:
+        _llm = LLM()
+        _llm_tool_calling = True
+        _enable_skill_learning = False
+        _skills = SimpleNamespace(execute=execute)
+
+        def get_logger(self):
+            return logging.getLogger("native_compound")
+
+        def _set_state(self, *args):
+            pass
+
+        def _build_system_prompt(self):
+            return "도구 결과를 근거로 답하세요."
+
+        def _tool_specs(self):
+            return build_tool_specs([{"name": name} for name in ["get_status", "analyze_scene"]])
+
+        def _validate_skill_chain(self, chain):
+            return None
+
+        async def _run_blocking(self, op, func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+    feedback = []
+    messages = [{"role": "user", "content": instruction}]
+    result, _, success, _ = await LLMPlanner(Node()).run_llm_planning_loop(
+        SimpleNamespace(),
+        instruction,
+        messages,
+        {},
+        30,
+        lambda text, progress: feedback.append(text),
+    )
+    assert success is True
+    assert executed == ["get_status", "analyze_scene"]
+    assert result == "배터리는 80%이며 주변 통로는 비어 있습니다."
+    assert requests[2][0] == {"role": "user", "content": instruction}
+    assert [m["tool_name"] for m in requests[2] if m["role"] == "tool"] == [
+        "get_status",
+        "analyze_scene",
+    ]
+    assert not any(m["role"] == "system" for m in requests[2])
+    assert [m for m in feedback if m.startswith("assistant: ")] == [
+        "assistant: 배터리를 확인합니다.",
+        "assistant: 배터리는 80%입니다. 주변을 분석합니다.",
+    ]
