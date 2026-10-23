@@ -158,3 +158,44 @@ former/
 `map_konjiam_L_107-1` 은 RTAB-Map 결과(`grid_map.pgm`)를 그대로 사용하며, 이전 SLAM 맵과 **원점·해상도가 다릅니다**.
 
 초기 자세는 각 로봇의 `initpose.md`(예: `~/konjiam/former/initpose.md`)로 주입합니다. 맵 프레임이 바뀌었거나 다른 지점에서 출발하면 RViz의 `2D Pose Estimate`로 새 위치를 지정하고, 그 값을 `initpose.md`에 갱신하세요. `set_initial_pose: true`(자동 주입) + `always_reset_initial_pose: false`(수동 지정값 유지) 조합을 사용합니다.
+
+## 8. 알려진 문제: nav2 컨테이너 간헐 종료 (`Magick: abort due to signal 11`)
+
+증상은 "주행을 시작하면 네비게이션이 멈춘다"로 보이지만, 실제로는 `former00XX_nav` 컨테이너가 기동 직후 죽어 Nav2 노드가 모두 사라진 상태입니다.
+
+```bash
+docker ps -a --format '{{.Names}}\t{{.Status}}' | grep former00XX_nav   # Exited 상태 확인
+docker logs --tail 20 former00XX_nav | grep -iE "Magick|died"
+```
+
+```
+[lifecycle_manager_navigation] Managed nodes are active
+[lifecycle_manager_navigation] Creating bond timer...
+[component_container_isolated-1] Magick: abort due to signal 11 (SIGSEGV) "Segmentation Fault"...
+[ERROR] process has died [pid ..., exit code -6, cmd '.../component_container_isolated ...']
+```
+
+원인: nav2 기본 `bringup_launch.py` 는 `component_container_isolated`(노드별 executor 스레드를 두는 다중 스레드 컨테이너)를 쓰고, 같은 프로세스에 `map_server`(ImageMagick 사용, 스레드 안전하지 않음)와 15개 이상의 노드가 함께 올라갑니다. 이 조합에서 간헐적으로 SIGSEGV 가 발생하면 **프로세스 전체가 죽어 네비게이션 스택이 통째로 사라집니다**.
+
+### 즉시 우회 (이미지 재빌드 없이)
+
+`former_navigation2` 의 launch 를 단일 스레드 컨테이너로 바꾼 사본을 바인드마운트합니다. 두 로봇 스크립트는 `RC_EXTRA_VOLUMES` 로 추가 마운트를 받습니다.
+
+```bash
+cd ~/konjiam/former/former00XX
+mkdir -p patch
+sed 's/component_container_isolated/component_container/' \
+  ~/dev_ws/src/former_robot/former_navigation2/launch/bringup_launch.py \
+  > patch/bringup_launch.py
+
+RC_EXTRA_VOLUMES="-v $PWD/patch/bringup_launch.py:/root/dev_ws/install/former_navigation2/share/former_navigation2/launch/bringup_launch.py:ro" \
+  ./former_nav2_run.sh -m map_konjiam_L_107-1.yaml
+```
+
+적용 확인은 로그의 컨테이너 이름으로 합니다. `component_container-1` 이면 적용, `component_container_isolated-1` 이면 미적용입니다.
+
+### 근본 대책
+
+- `former_navigation2` 의 `bringup_launch.py` 자체를 `component_container` 로 수정하고 이미지를 재빌드합니다(핫픽스 마운트 불필요).
+- 또는 `map_server` 를 컴포넌트에서 분리해 별도 프로세스로 띄워 크래시 영향을 국소화합니다.
+- 운영 중에는 주기적으로 컨테이너 생존을 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
