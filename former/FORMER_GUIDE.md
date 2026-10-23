@@ -210,3 +210,42 @@ RC_EXTRA_VOLUMES="-v $PWD/patch/bringup_launch.py:/root/dev_ws/install/former_na
 - 또는 `map_server` 를 컴포넌트에서 분리해 별도 프로세스로 띄워 크래시 영향을 국소화합니다.
 - 운영 중에는 컨테이너 생존을 주기적으로 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
 - 참고: 이 이미지 안에서는 `apt-get update` 가 실패해 gdb 등 디버거 설치가 불가능했습니다(백트레이스 확보 불가 → 프로세스 분리로 원인 노드를 특정하는 방식 사용).
+
+## 9. Nav2 기동/구동 이슈 (실기 적용값)
+
+### 9.1 노드 분리 기동
+
+`./run_nav_stable.sh` 는 다음 두 가지를 적용해 기동합니다.
+
+1. `use_composition:=False` — 모든 노드를 개별 프로세스로 실행(AMCL 크래시가 전체 스택을 죽이지 않게, 그리고 크래시 노드를 로그에서 식별)
+2. `navigation_launch.py` 사본 바인드마운트 — vendor launch 는 `velocity_smoother` 최종 출력을 `/cmd_vel` 로 보내지만, 이 로봇 베이스는 `/base_controller/cmd_vel_unstamped` 만 구독합니다. 원본에는 `('/cmd_vel', '/base_controller/cmd_vel_unstamped')` 리맵이 **주석 처리**되어 있어, `cmd_vel_smoothed` 를 베이스 토픽으로 직접 리맵합니다.
+
+```bash
+cd ~/konjiam/former/former00XX
+./run_nav_stable.sh          # 또는 ./restart_nav.sh (기존 컨테이너 정리 후 재기동)
+```
+
+확인:
+```bash
+docker exec former00XX_nav bash -lc 'source /opt/ros/humble/setup.bash; \
+  ros2 topic info /base_controller/cmd_vel_unstamped -v | grep -A1 "Node name"'
+# velocity_smoother 가 publisher 목록에 있어야 정상
+```
+
+### 9.2 RTAB-Map 지도 사용 시 costmap 설정
+
+RTAB-Map grid map 은 미관측 영역이 unknown(205)으로 남아 52% 이상이 미지입니다. `track_unknown_space: true` 이면 그 영역이 통행 불가로 처리되어 `GridBased: failed to create plan` 이 반복됩니다.
+
+```yaml
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      track_unknown_space: false   # RTAB 맵의 미지 영역을 통행 가능으로 처리
+      inflation_layer:
+        inflation_radius: 0.35     # 0.45 에서 완화(통로 inscribed 최소화)
+```
+
+### 9.3 남은 항목
+
+- `controller_server.progress_checker.movement_time_allowance` 는 nav2 에 없는 파라미터명입니다(정식: `movement_timeout`). 현재는 기본값(10 s)로 동작하므로, 장시간 정지 허용이 필요하면 이름을 바로잡아야 합니다.
+- `robo_claw_container`(에이전트)가 0047 에서 `/former0045/camera/...` 토픽을 구독하는 것이 확인되었습니다. 로봇 프로필 설정을 확인하세요.
