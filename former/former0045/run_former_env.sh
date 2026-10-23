@@ -58,6 +58,7 @@ ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-4}" # ROS 표준 환경 변수
 MAP_FILE="${RC_MAP_FILE:-w2_5f.yaml}"
 DAEMON_MODE=false
 EXTRA_ARGS=()
+INITPOSE_OVERRIDE_DIR=""
 
 # Auto-detect former user home directory
 if [ -d "/home/former" ]; then
@@ -159,6 +160,91 @@ resolve_map_file() {
     return 1
 }
 
+# Resolve initpose.md: checks absolute path, script dir, parent dirs, and FORMER_HOME
+resolve_initpose_file() {
+    local target="${1:-initpose.md}"
+    local candidates=()
+
+    if [[ "$target" == /* ]]; then
+        candidates=("$target")
+    else
+        candidates=(
+            "$SCRIPT_DIR/$target"
+            "$SCRIPT_DIR/../$target"
+            "$SCRIPT_DIR/../../$target"
+            "$FORMER_HOME/$target"
+        )
+    fi
+
+    local f
+    for f in "${candidates[@]}"; do
+        if [ -f "$f" ]; then
+            echo "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Parse initpose.md and print "x y yaw".
+# Expected format:
+#   Position(0.407429, 0.204412, 0), Orientation(0, 0, -0.797877, 0.60282) = Angle: -1.84753
+parse_initpose() {
+    local file="$1"
+    local x y yaw
+
+    x=$(sed -nE 's/.*Position\([[:space:]]*([-+]?[0-9]*\.?[0-9]+)[[:space:]]*,.*/\1/p' "$file" | head -n1)
+    y=$(sed -nE 's/.*Position\([[:space:]]*[-+]?[0-9]*\.?[0-9]+[[:space:]]*,[[:space:]]*([-+]?[0-9]*\.?[0-9]+).*/\1/p' "$file" | head -n1)
+    yaw=$(sed -nE 's/.*Angle:[[:space:]]*([-+]?[0-9]*\.?[0-9]+).*/\1/p' "$file" | head -n1)
+
+    if [ -n "$x" ] && [ -n "$y" ] && [ -n "$yaw" ]; then
+        printf '%s %s %s\n' "$x" "$y" "$yaw"
+        return 0
+    fi
+    return 1
+}
+
+# Copy a Nav2 params file, replacing the AMCL initial_pose with the given values.
+# Supports both dict form (initial_pose: {x,y,z,yaw}) and list form (initial_pose: [x,y,z]).
+apply_initpose_to_params() {
+    local src="$1"
+    local dst="$2"
+    local x="$3"
+    local y="$4"
+    local yaw="$5"
+
+    awk -v x="$x" -v y="$y" -v yaw="$yaw" '
+        /^[^[:space:]]/ { in_block = 0 }
+        /^[[:space:]]*initial_pose:[[:space:]]*\[/ {
+            sub(/\[.*\]/, "[" x ", " y ", 0.0]")
+            print
+            next
+        }
+        /^[[:space:]]*initial_pose:[[:space:]]*$/ {
+            in_block = 1
+            print
+            next
+        }
+        in_block && /^[[:space:]]*x:[[:space:]]*/ {
+            sub(/x:.*/, "x: " x)
+            print
+            next
+        }
+        in_block && /^[[:space:]]*y:[[:space:]]*/ {
+            sub(/y:.*/, "y: " y)
+            print
+            next
+        }
+        in_block && /^[[:space:]]*yaw:[[:space:]]*/ {
+            sub(/yaw:.*/, "yaw: " yaw)
+            in_block = 0
+            print
+            next
+        }
+        { print }
+    ' "$src" > "$dst"
+}
+
 # XAuthority detection
 XAUTH="$HOME/.Xauthority"
 if [ -f "$FORMER_HOME/.Xauthority" ]; then
@@ -219,8 +305,9 @@ case "$COMMAND" in
         HOST_PARAMS_DIR=$(resolve_dir "params")
         PARAMS_PARAM=""
         PARAMS_FILE="${RC_PARAMS_FILE:-nav2_params.yaml}"
+        PARAMS_MOUNT_DIR=""
         if [ -n "$HOST_PARAMS_DIR" ]; then
-            DOCKER_VOLUMES+=("-v" "$HOST_PARAMS_DIR:/ws/params:ro")
+            PARAMS_MOUNT_DIR="$HOST_PARAMS_DIR"
             if [ -f "$HOST_PARAMS_DIR/$PARAMS_FILE" ]; then
                 PARAMS_PARAM="/ws/params/$PARAMS_FILE"
             else
@@ -228,6 +315,37 @@ case "$COMMAND" in
             fi
         else
             echo "Warning: Params directory not found. Using package default." >&2
+        fi
+
+        # Override the AMCL initial pose by reading initpose.md.
+        # The params file is generated in a temp dir (bind-mounted at /ws/params)
+        # so the original yaml stays untouched.
+        if [ -n "$HOST_PARAMS_DIR" ] && [ -f "$HOST_PARAMS_DIR/$PARAMS_FILE" ]; then
+            INITPOSE_FILE=$(resolve_initpose_file "${RC_INITPOSE_FILE:-initpose.md}" || true)
+            if [ -n "$INITPOSE_FILE" ]; then
+                if read -r IP_X IP_Y IP_YAW < <(parse_initpose "$INITPOSE_FILE"); then
+                    # 고정 이름 디렉터리를 쓴다. 이전 실행(예: sudo 실행, docker
+                    # bind-mount 자동 생성)이 이 경로를 root 소유로 남기면 sticky /tmp
+                    # 에서는 삭제할 수 없고, set -e 때문에 기동 전체가 중단된다.
+                    # 삭제에 실패하면 매 실행 고유한 임시 디렉터리로 대체한다.
+                    INITPOSE_OVERRIDE_DIR="${TMPDIR:-/tmp}/former_initpose_${ROBOT_ID}"
+                    if ! rm -rf "$INITPOSE_OVERRIDE_DIR" 2>/dev/null; then
+                        INITPOSE_OVERRIDE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/former_initpose_${ROBOT_ID}.XXXXXX")"
+                    fi
+                    mkdir -p "$INITPOSE_OVERRIDE_DIR"
+                    apply_initpose_to_params "$HOST_PARAMS_DIR/$PARAMS_FILE" \
+                        "$INITPOSE_OVERRIDE_DIR/$PARAMS_FILE" "$IP_X" "$IP_Y" "$IP_YAW"
+                    PARAMS_MOUNT_DIR="$INITPOSE_OVERRIDE_DIR"
+                    PARAMS_PARAM="/ws/params/$PARAMS_FILE"
+                    echo "Applied initial pose from $INITPOSE_FILE: x=$IP_X, y=$IP_Y, yaw=$IP_YAW"
+                else
+                    echo "Warning: Failed to parse initial pose from $INITPOSE_FILE. Keeping params file values." >&2
+                fi
+            fi
+        fi
+
+        if [ -n "$PARAMS_MOUNT_DIR" ]; then
+            DOCKER_VOLUMES+=("-v" "$PARAMS_MOUNT_DIR:/ws/params:ro")
         fi
 
         MAP_PARAM="/ws/maps/$MAP_HOST_BASENAME"
@@ -327,6 +445,11 @@ fi
 
 # X11 authorization setup
 cleanup() {
+    # Keep the generated params dir in daemon mode: the container reads it
+    # asynchronously after `docker run` returns.
+    if [ "$DAEMON_MODE" != true ] && [ -n "${INITPOSE_OVERRIDE_DIR:-}" ] && [ -d "$INITPOSE_OVERRIDE_DIR" ]; then
+        rm -rf "$INITPOSE_OVERRIDE_DIR" 2>/dev/null || true
+    fi
     if command -v xhost >/dev/null 2>&1; then
         xhost -local:docker > /dev/null 2>&1 || true
     fi
