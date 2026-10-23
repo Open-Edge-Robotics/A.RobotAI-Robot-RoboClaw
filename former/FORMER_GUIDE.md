@@ -155,4 +155,6 @@ former/
 | `w2_2f`, `w2_2f_2`, `w2_5f` | 0.025 m/px | 12~16 m | W2 빌딩 구역 |
 | `map_konjiam_L_107-1` | 0.05 m/px | 16.2 × 15.35 m | RTAB-Map(3D SLAM) grid map 기반. 미관측 영역은 unknown(205)으로 남습니다. |
 
-`map_konjiam_L_107-1` 은 RTAB-Map 결과(`grid_map.pgm`)를 그대로 사용하며, 이전 SLAM 맵과 **원점·해상도가 다릅니다**. 따라서 `set_initial_pose` 는 `false` 로 두고, 주행 전 RViz의 `2D Pose Estimate` 로 실제 위치를 지정해야 합니다. 매번 같은 지점에서 출발한다면 그 좌표를 `former/initpose.md` 로 기록해 초기 자세 자동 주입을 다시 켜면 됩니다(`set_initial_pose: true`).
+`map_konjiam_L_107-1` 은 RTAB-Map 결과(`grid_map.pgm`)를 그대로 사용하며, 이전 SLAM 맵과 **원점·해상도가 다릅니다**.
+
+초기 자세는 각 로봇의 `initpose.md`(예: `~/konjiam/former/initpose.md`)로 주입합니다. 맵 프레임이 바뀌었거나 다른 지점에서 출발하면 RViz의 `2D Pose Estimate`로 새 위치를 지정하고, 그 값을 `initpose.md`에 갱신하세요. `set_initial_pose: true`(자동 주입) + `always_reset_initial_pose: false`(수동 지정값 유지) 조합을 사용합니다.
