@@ -249,3 +249,29 @@ global_costmap:
 
 - `controller_server.progress_checker.movement_time_allowance` 는 nav2 에 없는 파라미터명입니다(정식: `movement_timeout`). 현재는 기본값(10 s)로 동작하므로, 장시간 정지 허용이 필요하면 이름을 바로잡아야 합니다.
 - `robo_claw_container`(에이전트)가 0047 에서 `/former0045/camera/...` 토픽을 구독하는 것이 확인되었습니다. 로봇 프로필 설정을 확인하세요.
+
+### 9.4 스캔 재스탬프 (AMCL 크래시 대응)
+
+SICK 스캐너는 자체 시계로 `header.stamp` 를 채우기 때문에 호스트 시계와 **+0.4~0.7초** 어긋나고, 이 오차가 커지면 tf2 메시지 필터가 스캔을 드롭하고 `nav2_amcl` 이 SIGSEGV 로 죽습니다(실측: 크래시 직전 `Message Filter dropping` 폭주).
+
+`run_nav_stable.sh` 는 `scan_restamp` 노드를 함께 띄워 `/scan` 을 ROS 시간으로 다시 찍어 `/scan_restamped` 로 발행하고, AMCL·costmap 이 그 토픽을 사용하도록 파라미터를 맞춥니다.
+
+```yaml
+amcl:
+  ros__parameters:
+    scan_topic: scan_restamped
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      obstacle_layer:
+        scan:
+          topic: /scan_restamped
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      voxel_layer:
+        scan:
+          topic: /scan_restamped
+```
+
+효과(실측, 재기동 직후 55초): `/scan_restamped` 14.98 Hz, `Message Filter dropping` **0건**(이전 수백 건), AMCL 사망 0건.

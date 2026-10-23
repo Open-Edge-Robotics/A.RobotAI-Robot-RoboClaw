@@ -38,7 +38,7 @@ amcl:
     z_max: 0.05
     z_rand: 0.1
     z_short: 0.05
-    scan_topic: scan
+    scan_topic: scan_restamped
     set_initial_pose: true
     initial_pose: [0.0, 0.0, 0.0]
 
@@ -208,7 +208,7 @@ local_costmap:
         mark_threshold: 0
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_restamped
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -232,14 +232,14 @@ global_costmap:
       robot_base_frame: base_link
       robot_radius: 0.24            # 전역 경로 탐색 시 로봇 반경을 약간 슬림하게 산정 (기존 0.26)
       resolution: 0.025
-      track_unknown_space: true
+      track_unknown_space: false
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_restamped
           max_obstacle_height: 2.0
           clearing: True
           marking: True
