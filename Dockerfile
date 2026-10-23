@@ -133,6 +133,9 @@ RUN if [ "${INSTALL_LAYA}" = "true" ]; then \
     fi && rm -f /tmp/install_laya.sh
 
 # 7. ROS 패키지 manifest 선 복사 (rosdep 레이어 캐시)
+# 워크스페이스에서 직접 빌드하는 vendored 메시지 패키지도 여기에 포함한다. 누락하면
+# `rosdep install --ignore-src` 가 이들을 소스 패키지로 인식하지 못해
+# "Cannot locate rosdep definition for [<pkg>]" 로 빌드가 실패한다.
 COPY src/robo_claw_agent/package.xml src/robo_claw_agent/package.xml
 COPY src/robo_claw_bringup/package.xml src/robo_claw_bringup/package.xml
 COPY src/robo_claw_channel/package.xml src/robo_claw_channel/package.xml
@@ -141,6 +144,8 @@ COPY src/robo_claw_discovery/package.xml src/robo_claw_discovery/package.xml
 COPY src/robo_claw_grpc/package.xml src/robo_claw_grpc/package.xml
 COPY src/robo_claw_msgs/package.xml src/robo_claw_msgs/package.xml
 COPY src/robo_claw_vision/package.xml src/robo_claw_vision/package.xml
+COPY src/task_manager_msgs/package.xml src/task_manager_msgs/package.xml
+COPY src/tofu_msgs/package.xml src/tofu_msgs/package.xml
 
 # 8. ROS 의존성 설치 (rosdep)
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
