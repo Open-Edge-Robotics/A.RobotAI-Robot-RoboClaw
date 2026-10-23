@@ -522,6 +522,14 @@ FINAL_EXEC_CMD=(
 )
 
 # Execute docker run
+# 추가 마운트/옵션 주입 (디버깅·핫픽스용). 예:
+#   RC_EXTRA_VOLUMES="-v /path/bringup_launch.py:/root/dev_ws/install/former_navigation2/share/former_navigation2/launch/bringup_launch.py:ro"
+if [ -n "${RC_EXTRA_VOLUMES:-}" ]; then
+    # shellcheck disable=SC2206
+    EXTRA_VOL_ARGS=($RC_EXTRA_VOLUMES)
+    DOCKER_VOLUMES+=("${EXTRA_VOL_ARGS[@]}")
+fi
+
 docker run $RUN_MODE \
     --name "$CONTAINER_NAME" \
     --net host \
