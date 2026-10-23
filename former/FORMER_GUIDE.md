@@ -209,7 +209,7 @@ RC_EXTRA_VOLUMES="-v $PWD/patch/bringup_launch.py:/root/dev_ws/install/former_na
 - 로봇 개발사 소스/이미지 Dockerfile 이 없어도, 현재 이미지를 베이스로 한 파생 이미지(`FROM former_docker:1.0` + `COPY` 로 launch/파라미터 교체)로 수정본을 구울 수 있습니다.
 - 또는 `map_server` 를 컴포넌트에서 분리해 별도 프로세스로 띄워 크래시 영향을 국소화합니다.
 - 운영 중에는 컨테이너 생존을 주기적으로 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
-- 참고: 이 이미지 안에서는 `apt-get update` 가 실패해 gdb 등 디버거 설치가 불가능했습니다(백트레이스 확보 불가 → 프로세스 분리로 원인 노드를 특정하는 방식 사용).
+- 참고: 이 이미지 안에서는 `apt-get update` 가 실패합니다(dpkg DB 비어 있음, ROS apt 키 만료). 분석 전용 파생 이미지에 gdb 를 넣고 core dump 로 백트레이스를 얻는 절차는 저장소 루트의 `NAVI_ISSUE.md` 6절을 참고합니다.
 
 ## 9. Nav2 기동/구동 이슈 (실기 적용값)
 
@@ -252,7 +252,7 @@ global_costmap:
 
 ### 9.4 스캔 재스탬프 (AMCL 크래시 대응)
 
-SICK 스캐너는 자체 시계로 `header.stamp` 를 채우기 때문에 호스트 시계와 **+0.4~0.7초** 어긋나고, 이 오차가 커지면 tf2 메시지 필터가 스캔을 드롭하고 `nav2_amcl` 이 SIGSEGV 로 죽습니다(실측: 크래시 직전 `Message Filter dropping` 폭주).
+SICK 스캐너는 자체 시계로 `header.stamp` 를 채우기 때문에 호스트 시계와 **+0.4~0.7초** 어긋나고, 이 오차가 커지면 tf2 메시지 필터가 스캔을 드롭합니다. AMCL SIGSEGV 의 실제 원인은 9.5절의 `recovery_alpha` 설정입니다.
 
 `run_nav_stable.sh` 는 `scan_restamp` 노드를 함께 띄워 `/scan` 을 ROS 시간으로 다시 찍어 `/scan_restamped` 로 발행하고, AMCL·costmap 이 그 토픽을 사용하도록 파라미터를 맞춥니다.
 
@@ -275,3 +275,16 @@ local_costmap:
 ```
 
 효과(실측, 재기동 직후 55초): `/scan_restamped` 14.98 Hz, `Message Filter dropping` **0건**(이전 수백 건), AMCL 사망 0건.
+
+### 9.5 AMCL SIGSEGV 근본 원인 — `recovery_alpha`
+
+core dump 백트레이스로 `uniformPoseGenerator()` ← `pf_update_resample()` 에서 NULL map 포인터를 역참조해 죽는 것을 확인했습니다. AMCL 은 맵 수신 전에 파티클 필터를 만들어 map 포인터가 NULL 로 고정되고, `recovery_alpha_fast/slow` 가 0 이 아니면 스캔 매칭 점수가 떨어질 때 무작위 파티클을 주입하면서 그 포인터를 사용합니다. Nav2 기본값인 `0.0` 으로 두면 이 경로가 실행되지 않습니다.
+
+```yaml
+amcl:
+  ros__parameters:
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+```
+
+위치를 크게 잃은 경우의 자동 복구는 꺼지므로 RViz 에서 initial pose 를 다시 지정합니다. 상세 분석은 저장소 루트의 `NAVI_ISSUE.md` 3.5절을 참고합니다.
