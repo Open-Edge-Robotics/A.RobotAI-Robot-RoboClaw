@@ -139,6 +139,7 @@ def traceable(*d_args: Any, **d_kwargs: Any) -> Callable[[_F], _F]:
                 cache["fn"] = traced
             return traced(*args, **kwargs)
 
+        wrapper.__roboclaw_traced__ = True
         return wrapper  # type: ignore[return-value]
 
     return decorator
@@ -288,3 +289,40 @@ def init_tracing(emit: Callable[[str], None] | None = None) -> None:
             "traces will NOT be uploaded."
         )
     _log(f"LangSmith tracing ENABLED (project={project}, endpoint={endpoint})")
+
+
+def trace_operation(
+    op_name: str, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> Any:
+    """이미 계측된 호출은 재포장하지 않고, 나머지 작업은 실제 이름으로 기록합니다."""
+    if getattr(func, "__roboclaw_traced__", False):
+        return func(*args, **kwargs)
+
+    @traceable(
+        name=op_name,
+        run_type="chain",
+        process_inputs=trace_process_inputs,
+        process_outputs=trace_process_outputs,
+    )
+    def operation(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        return func(*args, **kwargs)
+
+    return operation(args, kwargs)
+
+
+def trace_summary_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """상위 orchestration에는 대화 원문 대신 메시지 개수를 기록합니다."""
+    result = trace_process_inputs(
+        {key: value for key, value in inputs.items() if key != "messages"}
+    )
+    if "messages" in inputs:
+        result["message_count"] = len(inputs["messages"])
+    return result
+
+
+def trace_context_outputs(outputs: Any) -> dict[str, Any] | None:
+    """컨텍스트의 대화 본문은 LLM span에만 저장합니다."""
+    if outputs is None:
+        return None
+    messages, robot_summary = outputs
+    return {"message_count": len(messages), "robot_summary": redact_trace_data(robot_summary)}

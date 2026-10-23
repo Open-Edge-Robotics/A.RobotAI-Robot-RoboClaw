@@ -75,6 +75,8 @@ class AzureOpenAIBridge(BaseLLMBridge):
 
     @traceable(name="AzureOpenAIBridge.chat")
     def chat(self, messages, system_prompt=None, **kwargs):
+        # Ollama의 호출별 thinking 옵션은 Azure OpenAI API로 전달하지 않습니다.
+        kwargs.pop("think", None)
         payload = (
             [{"role": "system", "content": system_prompt}] if system_prompt else []
         )

@@ -76,14 +76,17 @@ set -a; source <(grep -E '^LANGSMITH_' .env); set +a
 
 ## 트레이싱 계층 구조 (LangSmith run tree)
 
-```
-run_llm_planning_loop            (chain)  ← 태스크 1건 = 트레이스 1건
-├─ collect_task_context          (chain)
-│  ├─ query_reformulate → *Bridge.chat   (llm, 토큰/모델 캡처)
-│  └─ rag_search → *Bridge.embed         (llm/retriever)
-└─ (라운드 반복)
-   ├─ *Bridge.chat               (llm)   ← 벤더 SDK 래퍼가 토큰 사용량 자동 기록
-   └─ 스킬 실행 결과가 messages 로 피드백
+```text
+execute_task                       (chain)
+├─ collect_task_context            (chain, 메시지 개수와 로봇 상태 요약)
+│  ├─ *Bridge.chat                 (llm, 검색 쿼리 재작성)
+│  ├─ rag_search                   (chain)
+│  └─ render_relevant_skill_lessons (chain)
+└─ run_llm_planning_loop           (chain)
+   ├─ *Bridge.chat_with_tools      (llm)
+   ├─ navigation_safety_gate       (chain)
+   └─ SkillManager.execute         (tool)
+      └─ skill_attempt_*           (tool, 실제 실행·재시도)
 ```
 
 - OpenAI/Azure/Anthropic: **SDK 클라이언트 래핑**으로 토큰 사용량·모델명이 정확히 기록됨.
@@ -112,16 +115,18 @@ run_llm_planning_loop            (chain)  ← 태스크 1건 = 트레이스 1건
 - `execute_task`
 - `run_llm_planning_loop`
 - `collect_task_context`
-- `runtime_operation` (`llm_chat`, `rag_search`, `get_robot_summary`, `skill:*` 등)
+- `rag_search`, `query_reformulate` 등 실제 작업 이름의 span: 호출 대상이 이미 계측된 LLM·스킬이면 중복 wrapper를 생략합니다.
 - `parse_llm_plan`
 - `navigation_safety_gate`
 - `SkillManager.execute`
-- `skill_policy_check`
-- `skill_preconditions`
-- `skill_schema_validation`
 - `skill_attempt_direct`, `skill_attempt_with_timeout`
 - 각 provider의 `chat`, `embed`, `analyze_image`
 - OpenAI/Azure/Anthropic SDK client wrapper
+
+정책·사전조건·스키마 검사는 별도 child span을 만들지 않습니다. 검사는 그대로 수행하며,
+차단·실패 이유는 `SkillManager.execute`의 결과에 보존합니다. 안전 게이트와 실제 실행·재시도
+span은 유지합니다. 컨텍스트 출력과 planning 입력에는 전체 대화 대신 메시지 개수를 기록하며,
+LLM span에서 실제 prompt와 응답을 확인합니다. 임베딩 계측은 기존 동작을 유지합니다.
 
 따라서 Task → context → LLM → plan parse → safety → skill 실행과 retry까지 child run tree로
 확인할 수 있습니다. 다음 동작은 아직 독립된 child run이 아니라 상위 결과나 일반 Robot log로

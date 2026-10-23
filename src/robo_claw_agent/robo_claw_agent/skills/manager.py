@@ -77,12 +77,6 @@ class SkillManager:
             sorted(self._blocked_skills) or "(none blocked)",
         )
 
-    @traceable(
-        run_type="chain",
-        name="skill_policy_check",
-        process_inputs=trace_process_inputs,
-        process_outputs=trace_process_outputs,
-    )
     def _check_skill_policy(self, skill_name: str) -> str | None:
         """스킬 정책 위반 여부를 검사한다.
 

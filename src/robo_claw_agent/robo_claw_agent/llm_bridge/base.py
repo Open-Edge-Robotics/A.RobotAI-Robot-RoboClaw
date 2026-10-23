@@ -107,7 +107,11 @@ class BaseLLMBridge(ABC):
         system_prompt: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """메시지 목록으로 응답 생성"""
+        """메시지 목록으로 응답을 생성합니다.
+
+        ``think``는 Ollama의 호출별 thinking 옵션입니다. 지정하지 않으면
+        브릿지 설정을 사용하며, 다른 provider에서는 무시합니다.
+        """
 
     def supports_tools(self) -> bool:
         """네이티브 도구(tool) 호출을 지원하는지 여부.

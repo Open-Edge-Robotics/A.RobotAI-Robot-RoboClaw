@@ -15,6 +15,9 @@ from ..tracing import (
     trace_process_outputs,
     traceable,
 )
+from ..tracing import (
+    trace_operation as _trace_runtime_operation,
+)
 from ..types import AgentState
 from .direct_skills import direct_cup_pick_skill, start_background_direct_skill
 from .fast_router import (
@@ -59,22 +62,6 @@ def resolve_cloid_expression_situation(
     return classify_situation(
         instruction, task_success=task_success, used_base_motion=used_base_motion
     )
-
-
-@traceable(
-    run_type="chain",
-    name="runtime_operation",
-    process_inputs=trace_process_inputs,
-    process_outputs=trace_process_outputs,
-)
-def _trace_runtime_operation(
-    op_name: str,
-    func: Any,
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-) -> Any:
-    del op_name
-    return func(*args, **kwargs)
 
 
 class ExecutionMixin:

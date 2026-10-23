@@ -222,16 +222,17 @@ class OllamaBridge(BaseLLMBridge):
                 self._think_supported = False
         return self._think_supported
 
-    def _apply_think(self, call_kwargs: dict) -> None:
-        if self._think is None:
+    def _apply_think(self, call_kwargs: dict, *, think: bool | str | None = None) -> None:
+        think = self._think if think is None else think
+        if think is None:
             return
         if self._supports_think():
-            call_kwargs["think"] = self._think
+            call_kwargs["think"] = think
         else:
             logger.warning(
                 "OllamaBridge: think=%s was requested but the ollama client does not "
                 "support think. Run `pip install -U ollama` and try again.",
-                self._think,
+                think,
             )
 
     @traceable(run_type="llm", name="OllamaBridge.chat")
@@ -244,7 +245,7 @@ class OllamaBridge(BaseLLMBridge):
         chat_kwargs = {"model": self._model, "messages": payload}
         if self._options:
             chat_kwargs["options"] = self._options
-        self._apply_think(chat_kwargs)
+        self._apply_think(chat_kwargs, think=kwargs.pop("think", None))
 
         response_format = kwargs.pop("response_format", None)
         if response_format:
@@ -256,11 +257,11 @@ class OllamaBridge(BaseLLMBridge):
                 # 자연어로 응답하려는 것을 JSON 으로 억눌러 {"error": ...} 같은
                 # 포기 응답을 유발할 수 있다. think 모드에서는 format 제약을
                 # 생략하고 파서가 응답에서 JSON 을 추출하도록 한다.
-                if self._think is True and self._supports_think():
+                if chat_kwargs.get("think") is True:
                     logger.info(
                         "OllamaBridge: skipping format=json because think=%s "
                         "(letting model produce natural response with embedded JSON)",
-                        self._think,
+                        chat_kwargs["think"],
                     )
                 else:
                     chat_kwargs["format"] = "json"

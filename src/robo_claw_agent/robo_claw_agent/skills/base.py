@@ -12,7 +12,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from ..geo_utils import yaw_from_quaternion
-from ..tracing import trace_process_inputs, trace_process_outputs, traceable
 
 if TYPE_CHECKING:
     from robo_claw_agent.agent_node import AgentNode
@@ -23,12 +22,6 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-@traceable(
-    run_type="chain",
-    name="skill_preconditions",
-    process_inputs=trace_process_inputs,
-    process_outputs=trace_process_outputs,
-)
 def _trace_skill_preconditions(
     skill_name: str, skill: "BaseSkill", params: dict[str, Any]
 ) -> tuple[bool, str]:
@@ -36,12 +29,6 @@ def _trace_skill_preconditions(
     return skill.check_preconditions(params)
 
 
-@traceable(
-    run_type="chain",
-    name="skill_schema_validation",
-    process_inputs=trace_process_inputs,
-    process_outputs=trace_process_outputs,
-)
 def _trace_skill_schema(
     skill_name: str, skill: "BaseSkill", params: dict[str, Any]
 ) -> tuple[bool, str]:

@@ -6,7 +6,13 @@ from typing import Any
 
 from ...answer import looks_like_json
 from ...llm_bridge.base import ToolTurn
-from ...tracing import traceable
+from ...tracing import (
+    trace_context_outputs,
+    trace_process_inputs,
+    trace_process_outputs,
+    trace_summary_inputs,
+    traceable,
+)
 from ...types import AgentState, LLMPlanResult, SkillChainItem
 from ..nav_safety import ensure_navigation_safety
 from ..utils import _omit_base64_data, tool_calling_enabled
@@ -104,26 +110,45 @@ class LLMPlanner:
             return False
         return all(self._is_informational_skill(str(item.get("skill") or "")) for item in chain)
 
-    @traceable(name="collect_task_context")
+    @traceable(
+        name="collect_task_context",
+        process_inputs=trace_process_inputs,
+        process_outputs=trace_context_outputs,
+    )
     async def collect_task_context(
         self, instruction: str, goal_handle: Any
     ) -> tuple[list[dict[str, str]], dict]:
         """RAG 검색, 로봇 상태 수집, 스킬 교훈 인출을 수행해 LLM messages를 구성한다."""
+        messages: list[dict[str, str]] = []
+        if self.node._llm:
+            history = self.node._memory.get_conversation_history(self.node._multiturn_n)
+            # task_received 이벤트가 현재 명령을 이미 이력에 포함할 수 있습니다.
+            # 검색어 재작성과 planning에서 같은 대화를 사용하며 중복 추가하지 않습니다.
+            messages = list(history)
+            if not (
+                history
+                and history[-1].get("role") == "user"
+                and history[-1].get("content") == instruction
+            ):
+                messages.append({"role": "user", "content": instruction})
+
         knowledge_ctx = ""
         if self.node._enable_rag:
             search_query = instruction
             if self.node._llm:
                 try:
                     reformulate_prompt = (
-                        "다음 사용자 명령에서 RAG 지식 검색을 위한 핵심 키워드 및 환경 요소를 추출하여 검색 쿼리 하나만 반환하세요.\n"
-                        "불필요한 지시어나 서술어는 제거하고 핵심 명사나 명사구 위주로 작성하세요. 다른 텍스트는 절대 출력하지 마세요.\n\n"
-                        f"명령: {instruction}\n"
-                        "쿼리:"
+                        "대화 내역을 참고하여 마지막 사용자 명령에 필요한 RAG 지식 검색 쿼리 하나만 반환하세요.\n"
+                        "'거기', '그것' 같은 표현은 대화에서 확인된 장소나 대상의 이름으로 구체화하세요.\n"
+                        "불필요한 지시어나 서술어는 제거하고 핵심 명사나 명사구 위주로 작성하세요.\n"
+                        "명령을 실행하거나 사용자에게 답변하지 마세요. 검색 쿼리 외의 텍스트는 출력하지 마세요."
                     )
                     reformulated = await self.node._run_blocking(
                         "query_reformulate",
                         self.node._llm.chat,
-                        [{"role": "user", "content": reformulate_prompt}],
+                        list(messages),
+                        system_prompt=reformulate_prompt,
+                        think=False,
                         timeout_sec=getattr(self.node, "_llm_timeout_sec", 60.0),
                     )
                     reformulated = reformulated.strip().strip('"').strip("'")
@@ -191,23 +216,7 @@ class LLMPlanner:
             )
 
         # LLM messages 구성
-        messages: list[dict[str, str]] = []
         if self.node._llm:
-            history = self.node._memory.get_conversation_history(self.node._multiturn_n)
-            # 현재 지시문은 이미 execution.py 의 _handle_execute_task 에서
-            # "task_received" 이벤트로 대화 이력에 들어 있다(get_conversation_history
-            # 가 이 이벤트를 user 메시지로 되살린다). 여기서 또 붙이면 같은
-            # 메시지가 두 번 들어가 모델이 중복 질문을 받은 것처럼 보이므로,
-            # 마지막 이력이 동일 문구면 추가하지 않는다.
-            if (
-                history
-                and history[-1].get("role") == "user"
-                and history[-1].get("content") == instruction
-            ):
-                messages = list(history)
-            else:
-                messages = list(history) + [{"role": "user", "content": instruction}]
-
             health_state = self.node._get_robot_health_state(robot_summary)
             messages.insert(
                 0,
@@ -417,7 +426,11 @@ class LLMPlanner:
             '반드시 {"skill": null, "response": "<답변>"} 형식으로만 응답하세요.'
         )
 
-    @traceable(name="run_llm_planning_loop")
+    @traceable(
+        name="run_llm_planning_loop",
+        process_inputs=trace_summary_inputs,
+        process_outputs=trace_process_outputs,
+    )
     async def run_llm_planning_loop(
         self,
         goal_handle: Any,
