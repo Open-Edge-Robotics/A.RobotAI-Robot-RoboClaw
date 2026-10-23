@@ -159,9 +159,9 @@ former/
 
 초기 자세는 각 로봇의 `initpose.md`(예: `~/konjiam/former/initpose.md`)로 주입합니다. 맵 프레임이 바뀌었거나 다른 지점에서 출발하면 RViz의 `2D Pose Estimate`로 새 위치를 지정하고, 그 값을 `initpose.md`에 갱신하세요. `set_initial_pose: true`(자동 주입) + `always_reset_initial_pose: false`(수동 지정값 유지) 조합을 사용합니다.
 
-## 8. 알려진 문제: nav2 컨테이너 간헐 종료 (`Magick: abort due to signal 11`)
+## 8. 알려진 문제: nav2 스택 간헐 종료 (`Magick: abort due to signal 11`)
 
-증상은 "주행을 시작하면 네비게이션이 멈춘다"로 보이지만, 실제로는 `former00XX_nav` 컨테이너가 기동 직후 죽어 Nav2 노드가 모두 사라진 상태입니다.
+증상은 "주행을 시작하면 네비게이션이 멈춘다"로 보이지만, 실제로는 `former00XX_nav` 컨테이너가 **기동 2~3초 내에 죽어** Nav2 노드가 모두 사라진 상태입니다. 크래시 인스턴스 로그에는 골/조이스틱 관련 기록이 전혀 없습니다(기동 로그 254줄, 수명 2.6초).
 
 ```bash
 docker ps -a --format '{{.Names}}\t{{.Status}}' | grep former00XX_nav   # Exited 상태 확인
@@ -171,31 +171,42 @@ docker logs --tail 20 former00XX_nav | grep -iE "Magick|died"
 ```
 [lifecycle_manager_navigation] Managed nodes are active
 [lifecycle_manager_navigation] Creating bond timer...
-[component_container_isolated-1] Magick: abort due to signal 11 (SIGSEGV) "Segmentation Fault"...
-[ERROR] process has died [pid ..., exit code -6, cmd '.../component_container_isolated ...']
+[component_container...] Magick: abort due to signal 11 (SIGSEGV) "Segmentation Fault"...
+[ERROR] process has died [pid ..., exit code -6, ...]
 ```
 
-원인: nav2 기본 `bringup_launch.py` 는 `component_container_isolated`(노드별 executor 스레드를 두는 다중 스레드 컨테이너)를 쓰고, 같은 프로세스에 `map_server`(ImageMagick 사용, 스레드 안전하지 않음)와 15개 이상의 노드가 함께 올라갑니다. 이 조합에서 간헐적으로 SIGSEGV 가 발생하면 **프로세스 전체가 죽어 네비게이션 스택이 통째로 사라집니다**.
+원인: 기본 `bringup_launch.py` 는 모든 Nav2 노드를 **하나의 component container 프로세스**에 올립니다. 이 프로세스가 SIGSEGV(메시지는 ImageMagick 의 전역 시그널 핸들러가 출력)로 죽으면 네비게이션 스택 전체가 사라집니다. `component_container_isolated` → `component_container` 로 바꾸는 것만으로는 재발했습니다(실측).
 
-### 즉시 우회 (이미지 재빌드 없이)
-
-`former_navigation2` 의 launch 를 단일 스레드 컨테이너로 바꾼 사본을 바인드마운트합니다. 두 로봇 스크립트는 `RC_EXTRA_VOLUMES` 로 추가 마운트를 받습니다.
+### 권장 우회: 노드를 개별 프로세스로 기동
 
 ```bash
 cd ~/konjiam/former/former00XX
+./run_nav_stable.sh          # = run_former_env.sh nav2 --daemon -m <맵> use_composition:=False
+```
+
+- 장애가 국소화됩니다(노드 하나가 죽어도 나머지는 살아있음).
+- 크래시가 나면 launch 로그에 **어떤 노드가 죽었는지** 그대로 남습니다.
+  ```
+  [ERROR] [launch]: process has died [pid ..., cmd '/opt/ros/humble/lib/nav2_xxx/xxx ...']
+  ```
+- 확인: `docker exec former00XX_nav bash -lc 'ps -eo args | grep -cE "[n]av2_|[a]mcl"'` → 12개 수준이면 적용됨. 컨테이너 로그에 `component_container-1` 이 보이면 미적용(`component_container_isolated-1` 은 기본값).
+
+### 대안 (이미지 재빌드 없이 바인드마운트)
+
+`former_navigation2` 의 launch 사본을 바인드마운트할 수 있습니다. 두 로봇 스크립트는 `RC_EXTRA_VOLUMES` 로 추가 마운트를 받습니다.
+
+```bash
 mkdir -p patch
 sed 's/component_container_isolated/component_container/' \
-  ~/dev_ws/src/former_robot/former_navigation2/launch/bringup_launch.py \
-  > patch/bringup_launch.py
+  ~/dev_ws/src/former_robot/former_navigation2/launch/bringup_launch.py > patch/bringup_launch.py
 
 RC_EXTRA_VOLUMES="-v $PWD/patch/bringup_launch.py:/root/dev_ws/install/former_navigation2/share/former_navigation2/launch/bringup_launch.py:ro" \
   ./former_nav2_run.sh -m map_konjiam_L_107-1.yaml
 ```
 
-적용 확인은 로그의 컨테이너 이름으로 합니다. `component_container-1` 이면 적용, `component_container_isolated-1` 이면 미적용입니다.
-
 ### 근본 대책
 
-- `former_navigation2` 의 `bringup_launch.py` 자체를 `component_container` 로 수정하고 이미지를 재빌드합니다(핫픽스 마운트 불필요).
+- 로봇 개발사 소스/이미지 Dockerfile 이 없어도, 현재 이미지를 베이스로 한 파생 이미지(`FROM former_docker:1.0` + `COPY` 로 launch/파라미터 교체)로 수정본을 구울 수 있습니다.
 - 또는 `map_server` 를 컴포넌트에서 분리해 별도 프로세스로 띄워 크래시 영향을 국소화합니다.
-- 운영 중에는 주기적으로 컨테이너 생존을 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
+- 운영 중에는 컨테이너 생존을 주기적으로 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
+- 참고: 이 이미지 안에서는 `apt-get update` 가 실패해 gdb 등 디버거 설치가 불가능했습니다(백트레이스 확보 불가 → 프로세스 분리로 원인 노드를 특정하는 방식 사용).
