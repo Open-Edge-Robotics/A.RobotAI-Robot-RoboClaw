@@ -3,6 +3,27 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-24 — 복합 명령 하위 단계 Eligibility Gate
+
+- **배경**: 복합 명령은 TaskDecomposer가 단계로 나눈 뒤 모든 단계를 LLM(`run_llm_planning_loop`)으로 처리했다. 사전 라우터는 분해 전
+  원래 명령에만 한 번 적용되고 복합 명령 가드에 걸려 곧바로 LLM으로 갔으므로, "카메라로 촬영해" 같은 단순 단계도 LLM 지연을 거쳤다.
+  반면 "촬영한 이미지를 전송해"처럼 앞 단계 결과에 의존하는 단계를 라우터로 보내면 문맥 없이 잘못 실행될 수 있다.
+- **조치**:
+  - `agent_node/eligibility_gate.py`: 하위 단계가 혼자 완결되는지 판정한다. 탈락 사유는 `depends_on_previous`(촬영한·찾은·방금·그거 등),
+    `conditional`(~이하면·보이면·만약·경우·할 때 등, "화면/정면"의 '면'은 제외), `compound`(`looks_compound`), `empty`.
+  - `TaskDecomposer._try_step_fast_path`: 단계마다 관문 → 사전 라우터(`SYSTEM1_ROUTER`의 rule/laya) → 처리 순서로 동작하고
+    `System1 step gate: {...}` 판정 로그를 남긴다. 직접 실행 실패·라우터 오류 시 같은 단계를 LLM으로 처리한다. 백그라운드 직접 실행은
+    단계 경로에서 쓰지 않는다(시작 즉시 성공 보고로 다음 단계가 먼저 시작되는 문제).
+  - `ExecutionMixin._execute_direct_route`: 최상위 명령의 직접 실행 코드를 메서드로 분리해 하위 단계와 공유한다(주행 안전 규칙, 상태 갱신,
+    결과 이미지 전송). 최상위 경로 동작은 바뀌지 않는다.
+  - `SYSTEM1_STEP_ROUTING`: `off` / `shadow`(기본, 판정만 기록) / `on`. 기본값에서는 실행 동작이 바뀌지 않는다.
+  - 문서 `docs/SYSTEM1_ELIGIBILITY_GATE.md`를 추가하고 `SYSTEM1_FAST_ROUTER.md`, `.env.example`, README 표를 갱신했다.
+- **검증**: `tests/test_eligibility_gate.py` 28건(실기 분해 단계를 포함한 판정 규칙, on/shadow/off, 백그라운드 제외, 실패 시 LLM 대체,
+  라우터 오류, Simple_Reply) 통과. `test_execution_routing.py` 5건은 ROS 스텁 환경에서 리팩터링 전후 모두 통과했다. `robo_claw_agent`
+  전체(로컬)는 778 passed이며 실패·수집 오류 목록은 변경 전과 같은 ROS 의존 항목이다.
+- **남은 과제**: 실기 `shadow` 기록으로 실제 분해 문장의 판정을 확인한 뒤 `on`으로 전환한다. AI Config Server 웹 설정에 `SYSTEM1_STEP_ROUTING`
+  필드를 추가해야 웹에서 관리할 수 있다.
+
 ## 2026-10-22 — 구동 시 적용 설정 상세 요약 및 요약 로그 추가
 
 - **배경**: `rclaw launch` 는 설정 서버에서 받은 값을 docker 실행 명령(`--env-file`)

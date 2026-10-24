@@ -534,71 +534,15 @@ class ExecutionMixin:
         result_msg = ""
         task_success = True
 
-        from .direct_skills import start_background_direct_skill
-
         # 사전 라우팅(그룹 A). SYSTEM1_ROUTER 설정에 따라 RuleRouter 또는 Laya 중
         # 하나만 판단한다. 복합 명령 선점 방지 등 기존 규칙은 RuleRouter 가 담당한다.
         router = getattr(self, "_router", None) or DEFAULT_RULE_ROUTER
         route = await router.decide(self, instruction)
         set_current_trace_metadata(route.trace_metadata())
         if route.kind == ROUTE_DIRECT_SKILL:
-            name = route.skill
-            params = dict(route.params)
-            # 결과 메시지에 쓸 실제 실행 스킬명. stow 등 선행 스킬이 실패하면
-            # 원래 요청 스킬명이 아니라 실패한 스킬명을 보고해야 한다.
-            step_name = name
-            self.get_logger().info(f"Direct skill routing: {name} (params={params})")
-            if route.background:
-                send_fb(f"실행: {name}", 40)
-                res = start_background_direct_skill(self, instruction, name, params)
-                skill_results.append(res)
-            else:
-                # LLM 계획 경로와 동일한 주행 안전 규칙을 적용한다.
-                chain = ensure_navigation_safety(
-                    [{"skill": name, "params": params}],
-                    self._skills,
-                    self.get_logger(),
-                    self,
-                )
-
-                res = None
-                for direct_item in chain:
-                    step_name = direct_item["skill"]
-                    step_params = direct_item["params"]
-                    send_fb(f"실행: {step_name}", 40)
-                    self._set_state(AgentState.EXECUTING, step_name, f"{step_name} 실행 중")
-                    res = await self._run_blocking(
-                        f"skill:{step_name}",
-                        self._skills.execute,
-                        step_name,
-                        step_params,
-                        timeout,
-                    )
-                    skill_results.append(res)
-                    if (
-                        res.success
-                        and isinstance(res.result_data, dict)
-                        and "file_path" in res.result_data
-                    ):
-                        file_path = res.result_data["file_path"]
-                        msg_text = res.result_data.get(
-                            "message", f"'{step_name}' 실행 결과 이미지입니다."
-                        )
-                        self.get_logger().info(f"Starting image transfer: {file_path}")
-                        event = self._start_channel_send(msg_text, file_path)
-                        pending_send_events.append(event)
-                    if not res.success:
-                        break
-
-            if res is None:
-                result_msg = f"{name} 실행 실패"
-                task_success = False
-                return result_msg, skill_results, task_success
-            task_success = bool(res.success)
-            result_msg = res.message or (
-                f"{step_name} 실행 완료" if res.success else f"{step_name} 실행 실패"
+            result_msg, skill_results, task_success, pending_send_events = (
+                await self._execute_direct_route(route, instruction, timeout, send_fb)
             )
-
             if pending_send_events:
                 try:
                     asyncio.get_running_loop()
@@ -675,6 +619,69 @@ class ExecutionMixin:
             task_success = False
 
         return result_msg, skill_results, task_success
+
+    async def _execute_direct_route(
+        self, route: Any, instruction: str, timeout: float, send_fb: Callable[[str, int], None]
+    ) -> tuple[str, list[Any], bool, list[threading.Event]]:
+        """사전 라우터가 고른 스킬을 LLM 없이 실행한다(``ROUTE_DIRECT_SKILL``).
+
+        태스크 최상위 경로와 TaskDecomposer 의 하위 단계 경로가 같은 실행 규칙을 쓴다:
+        주행 안전 규칙(``ensure_navigation_safety``), 상태 갱신, 결과 이미지 전송.
+        이미지 전송 완료는 기다리지 않고 이벤트로 돌려준다(호출부가 기다린다).
+        """
+        # 테스트에서 monkeypatch 할 수 있도록 호출 시점에 import 한다.
+        from .direct_skills import start_background_direct_skill
+
+        skill_results: list[Any] = []
+        pending_send_events: list[threading.Event] = []
+        name = route.skill
+        params = dict(route.params)
+        # 결과 메시지에 쓸 실제 실행 스킬명. stow 등 선행 스킬이 실패하면
+        # 원래 요청 스킬명이 아니라 실패한 스킬명을 보고해야 한다.
+        step_name = name
+        self.get_logger().info(f"Direct skill routing: {name} (params={params})")
+        res = None
+        if route.background:
+            send_fb(f"실행: {name}", 40)
+            res = start_background_direct_skill(self, instruction, name, params)
+            skill_results.append(res)
+        else:
+            # LLM 계획 경로와 동일한 주행 안전 규칙을 적용한다.
+            chain = ensure_navigation_safety(
+                [{"skill": name, "params": params}],
+                self._skills,
+                self.get_logger(),
+                self,
+            )
+            for direct_item in chain:
+                step_name = direct_item["skill"]
+                step_params = direct_item["params"]
+                send_fb(f"실행: {step_name}", 40)
+                self._set_state(AgentState.EXECUTING, step_name, f"{step_name} 실행 중")
+                res = await self._run_blocking(
+                    f"skill:{step_name}",
+                    self._skills.execute,
+                    step_name,
+                    step_params,
+                    timeout,
+                )
+                skill_results.append(res)
+                if res.success and isinstance(res.result_data, dict) and "file_path" in res.result_data:
+                    file_path = res.result_data["file_path"]
+                    msg_text = res.result_data.get(
+                        "message", f"'{step_name}' 실행 결과 이미지입니다."
+                    )
+                    self.get_logger().info(f"Starting image transfer: {file_path}")
+                    pending_send_events.append(self._start_channel_send(msg_text, file_path))
+                if not res.success:
+                    break
+
+        if res is None:
+            return f"{name} 실행 실패", skill_results, False, pending_send_events
+        result_msg = res.message or (
+            f"{step_name} 실행 완료" if res.success else f"{step_name} 실행 실패"
+        )
+        return result_msg, skill_results, bool(res.success), pending_send_events
 
     def _start_channel_send(self, message: str, file_path: str = "") -> threading.Event:
         """이미지/메시지 전송을 비동기로 시작하고 완료 이벤트를 반환한다."""

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sys
 import sysconfig
 import threading
@@ -22,6 +23,7 @@ from ..observability import OperationTracker
 from ..skill_manager import SkillManager, SkillResult
 from ..skills.limits import load_limits_dict
 from ..types import AgentState
+from .eligibility_gate import step_routing_mode
 from .execution import ExecutionMixin
 from .initialization import (
     load_skills,
@@ -130,6 +132,9 @@ class AgentNode(Node, ExecutionMixin):
         self._task_decomposer = TaskDecomposer(self)
         # 사전 라우팅(System 1): SYSTEM1_ROUTER=rule|laya 배타 선택
         self._router = build_router(System1Config.from_env(), log=self.get_logger())
+        # 분해된 하위 단계의 사전 라우팅: SYSTEM1_STEP_ROUTING=off|shadow(기본)|on
+        self._step_routing_mode = step_routing_mode(os.environ)
+        self.get_logger().info(f"System1 step routing: mode={self._step_routing_mode}")
         self._enable_task_decomposition = p.enable_task_decomposition
         self._task_decomposition_max_steps = p.task_decomposition_max_steps
         self._task_step_max_retries = p.task_step_max_retries
