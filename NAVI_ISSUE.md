@@ -1,0 +1,179 @@
+# NAVI_ISSUE — Former 실기 Nav2 멈춤/크래시 이슈 정리
+
+이 문서는 Former 실기(former0045 / former0047)에서 발생한 Nav2 멈춤 문제를 다른 에이전트·엔지니어가 이어서 진단할 수 있도록 정리한 이슈 노트입니다. 기능 가이드는 `former/FORMER_GUIDE.md` 를 참고합니다.
+
+## 1. 증상
+
+- RViz 에서 `Nav2 Goal` 을 찍어도 로봇이 이동하지 않거나, 이동 중 갑자기 멈춥니다.
+- 멈춘 뒤 로그에 `Message Filter dropping`, `Extrapolation Error looking up target frame`, `Controller patience exceeded` 가 폭주합니다.
+
+## 2. 환경
+
+| 항목 | 값 |
+| --- | --- |
+| 로봇 | former0047(Jetson, aarch64), former0045(aarch64) |
+| 이미지 | `former_docker:1.0` (벤더 제공, 소스/Dockerfile 없음). dpkg DB(`/var/lib/dpkg/status`)가 비어 있고 ROS apt 키가 만료(`EXPKEYSIG F42ED6FBAB17C654`)되어 `apt-get update`/`install` 이 실패합니다. |
+| ROS | Humble, `nav2_amcl` 1.1.12, `ROS_DOMAIN_ID=4` |
+| RMW | nav 컨테이너는 `rmw_cyclonedds_cpp`(백트레이스로 확인, `/root/cyclonedds_conf` 마운트). `realsense_docker`, `remote-rviz-sidecar` 도 CycloneDDS |
+| 지도 | RTAB-Map `grid_map` 결과를 PGM 으로 변환해 `map_konjiam_L_107-1` 로 교체 (324x307 @ 0.05 m, origin (-5.95,-4.95), 미지 52%) |
+| 기동 | `~/konjiam/former/former00XX/run_nav_stable.sh` (아래 4절 참조) |
+
+## 3. 규명된 원인 (순서대로)
+
+### 3.1 계획 실패 — RTAB-Map 의 미지 영역
+
+- `global_costmap.track_unknown_space: true` 상태에서 미지 52% 가 통행 불가로 처리되어 `GridBased: failed to create plan` 이 반복되었습니다.
+- 조치: `track_unknown_space: false`, `inflation_radius 0.45 → 0.35`. 자유 셀이 13,161 → 65,820 로 늘고 `Begin navigating ...` 로그가 나오기 시작했습니다.
+
+### 3.2 주행 명령 미전달 — `/cmd_vel` vs `/base_controller/cmd_vel_unstamped`
+
+- 벤더 `navigation_launch.py` 는 `velocity_smoother` 의 최종 출력을 `/cmd_vel` 로 보내지만, 베이스(`/base_controller`)는 `/base_controller/cmd_vel_unstamped` 만 구독합니다. 원본 launch 의 리맵 `('/cmd_vel', '/base_controller/cmd_vel_unstamped')` 는 **주석 처리**되어 있습니다.
+- 조치: `navigation_launch.py` 사본을 바인드마운트해 `cmd_vel_smoothed → /base_controller/cmd_vel_unstamped` 로 리맵. `velocity_smoother` 가 베이스 토픽 publisher 로 나타나는 것을 확인했습니다.
+
+### 3.3 스캔 타임스탬프 불일치
+
+- SICK 스캐너가 자체 시계로 `header.stamp` 를 채워 ROS 시각과 **-0.23초 ~ +0.68초**로 흔들립니다.
+- `tf2_ros::MessageFilter` 가 스캔을 드롭합니다.
+- 조치: `scan_restamp` 노드가 `/scan` 을 ROS 시간으로 다시 찍어 `/scan_restamped` 로 발행하고 AMCL·costmap 이 이를 사용합니다.
+- 이 조치 이후에도 AMCL 크래시는 계속되었으므로 크래시의 원인은 아닙니다(3.5절).
+
+### 3.4 AMCL 사망이 모든 후속 오류의 원인
+
+AMCL 이 죽으면 `map → odom` 변환이 사라져 다음이 연쇄 발생합니다.
+
+- costmap: 스캔을 map 으로 변환 불가 → `Message Filter dropping`
+- bt_navigator: goal 을 map 으로 변환 불가 → `Extrapolation ... into the past` (요청 시각은 골을 찍은 시각)
+- controller: `Controller patience exceeded` 반복
+- lifecycle_manager: 4초 뒤 `CRITICAL FAILURE: SERVER amcl IS DOWN` 으로 localization 스택을 내립니다.
+
+즉 로그 폭주는 원인이 아니라 결과입니다. 노드를 개별 프로세스로 띄우면(4절) 크래시 노드가 로그에 명시됩니다.
+
+### 3.5 AMCL SIGSEGV 근본 원인 — `recovery_alpha` + NULL map 포인터 (확정)
+
+core dump 백트레이스(2026-10-23, former0047)로 확정했습니다.
+
+```
+Program terminated with signal SIGSEGV, Segmentation fault.   si_addr = 0x10
+#0  nav2_amcl::AmclNode::uniformPoseGenerator(void*)   libamcl_core.so
+#1  pf_update_resample()                               libpf_lib.so
+#2  nav2_amcl::AmclNode::laserReceived(...)            libamcl_core.so
+#5  tf2_ros::MessageFilter<LaserScan>::transformReadyCallback(...)
+```
+
+| 관찰 | 값 |
+| --- | --- |
+| 크래시 명령 | `ldr d1, [x19, #16]`, `x19 = 0x0` → `map_t::scale`(오프셋 16) 읽기 |
+| `pf_t::random_pose_fn` | `uniformPoseGenerator` |
+| `pf_t::random_pose_data` | `0x0` (NULL) |
+| `alpha_slow` / `alpha_fast` | `0.001` / `0.1` |
+| `w_slow` / `w_fast` | `0.00892` / `0.00884` (`w_fast < w_slow`) |
+
+동작 원리:
+
+1. AMCL 은 configure 단계에서 파티클 필터를 만들며 `map_` 을 `random_pose_data` 로 저장합니다. 이 시점에는 맵을 받기 전이라 NULL 이 저장되고, 이후 맵을 받아도 갱신되지 않습니다.
+2. `recovery_alpha_fast/slow` 가 0 이 아니면 스캔 매칭 점수가 떨어져 `w_fast < w_slow` 가 되는 순간부터 리샘플링마다 `w_diff = 1 - w_fast/w_slow` 확률로 무작위 파티클을 주입합니다. 이때 NULL map 으로 `uniformPoseGenerator` 를 호출해 죽습니다.
+3. 매칭 점수는 주행, 수동으로 밀기, 동적 장애물만으로도 떨어지므로 크래시 시점이 무작위로 보입니다. 실제로 대기 중 19분 만에, 또는 골 수신 1초 뒤에 크래시했습니다.
+
+Nav2 기본값은 `recovery_alpha_fast: 0.0`, `recovery_alpha_slow: 0.0` 입니다. 벤더 `nav2_params.yaml` 이 ROS1 amcl 튜토리얼 값(0.1 / 0.001)을 사용해 이 경로가 열려 있었습니다.
+
+조치: 두 값을 `0.0` 으로 설정합니다(4절 5번). 무작위 파티클 주입이 꺼지므로 위치를 크게 잃은 경우(kidnap) 자동 복구는 되지 않습니다. 그때는 RViz 에서 initial pose 를 다시 지정합니다.
+
+### 3.6 기각된 가설
+
+| 가설 | 판정 근거 |
+| --- | --- |
+| RViz `Particle Cloud` 구독이 방아쇠 | 구독자가 없는 상태에서도 크래시했습니다. RViz 를 켜는 시점과 골을 보내는 시점이 겹쳐 상관관계처럼 보였습니다. |
+| USB 재열거 | 키보드 허브(`1-2.1`) 분리 시 같은 허브의 베이스 FTDI(`1-2.3`)는 재열거되지 않았고, 크래시는 5.5분 뒤였습니다. `/dev/ttyUSB*` 의 mtime 은 I/O 만으로 갱신되므로 재열거 근거로 쓸 수 없습니다. 커널 로그(`/var/log/kern.log`, `adm` 그룹으로 읽기 가능)로 판정합니다. |
+
+## 4. 현재 적용된 핫픽스 (이미지 재빌드 없이)
+
+`~/konjiam/former/former00XX/run_nav_stable.sh` 가 아래를 자동 적용합니다.
+
+1. `use_composition:=False` — 노드별 개별 프로세스(크래시 국소화 + 범인 노드 식별)
+2. `navigation_launch.py` 패치 바인드마운트 — `cmd_vel_smoothed → /base_controller/cmd_vel_unstamped`
+3. `bringup_launch.py` 패치 바인드마운트 + `/opt/rc/scan_restamp.py` — 스캔 재스탬프 노드 실행
+4. `~/konjiam/former/params/nav2_params.yaml` — `track_unknown_space: false`, `inflation_radius: 0.35`, `scan_topic: scan_restamped`, costmap 관측 토픽 `/scan_restamped`
+5. 같은 파일의 amcl — `recovery_alpha_fast: 0.0`, `recovery_alpha_slow: 0.0` (3.5절). 백업은 `nav2_params.yaml.bak_20261023-recovery_alpha` 입니다. former0045, former0047 모두 적용했습니다.
+
+검증된 정상 상태 지표(재기동 직후 1~2분):
+
+| 지표 | 정상 기준 |
+| --- | --- |
+| `/scan_restamped` | 15 Hz |
+| `Message Filter dropping` | 0 건 |
+| `process has died` | 0 건 |
+| `ros2 param get /amcl recovery_alpha_fast` | `0.0` |
+| `/base_controller/cmd_vel_unstamped` publisher | teleop, **velocity_smoother**, robo_claw_core, former_auto_docking |
+| `map→base_link` TF | 존재, 값이 크게 튀지 않음 |
+
+## 5. 재현/확인 절차
+
+```bash
+cd ~/konjiam/former/former00XX
+./restart_nav.sh                                    # 올바른 설정으로 재기동
+
+docker ps -a | grep former00XX_nav                  # 컨테이너 생존 확인
+docker logs former00XX_nav 2>&1 | grep -E "process has died|Magick" | tail -5
+docker logs former00XX_nav 2>&1 | grep -c "Message Filter dropping"
+docker logs former00XX_nav 2>&1 | grep -oE "component_container_isolated-1|\[amcl-[0-9]+\]" | sort -u
+docker exec former00XX_nav bash -lc 'source /opt/ros/humble/setup.bash; ros2 node list | grep -c "^/amcl$"'
+docker exec former00XX_nav bash -lc 'source /opt/ros/humble/setup.bash; ros2 param get /amcl recovery_alpha_fast'
+docker exec former00XX_nav bash -lc 'source /opt/ros/humble/setup.bash; ros2 topic hz /base_controller/odom | head -2'
+```
+
+`component_container_isolated-1` 이 보이면 예전 방식(`./former_nav2_run.sh`)으로 뜬 것이므로 위 핫픽스가 모두 미적용 상태입니다.
+
+## 6. 크래시 백트레이스 확보 절차
+
+벤더 이미지에서는 gdb 를 설치할 수 없고, 호스트 apport 는 컨테이너 크래시를 버립니다(`/var/log/apport.log` 에 `crashed in a container without apport support`). 다음 절차로 core 와 백트레이스를 얻습니다.
+
+1. 디버그 이미지를 만듭니다(원본 `former_docker:1.0` 은 변경하지 않습니다). 이 이미지는 libc/libstdc++ 가 갱신되므로 분석 전용으로만 씁니다.
+
+   ```bash
+   docker run --name gdb_build --entrypoint bash former_docker:1.0 -c '
+     export DEBIAN_FRONTEND=noninteractive
+     rm -f /etc/apt/sources.list.d/ros2-latest.list; rm -rf /var/lib/apt/lists/*
+     apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+       -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef gdb'
+   docker commit gdb_build former_docker:1.0-gdb && docker rm gdb_build
+   ```
+
+2. `core_pattern` 을 파일 경로로 바꿉니다. 컨테이너 core 크기 제한은 이미 `unlimited` 입니다. sudo 대신 privileged 컨테이너로 씁니다. 원래 값은 재부팅 시 복원되며, 수동 복원은 저장해 둔 값을 같은 방법으로 다시 씁니다.
+
+   ```bash
+   cat /proc/sys/kernel/core_pattern > core_pattern.orig
+   docker run --rm --privileged --entrypoint sh former_docker:1.0 \
+     -c 'echo /tmp/core.%e.%p.%t > /proc/sys/kernel/core_pattern'
+   ```
+
+3. 크래시 후 core 를 꺼내 분석합니다. sysroot 는 nav 컨테이너의 살아 있는 프로세스 rootfs(`/proc/<pid>/root`)를 써서 원본 라이브러리로 심볼을 맞춥니다.
+
+   ```bash
+   docker cp former00XX_nav:/tmp/core.amcl.<pid>.<t> ./debug/
+   docker run --rm --pid=container:former00XX_nav --cap-add SYS_PTRACE -v $PWD/debug:/dbg \
+     --entrypoint bash former_docker:1.0-gdb -c '
+       P=$(pgrep -f planner_server | head -1)
+       gdb -batch -ex "set sysroot /proc/$P/root" \
+         -ex "file /proc/$P/root/opt/ros/humble/lib/nav2_amcl/amcl" \
+         -ex "core-file /dbg/core.amcl.<pid>.<t>" -ex bt -ex "thread apply all bt 25"'
+   ```
+
+former0047 의 분석 산출물(core, 백트레이스, 크래시 로그, `core_pattern.orig`)은 `~/konjiam/former/former0047/debug/` 에 있습니다. 분석 후 `core_pattern` 은 apport 값으로 복원했습니다.
+
+## 7. 남은 가설과 다음 실험
+
+| # | 가설 | 검증 방법 | 상태 |
+| --- | --- | --- | --- |
+| A | AMCL 이 `/particle_cloud` 발행 시 크래시 | — | **기각** (3.6절) |
+| B | odom 주기 저하(40 Hz)가 controller patience 초과 유발 | `former_robot` 재기동 후 80 Hz 회복 여부와 주행 확인. 2026-10-23 부팅 직후에도 40 Hz 였으므로 정상 기준값부터 재확인 필요 | 미확인 |
+| C | USB 재열거가 TF 타이밍을 깨뜨림 | `kern.log` 의 `USB disconnect` 와 크래시 시각 대조 | **기각** (3.6절) |
+| D | nav2_amcl 1.1.12 자체 버그 | core dump 백트레이스 | **확정** (3.5절), `recovery_alpha` 0.0 으로 회피 |
+| E | AMCL 대신 slam_toolbox localization 사용 | 동일 구역 1회 매핑 후 `.posegraph/.data` 생성 | 불필요 시 보류 |
+| F | `recovery_alpha` 0.0 적용 후 주행 시 AMCL 생존 | 주행 중 `process has died` 0 건 유지 | former0047 에서 크래시 없이 골 주행 성공(2026-10-23). 장시간 운용은 계속 관찰 |
+
+## 8. 참고: 로그 해석 요령
+
+- `Message Filter dropping ... timestamp ... earlier than all the data in the transform cache`: TF 체인이 끊겼거나(AMCL 사망) 스캔 스탬프가 어긋났다는 뜻입니다. 스캔 스탬프 문제라면 `scan_restamp` 적용 여부와 `/scan_restamped` Hz 를 먼저 확인합니다.
+- `Extrapolation ... Requested time <골 시각>`: 골을 찍은 뒤 오래 지나 TF 버퍼(기본 10초)에 해당 시각 데이터가 없어서 발생합니다. 골을 다시 찍으면 사라지므로, 근본 원인은 그 사이에 골 처리가 실패한 것입니다.
+- `Controller patience exceeded`: 로봇이 실제로 움직이지 못했다는 뜻입니다. `/base_controller/cmd_vel_unstamped` 에 `velocity_smoother` 가 publisher 로 있는지, 값이 실제로 흐르는지 확인합니다.
+- `[amcl-N]: process has died ... exit code -11` 이고 직전에 다른 원인 로그가 없으면 3.5절의 `recovery_alpha` 설정부터 확인합니다.

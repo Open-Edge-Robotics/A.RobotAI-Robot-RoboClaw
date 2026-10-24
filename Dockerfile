@@ -133,6 +133,9 @@ RUN if [ "${INSTALL_LAYA}" = "true" ]; then \
     fi && rm -f /tmp/install_laya.sh
 
 # 7. ROS 패키지 manifest 선 복사 (rosdep 레이어 캐시)
+# 워크스페이스에서 직접 빌드하는 vendored 메시지 패키지도 여기에 포함한다. 누락하면
+# `rosdep install --ignore-src` 가 이들을 소스 패키지로 인식하지 못해
+# "Cannot locate rosdep definition for [<pkg>]" 로 빌드가 실패한다.
 COPY src/robo_claw_agent/package.xml src/robo_claw_agent/package.xml
 COPY src/robo_claw_bringup/package.xml src/robo_claw_bringup/package.xml
 COPY src/robo_claw_channel/package.xml src/robo_claw_channel/package.xml
@@ -141,6 +144,8 @@ COPY src/robo_claw_discovery/package.xml src/robo_claw_discovery/package.xml
 COPY src/robo_claw_grpc/package.xml src/robo_claw_grpc/package.xml
 COPY src/robo_claw_msgs/package.xml src/robo_claw_msgs/package.xml
 COPY src/robo_claw_vision/package.xml src/robo_claw_vision/package.xml
+COPY src/task_manager_msgs/package.xml src/task_manager_msgs/package.xml
+COPY src/tofu_msgs/package.xml src/tofu_msgs/package.xml
 
 # 8. ROS 의존성 설치 (rosdep)
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
@@ -168,6 +173,12 @@ RUN bash ./generate_protos.sh && \
 # buildx/QEMU에서 ROS export library 탐색이 깨져 메시지 패키지(robo_claw_msgs)는
 # CMake로 먼저 설치한다. 같은 현상의 다운스트림 재발 방지를 위해 find_library
 # 접두사/접미사 설정을 CMAKE_PROJECT_TOP_LEVEL_INCLUDES로 모든 패키지에 주입한다.
+#
+# 수동 생성하는 robo_claw_msgs/package.sh 는 colcon 템플릿처럼 끝에서
+# COLCON_CURRENT_PREFIX 를 unset 한다. colcon 은 한 셸에서 의존성 package.sh 를
+# 연속 sourcing 하므로, unset 하지 않으면 다음에 sourcing 되는 패키지가 남은
+# prefix 를 자기 prefix 로 착각해 환경 변수(CMAKE_PREFIX_PATH, AMENT_PREFIX_PATH)
+# 에서 통째로 빠진다(“not found: .../share/<다른패키지>/...” 로그).
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
     test -f /opt/ros/${ROS_DISTRO}/lib/libbuiltin_interfaces__rosidl_generator_c.so && \
     mkdir -p /tmp/ros_sanity && \
@@ -182,7 +193,7 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
       -DCMAKE_INSTALL_PREFIX=/ros2_ws/install/robo_claw_msgs \
       -DCMAKE_LIBRARY_PATH=/opt/ros/${ROS_DISTRO}/lib && \
     cmake --build build/robo_claw_msgs --target install -- -j1 && \
-    printf 'COLCON_CURRENT_PREFIX="/ros2_ws/install/robo_claw_msgs"\n. "$COLCON_CURRENT_PREFIX/share/robo_claw_msgs/local_setup.sh"\n' > /ros2_ws/install/robo_claw_msgs/share/robo_claw_msgs/package.sh && \
+    printf 'COLCON_CURRENT_PREFIX="/ros2_ws/install/robo_claw_msgs"\n. "$COLCON_CURRENT_PREFIX/share/robo_claw_msgs/local_setup.sh"\nunset COLCON_CURRENT_PREFIX\n' > /ros2_ws/install/robo_claw_msgs/share/robo_claw_msgs/package.sh && \
     . /ros2_ws/install/robo_claw_msgs/share/robo_claw_msgs/local_setup.sh && \
     export AMENT_PREFIX_PATH=/ros2_ws/install/robo_claw_msgs:${AMENT_PREFIX_PATH:-} && \
     export CMAKE_PREFIX_PATH=/ros2_ws/install/robo_claw_msgs:${CMAKE_PREFIX_PATH:-} && \
