@@ -3,6 +3,28 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 정리 태스크 3조건 실험 러너·위임 결과 계측
+
+- **배경**: run log 계측만으로는 반복 실행·판정·집계를 사람이 손으로 해야 했고, 위임 성공률을 실행 결과의 장소 status 로 추정해야 했습니다. 수신 로봇이 정리를 거부하는 문장을 돌려주면서 성공 플래그를 주면 `delegated_demo` 로 보여 위임 성공률이 실제보다 높게 나오는 문제가 있었습니다.
+- **조치**:
+  - `skills/cleanup_run_metrics.py`: `cleanup_delegate` 이벤트를 추가했습니다. 위임 요청 1건의 성공 여부·응답 메시지·소요 시간을 남깁니다.
+  - `skills/autonomous_skill/execution_nodes.py`: `ExecuteDecidedAction` 이 위임 결과를 `cleanup_delegate` 로 기록합니다(계측 실패는 실행 결과에 영향을 주지 않음).
+  - `scripts/cleanup_run_report.py`: 위임 성공률을 `cleanup_delegate` 의 `success` 비율로 계산하고, 레코드가 없는 로그에서는 기존 status 기반 계산으로 대체합니다(`delegation_source` 로 구분).
+  - `validation/cleanup-experiment/`(신규): 조건 정의 3종(정상 협업·기능 제약·실패 및 복구)과 `run_cleanup_experiment.py` 러너를 추가했습니다. 회차마다 gRPC 응답과 `cleanup_handoff`·`cleanup_delegate`·`cleanup_run` 레코드를 `run_id` 로 묶어 판정하고 표 2 형식 리포트를 만듭니다. 재계획 성공률은 `--agent-log` 를 준 경우에만 계산합니다. `--dry-run` 은 사전 준비 항목만 출력하고 명령을 보내지 않습니다.
+  - `docs/CLEANUP_RUN_METRICS.md`: `cleanup_delegate` 이벤트와 3조건 실험 절차를 반영했습니다.
+- **검증**: `task unit-test` 1,419건 통과(신규 21건: 계측 2, 집계 2, 실험 러너 17), `uv run ruff check`·`ruff format --check` 통과. 가짜 sender 로 run log 를 생성하는 통합 테스트에서 러너가 표 2 행(`| 정상 협업 | 1 | 100.0% | 100.0% | 100.0% | 65.0s | n/a |`)을 만들고, 기대 불일치 시 종료 코드 1 을 반환하는 것을 확인했습니다. 실기 로봇에서 3조건을 실행한 측정값은 **미확보**입니다.
+
+## 2026-10-26 — 정리 태스크 실험 계측(run log) 및 표 2 집계
+
+- **배경**: 실험 결과 표(전체 성공률·할당 정확도·위임 성공률·평균 시간)를 채출 데이터가 없었습니다. `tidy_home` 은 `terminal_behavior="background"` 라 호출 결과가 `status="started"` 뿐이고, 위임 결정·실행 결과는 사람이 읽는 메시지와 흘어진 로그 줄로만 남았습니다. 스킬별 `OperationTracker` 통계는 메모리 누적값이라 실행 1회를 구분할 수 없었습니다.
+- **조치**:
+  - `skills/cleanup_run_metrics.py`(신규): `RC_CLEANUP_RUN_LOG_PATH` 가 지정된 더위 JSONL 한 줄씩 `cleanup_handoff`·`cleanup_run` 레코드를 쓰는 계측 모듈입니다. 미설정이면 아무 파일도 쓰지 않고, 쓰기 실패는 경고 1회만 남기고 정리 동작을 막지 않습니다.
+  - `skills/autonomous_skill/execution_nodes.py`: `ResolveCleanupHandoff` 의 위임 결정·차단 분기에서 선택된 동료, 전송 경로, 후보 스냅샷(`_discover_peer_agents`, 추가 RPC 없음), 차단 사유, 동료 탐색 소요를 기록합니다. `ExecuteDecidedAction` 은 위임 스킬의 `duration_sec` 를 구간 계측에 누적합니다.
+  - `skills/tidy_home_skill.py`: 실행 1회마다 `run_id` 를 만들고(`execute()` 결과에도 포함) 장소별 navigate·observe·handle 구간 시간과 결과를 `finally` 에서 기록합니다. 예외로 중단되면 `error` 와 `success=false` 가 남습니다.
+  - `scripts/cleanup_run_report.py`(신규): run log 를 반복 횟수·전체 성공률·할당 정확도·위임 성공률·구간별 평균 시간으로 집계해 `--markdown` 표 한 행을 출력합니다.
+  - `docs/CLEANUP_RUN_METRICS.md`(신규), `README.md` 상세 가이드 행, `.env.example` 항목을 추가했습니다.
+- **검증**: `task unit-test` 1,398건 통과(신규 19건: 계측 15, 집계 4), `task lint`(`ruff check`, 스킬 카탈로그, 프롬프트 톤, `check_docker_deps`, `go vet`)·`task contract-check` 통과, 변경 파일 `ruff format --check` 통과. 실제 계측 경로로 3회분 레코드를 생성해 `scripts/cleanup_run_report.py --expect-peer cloid2 --markdown` 이 표 행과 구간별 평균을 출력하는 것을 확인했습니다. 실기 로봇에서 2호 위임과 함께 기록되는지는 **미검증**입니다.
+
 ## 2026-10-26 — set_initial_pose 실기 실패 수정 (`Publisher.wait_for_subscribers` 제거)
 
 - **배경**: former0047 실기에서 "안방을 초기 위치로 잡아줘" 요청이 5회 재플래닝 끝에 실패했습니다. `set_initial_pose` 가 `/initialpose` 퍼블리셔 대기 루프에서 `pub.wait_for_subscribers(...)` 를 호출했지만 `rclpy.publisher.Publisher` 에는 그런 메서드가 없어 `AttributeError` 가 발생했습니다. 단위 테스트의 퍼블리셔 대역이 존재하지 않는 메서드를 흉내 내고 있어 테스트는 통과했습니다.

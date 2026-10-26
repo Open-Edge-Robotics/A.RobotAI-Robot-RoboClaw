@@ -1,0 +1,55 @@
+{
+  "condition": "recovery",
+  "label": "실패 및 복구",
+  "description": "동료 로봇이 응답하지 않는 상태에서 위임이 실패하고, 동료를 복구한 뒤 같은 요청이 성공하는 조건입니다. 표 2 행은 복구 단계(recovered) 결과로 채우고, 실패 유발 단계는 실패 처리 정확성 근거로 함께 보고합니다.",
+  "setup": {
+    "operator_steps": [
+      "cloid2 컨테이너를 중지합니다(수신 로봇이 없으므로 물리 모션이 발생하지 않습니다).",
+      "former0047의 GRPC_TARGET_PEERS_JSON에 cloid2의 capabilities=[\"cleanup_demo\"] 선언은 그대로 둡니다(연결만 끊긴 상태를 재현).",
+      "1단계(실패 유발)를 실행해 위임 실패와 완료 미보고를 확인합니다.",
+      "cloid2 컨테이너를 다시 기동하고 연결 상태를 확인한 뒤 2단계(복구)를 실행합니다.",
+      "실패 유발 단계 실행 전에 --phase fail_injected 로 대상을 좁혀 실행해도 됩니다."
+    ],
+    "required_env": {
+      "former0047": {
+        "RC_CLEANUP_RUN_LOG_PATH": "<host path>/cleanup_runs.jsonl"
+      },
+      "cloid2": {
+        "RC_CLOID_CLEANUP_DEMO_ENABLED": "true",
+        "RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22]"
+      }
+    }
+  },
+  "run_timeout_sec": 300,
+  "settle_sec": 15,
+  "phases": [
+    {
+      "key": "fail_injected",
+      "prompt": "안방 정리해줘",
+      "repeat": 3,
+      "row": false,
+      "expect": {
+        "run_present": true,
+        "run_success": false,
+        "place_status": ["unhandled", "execution_failed"],
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리 완료", "[스킬"]
+      }
+    },
+    {
+      "key": "recovered",
+      "prompt": "안방 정리해줘",
+      "repeat": 3,
+      "row": true,
+      "expect": {
+        "run_present": true,
+        "run_success": true,
+        "place_status": ["delegated_demo"],
+        "peer": "Cloid 2호",
+        "delegate_success": true,
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리할 수 없", "실패:", "[스킬"]
+      }
+    }
+  ]
+}

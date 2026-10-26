@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from typing import Any
 
 from robo_claw_agent.skill_manager import BaseSkill
@@ -26,6 +27,7 @@ from .cleanup_policy import (
     _safe_cleanup_storage_targets,
     _select_cloid_indicator_motion,
 )
+from .cleanup_run_metrics import new_run_id, record_cleanup_run
 
 logger = logging.getLogger(__name__)
 _MAX_HOME_PLACES = 20
@@ -141,9 +143,10 @@ class TidyHomeSkill(BaseSkill):
                 recoverable=True,
             )
 
+        run_id = new_run_id(agent_id=str(getattr(self.node, "_agent_id", "") or ""))
         worker = threading.Thread(
             target=self._run_cleanup,
-            args=(scope, places),
+            args=(scope, places, run_id, target_location),
             daemon=True,
             name="tidy-home-worker",
         )
@@ -163,6 +166,7 @@ class TidyHomeSkill(BaseSkill):
             status="started",
             scope=scope,
             places=[place["name"] for place in places],
+            run_id=run_id,
         )
 
     def _collect_places(
@@ -272,9 +276,24 @@ class TidyHomeSkill(BaseSkill):
         finally:
             release_autonomous()
 
-    def _run_cleanup(self, scope: str, places: list[dict[str, Any]]) -> None:
+    @staticmethod
+    def _add_phase_ms(phase_ms: dict[str, float], name: str, elapsed_sec: float) -> None:
+        """구간 소요 시간을 누적한다(실험 계측 전용, 동작에는 영향 없음)."""
+        phase_ms[name] = phase_ms.get(name, 0.0) + max(0.0, float(elapsed_sec)) * 1000.0
+
+    def _run_cleanup(
+        self,
+        scope: str,
+        places: list[dict[str, Any]],
+        run_id: str = "",
+        target_location: str = "",
+    ) -> None:
         results: list[dict[str, Any]] = []
         found_cleanup_target = False
+        # 실험 계측 — 구간별 소요 시간을 같은 키로 누적해 표 2의 평균 시간을 계산한다.
+        phase_ms: dict[str, float] = {}
+        run_error = ""
+        started = time.monotonic()
         try:
             start_message = (
                 f"정리 작업을 시작합니다. 기억된 장소 {len(places)}곳을 한 차례 확인합니다."
@@ -288,11 +307,14 @@ class TidyHomeSkill(BaseSkill):
                     break
 
                 place_name = str(place["name"])
+                nav_started = time.monotonic()
                 try:
                     arrived, nav_message = self._visit_place(place_name)
                 except Exception as exc:  # noqa: BLE001
                     arrived, nav_message = False, str(exc)
                     logger.exception("[TidyHome] Navigation failed for %s", place_name)
+                finally:
+                    self._add_phase_ms(phase_ms, "navigate", time.monotonic() - nav_started)
                 if not is_autonomous_active():
                     results.append({"place": place_name, "status": "cancelled"})
                     break
@@ -303,7 +325,11 @@ class TidyHomeSkill(BaseSkill):
                     )
                     continue
 
-                scene_result = self._analyze_current_scene(place_name)
+                observe_started = time.monotonic()
+                try:
+                    scene_result = self._analyze_current_scene(place_name)
+                finally:
+                    self._add_phase_ms(phase_ms, "observe", time.monotonic() - observe_started)
                 if not is_autonomous_active():
                     results.append({"place": place_name, "status": "cancelled"})
                     break
@@ -364,12 +390,18 @@ class TidyHomeSkill(BaseSkill):
                     continue
 
                 found_cleanup_target = True
-                status = self._handle_cleanup_target(
-                    place_name=place_name,
-                    scene=scene,
-                    objects=objects,
-                    cycle=index,
-                )
+                handle_started = time.monotonic()
+                try:
+                    status = self._handle_cleanup_target(
+                        place_name=place_name,
+                        scene=scene,
+                        objects=objects,
+                        cycle=index,
+                        run_id=run_id,
+                        phase_ms=phase_ms,
+                    )
+                finally:
+                    self._add_phase_ms(phase_ms, "handle", time.monotonic() - handle_started)
                 results.append(
                     {
                         "place": place_name,
@@ -382,9 +414,25 @@ class TidyHomeSkill(BaseSkill):
                 self._run_cloid_activity_indicator()
             self._report_summary(scope, results, found_cleanup_target)
         except Exception as exc:  # noqa: BLE001
+            run_error = f"{type(exc).__name__}: {exc}"
             logger.exception("[TidyHome] Cleanup run failed")
             self.send_user_message(f"정리 작업이 중단됐습니다. 완료 여부를 확인해 주세요: {exc}")
         finally:
+            # 계측 실패는 정리 종료 처리(자율 플래그 해제)를 막지 않는다.
+            try:
+                record_cleanup_run(
+                    run_id=run_id,
+                    agent_id=str(getattr(self.node, "_agent_id", "") or ""),
+                    scope=scope,
+                    target_location=target_location,
+                    places=[str(place.get("name", "")) for place in places],
+                    results=results,
+                    phase_ms=phase_ms,
+                    elapsed_ms=(time.monotonic() - started) * 1000.0,
+                    error=run_error,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("[TidyHome] run log record failed", exc_info=True)
             release_autonomous()
 
     def _visit_place(self, place_name: str) -> tuple[bool, str]:
@@ -486,7 +534,14 @@ class TidyHomeSkill(BaseSkill):
         }
 
     def _handle_cleanup_target(
-        self, *, place_name: str, scene: str, objects: list[Any], cycle: int
+        self,
+        *,
+        place_name: str,
+        scene: str,
+        objects: list[Any],
+        cycle: int,
+        run_id: str = "",
+        phase_ms: dict[str, float] | None = None,
     ) -> str:
         from .autonomous_skill.actions import (
             ExecuteDecidedAction,
@@ -516,6 +571,9 @@ class TidyHomeSkill(BaseSkill):
             "cleanup_disposal_targets": disposal_targets,
             "cleanup_storage_targets": storage_targets,
             "cleanup_destinations": destinations,
+            # 실험 계측 — 위임 결정·구간 소요를 실행 1회 기록으로 모으기 위한 키.
+            "cleanup_run_id": run_id,
+            "cleanup_phase_ms": phase_ms if isinstance(phase_ms, dict) else None,
         }
         handoff = ResolveCleanupHandoff(self)
         decide = LLMDecideAction(self)
