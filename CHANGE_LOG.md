@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 1차 실기 예비 실행 및 delegate 구간 단위 수정
+
+- **배경**: former0047에서 `'안방 정리해줘'` 1회를 실행해 계측 경로를 확인했습니다. 전 구간이 정상 동작했고(`tidy_home` → `cleanup_handoff` → Cloid 2호 위임 → `cleanup_delegate` → `cleanup_run`), `delegated_demo`·`success=true`로 기록됐습니다. 다만 `phase_ms.delegate`가 `90.6`(초 단위)로 기록되어 다른 구간(밀리초)과 단위가 어긋났습니다.
+- **조치**:
+  - `skills/autonomous_skill/execution_nodes.py`: 위임 스킬 `duration_sec`를 밀리초로 환산해 구간 계측에 더합니다.
+  - `scripts/cleanup_run_report.py`: 위임 구간 평균은 `cleanup_delegate.duration_ms`를 우선 사용합니다. 단위가 어긋난 과거 기록도 정확히 집계됩니다.
+  - 테스트: 구간 단위(12.5초 → 12500ms), 위임 레코드 우선 집계 각 1건.
+- **검증**: `task unit-test` 1,423건 통과. 실기 1회 기록으로 `scripts/cleanup_run_report.py --expect-peer "Cloid 2호"`가 표 2 행을 출력함을 확인했습니다.
+- **실측값(1회)**: 전체 성공률 100%, 할당 정확도 100%(peer=Cloid 2호), 위임 성공률 100%, 총 178.1s(navigate 43.0s / observe 27.2s / discovery 12.4ms / delegate 90.6s / handle 107.9s).
+
 ## 2026-10-26 — 실험 러너 gRPC 채팅 인증 지원
 
 - **배경**: former0047 에이전트에 `GRPC_PEER_TOKEN`이 설정되어 있어 `SendCommand`도 인증을 요구합니다. `validation/talk/robo_talk.py`는 토큰을 보내지 않아 실험 러너의 명령 전송이 거부됩니다.

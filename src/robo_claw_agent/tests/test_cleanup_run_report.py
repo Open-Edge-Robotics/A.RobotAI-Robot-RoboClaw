@@ -146,3 +146,26 @@ def test_delegation_falls_back_to_run_status_without_delegate_records(tmp_path):
     assert summary["delegation_source"] == "run_status"
     assert summary["delegation_attempts"] == 0
     assert summary["delegation_success_rate"] == pytest.approx(100.0)
+
+
+def test_delegate_phase_prefers_delegate_record_duration(tmp_path):
+    """실행 레코드의 delegate 구간 값이 어긋나도 위임 레코드 소요 시간을 쓴다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("r1", "cloid2"),
+            {
+                "event": "cleanup_delegate",
+                "run_id": "r1",
+                "peer": "cloid2",
+                "success": True,
+                "duration_ms": 90597.5,
+            },
+            _run("r1", "delegated_demo", True, {"navigate": 1000.0, "delegate": 90.6}, 10000.0),
+        ],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["mean_phase_ms"]["delegate"] == pytest.approx(90597.5)

@@ -341,7 +341,8 @@ def test_execute_decided_action_adds_delegate_phase_ms(monkeypatch):
     }
 
     assert execute.tick() == NodeStatus.SUCCESS
-    assert phase["delegate"] == pytest.approx(12.5)
+    # phase_ms 는 밀리초 단위다(12.5초 → 12500ms).
+    assert phase["delegate"] == pytest.approx(12500.0)
 
 
 def test_run_log_path_defaults_to_empty_string(monkeypatch):

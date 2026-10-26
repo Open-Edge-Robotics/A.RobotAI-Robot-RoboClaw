@@ -706,7 +706,8 @@ class ExecuteDecidedAction(BTNode):
             if cleanup_handoff:
                 phase = _phase_ms(self._blackboard)
                 if phase is not None:
-                    phase["delegate"] = phase.get("delegate", 0.0) + duration_sec
+                    # phase_ms 는 밀리초 단위이므로 초 단위 duration 을 환산해 더한다.
+                    phase["delegate"] = phase.get("delegate", 0.0) + duration_sec * 1000.0
                 _record_delegate(
                     blackboard=self._blackboard,
                     node=node,

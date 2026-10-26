@@ -72,11 +72,22 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
     prepared_runs = {str(handoff.get("run_id", "")) for handoff in prepared_handoffs}
     prepared_runs.discard("")
 
+    # 위임 구간은 위임 레코드의 소요 시간을 우선 사용한다. 실행 레코드의 delegate 값은
+    # 계측 단위가 바뀐 과거 기록이 섞일 수 있어, 레코드가 있으면 그쪽이 정확하다.
+    delegate_ms_by_run: dict[str, float] = defaultdict(float)
+    for record in delegates:
+        run_id = str(record.get("run_id", ""))
+        delegate_ms_by_run[run_id] += float(record.get("duration_ms", 0.0))
+
     phase_totals: dict[str, list[float]] = defaultdict(list)
     elapsed: list[float] = []
-    for run in runs_by_id.values():
+    for run_id, run in runs_by_id.items():
         for name, value in (run.get("phase_ms") or {}).items():
+            if str(name) == "delegate" and run_id in delegate_ms_by_run:
+                continue
             phase_totals[str(name)].append(float(value))
+        if run_id in delegate_ms_by_run:
+            phase_totals["delegate"].append(delegate_ms_by_run[run_id])
         elapsed.append(float(run.get("elapsed_ms", 0.0)))
 
     if delegates:
