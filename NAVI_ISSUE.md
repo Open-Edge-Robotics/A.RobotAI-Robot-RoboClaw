@@ -1,6 +1,35 @@
 # NAVI_ISSUE — Former 실기 Nav2 멈춤/크래시 이슈 정리
 
-이 문서는 Former 실기(former0045 / former0047)에서 발생한 Nav2 멈춤 문제를 다른 에이전트·엔지니어가 이어서 진단할 수 있도록 정리한 이슈 노트입니다. 기능 가이드는 `former/FORMER_GUIDE.md` 를 참고합니다.
+이 문서는 Former 실기(former0045 / former0047)에서 발생한 Nav2 멈춤 문제의 원인과 해결을 다른 에이전트·엔지니어가 바로 참고할 수 있도록 정리한 이슈 노트입니다. 기능 가이드는 `former/FORMER_GUIDE.md` 를 참고합니다.
+
+## 0. 요약 (먼저 읽기)
+
+**상태: 해결됨 (2026-10-23).** 두 로봇 모두 적용 완료했고, former0047 에서 기동 후 약 15분간 골 11건을 받는 동안 크래시가 없었습니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 증상 | 골을 찍어도 안 움직이거나 주행 중 멈추고, 로그에 `Message Filter dropping` / `Extrapolation` / `Controller patience exceeded` 가 폭주 |
+| 직접 원인 | `nav2_amcl` 프로세스가 SIGSEGV(exit -11)로 죽어 `map→odom` TF 가 사라짐. 위 로그 폭주는 전부 이 결과 |
+| 근본 원인 | `params` 의 `recovery_alpha_fast/slow` 가 `0.1 / 0.001`(0 아님). AMCL 이 map 포인터를 NULL 로 저장한 채 무작위 파티클을 주입하다 NULL 역참조 (3.5절) |
+| 해결 | `former/params/nav2_params.yaml`, `nav2_params_narrow.yaml` 의 `recovery_alpha_fast/slow` 를 `0.0` 으로 설정 후 `./restart_nav.sh` |
+| 부수 문제(별개) | 계획 실패(3.1), 주행 명령 미전달(3.2), 스캔 스탬프 불일치(3.3). 각각 다른 증상이며 `run_nav_stable.sh` 가 함께 처리 |
+| 트레이드오프 | 위치를 크게 잃었을 때의 자동 복구(kidnap recovery)가 꺼지므로 RViz 에서 initial pose 를 다시 지정해야 함 |
+
+**크래시가 다시 나면 이 순서로 봅니다.**
+
+1. `docker logs former00XX_nav 2>&1 | grep "process has died"` 로 죽은 노드를 확인합니다. `amcl` 이 아니면 이 문서의 원인이 아닙니다.
+2. `ros2 param get /amcl recovery_alpha_fast` 가 `0.0` 인지 확인합니다. 아니라면 `former_nav2_run.sh` 등 핫픽스 없는 경로로 떴거나 params 가 되돌아간 것입니다(5절).
+3. `0.0` 인데도 죽으면 새로운 원인입니다. 6절 절차로 core 를 받아 백트레이스부터 확인합니다. 로그만으로 추측하지 않습니다(이번 건에서 추측이 두 번 빗나갔습니다, 3.6절).
+
+**관련 파일**
+
+| 경로 | 역할 |
+| --- | --- |
+| `former/params/nav2_params.yaml`, `nav2_params_narrow.yaml` | Nav2 파라미터. `recovery_alpha`, costmap, `scan_restamped` 토픽 |
+| `former/former00XX/run_nav_stable.sh` | 핫픽스를 적용한 nav 기동(0045/0047 동일) |
+| `former/former00XX/restart_nav.sh` | nav 컨테이너만 지우고 재기동 |
+| `former/FORMER_GUIDE.md` 9절 | 같은 내용의 운영 가이드 |
+| 로봇 `~/konjiam/former/former0047/debug/` | 크래시 core, 백트레이스, 로그(저장소에는 없음) |
 
 ## 1. 증상
 
@@ -84,6 +113,19 @@ Nav2 기본값은 `recovery_alpha_fast: 0.0`, `recovery_alpha_slow: 0.0` 입니�
 | --- | --- |
 | RViz `Particle Cloud` 구독이 방아쇠 | 구독자가 없는 상태에서도 크래시했습니다. RViz 를 켜는 시점과 골을 보내는 시점이 겹쳐 상관관계처럼 보였습니다. |
 | USB 재열거 | 키보드 허브(`1-2.1`) 분리 시 같은 허브의 베이스 FTDI(`1-2.3`)는 재열거되지 않았고, 크래시는 5.5분 뒤였습니다. `/dev/ttyUSB*` 의 mtime 은 I/O 만으로 갱신되므로 재열거 근거로 쓸 수 없습니다. 커널 로그(`/var/log/kern.log`, `adm` 그룹으로 읽기 가능)로 판정합니다. |
+
+### 3.7 진단 이력 (같은 길을 다시 가지 않기 위한 기록)
+
+| 단계 | 한 일 | 결과 |
+| --- | --- | --- |
+| 1 | 로그의 `Message Filter dropping` / `Extrapolation` 을 원인으로 추적 | 전부 AMCL 사망의 결과였음(3.4) |
+| 2 | 스캔 스탬프 불일치(3.3)를 AMCL 크래시 원인으로 보고 `scan_restamp` 적용 | 드롭은 사라졌지만 AMCL 크래시는 계속됨 |
+| 3 | RViz `Particle Cloud` 구독을 방아쇠로 추정(크래시 직전 로그에 항상 있었음) | 구독자가 없는 부팅 직후 크래시로 기각. RViz 를 켜는 사람이 곧 골을 보내서 같이 나타났을 뿐이었음 |
+| 4 | 키보드 USB 분리를 방아쇠로 추정 | `kern.log` 대조로 기각(3.6) |
+| 5 | core dump + gdb 백트레이스 확보 (6절) | `uniformPoseGenerator` NULL map 역참조 확정 → `recovery_alpha` 가 경로를 여는 조건임을 코드와 파라미터로 확인 |
+| 6 | `recovery_alpha` 0.0 적용 | 골 11건 주행 무크래시 |
+
+교훈: 크래시 직전 로그의 공통 문구는 원인이 아니라 같은 시점에 일어나는 다른 사건일 수 있습니다. SIGSEGV 는 추측하지 말고 core 로 확인합니다.
 
 ## 4. 현재 적용된 핫픽스 (이미지 재빌드 없이)
 
@@ -169,7 +211,7 @@ former0047 의 분석 산출물(core, 백트레이스, 크래시 로그, `core_p
 | C | USB 재열거가 TF 타이밍을 깨뜨림 | `kern.log` 의 `USB disconnect` 와 크래시 시각 대조 | **기각** (3.6절) |
 | D | nav2_amcl 1.1.12 자체 버그 | core dump 백트레이스 | **확정** (3.5절), `recovery_alpha` 0.0 으로 회피 |
 | E | AMCL 대신 slam_toolbox localization 사용 | 동일 구역 1회 매핑 후 `.posegraph/.data` 생성 | 불필요 시 보류 |
-| F | `recovery_alpha` 0.0 적용 후 주행 시 AMCL 생존 | 주행 중 `process has died` 0 건 유지 | former0047 에서 크래시 없이 골 주행 성공(2026-10-23). 장시간 운용은 계속 관찰 |
+| F | `recovery_alpha` 0.0 적용 후 주행 시 AMCL 생존 | 주행 중 `process has died` 0 건 유지 | **확인** — former0047 에서 기동 후 21:10 까지 `Received a goal` 11건 동안 `process has died` 0, `Message Filter dropping` 0, core 0 (2026-10-23). former0045 는 재기동 후 파라미터 로드와 노드 active 만 확인했고 주행 검증은 아직입니다. 장시간 운용은 계속 관찰합니다. |
 
 ## 8. 참고: 로그 해석 요령
 
