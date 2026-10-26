@@ -880,7 +880,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "cloid_navigation_pose_enabled",
                 default_value="false",
-                description="CLOiD 주행 전 boxing 자세 prelude 스위치(기본 false). 활성화하면 베이스 이동·회전 스킬 직전에 cloid.move_boxing 실행을 한 번 요청하고 실패 시 이동을 거부합니다. 상체 구동 오류 개체는 false 로 둡니다.",
+                description="CLOiD 주행 전 boxing 자세 prelude 스위치(기본 false). 활성화하면 베이스 이동·회전 스킬 직전에 cloid.move_boxing 실행을 한 번 요청하고 실패 시 이동을 거부합니다. 상체 모션을 쓰지 않는 배포는 false 로 둡니다.",
             ),
             DeclareLaunchArgument(
                 "scan_interval_sec",

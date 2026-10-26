@@ -115,15 +115,16 @@ RC_AGENT_ID=cloi02
 | `cloid_config.yaml` | core/agent 센서·토픽, agent 카메라, 조작 활성화 및 정리 표시 모션 설정 |
 | `ROBOT_LIMITS.cloid.json` | 주행 한계와 URDF(hmc_v2_hand) 기준 팔·waist·neck 조인트 하드 한계 |
 | `SKILLS.cloid.1.md` | CLOiD 1호 전용 스킬 가이드(주행과 CLOi 등록 상체 모션 사용 가능) |
-| `SKILLS.cloid.2.md` | CLOiD 2호 전용 스킬 가이드(팔·상체 구동 오류, 주행·인지·조회·정지 전용) |
+| `SKILLS.cloid.2.md` | CLOiD 2호 전용 스킬 가이드(주행과 CLOi 등록 상체 모션 사용 가능, `cleanup_demo` 시연은 1호 전용) |
 | `ROBOT.cloid.1.md` | CLOiD 1호 전용 소울 프로필(팔·상체 모션을 쓰는 정상 개체의 개성) |
-| `ROBOT.cloid.2.md` | CLOiD 2호 전용 소울 프로필(팔·상체 오류 상태를 담담히 알리는 개성) |
+| `ROBOT.cloid.2.md` | CLOiD 2호 전용 소울 프로필(관찰·순찰 중심으로 공간을 살피는 개성) |
 
 ### 개체별 스킬·소울 가이드 선택
 
-CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체 상태가 달라 스킬 가이드와 소울 프로필을
-1호/2호로 분리했습니다. 하드웨어·토픽 설정(`cloid_config.yaml`, `ROBOT_LIMITS.cloid.json`)은
-두 개체가 공유하고, 런타임에 주입되는 문서만 개체별로 지정합니다.
+CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체별 개성과 운용 역할이 달라 스킬 가이드와 소울
+프로필을 1호/2호로 분리했습니다. 하드웨어·토픽 설정(`cloid_config.yaml`,
+`ROBOT_LIMITS.cloid.json`)은 두 개체가 공유하고, 런타임에 주입되는 문서만 개체별로
+지정합니다.
 
 - `skills_guide_file`(또는 `RC_SKILLS_GUIDE_FILE`)을 지정하지 않고 `robot_config:=cloid`
   로 기동하면 launch 는 `SKILLS.cloid.md` 를 먼저 찾고, 없으면 `SKILLS.cloid.1.md` 를
@@ -141,8 +142,8 @@ RC_ROBOT_SOUL_FILE=/ros2_ws/src/robo_claw_bringup/config/ROBOT.cloid.2.md
 
 - 설정서버로 기동하는 배포는 서버가 내려주는 `SKILLS.md`·`ROBOT.md` 내용이 우선하므로,
   2호 디바이스 설정에는 `SKILLS.cloid.2.md`·`ROBOT.cloid.2.md` 내용을 등록합니다.
-- 2호 배포에서는 상체 표시 모션이 발행되지 않도록 `cloid_cleanup_indicator_enabled` 를
-  `false` 로 두고 `cloid_cleanup_indicator_motion_ids_json` allowlist 를 비웁니다.
+- 정리 표시 모션은 모든 CLOi 개체에서 `cloid_cleanup_indicator_enabled=false` 가 기본이며,
+  필요하면 `cloid_cleanup_indicator_motion_ids_json` allowlist 로 개체별로 제한합니다.
 
 CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 전제).
 
@@ -160,11 +161,11 @@ CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 
 
 ### VLA 구현 전 동료 정리 시연
 
-CLOiD의 `tidy_home`은 명확한 폐기물뿐 아니라 수건, 쿠션/방석, 명확한 빨래/세탁물도 관찰 후보로 인식합니다. CLOiD 2호는 이를 직접 옮길 수 없으며, 생활용품은 유형별 안전 보관 장소가 확인되는 실제 `manipulation` 동료에게만 요청할 수 있습니다. 명확한 폐기물은 `cleanup_demo` 능력을 제공하는 CLOiD 1호에 단일 시연 요청을 보낼 수 있습니다. 이 고정 모션 시연은 물체를 집거나 옮기는 기능이 아닙니다. 2호는 요청 전 Nav2 안전 검사를 거친 짧은 상대 이동으로 접근 공간을 확보합니다. 이동이 거부되면 요청을 보내지 않습니다.
+CLOiD의 `tidy_home`은 명확한 폐기물뿐 아니라 수건, 쿠션/방석, 명확한 빨래/세탁물도 관찰 후보로 인식합니다. `cleanup_demo` 시연 스킬은 1호 배포(`RC_AGENT_ID`가 `cloid01`/`cloi01`)에만 등록되므로, 2호는 대상을 직접 옮기거나 시연하지 않고 관찰·기록 후 위임합니다. 생활용품은 유형별 안전 보관 장소가 확인되는 실제 `manipulation` 동료에게만 요청할 수 있고, 명확한 폐기물은 `cleanup_demo` 또는 `manipulation` 능력을 제공하는 동료에게 단일 요청을 보낼 수 있습니다. 이 고정 모션 시연은 물체를 집거나 옮기는 기능이 아닙니다. 위임 전에는 Nav2 안전 검사를 거친 짧은 상대 이동으로 접근 공간을 확보하며, 이동이 거부되면 요청을 보내지 않습니다.
 
 시연 요청은 방 이름, 대상 이름, 관찰 요약을 전달합니다. 대상의 3D 좌표나 파지 궤적은 전달하지 않습니다. 1호는 자신의 기억 장소에서 방을 해석해 이동한 뒤 카메라로 대상을 다시 확인해야 합니다. 대상이 다시 보이지 않거나 모호·위험하면 모션을 실행하지 않습니다.
 
-1호의 시연 경로 플래그는 기본 `true`이며, `RC_AGENT_ID`가 `cloid01` 또는 `cloi01`일 때만 코드 기본 allowlist `[22, 60]`을 사용합니다. ID 22는 좌우 탐색(`scan`), ID 60은 등록된 `wipe_2` 모션입니다. **1호 전용** `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON` 값으로 목록을 덮어쓸 수 있고, `[]`를 지정하면 시연 스킬이 등록되지 않습니다. ID 59도 명시적 allowlist에 넣을 수 있습니다. 단, 시연 선택기는 실행 시점 모션 카탈로그의 `pre_id`가 비어 있는 항목만 선택하며 선행 모션을 자동 실행하지 않습니다. 따라서 카탈로그에 ID 60의 `pre_id=59`가 표시되면 ID 60은 계속 차단됩니다. 2호에는 기본값이나 시연 스킬을 적용하지 않으며, 공통 CLOi 설정의 기존 상태 표시 모션도 기본 비활성화합니다.
+1호의 시연 경로 플래그는 기본 `true`이며, `RC_AGENT_ID`가 `cloid01` 또는 `cloi01`일 때만 코드 기본 allowlist `[22, 60]`을 사용합니다. ID 22는 좌우 탐색(`scan`), ID 60은 등록된 `wipe_2` 모션입니다. **1호 전용** `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON` 값으로 목록을 덮어쓸 수 있고, `[]`를 지정하면 시연 스킬이 등록되지 않습니다. ID 59도 명시적 allowlist에 넣을 수 있습니다. 단, 시연 선택기는 실행 시점 모션 카탈로그의 `pre_id`가 비어 있는 항목만 선택하며 선행 모션을 자동 실행하지 않습니다. 따라서 카탈로그에 ID 60의 `pre_id=59`가 표시되면 ID 60은 계속 차단됩니다. 2호에는 시연 스킬을 등록하지 않으며, 공통 CLOi 설정의 기존 상태 표시 모션도 기본 비활성화합니다.
 
 CLOi MotionCmd에는 완료 응답이 없으므로 이 경로의 결과는 모션 **실행 요청**까지만 확인합니다. 메시지는 임시 시연과 실제 정리 여부를 구분하며, 물체를 집거나 옮겼다거나 정리가 완료됐다고 보고하지 않습니다. `manipulation_enabled=false`는 계속 유지합니다.
 
@@ -227,7 +228,7 @@ CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 �
 - **스위치**: contract `agent.cloid_navigation_pose_enabled`(env
   `RC_CLOID_NAVIGATION_POSE_ENABLED`, launch `cloid_navigation_pose_enabled`, 기본
   `false`)로 켭니다. 스킬 모듈이 등록되지 않으면 게이트도 함께 비활성화됩니다.
-- **개체 적용**: 1호/2호 구분 없이 등록되며, 상체 구동 오류가 있는 개체는 운영 설정에서
+- **개체 적용**: 1호/2호 구분 없이 등록되며, 상체 모션을 쓰지 않는 배포에서는 운영 설정에서
   스위치를 `false` 로 두어 비활성화합니다.
 - **미적용 경로**: `scan_room`(제자리 360° 스캔)과 `self_localize` 는 Nav2 spin/navigate 를
   직접 호출하고 메타데이터에 베이스 모션 부작용이 없어 현재 prelude 삽입 대상이 아닙니다.
@@ -262,8 +263,8 @@ CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 �
   있습니다.
 - **미확인 사항**: `MotionCmd` 는 완료 응답을 주지 않으므로 결과는 모션 실행 요청까지이며
   실제 자세 도달은 확인하지 않습니다. 실기에서 안전성 검증은 아직 하지 않았습니다.
-- **개체별 설정**: 모든 cloid 개체에 등록되므로, 상체 구동 오류가 있는 2호는 개체
-  설정에서 `RC_CLOID_EXPRESSION_ENABLED=false` 로 두어 비활성화합니다.
+- **개체별 설정**: 모든 cloid 개체에 등록되므로, 개체별로 `RC_CLOID_EXPRESSION_ENABLED`
+  값을 지정해 켜거나 끕니다(기본 `false`).
 
 ## x64 DevBox SIL
 

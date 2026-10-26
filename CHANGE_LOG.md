@@ -3,6 +3,28 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — CLOiD 2호 상체 구동 수리 반영 (소울·스킬 가이드)
+
+- **배경**: CLOiD 2호의 팔·waist·neck 구동 수리가 완료되어 상체 구동 장애가 해소되었습니다. `ROBOT.cloid.2.md`·`SKILLS.cloid.2.md`가 여전히 "상체 구동 오류로 상체 동작 불가"를 전제로 서술되어 있어, 2호 에이전트가 등록 모션 요청을 이유 없이 거절하고 배포 문서도 수리 전 상태를 안내했습니다.
+- **조치**:
+  - `src/robo_claw_bringup/config/ROBOT.cloid.2.md`: 수리 완료 상태를 반영해 자기 소개·전문 분야·커뮤니케이션 스타일을 다시 썼습니다. 관찰·순찰 중심 개성은 유지하고, 등록 모션 기반 표현을 할 수 있는 개체로 서술했습니다.
+  - `src/robo_claw_bringup/config/SKILLS.cloid.2.md`: 1호 가이드와 같은 구조로 재작성했습니다. `execute_cloid_motion`·packing pose·표현 모션·주행 전 boxing prelude를 사용할 수 있고, 일반 조작 백엔드 미구현(`manipulation_enabled=false`)과 CLOiD 공통 제약(LaserScan 없음, AMCL 없음, compressed 카메라)만 유지했습니다. 정리 시연(`cleanup_demo`)은 1호 배포 전용이므로 2호는 관찰·위임으로 안내합니다.
+  - `src/robo_claw_bringup/config/SKILLS.cloid.1.md`: 2호 관련 서술을 "상체 오류"에서 "시연 스킬은 1호 배포 전용"으로 고쳤습니다.
+  - `src/robo_claw_bringup/tests/test_cloid_robot_config.py`: 두 문서 검증 테스트를 개체 역할 기준으로 바꿨습니다. 2호 문서에 "구동 오류" 서술이 남지 않고 `cleanup_demo`가 1호 전용임을 고정합니다.
+  - `docs/CLOiD_GUIDE.md`, `docs/ROBOT_CONFIG.md`, `.env.example`: 프로필 표·개체 선택 안내·정리 시연·표현 모션·주행 전 자세 안내를 수리 후 상태로 갱신했습니다.
+  - `robo_claw.launch.py`: `cloid_navigation_pose_enabled` 인자 설명에서 개체 상태 대신 "상체 모션을 쓰지 않는 배포" 기준으로 표현했습니다.
+- **검증**: `src/robo_claw_bringup/tests/test_cloid_robot_config.py` 26건, `test_runtime_config_contract.py` 5건 통과. `python3 scripts/check_prompt_tone.py` 합계 10/10(한도 10) 유지. 실기 2호에서 등록 모션 실행 확인은 미검증입니다.
+
+## 2026-10-26 — Former Nav2 좁은 문 통과 개선 (costmap 기하 정합 + 지도 정리)
+
+- **배경**: former0045/0047 실기에서 여유가 있는 문(0.7~0.9 m)을 통과하지 못하는 증상이 있었습니다. 0047 로그 52분 기준 골 42건 중 도달 12건, 계획 실패 19건으로 실패의 주류는 제어가 아니라 계획이었습니다. 원인은 costmap 이 실측 기하보다 넓게 지정된 것입니다(실측 `base_link` collision mesh 0.404 m, global `robot_radius` 0.26, `inflation_radius` 0.35 + `cost_scaling_factor` 3.0 → 경계 cost 167 절벽).
+- **조치**:
+  - `former/params/nav2_params.yaml`, `nav2_params_narrow.yaml`: global 도 local 과 같은 footprint(±0.205)를 쓰도록 `robot_radius` 제거, `inflation_radius` 0.30 / `cost_scaling_factor` 10.0, global `resolution` 0.025→0.05, `BaseObstacle.scale` 0.02→0.10, `angular_dist_threshold` 0.485→0.60. narrow 파일의 중복 `pf_z` 키도 제거했습니다.
+  - `former/scripts/check_nav_params.py` 추가: `recovery_alpha` 0.0, footprint/inscribed 범위, global·local 일치, inflation 절벽, 해상도, `scan_restamped` 토픽을 계약으로 검사합니다(이전 파라미터는 FAIL, 현재 PASS).
+  - `former/scripts/nav_map_tools.py` 추가: 지도 잡음 통계·병목 폭·clearance 임계값별 계획 가능 면적을 계산하고(`analyze`), 고립 점 제거 + 벽 1셀 구멍 폐쇄(`clean`)를 수행합니다.
+  - `former/maps/map_konjiam_L_107-1_clean.pgm/.yaml` 생성: occupied 2,968→2,697, 고립 점 216→25, clearance>0.205 계획 가능 면적 79,317→82,598, 최대 연결 영역 77,445→82,592(컴포넌트 8→3). 경로별 최소 통과 폭은 `(6.59,-2.28)` 0.70→0.80 m, `(9.55,0.45)` 0.70→0.73 m, `(-1.90,3.50)` 0.20→0.60 m, `(-4.90,3.00)` 0.36→0.45 m 로 넓어졌습니다. 원본 지도는 유지합니다.
+- **검증**: `python3 former/scripts/check_nav_params.py` PASS(2/2), 정리 지도 재분석 결과 위 수치 재현. 실기 주행 검증(0.70~0.73 m 문 왕복, `failed to create plan`/`spin failed` 0건)은 대기 상태이며, 절차와 주의사항은 `former/FORMER_GUIDE.md` 9.6~9.7절과 `NAVI_ISSUE.md` 3.8절에 정리했습니다.
+
 ## 2026-10-24 — 복합 명령 하위 단계 Eligibility Gate
 
 - **배경**: 복합 명령은 TaskDecomposer가 단계로 나눈 뒤 모든 단계를 LLM(`run_llm_planning_loop`)으로 처리했다. 사전 라우터는 분해 전

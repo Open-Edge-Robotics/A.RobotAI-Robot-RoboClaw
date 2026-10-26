@@ -35,7 +35,7 @@ _LAUNCH_FILE = _PKG_DIR / "launch" / "robo_claw.launch.py"
 
 _CLOID_CONFIG = _CONFIG_DIR / "cloid_config.yaml"
 _CLOID_LIMITS = _CONFIG_DIR / "ROBOT_LIMITS.cloid.json"
-# CLOiD 는 개체 상태가 달라 스킬 가이드와 소울 프로필을 1호/2호로 분리한다.
+# CLOiD 는 개체 역할이 달라 스킬 가이드와 소울 프로필을 1호/2호로 분리한다.
 _CLOID_SKILLS_UNIT_1 = _CONFIG_DIR / "SKILLS.cloid.1.md"
 _CLOID_SKILLS_UNIT_2 = _CONFIG_DIR / "SKILLS.cloid.2.md"
 _CLOID_SOUL_UNIT_1 = _CONFIG_DIR / "ROBOT.cloid.1.md"
@@ -118,8 +118,8 @@ def test_cloid_profile_files_exist(path: Path) -> None:
     assert path.read_text(encoding="utf-8").strip(), f"CLOiD 프로필 파일이 비어 있습니다: {path}"
 
 
-def test_cloid_unit_skill_guides_differ_by_upper_body_state() -> None:
-    """1호는 상체 모션 사용 가능, 2호는 팔·상체 사용 불가로 구분되어야 한다."""
+def test_cloid_unit_skill_guides_differ_by_deployment_role() -> None:
+    """1호와 2호는 모두 상체 모션을 쓸 수 있고, 1호 전용 정리 시연만 구분돼야 한다."""
     unit_1 = _CLOID_SKILLS_UNIT_1.read_text(encoding="utf-8")
     unit_2 = _CLOID_SKILLS_UNIT_2.read_text(encoding="utf-8")
 
@@ -128,20 +128,22 @@ def test_cloid_unit_skill_guides_differ_by_upper_body_state() -> None:
     assert "execute_cloid_motion" in unit_1
     assert "사용할 수 있으며" in unit_1 or "모두 사용 가능" in unit_1
 
-    # 2호: 상체 구동 오류로 팔·상체 동작 경로를 사용할 수 없다.
+    # 2호: 상체 모션 경로를 사용할 수 있고, "구동 오류" 같은 불가 서술은 남기지 않는다.
     assert "2호" in unit_2
-    assert "상체 구동 오류" in unit_2
     assert "execute_cloid_motion" in unit_2
-    assert "사용할 수 없는 동작" in unit_2
-    # 2호 배포에서 정리 표시 모션을 끄도록 안내해야 한다.
-    assert "cloid_cleanup_indicator_enabled=false" in unit_2
+    assert "모두 사용 가능" in unit_2
+    assert "구동 오류" not in unit_2
+
+    # 정리 시연(`cleanup_demo`)은 1호 배포에만 등록되므로 2호 가이드는 위임을 안내한다.
+    assert "cleanup_demo" in unit_2
+    assert "1호" in unit_2
 
     # 두 문서는 서로 다른 개체 전용이므로 동일 문서를 공유하지 않는다.
     assert unit_1 != unit_2
 
 
-def test_cloid_unit_soul_profiles_differ_by_upper_body_state() -> None:
-    """소울 프로필도 1호/2호 몸 상태를 구분해 개성을 정의해야 한다."""
+def test_cloid_unit_soul_profiles_differ_by_deployment_role() -> None:
+    """소울 프로필은 1호/2호 개성을 구분하되, 2호 구동 오류 서술은 남기지 않아야 한다."""
     unit_1 = _CLOID_SOUL_UNIT_1.read_text(encoding="utf-8")
     unit_2 = _CLOID_SOUL_UNIT_2.read_text(encoding="utf-8")
 
@@ -155,9 +157,10 @@ def test_cloid_unit_soul_profiles_differ_by_upper_body_state() -> None:
     assert "CLOiD 휴머노이드 1호" in unit_1
     assert "정상적으로 쓸 수 있는 상태" in unit_1
 
-    # 2호: 상체 오류를 숨기지 않고 담담하게 알리는 개체로 소개한다.
+    # 2호: 등록 모션까지 쓰는 개체로 자신을 소개하고, 수리 전 오류 서술을 남기지 않는다.
     assert "CLOiD 휴머노이드 2호" in unit_2
-    assert "오류가 있어" in unit_2
+    assert "등록 모션" in unit_2
+    assert "구동 오류" not in unit_2
     assert "실행하지 않은 동작을 완료했다고 말하지 않는다" in unit_2
 
     assert unit_1 != unit_2
@@ -456,7 +459,7 @@ def test_cloid_navigation_pose_skill_is_registered_only_when_enabled() -> None:
     assert "robo_claw_agent.skills.cloid_navigation_pose_skill" not in _modules(
         {"robot_config": "cloid"}
     )
-    # 개체 구분 없이 cloid 프로필이면 스위치로 켤 수 있다(2호는 설정에서 끈다).
+    # 개체 구분 없이 cloid 프로필이면 스위치로 켤 수 있다(개체 설정으로 끈다).
     for agent_id in ("cloid01", "cloi02"):
         assert "robo_claw_agent.skills.cloid_navigation_pose_skill" in _modules(
             {"robot_config": "cloid", "cloid_navigation_pose_enabled": "true", "agent_id": agent_id}
