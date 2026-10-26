@@ -402,3 +402,40 @@ def test_apply_peer_override_is_noop_without_peer():
     runner.apply_peer_override(condition, "")
 
     assert condition["phases"][0]["expect"]["peer"] == "cloid2"
+
+
+def test_send_via_robotalk_passes_chat_token(monkeypatch):
+    """에이전트에 GRPC_PEER_TOKEN이 설정된 경우 채팅 인증 토큰을 전달해야 한다."""
+    import sys
+    import types
+
+    runner = _load_runner()
+    captured = {}
+
+    class _FakeTalk:
+        def __init__(self, host, port, sender_id="robo_talk", token=""):
+            captured.update(host=host, port=port, sender_id=sender_id, token=token)
+
+        def wait_ready(self, _timeout_sec):
+            return True
+
+        def send(self, prompt, timeout_sec):
+            return True, "ok", "{}"
+
+        def close(self):
+            pass
+
+    fake_module = types.ModuleType("robo_talk")
+    fake_module.RoboTalk = _FakeTalk
+    monkeypatch.setitem(sys.modules, "robo_talk", fake_module)
+
+    send = runner.send_via_robotalk("127.0.0.1", 50052, "tester", "secret-token")
+
+    assert captured == {
+        "host": "127.0.0.1",
+        "port": 50052,
+        "sender_id": "tester",
+        "token": "secret-token",
+    }
+    assert send("안방 정리해줘", 5.0)["success"] is True
+    send.close()

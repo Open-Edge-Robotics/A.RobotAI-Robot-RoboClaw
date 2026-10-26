@@ -393,12 +393,16 @@ class LogTail:
         return chunk
 
 
-def send_via_robotalk(host: str, port: int, sender_id: str):
-    """`validation/talk/robo_talk.py` 의 RoboTalk 을 재사용한다(생성된 proto 필요)."""
+def send_via_robotalk(host: str, port: int, sender_id: str, token: str = ""):
+    """`validation/talk/robo_talk.py` 의 RoboTalk 을 재사용한다(생성된 proto 필요).
+
+    에이전트에 `GRPC_PEER_TOKEN`이 설정되어 있으면 gRPC 채팅도 인증이 필요하므로
+    ``token`` 을 그대로 전달한다.
+    """
     sys.path.insert(0, str(_TALK_DIR))
     import robo_talk  # noqa: PLC0415
 
-    talk = robo_talk.RoboTalk(host, port, sender_id=sender_id)
+    talk = robo_talk.RoboTalk(host, port, sender_id=sender_id, token=token)
     if not talk.wait_ready(5.0):
         raise RuntimeError(f"{talk.target} 연결 실패 — 에이전트 기동과 포트를 확인하세요")
 
@@ -503,6 +507,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="", help="에이전트 gRPC 호스트")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--sender-id", default="cleanup_experiment")
+    parser.add_argument(
+        "--grpc-token",
+        default=os.environ.get("ROBO_CLAW_PEER_TOKEN", ""),
+        help="gRPC 채팅 인증 토큰(에이전트에 GRPC_PEER_TOKEN이 설정된 경우 필요). "
+        "환경변수 ROBO_CLAW_PEER_TOKEN 로도 지정 가능",
+    )
     parser.add_argument("--run-log", default=DEFAULT_RUN_LOG, help="에이전트 run log JSONL 경로")
     parser.add_argument("--agent-log", default="", help="재계획 횟수 산출용 에이전트 로그")
     parser.add_argument(
@@ -547,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    send = send_via_robotalk(args.host, args.port, args.sender_id)
+    send = send_via_robotalk(args.host, args.port, args.sender_id, args.grpc_token)
     tail = LogTail(args.agent_log)
     reports: list[str] = []
     exit_code = 0

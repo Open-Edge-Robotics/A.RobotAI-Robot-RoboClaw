@@ -3,6 +3,14 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 실험 러너 gRPC 채팅 인증 지원
+
+- **배경**: former0047 에이전트에 `GRPC_PEER_TOKEN`이 설정되어 있어 `SendCommand`도 인증을 요구합니다. `validation/talk/robo_talk.py`는 토큰을 보내지 않아 실험 러너의 명령 전송이 거부됩니다.
+- **조치**:
+  - `validation/talk/robo_talk.py`: `RoboTalk(token=...)` 과 `--token`(기본값 `ROBO_CLAW_PEER_TOKEN`)을 추가하고, 토큰이 있으면 `ChatMessage.metadata["auth_token"]`으로 전달합니다.
+  - `validation/cleanup-experiment/run_cleanup_experiment.py`: `--grpc-token`(기본값 동일 환경변수)을 추가해 `RoboTalk`에 전달합니다.
+- **검증**: 러너 테스트 20건 통과(신규 1건: 토큰 전달 경로), `ruff check`·`ruff format --check` 통과. 실기 예비 실행은 이어서 확인합니다.
+
 ## 2026-10-26 — 런타임 설정 컨트랙트 v2.10.0 반영
 
 - **배경**: 정리 태스크 실험 계측 경로(`RC_CLEANUP_RUN_LOG_PATH`)를 실기 로봇에 주입하려면 공통 컨트랙트를 거쳐야 합니다. 로봇은 AI Config Server가 생성한 `.env`로 환경변수를 받으므로, 로컬 `.env`에만 넣으면 배포 경로에서 반영되지 않습니다.
