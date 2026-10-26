@@ -2,6 +2,7 @@
 
 import logging
 import math
+import time
 from typing import Any
 
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -20,6 +21,30 @@ _COVARIANCE_EXPLICIT = 0.05
 #: 마지막 위치 복원 시의 공분산. 스냅숏 지연·AMCL 드리프트가 있을 수 있으므로
 #: 더 넓게 두어 AMCL 이 라이다로 보정할 여지를 남긴다.
 _COVARIANCE_LAST_POSE = 0.25
+#: /initialpose 구독자 준비 대기(초)와 폴링 간격(초).
+_SUBSCRIBER_WAIT_SEC = 2.0
+_SUBSCRIBER_POLL_SEC = 0.05
+
+
+def _wait_for_subscribers(publisher: Any, timeout_sec: float) -> bool:
+    """`/initialpose` 구독자가 붙을 때까지 기다린다(rclpy Publisher 공개 API 만 사용).
+
+    `rclpy.publisher.Publisher` 에는 ``wait_for_subscribers`` 가 없으므로
+    ``get_subscription_count`` 를 폴링한다. 구독자 수를 확인할 수 없는 구현이면
+    발행을 막지 않도록 즉시 True 를 돌려준다(기존 best-effort 동작 유지).
+    """
+    deadline = time.monotonic() + timeout_sec
+    while True:
+        try:
+            if publisher.get_subscription_count() > 0:
+                return True
+        except Exception as exc:  # noqa: BLE001 - 확인 불가 시 발행은 계속한다
+            logger.debug("Could not inspect /initialpose subscribers: %s", exc)
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            return False
+        time.sleep(min(_SUBSCRIBER_POLL_SEC, remaining))
 
 
 class SetInitialPoseSkill(BaseSkill):
@@ -162,14 +187,13 @@ class SetInitialPoseSkill(BaseSkill):
                 PoseWithCovarianceStamped, "/initialpose", qos
             )
 
-            # 퍼블리셔 준비 대기 (최대 2초)
-            import time
-
-            t0 = time.monotonic()
-            while not pub.wait_for_subscribers(timeout_sec=0.5):
-                if time.monotonic() - t0 > 2.0:
-                    logger.warning("No subscribers on /initialpose after 2s, publishing anyway")
-                    break
+            # 구독자 준비 대기 (최대 _SUBSCRIBER_WAIT_SEC). rclpy Publisher 에는
+            # wait_for_subscribers 가 없으므로 get_subscription_count 로 확인한다.
+            if not _wait_for_subscribers(pub, _SUBSCRIBER_WAIT_SEC):
+                logger.warning(
+                    "No subscribers on /initialpose after %.1fs, publishing anyway",
+                    _SUBSCRIBER_WAIT_SEC,
+                )
 
             pub.publish(init_pose)
             logger.info("Initial pose published to /initialpose")

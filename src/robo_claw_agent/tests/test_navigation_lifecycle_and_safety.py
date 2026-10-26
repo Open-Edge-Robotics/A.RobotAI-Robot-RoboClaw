@@ -280,12 +280,29 @@ class _PlaceMemory:
         return []
 
 
-def _initial_pose_node(published: list, memory=None):
+class _FakeInitialPosePublisher:
+    """실제 rclpy Publisher 가 제공하는 API 만 노출하는 대역.
+
+    `rclpy.publisher.Publisher` 에는 `wait_for_subscribers` 가 없으므로 그런 메서드를
+    대역에 넣으면 실기에서만 터지는 AttributeError 를 테스트가 가린다.
+    """
+
+    def __init__(self, published: list, subscriber_count: int = 1) -> None:
+        self._published = published
+        self._subscriber_count = subscriber_count
+        self.publish_count = 0
+
+    def publish(self, message) -> None:
+        self.publish_count += 1
+        self._published.append(message)
+
+    def get_subscription_count(self) -> int:
+        return self._subscriber_count
+
+
+def _initial_pose_node(published: list, memory=None, *, subscriber_count: int = 1):
     def _create_publisher(_msg_type, _topic, _qos):
-        return SimpleNamespace(
-            publish=published.append,
-            wait_for_subscribers=lambda timeout_sec=0.5: True,
-        )
+        return _FakeInitialPosePublisher(published, subscriber_count=subscriber_count)
 
     return SimpleNamespace(
         _robot_limits_dict={"robot_type": "former", "navigation": {"forbidden_zones": []}},
@@ -565,3 +582,42 @@ def test_virtual_obstacle_handles_none_lidar_distance():
     res = skill.execute({"target_object": "obstacle", "bearing_deg": 0.0})
     assert res["success"] is True
     assert res["distance_source"] == "vlm_estimate"
+
+
+@pytest.mark.unit
+def test_set_initial_pose_waits_with_public_publisher_api(monkeypatch):
+    """rclpy Publisher 공개 API(get_subscription_count)만으로 대기한다.
+
+    `wait_for_subscribers` 는 rclpy Publisher 에 없는 메서드이므로 이를 호출하면
+    실기에서 AttributeError 로 실패한다(실기 former0047 재현 이슈).
+    """
+    from robo_claw_agent.skills.navigation_skill import set_initial_pose as module
+
+    monkeypatch.setattr(module, "_SUBSCRIBER_WAIT_SEC", 0.5)
+    published: list = []
+    skill = SetInitialPoseSkill()
+    skill.set_node(_initial_pose_node(published, _PlaceMemory({"안방": (3.2, -1.4)})))
+
+    res = skill.execute({"target_name": "안방"})
+
+    assert res["success"] is True
+    assert len(published) == 1
+
+
+@pytest.mark.unit
+def test_set_initial_pose_publishes_without_subscribers(monkeypatch):
+    """구독자가 없어도 대기 시간 후에는 그대로 발행한다(기존 best-effort 동작 유지)."""
+    from robo_claw_agent.skills.navigation_skill import set_initial_pose as module
+
+    monkeypatch.setattr(module, "_SUBSCRIBER_WAIT_SEC", 0.05)
+    monkeypatch.setattr(module, "_SUBSCRIBER_POLL_SEC", 0.01)
+    published: list = []
+    skill = SetInitialPoseSkill()
+    skill.set_node(
+        _initial_pose_node(published, _PlaceMemory({"안방": (3.2, -1.4)}), subscriber_count=0)
+    )
+
+    res = skill.execute({"target_name": "안방"})
+
+    assert res["success"] is True
+    assert len(published) == 1

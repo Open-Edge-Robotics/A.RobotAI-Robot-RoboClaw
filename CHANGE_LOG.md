@@ -3,6 +3,14 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — set_initial_pose 실기 실패 수정 (`Publisher.wait_for_subscribers` 제거)
+
+- **배경**: former0047 실기에서 "안방을 초기 위치로 잡아줘" 요청이 5회 재플래닝 끝에 실패했습니다. `set_initial_pose` 가 `/initialpose` 퍼블리셔 대기 루프에서 `pub.wait_for_subscribers(...)` 를 호출했지만 `rclpy.publisher.Publisher` 에는 그런 메서드가 없어 `AttributeError` 가 발생했습니다. 단위 테스트의 퍼블리셔 대역이 존재하지 않는 메서드를 흉내 내고 있어 테스트는 통과했습니다.
+- **조치**:
+  - `skills/navigation_skill/set_initial_pose.py`: 대기 로직을 `_wait_for_subscribers()` 헬퍼로 분리하고 공개 API 인 `get_subscription_count()` 폴링으로 바꿨습니다. 구독자 수를 확인할 수 없는 구현이면 발행을 막지 않고 그대로 진행하며(기존 best-effort 동작 유지), 대기 시간(기본 2초)이 지나면 경고를 남기고 발행합니다.
+  - `tests/test_navigation_lifecycle_and_safety.py`: 퍼블리셔 대역을 실제 rclpy API(`publish`, `get_subscription_count`)만 노출하는 `_FakeInitialPosePublisher` 로 교체했습니다. 회귀 테스트 2건(공개 API 만으로 대기, 구독자 없을 때도 발행)을 추가했습니다.
+- **검증**: `task unit-test` 1379건 통과(신규 2건), 변경 모듈 `uv run ruff check` 통과, `git diff --check` OK. 실기 재기동 후 "안방을 초기 위치로" 발행 확인은 **미검증**입니다.
+
 ## 2026-10-26 — boxing 자세를 만든 직후 자동 표현 모션 재생 차단
 
 - **배경**: cloid02 실기에서 `set_cloid_packing_pose` 로 박싱 자세를 만든 직후, 태스크 완료 후 자동 재생되는 상황별 표현 모션이 팔을 움직여 그 자세를 바로 풀어 버렸습니다. 표현 모션은 이동 없는 태스크를 `talking` 으로 판정해 매번 실행되므로, 자세 요청 자체가 무효화되는 문제였습니다.
