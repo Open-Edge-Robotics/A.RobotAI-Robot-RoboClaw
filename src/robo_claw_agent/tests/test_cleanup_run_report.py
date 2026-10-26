@@ -169,3 +169,18 @@ def test_delegate_phase_prefers_delegate_record_duration(tmp_path):
     summary = script.summarize(script.load_records(path))
 
     assert summary["mean_phase_ms"]["delegate"] == pytest.approx(90597.5)
+
+
+def test_delegation_rate_is_not_applicable_when_no_handoff_prepared(tmp_path):
+    """기능 제약처럼 위임 시도가 없으면 위임 성공률은 0%가 아니라 n/a 다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [_handoff("r1", "", blocked=True), _run("r1", "unhandled", False)],
+    )
+
+    summary = script.summarize(script.load_records(path), expect_peer="cloid2")
+
+    assert summary["delegation_success_rate"] is None
+    assert summary["handoff_prepared"] == 0
+    assert summary["handoff_blocked"] == 1

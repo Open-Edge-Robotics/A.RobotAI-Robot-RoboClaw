@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 정상 협업 10회·기능 제약 10회 실측
+
+- **배경**: former0047 + Cloid 2호로 표 2의 두 조건을 실측했습니다. 컨트랙트 v2.10.0의 `RC_CLEANUP_RUN_LOG_PATH`를 AI Config Server 프로필(`former`/`kon47`)에 배포하고, 에이전트 재기동으로 컨테이너에 주입한 뒤 러너를 백그라운드로 실행했습니다.
+- **결과**:
+  - 정상 협업 10회: 전체 성공률 100%, 할당 정확도 100%(전 회차 `Cloid 2호`), 위임 성공률 100%, 평균 147.0s(navigate 4.5s / observe 27.1s / discovery 12.4ms / delegate 104.6s).
+  - 기능 제약 10회(프로필 피어 목록 제거): 전체 성공률 0%, 기대 동작 준수 10/10, 전 회차 `unhandled`·차단 10건, 평균 27.0s.
+- **조치**: `scripts/cleanup_run_report.py`에서 위임을 시도한 실행이 없을 때 위임 성공률을 `0%`가 아니라 `n/a`로 표기합니다. 프로필은 실험 후 원복했습니다(.env diff 0).
+- **검증**: `task unit-test` 1,424건 통과. 실측 데이터는 저장소에 커밋하지 않고 `~/Documents/robo_claw_experiment/`에 보관했습니다.
+- **남은 것**: 실패 및 복구 조건(Cloid 2호 중지 → 실패 유발 → 재기동 → 복구)은 미실시입니다.
+
 ## 2026-10-26 — 1차 실기 예비 실행 및 delegate 구간 단위 수정
 
 - **배경**: former0047에서 `'안방 정리해줘'` 1회를 실행해 계측 경로를 확인했습니다. 전 구간이 정상 동작했고(`tidy_home` → `cleanup_handoff` → Cloid 2호 위임 → `cleanup_delegate` → `cleanup_run`), `delegated_demo`·`success=true`로 기록됐습니다. 다만 `phase_ms.delegate`가 `90.6`(초 단위)로 기록되어 다른 구간(밀리초)과 단위가 어긋났습니다.

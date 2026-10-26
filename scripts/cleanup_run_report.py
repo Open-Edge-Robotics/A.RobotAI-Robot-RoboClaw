@@ -95,8 +95,12 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
             sum(record.get("success") is True for record in delegates), len(delegates)
         )
         delegation_source = "cleanup_delegate"
-    else:
+    elif prepared_runs:
         delegation_success_rate = _rate(len(delegated_runs & prepared_runs), len(prepared_runs))
+        delegation_source = "run_status"
+    else:
+        # 위임을 시도한 실행이 없으면(기능 제약 등) 비율 대신 n/a 로 둔다.
+        delegation_success_rate = None
         delegation_source = "run_status"
 
     summary = {
