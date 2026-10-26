@@ -11,7 +11,8 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   - 기능 제약 10회(프로필 피어 목록 제거): 전체 성공률 0%, 기대 동작 준수 10/10, 전 회차 `unhandled`·차단 10건, 평균 27.0s.
 - **조치**: `scripts/cleanup_run_report.py`에서 위임을 시도한 실행이 없을 때 위임 성공률을 `0%`가 아니라 `n/a`로 표기합니다. 프로필은 실험 후 원복했습니다(.env diff 0).
 - **검증**: `task unit-test` 1,424건 통과. 실측 데이터는 저장소에 커밋하지 않고 `~/Documents/robo_claw_experiment/`에 보관했습니다.
-- **남은 것**: 실패 및 복구 조건(Cloid 2호 중지 → 실패 유발 → 재기동 → 복구)은 미실시입니다.
+- **실패 및 복구**: Cloid 2호를 `cloi down -f robo-claw dev`로 내린 뒤 3회 실행해 전 회차 `unhandled`·차단(피어 미연결 시 요청하지 않는 설계)으로 실패를 정확히 보고했고(`기대 동작 준수 3/3`), `cloi up robo-claw dev` 후 3회 중 2회 성공했습니다(66.7%). 첫 회차는 위임은 전달됐지만 Cloid 2호가 `CLOiD 포장 자세 실행이 실패했습니다: timeout after 60.0 s`로 실패를 반환했습니다. 재기동 직후 boxing 자세 스크립트의 콜드 스타트로 보이며, 2·3회차는 정상 수행(`delegated_demo`)됐습니다.
+- **참고**: `cloi up`은 컨테이너 내부에서 `/ws/build`·`/ws/install`을 지우고 colcon 빌드를 다시 수행하므로 수 분이 걸립니다. 그 사이 Cloid 2호의 RoboMessenger가 내려가 former0047의 피어 연결도 끊깁니다.
 
 ## 2026-10-26 — 1차 실기 예비 실행 및 delegate 구간 단위 수정
 
