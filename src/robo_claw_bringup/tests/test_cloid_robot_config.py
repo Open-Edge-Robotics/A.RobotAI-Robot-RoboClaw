@@ -134,9 +134,9 @@ def test_cloid_unit_skill_guides_differ_by_deployment_role() -> None:
     assert "모두 사용 가능" in unit_2
     assert "구동 오류" not in unit_2
 
-    # 정리 시연(`cleanup_demo`)은 1호 배포에만 등록되므로 2호 가이드는 위임을 안내한다.
+    # 정리 시연(`cleanup_demo`)도 2호에서 사용하며, allowlist가 필수다.
     assert "cleanup_demo" in unit_2
-    assert "1호" in unit_2
+    assert "allowlist" in unit_2
 
     # 두 문서는 서로 다른 개체 전용이므로 동일 문서를 공유하지 않는다.
     assert unit_1 != unit_2
@@ -265,7 +265,7 @@ def test_packing_pose_skill_is_not_registered_for_non_cloid_profiles() -> None:
         assert "robo_claw_agent.skills.cloid_packing_pose_skill" not in agent["skill_modules"]
 
 
-def test_cleanup_demo_defaults_to_scan_and_wipe_motion_for_cloid1_only() -> None:
+def test_cleanup_demo_defaults_to_scan_and_wipe_motion_for_cloid1() -> None:
     module = _load_launch_module()
     launch_description = module.generate_launch_description()
     context = _build_context(
@@ -286,7 +286,8 @@ def test_cleanup_demo_defaults_to_scan_and_wipe_motion_for_cloid1_only() -> None
     assert agent["cloid_cleanup_demo_motion_ids_json"] == "[22,60]"
 
 
-def test_cleanup_demo_default_is_not_enabled_for_cloid2_generic_guide() -> None:
+def test_cleanup_demo_registers_for_cloid2_with_explicit_allowlist() -> None:
+    """2호도 검토된 allowlist가 있으면 정리 시연 스킬을 등록해야 한다."""
     module = _load_launch_module()
     launch_description = module.generate_launch_description()
     context = _build_context(
@@ -302,8 +303,45 @@ def test_cleanup_demo_default_is_not_enabled_for_cloid2_generic_guide() -> None:
     entities = module._launch_setup(context)  # noqa: SLF001
     agent = _evaluated_params(context, _find_node(entities, "agent_node"))
 
+    assert "robo_claw_agent.skills.cleanup_demo_skill" in agent["skill_modules"]
+    assert agent["cloid_cleanup_demo_motion_ids_json"] == "[22]"
+
+
+def test_cleanup_demo_is_not_registered_for_cloid2_without_allowlist() -> None:
+    """2호 기본값은 빈 allowlist이므로 검토된 모션 ID 없이는 등록되지 않는다."""
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+    context = _build_context(
+        launch_description,
+        {
+            "robot_config": "cloid",
+            "agent_id": "cloid02",
+            "skills_guide_file": str(_CLOID_SKILLS_UNIT_2),
+            "cloid_cleanup_demo_enabled": "true",
+        },
+    )
+    entities = module._launch_setup(context)  # noqa: SLF001
+    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+
     assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
     assert "cloid_cleanup_demo_motion_ids_json" not in agent
+
+
+def test_cleanup_demo_is_not_registered_for_non_cloid_profile() -> None:
+    module = _load_launch_module()
+    launch_description = module.generate_launch_description()
+    context = _build_context(
+        launch_description,
+        {
+            "robot_config": "former",
+            "cloid_cleanup_demo_enabled": "true",
+            "cloid_cleanup_demo_motion_ids_json": "[22]",
+        },
+    )
+    entities = module._launch_setup(context)  # noqa: SLF001
+    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
+
+    assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
 
 
 def test_cleanup_demo_accepts_cloid1_allowlist_with_motion_60() -> None:
@@ -336,26 +374,6 @@ def test_cleanup_demo_rejects_empty_or_malformed_motion_allowlist(motion_ids: st
             "agent_id": "cloid01",
             "cloid_cleanup_demo_enabled": "true",
             "cloid_cleanup_demo_motion_ids_json": motion_ids,
-        },
-    )
-    entities = module._launch_setup(context)  # noqa: SLF001
-    agent = _evaluated_params(context, _find_node(entities, "agent_node"))
-
-    assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
-    assert "cloid_cleanup_demo_motion_ids_json" not in agent
-
-
-def test_cloid2_profile_never_registers_cleanup_demo_skill() -> None:
-    module = _load_launch_module()
-    launch_description = module.generate_launch_description()
-    context = _build_context(
-        launch_description,
-        {
-            "robot_config": "cloid",
-            "agent_id": "cloid02",
-            "skills_guide_file": str(_CLOID_SKILLS_UNIT_2),
-            "cloid_cleanup_demo_enabled": "true",
-            "cloid_cleanup_demo_motion_ids_json": "[77]",
         },
     )
     entities = module._launch_setup(context)  # noqa: SLF001

@@ -191,7 +191,7 @@ class ResolveCleanupHandoff(BTNode):
         target_description: str,
     ) -> bool:
         """시연 로봇이 로컬에서 바로 정리 시연 모션을 수행하도록 결정을 채운다."""
-        # 시연 로봇(1호 등): 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
+        # 시연 가능 개체: 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
         catalog_res = None
         try:
             catalog_res = skills.execute(

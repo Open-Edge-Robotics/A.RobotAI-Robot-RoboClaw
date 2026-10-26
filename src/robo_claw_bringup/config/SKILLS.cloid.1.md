@@ -47,7 +47,7 @@
 - `execute_cloid_motion`은 목록에서 정확히 일치하는 `motion_name`을 확인하고 등록 ID를
   `/task_manager/motion_cmd`의 `task_manager_msgs/msg/MotionCmd` (`command_type=0`, START)으로
   발행합니다. 직접 모션은 사용자의 명시적 요청이 있어야 합니다. 내부 예외는 기본 비활성화된
-  `tidy_home` 상태 표시와 1호 전용 정리 시연 기능이며, 각각 별도의 ID allowlist로 제한합니다. 표시 이름이
+  `tidy_home` 상태 표시와 정리 시연 기능이며, 각각 별도의 ID allowlist로 제한합니다. 표시 이름이
   중복되면 목록의 `motion_id`도 함께 지정합니다.
 - `pre_id`가 있는 직접 모션은 `confirm=true`로 실행을 명시 승인하면 선행 모션부터 요청하고 10초 뒤
   대상 모션을 요청합니다. 선행 모션이 누락·순환하거나 중첩 `pre_id`가 있으면 실행하지 않습니다.
@@ -134,28 +134,28 @@
 
 ---
 
-## 동료 정리 시연
+## 정리 시연
 
 - `tidy_home`은 명확한 폐기물뿐 아니라 수건, 쿠션/방석, 명확한 빨래/세탁물도 정리 후보로 인식합니다. CLOi 1호에는 VLA/MoveIt 집기 기능이 없으므로 생활용품을 집거나 보관 장소로 옮길 수 없습니다.
 - CLOi 1호는 `manipulation_enabled=false`를 유지합니다. 승인된 등록 모션은 실제 집기 능력과 구분하며, 동료 탐색에는 `cleanup_demo` 능력으로만 광고합니다. `cleanup_demo`는 폐기물 후보에 대한 고정 시연 모션 요청일 뿐, 수건·쿠션·빨래를 이동시키지 않습니다.
-- 2호가 명확한 폐기물 후보를 관찰하면 기억된 장소 이름, 후보 이름, 장면 요약을 포함한 단일 시연
-  요청을 보냅니다. 물체 3D 좌표나 집기 궤적은 전달하지 않으며 1호는 자기 기억 장소에서 위치를
-  해석하고 현장을 다시 관찰해야 합니다.
-- 요청을 받은 1호는 장소 도착과 대상 재확인에 성공한 경우에만 `cloid_cleanup_demo_motion_ids_json`
-  allowlist에서 모션을 한 번 요청합니다. `RC_AGENT_ID`가 `cloid01` 또는 `cloi01`일 때 기본 allowlist는
-  `[22, 60]`이며, 각각 좌우 탐색(`scan`)과 등록된 `wipe_2` 모션입니다. 1호 배포의
-  `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON`으로 덮어쓸 수 있고, `[]`는 시연 스킬 등록을 차단합니다.
+- 1호는 동료에게 위임하기 전에 자기 `cleanup_demo` 시연을 먼저 시도합니다. 로컬 allowlist가
+  비어 있거나 `cleanup_demo` 스킬이 등록되지 않은 배포에서만 기억된 장소 이름, 후보 이름, 장면
+  요약을 포함한 단일 시연 요청을 동료에게 보냅니다. 물체 3D 좌표나 집기 궤적은 전달하지
+  않습니다.
+- 1호와 2호 모두 `cloid_cleanup_demo_motion_ids_json` allowlist에서 모션을 한 번 요청합니다.
+  `RC_AGENT_ID`가 `cloid01` 또는 `cloi01`일 때 기본 allowlist는 `[22, 60]`이며, 각각 좌우
+  탐색(`scan`)과 등록된 `wipe_2` 모션입니다. 다른 개체는 `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON`을
+  명시해야 하고, 비어 있거나 `[]`이면 시연 스킬이 등록되지 않습니다.
 - ID 59도 명시적 allowlist에 넣을 수 있습니다. 시연 선택기는 현재 모션 카탈로그의 `pre_id`가 비어
   있는 항목만 선택하고 선행 모션을 자동 실행하지 않습니다. 따라서 ID 60의 카탈로그 `pre_id`가 59로
   설정되어 있으면 ID 60은 실행하지 않습니다. MotionCmd는 완료 응답을 제공하지 않으므로 결과는
   “임시 모션 실행 요청, 실제 정리·모션 완료 미확인”으로 보고합니다.
-- 이 시연 기능은 `RC_AGENT_ID`가 `cloid01`/`cloi01`인 1호 배포에만 등록됩니다. 2호는 상체 구동
-  수리 이후에도 시연 스킬이 없으므로 관찰·위임만 수행합니다. 공통 CLOi 프로필의 상태 표시 모션은
-  기본 비활성화이며, 일반 관절 제어를 허용하거나 `manipulation_enabled`를 변경하지 않습니다.
+- 공통 CLOi 프로필의 상태 표시 모션은 기본 비활성화이며, 이 시연 경로는 일반 관절 제어를
+  허용하거나 `manipulation_enabled`를 변경하지 않습니다.
 
 ### 요약
 
-- CLOiD 1호는 **이동과 CLOi 등록 상체 모션을 모두 실행할 수 있는 정상 개체**입니다. RoboClaw
+- CLOiD 1호는 **이동과 CLOi 등록 상체 모션을 모두 실행할 수 있는 개체**입니다. RoboClaw
   MoveIt 조작 백엔드는 아직 없으므로 일반 조작 스킬은 거부되고, 상체 동작은 이름 기반 모션으로만
   수행합니다.
 - 기억할 점: **주행 전 stow 불필요**, **`self_localize` 사용 불가**, **LaserScan 없음**,

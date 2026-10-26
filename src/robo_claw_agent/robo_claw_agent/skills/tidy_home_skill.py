@@ -554,7 +554,7 @@ class TidyHomeSkill(BaseSkill):
                     )
                     return "handoff_staging_failed"
         elif blackboard.get("decided_skill") == "execute_cloid_motion":
-            # 로컬 정리 시연 모션 실행 (CLOi 1호 등 시연 가능 개체)
+            # 로컬 정리 시연 모션 실행 (cleanup_demo 스킬이 등록된 시연 가능 개체)
             exec_status = execute.tick()
             return (
                 "demo_motion_executed" if exec_status == NodeStatus.SUCCESS else "execution_failed"

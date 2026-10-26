@@ -92,7 +92,7 @@
 | Collaboration | `call_peer_robot` | Public | action | 공통 | 원격 동료 로봇에 작업 요청 |
 | Collaboration | `coordinate_peer_task` | Public | action | 공통 | 동료에게 복합 작업을 순차 위임 |
 | Collaboration | `delegate_task` | Public | action | 공통 | 같은 ROS 네트워크 에이전트에 작업 위임 |
-| Collaboration | `cleanup_demo` | Restricted | dangerous | CLOi 1호, allowlist 필요 | 기본 경로 플래그는 true; 검토된 모션 ID가 없으면 미등록. 기억 장소 이동·재관찰 후 실행 요청 |
+| Collaboration | `cleanup_demo` | Restricted | dangerous | CLOi(allowlist 필요) | 기본 경로 플래그는 true; 검토된 모션 ID가 없으면 미등록. 기억 장소 이동·재관찰 후 실행 요청 |
 | Collaboration | `list_peer_robots` | Public | read | 공통 | 연결된 동료 로봇 목록 조회 |
 | Collaboration | `query_peer_capabilities` | Public | read | 공통 | 동료 로봇 능력 목록 조회 |
 | Collaboration | `query_peer_status` | Public | read | 공통 | 동료 로봇 상태 조회 |

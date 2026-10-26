@@ -216,7 +216,7 @@ def test_cleanup_mode_extracts_towel_when_scene_mentions_trash_bin(monkeypatch):
     assert payload["target_location"] == "안방"
     assert payload["target_object"] == "수건"
 def test_local_robot_executes_demo_directly_when_capable(monkeypatch):
-    """로컬 로봇이 cleanup_demo 권한 및 허용 모션 ID를 보유한 경우(1호) 동료에게 위임하지 않고 로컬에서 모션을 실행한다."""
+    """로컬 로봇이 cleanup_demo 스킬과 허용 모션 ID를 보유한 경우 동료에게 위임하지 않고 로컬에서 모션을 실행한다."""
     node = _node_with_skills(
         ["navigate_to", "execute_cloid_motion", "list_cloid_motions", "cleanup_demo"]
     )
@@ -240,8 +240,8 @@ def test_local_robot_executes_demo_directly_when_capable(monkeypatch):
     assert handoff._blackboard.get("cleanup_handoff_prepared") is not True
     assert handoff._blackboard.get("decided_skill") == "execute_cloid_motion"
     assert "motion_id" in handoff._blackboard.get("decided_params", {})
-def test_cloi2_does_not_execute_local_motion_and_delegates_to_cloi1(monkeypatch):
-    """CLOi 2호는 execute_cloid_motion 스킬이 있어도 cleanup_demo 권한이 없으므로 로컬 모션을 실행하지 않고 1호에게 위임한다."""
+def test_robot_without_cleanup_demo_skill_delegates_to_demo_peer(monkeypatch):
+    """cleanup_demo 스킬이 없는 로봇은 로컬 모션을 실행하지 않고 시연 가능한 동료에게 위임한다."""
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
 
@@ -254,7 +254,7 @@ def test_cloi2_does_not_execute_local_motion_and_delegates_to_cloi1(monkeypatch)
 
     monkeypatch.setattr(execution_nodes, "_find_connected_peer_with_capability", find_peer)
 
-    # 2호: navigate_to, call_peer_robot, execute_cloid_motion, list_cloid_motions가 있지만 cleanup_demo는 없음!
+    # 시연 스킬이 없는 개체: navigate_to, call_peer_robot, execute_cloid_motion, list_cloid_motions만 보유
     node = _node_with_skills(
         ["navigate_to", "call_peer_robot", "execute_cloid_motion", "list_cloid_motions"]
     )
@@ -273,7 +273,7 @@ def test_cloi2_does_not_execute_local_motion_and_delegates_to_cloi1(monkeypatch)
     }
 
     assert handoff.tick() == NodeStatus.SUCCESS
-    # 2호는 로컬 모션을 수행하지 않고 1호에게 위임해야 함!
+    # 로컬 모션을 수행하지 않고 시연 가능한 동료에게 위임해야 함
     assert handoff._blackboard.get("decided_skill") != "execute_cloid_motion"
     assert handoff._blackboard["cleanup_handoff_prepared"] is True
     assert handoff._blackboard["cleanup_handoff_kind"] == "cleanup_demo"

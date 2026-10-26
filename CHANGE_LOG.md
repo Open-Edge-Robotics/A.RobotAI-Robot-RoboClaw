@@ -3,6 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — CLOiD 2호 정리 시연(cleanup_demo) 허용
+
+- **배경**: 2호 상체 수리 이후에도 `cleanup_demo` 스킬은 launch 의 1호 개체 목록(`cloid01`/`cloi01`)에서만 등록됐습니다. 2호는 `execute_cloid_motion` 보유에도 시연 권한이 없어 동료에 위임했고, 2호 문서도 1호 전용 시연으로 안내했습니다.
+- **조치**:
+  - `robo_claw_bringup/launch/robo_claw.launch.py`: 정리 시연 등록 게이트를 "1호만"에서 "cloid 프로필 + 검토된 allowlist"로 넓혔습니다. 기본 allowlist `[22,60]`은 1호에만 유지하고, 다른 개체는 `cloid_cleanup_demo_motion_ids_json`을 명시해야 등록됩니다. 빈 allowlist 경고는 cloid 프로필에서만 출력합니다.
+  - `test_cloid_robot_config.py`: 2호 allowlist 등록, 2호 allowlist 미지정 시 미등록, 비 cloid 프로필 미등록 케이스를 고정했습니다(기존 "2호는 절대 미등록" 검증 대체).
+  - `SKILLS.cloid.2.md`, `SKILLS.cloid.1.md`: 2호가 로컬 시연을 수행하고 allowlist가 없을 때만 위임하는 흐름으로 수정했습니다.
+  - `docs/CLOiD_GUIDE.md`, `docs/SKILLS.md`, `docs/PEER_COLLABORATION.md`, `.env.example`: 시연 대상을 CLOi 개체 전체로 정리하고 기본 allowlist 적용 범위를 명시했습니다.
+  - 2호 테스트 docstring·주석을 개체 번호 대신 "시연 스킬 보유 여부" 기준으로 바꿨습니다.
+- **검증**: `robo_claw_bringup` 테스트 27건과 `test_autonomous_cleanup_demo_routing.py` 포함 70건 통과, `scripts/check_prompt_tone.py` 10/10, Ruff 통과. 실기 2호에서 시연 모션 실행은 미검증입니다(이미지 재빌드·컨테이너 재기동 필요).
+
 ## 2026-10-26 — CLOiD 2호 상체 구동 수리 반영 (소울·스킬 가이드)
 
 - **배경**: CLOiD 2호의 팔·waist·neck 구동 수리가 완료되어 상체 구동 장애가 해소되었습니다. `ROBOT.cloid.2.md`·`SKILLS.cloid.2.md`가 여전히 "상체 구동 오류로 상체 동작 불가"를 전제로 서술되어 있어, 2호 에이전트가 등록 모션 요청을 이유 없이 거절하고 배포 문서도 수리 전 상태를 안내했습니다.
