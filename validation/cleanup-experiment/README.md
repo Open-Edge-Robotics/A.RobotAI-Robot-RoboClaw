@@ -57,6 +57,13 @@ python3 validation/cleanup-experiment/run_cleanup_experiment.py \
 2. 회차 상세 — 응답, 응답 시간, `run_id`, 장소 status, 위임 동료, 판정과 실패 사유
 3. 구간별 평균 — `navigate`, `observe`, `discovery`, `delegate`, `handle`
 
+## 측정 결과
+
+실측 회차의 원시 로그와 종합 보고서는 `results/<날짜>/`에 보관합니다. 재집계는 해당 디렉터리에서
+`python3 build_report.py`로 수행합니다.
+
+- [results/2026-10-26/EXPERIMENT_REPORT.md](results/2026-10-26/EXPERIMENT_REPORT.md)
+
 ## 주의 사항
 
 - 위임 성공은 `cleanup_delegate` 레코드의 성공 여부입니다. 수신 로봇이 "정리를 완료했다"가

@@ -3,6 +3,12 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 정리 태스크 실험 산출물 저장소 편입
+
+- **배경**: 3조건 실측 데이터와 보고서를 개인 작업 폴더에만 두어, 저장소를 clone한 사람이 결과를 재확인하거나 재집계할 수 없었습니다.
+- **조치**: `validation/cleanup-experiment/results/2026-10-26/`에 원시 JSONL 5개, 러너 리포트 4개, 종합 보고서(`EXPERIMENT_REPORT.md`), 재생성 스크립트(`build_report.py`), 피어 설정 백업을 추가했습니다. `docs/CLEANUP_EXPERIMENT_RUNBOOK.md`와 `validation/cleanup-experiment/README.md`에서 연결합니다.
+- **검증**: 새 위치에서 `python3 build_report.py`를 실행해 기존 보고서와 동일하게 재생성됨을 확인했습니다(작성 시각 제외 diff 0). 문서 상대 링크 검사 통과.
+
 ## 2026-10-26 — 정리 태스크 협업 실험 재실행 가이드
 
 - **배경**: 실험을 1회 완료했지만 절차가 세션 기록에만 남아 있어, 나중에 같은 두 로봇으로 다시 측정하려면 매번 시행착오가 필요했습니다.

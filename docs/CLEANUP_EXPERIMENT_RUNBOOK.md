@@ -256,6 +256,10 @@ setsid nohup ~/cleanup-exp/bin/python validation/cleanup-experiment/run_cleanup_
 
 ## 12. 2026-10-26 실측 결과 (참고)
 
+원시 로그와 종합 보고서를 저장소에 함께 보관했습니다:
+[validation/cleanup-experiment/results/2026-10-26/EXPERIMENT_REPORT.md](../validation/cleanup-experiment/results/2026-10-26/EXPERIMENT_REPORT.md).
+수치를 다시 계산하려면 같은 디렉터리에서 `python3 build_report.py`를 실행합니다.
+
 | 실험 조건 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 재계획 성공률 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | 정상 협업 | 10 | 100.0% | 100.0% | 100.0% | 147.0s | 해당 없음 |
