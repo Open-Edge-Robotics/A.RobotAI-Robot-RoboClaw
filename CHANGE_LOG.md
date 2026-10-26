@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — boxing 자세를 만든 직후 자동 표현 모션 재생 차단
+
+- **배경**: cloid02 실기에서 `set_cloid_packing_pose` 로 박싱 자세를 만든 직후, 태스크 완료 후 자동 재생되는 상황별 표현 모션이 팔을 움직여 그 자세를 바로 풀어 버렸습니다. 표현 모션은 이동 없는 태스크를 `talking` 으로 판정해 매번 실행되므로, 자세 요청 자체가 무효화되는 문제였습니다.
+- **조치**:
+  - `skills/cloid_expression_policy.py`: `classify_situation` 에 `used_pose_skill` 인자를 추가해, **그 태스크가 boxing 자세를 성공적으로 만들었으면** 표현 상황을 `None` 으로 반환합니다. 자세를 만든 태스크가 아니면 기존대로 재생합니다(대화 중 모션은 그대로 허용).
+  - `agent_node/execution.py`: `resolve_cloid_expression_situation` 이 완료된 스킬 결과에서 `CLOID_NAV_SAFETY_SKILLS`(`set_cloid_packing_pose`, `cloid_navigation_pose`)의 성공 여부를 확인해 `used_pose_skill` 로 전달합니다. 실패한 자세 요청은 예외에 해당하지 않아 실패 표현이 정상 동작합니다.
+  - `skills/cloid_packing_pose_skill.py`: 성공 메시지에 "팔을 움직이는 모션이 실행되면 자세가 풀립니다" 안내를 추가했습니다.
+  - `agent_node/prompts.py`, `config/SKILLS.cloid.1.md`, `config/SKILLS.cloid.2.md`, `docs/CLOiD_GUIDE.md`, `docs/SKILLS.md`: 자세 직후 1회만 재생을 건너뛰고 이후 태스크는 정상 동작한다는 규칙을 명시했습니다.
+- **검증**: `task unit-test` 1379건 통과(신규 5건: 상황 판정 4, 정책 1), `uv run ruff check src/`·변경 파일 `ruff format --check` 통과, `scripts/validate_skill_catalog.py --strict-docs` 105/105, `scripts/system1_skill_catalog.py --check` 최신, `scripts/check_prompt_tone.py` 10/10. cloid02 실행 인자에서 `cloid_expression_enabled:=true`·`cloid_navigation_pose_enabled:=true` 임을 확인했습니다. 실기에서 재빌드·재기동 후 박싱 자세가 유지되는지는 **미검증**입니다.
+
 ## 2026-10-26 — former0047 nav2 부팅 자동 시작 (systemd unit)
 
 - **배경**: former0047 은 로봇 베이스(`former_bringup.service`)와 카메라(`realsense_bringup.service`)를 systemd 로 자동 기동하지만, nav2 는 사람이 `run_nav_stable.sh` 를 실행해야 올라왔습니다. 재부팅 후 네비게이션이 빠진 상태로 남고, launch 프로세스가 죽어도 재기동해 주는 감시가 없었습니다.

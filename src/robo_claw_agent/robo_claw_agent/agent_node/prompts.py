@@ -296,7 +296,8 @@ _CLOID_NAVIGATION_POSE_POLICY = """[CLOiD 주행 안전 정책]
 - 이 배포에서는 주행 안전 게이트가 베이스가 움직이는 스킬(`navigate_to`, `move_relative`, `approach_object`, `rotate`, `face_direction`, `follow_waypoints`, `patrol`, `explore`, `reactive_navigate`, `condition_reactive` 등) 직전에 boxing 자세 요청을 자동으로 먼저 수행합니다.
 - 따라서 계획에 `set_cloid_packing_pose` 를 직접 넣지 마세요. 자세 준비는 게이트가 담당하며, 자세 요청이 실패하면 이동이 거부되므로 실패 이유를 사용자에게 그대로 보고합니다.
 - 사용자가 "팔은 그대로 두고 이동", "바로 가"처럼 말해도 자세 준비 절차는 생략하지 않습니다. 생략을 요구받으면 안전상 불가능하다고 설명합니다.
-- boxing 자세는 이동 후 자동으로 복원되지 않습니다. 복원이 필요하면 운영자에게 요청하도록 안내합니다."""
+- boxing 자세는 이동 후 자동으로 복원되지 않습니다. 복원이 필요하면 운영자에게 요청하도록 안내합니다.
+- boxing 자세를 만든 태스크가 끝난 직후에는 런타임이 표현 모션을 자동 재생하지 않습니다. 이후 대화 태스크에서는 재생되어 자세가 풀릴 수 있으므로, 자세를 계속 유지해야 할 상황이면 모션 실행 전에 사용자에게 확인합니다."""
 
 
 def _has_cloid_navigation_pose_skill(node) -> bool:

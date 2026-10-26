@@ -40,23 +40,32 @@ def resolve_cloid_expression_situation(
 
     - 표현 스킬이 등록되어 있지 않으면 None(기능 비활성).
     - 베이스 주행 스킬이 실행된 태스크에서는 None(주행 중 상체 모션 금지).
+    - boxing(포장/주행 전) 자세를 이번 태스크에서 만들었으면 None. 자세를 만든 직후의
+      팔 모션이 그 자세를 바로 풀어 버리기 때문이며, 이후 태스크는 막지 않는다.
     """
     if skills is None or not skills.has_skill(_CLOID_EXPRESSION_SKILL):
         return None
 
     from robo_claw_agent.skills.cloid_expression_policy import classify_situation
 
-    from .nav_safety import _is_base_motion_skill
+    from .nav_safety import CLOID_NAV_SAFETY_SKILLS, _is_base_motion_skill
 
     used_base_motion = False
+    used_pose_skill = False
     for result in skill_results:
         name = str(getattr(result, "skill_name", "") or "")
-        if name and _is_base_motion_skill(name, skills):
+        if not name:
+            continue
+        if not used_base_motion and _is_base_motion_skill(name, skills):
             used_base_motion = True
-            break
+        if not used_pose_skill and name in CLOID_NAV_SAFETY_SKILLS:
+            used_pose_skill = bool(getattr(result, "success", False))
 
     return classify_situation(
-        instruction, task_success=task_success, used_base_motion=used_base_motion
+        instruction,
+        task_success=task_success,
+        used_base_motion=used_base_motion,
+        used_pose_skill=used_pose_skill,
     )
 
 

@@ -67,3 +67,47 @@ def test_skips_navigation_instruction_without_executed_skill() -> None:
 
 def test_returns_none_without_skill_manager() -> None:
     assert resolve_cloid_expression_situation(None, "안녕", [], True) is None
+
+
+# ── boxing 자세를 만든 태스크 직후 제외 ──
+
+
+def test_skips_right_after_packing_pose_task() -> None:
+    """포장 자세를 만든 태스크가 끝나면 표현 모션을 재생하지 않는다.
+
+    자세를 만든 직후의 팔 모션이 그 자세를 바로 풀어 버리기 때문이다.
+    """
+    situation = resolve_cloid_expression_situation(
+        _FakeSkills(), "박싱 자세로 만들어줘", [_result("set_cloid_packing_pose")], True
+    )
+    assert situation is None
+
+
+def test_skips_right_after_navigation_pose_prelude() -> None:
+    """주행 전 자세 prelude 로 boxing 자세를 만든 태스크도 같다."""
+    situation = resolve_cloid_expression_situation(
+        _FakeSkills(), "박싱 자세 준비해줘", [_result("cloid_navigation_pose")], True
+    )
+    assert situation is None
+
+
+def test_plays_motion_in_later_conversation() -> None:
+    """자세를 만든 태스크가 지난 뒤의 대화에서는 표현 모션을 다시 재생한다.
+
+    이때 팔이 움직이면 자세는 풀리지만, 자세 유지 여부는 다음 요청의 판단이다.
+    """
+    situation = resolve_cloid_expression_situation(
+        _FakeSkills(), "안녕하세요", [_result("get_status")], True
+    )
+    assert situation == "greeting"
+
+
+def test_failed_pose_skill_does_not_suppress_expression() -> None:
+    """자세 요청이 실패했으면 자세가 만들어진 것이 아니므로 실패 표현을 허용한다."""
+    situation = resolve_cloid_expression_situation(
+        _FakeSkills(),
+        "박싱 자세로 만들어줘",
+        [_result("set_cloid_packing_pose", success=False)],
+        False,
+    )
+    assert situation == "fail"
