@@ -100,4 +100,12 @@ PY
 
 export RC_EXTRA_VOLUMES="-v $PATCH_DIR/bringup_launch.py:/root/dev_ws/install/former_navigation2/share/former_navigation2/launch/bringup_launch.py:ro -v $PATCH_DIR/navigation_launch.py:/root/dev_ws/install/former_navigation2/share/former_navigation2/launch/navigation_launch.py:ro -v $PATCH_DIR/rc:/opt/rc:ro"
 
-exec "$DIR/run_former_env.sh" nav2 --daemon -m "${RC_MAP_FILE:-map_konjiam_L_107-1.yaml}" use_composition:=False "$@"
+# 부팅 자동 시작(systemd)처럼 전경 실행이 필요하면 RC_FOREGROUND=1 로 호출한다.
+# 전경 모드에서는 docker run 이 붙어 있으므로 systemd 가 프로세스 생존을 감시하고
+# 종료 코드로 재기동 여부를 판단할 수 있다(직접 실행할 때는 기존처럼 백그라운드).
+MODE_ARGS=(--daemon)
+if [ "${RC_FOREGROUND:-0}" = "1" ]; then
+    MODE_ARGS=()
+fi
+
+exec "$DIR/run_former_env.sh" nav2 "${MODE_ARGS[@]}" -m "${RC_MAP_FILE:-map_konjiam_L_107-1.yaml}" use_composition:=False "$@"

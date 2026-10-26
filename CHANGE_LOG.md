@@ -3,6 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — former0047 nav2 부팅 자동 시작 (systemd unit)
+
+- **배경**: former0047 은 로봇 베이스(`former_bringup.service`)와 카메라(`realsense_bringup.service`)를 systemd 로 자동 기동하지만, nav2 는 사람이 `run_nav_stable.sh` 를 실행해야 올라왔습니다. 재부팅 후 네비게이션이 빠진 상태로 남고, launch 프로세스가 죽어도 재기동해 주는 감시가 없었습니다.
+- **조치**:
+  - `former/former0047/former_nav_bringup.service.in`(신규): `run_nav_stable.sh` 를 `RC_FOREGROUND=1` 로 실행하는 unit 템플릿입니다. `docker.service`·`cyclonedds_tunes`·`former_bringup`·`realsense_bringup` 이후에 기동하고, `ExecStartPre=-docker rm -f former0047_nav` 로 동명 컨테이너를 정리해 중복 기동을 막습니다. launch 종료 시 `Restart=on-failure`(15초), `ExecStop` 은 lifecycle 종료를 감안해 `docker stop --time 30` 입니다.
+  - `former/former0047/install_nav_autostart.sh`(신규): unit 경로/맵/홈을 치환해 `/etc/systemd/system` 에 등록하고 `enable`·즉시 기동합니다. `status`·`stop`·`disable` 하위 명령을 함께 둡니다.
+  - `former/former0047/run_nav_stable.sh`: `RC_FOREGROUND=1` 이면 `--daemon` 없이 실행해 `docker run` 이 전경에 붙게 했습니다(systemd 가 프로세스 생존으로 상태를 판단).
+  - `former/former0047/run_former_env.sh`: stdin/stdout 이 TTY 가 아니면 `docker run -t` 를 빼고 `-i` 만 씁니다. systemd 처럼 TTY 가 없는 환경에서 `-t` 는 `the input device is not a TTY` 로 즉시 실패합니다.
+  - `former/FORMER_GUIDE.md`·`former/former0047/README.md`: 설치/해제 절차와 주의 사항(설치 시 기존 nav 컨테이너 재기동, 자동 시작 중에는 부팅 직후부터 주행 명령 수신 가능)을 추가했습니다.
+- **검증**: `bash -n` 3개 스크립트 통과, unit 템플릿은 `systemd-analyze verify` 에서 `docker.service not found`(로컬 미설치) 외 오류 없음. 로봇에서 fake `docker` 로 전경 경로를 실행해 생성 명령이 `docker run -i --rm --name former0047_nav ... use_composition:=False` 임을 확인했습니다(현재 운용 중인 컨테이너 inspect 결과와 동일, `-t` 없음). 실기 former0047 에 unit 을 설치한 뒤 `former0047_nav` 1개만 기동되고 `lifecycle_manager_navigation: Managed nodes are active`, `/amcl` 1개, `/base_controller/cmd_vel_unstamped` 의 nav 쪽 publisher 가 `velocity_smoother` 1개임을 확인했습니다. **재부팅 후 자동 기동은 미검증**입니다.
+
 ## 2026-10-26 — 초기 위치를 장소명·마지막 위치로 지정 (AMCL 초기 위치 복구)
 
 - **배경**: `set_initial_pose`가 `x`, `y`, `yaw` 숫자만 받아, "안방 위치를 초기 위치로 지정해줘"처럼 장소명으로 요청하면 좌표를 스스로 조회해야 하는 2단계 계획에 의존했습니다(등록된 이름이 없거나 방향이 필요하면 실패). 또한 네비게이션 재기동으로 AMCL 초기 위치를 잃은 뒤 복구할 수단이 RViz `2D Pose Estimate` 또는 `initpose.md` 편집뿐이었습니다.

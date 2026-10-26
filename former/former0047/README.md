@@ -31,6 +31,8 @@
 | [`run_former_docker.sh`](run_former_docker.sh) | Former0047용 RoboClaw 에이전트 구동 런처 | 카메라 토픽: `/former0047/camera/color/image_raw` |
 | [`run_nav_stable.sh`](run_nav_stable.sh) | 실기용 Navigation2 기동 (권장) | `use_composition:=False`, cmd_vel 리맵, 스캔 재스탬프 핫픽스 적용 |
 | [`restart_nav.sh`](restart_nav.sh) | nav2 컨테이너만 지우고 `run_nav_stable.sh` 로 재기동 | 베이스/센서 컨테이너는 유지 |
+| [`install_nav_autostart.sh`](install_nav_autostart.sh) | nav2 부팅 자동 시작(systemd) 설치/해제 | `former_nav_bringup.service` 를 `/etc/systemd/system` 에 등록 |
+| [`former_nav_bringup.service.in`](former_nav_bringup.service.in) | 자동 시작 unit 템플릿 | 설치 스크립트가 경로/맵을 치환해 사용 |
 
 ## 사용법
 
@@ -56,3 +58,31 @@
 # 5. RoboClaw 에이전트 실행
 ./former/former0047/run_former_docker.sh
 ```
+
+## 부팅 시 자동 시작 (nav2)
+
+`former_bringup` / `realsense_bringup` 과 같은 방식으로, 부팅 시 `former0047_nav`
+컨테이너를 자동 기동합니다. systemd unit 은 `run_nav_stable.sh` 를 전경 모드
+(`RC_FOREGROUND=1`)로 실행하므로 launch 프로세스가 죽으면 `Restart=on-failure`
+(15초 간격)로 다시 뜨고, 로그는 `journalctl -u former_nav_bringup` 으로 남습니다.
+
+```bash
+# 설치 (unit 등록 + 즉시 기동, root 권한 필요)
+cd /home/former/konjiam/former/former0047
+sudo ./install_nav_autostart.sh
+
+# 상태와 최근 로그
+sudo ./install_nav_autostart.sh status
+journalctl -u former_nav_bringup -f
+
+# 자동 시작만 정지 / 해제
+sudo ./install_nav_autostart.sh stop
+sudo ./install_nav_autostart.sh disable
+```
+
+- 기본 맵은 `map_konjiam_L_107-1.yaml` 이며, 설치 전에 `RC_MAP_FILE=<맵 파일>` 로 바꿀 수 있습니다.
+- 초기 위치는 `../initpose.md` 를 읽어 매 기동마다 반영합니다(수동 실행과 동일).
+- 설치(install) 시점에는 이미 떠 있는 nav 컨테이너가 정리되고 다시 기동됩니다.
+- 자동 시작을 해도 이동 명령을 스스로 내리지는 않습니다. 다만 부팅 직후부터
+  `/base_controller/cmd_vel_unstamped` 로 주행 명령을 받을 수 있는 상태가 되므로,
+  실기 시험 중에는 `stop` 으로 내려 두는 편이 안전합니다.

@@ -482,12 +482,22 @@ if [ "$IS_RVIZ" = true ] && is_ssh_forwarding && has_local_display; then
 fi
 
 # Docker execution mode (interactive vs daemon)
-RUN_MODE="-it"
+#
+# TTY 플래그는 실제 터미널이 붙어 있을 때만 쓴다. systemd 처럼 stdin/stdout 이
+# TTY 가 아닌 환경에서 -t 를 붙이면 docker 가
+#   the input device is not a TTY
+# 로 즉시 실패하므로 -i 만 남긴다. (부팅 자동 시작 unit 이 이 경로를 탄다)
+TTY_FLAGS="-it"
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    TTY_FLAGS="-i"
+fi
+
+RUN_MODE="$TTY_FLAGS"
 if [ "$DAEMON_MODE" = true ] && { [ "$COMMAND" = "nav2" ] || [ "$COMMAND" = "slam" ]; }; then
-    RUN_MODE="-itd"
+    RUN_MODE="${TTY_FLAGS}d"
     echo "Starting container '$CONTAINER_NAME' in daemon (background) mode..."
 else
-    RUN_MODE="-it --rm"
+    RUN_MODE="$TTY_FLAGS --rm"
     echo "Starting container '$CONTAINER_NAME' in interactive mode..."
 fi
 
