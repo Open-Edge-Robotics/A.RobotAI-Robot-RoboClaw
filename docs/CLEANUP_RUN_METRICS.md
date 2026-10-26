@@ -81,6 +81,8 @@ python3 scripts/cleanup_run_report.py "$RC_CLEANUP_RUN_LOG_PATH" \
 
 조건(정상 협업·기능 제약·실패 및 복구)별 반복 실행과 판정은
 [validation/cleanup-experiment](../validation/cleanup-experiment/README.md)에 있습니다.
+실제 로봇 2대를 대상으로 처음부터 다시 실행하는 절차는
+[docs/CLEANUP_EXPERIMENT_RUNBOOK.md](CLEANUP_EXPERIMENT_RUNBOOK.md)를 따릅니다.
 `run_cleanup_experiment.py` 가 조건 파일의 프롬프트를 N회 전송하고, 매 회차의 응답과 run log
 레코드를 모아 표 2 행을 만듭니다. 실행 전에는 `--dry-run` 으로 사전 준비 항목을 확인합니다.
 
