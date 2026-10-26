@@ -54,7 +54,7 @@
 | Navigation | `patrol` | Public | action | 공통 | 지정 장소 반복 순찰 |
 | Navigation | `rotate` | Public | action | 공통 | 상대 각도 회전 |
 | Navigation | `self_localize` | Public | action | 공통 | AMCL 글로벌 위치 재탐색 |
-| Navigation | `set_initial_pose` | Public | action | 공통 | AMCL 초기 x/y/yaw 지정 |
+| Navigation | `set_initial_pose` | Public | action | 공통 | AMCL 초기 위치 지정(좌표·기억된 장소명·마지막 위치) |
 | Navigation | `stop` | Public | action | 공통 | 현재 이동·회전 작업 취소 |
 | Navigation | `stop_patrol` | Public | action | 공통 | 순찰 중단 |
 | Perception | `describe_surroundings` | Public | action | 공통 | 센서/VLM 주변 설명, 선택적 4방향 회전 관찰 및 시작 방향 복귀 요청 |

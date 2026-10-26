@@ -189,6 +189,22 @@ _SAVE_PLACE_STOPWORDS = frozenset(
     {"현재", "여기", "지금", "이", "그", "저", "위치", "장소", "곳", "여길", "거길"}
 )
 
+# 초기 위치(AMCL) 지정 요청.
+# "안방 위치를 초기 위치로 지정해줘"는 위치질의(_LOC_INTENT_RE: '위치')와 문구가 겹치므로
+# 장소 조회·저장 판정보다 **먼저** 이 의도를 확인한다. 순서가 바뀌면 초기 위치 설정 요청이
+# get_location(좌표 조회)으로 오라우팅된다.
+_INITIAL_POSE_RE = re.compile(
+    r"초기\s*(?:위치|위치값|자세|포즈)|initial\s*pose|initialpose|amcl.{0,12}(?:초기|위치|재설정)",
+    re.IGNORECASE,
+)
+_INITIAL_POSE_SKILL = "set_initial_pose"
+# 마지막 위치(직전 pose) 지시. 초기 위치 설정 요청에서 장소명 대신 쓰인다.
+_LAST_POSE_RE = re.compile(
+    r"마지막\s*(?:으로\s*)?(?:있던\s*)?(?:위치|장소|자리|지점|포즈)|직전\s*(?:위치|장소)|"
+    r"last\s*(?:pose|position)",
+    re.IGNORECASE,
+)
+
 
 def _extract_save_place(instruction: str) -> str:
     """ "…<장소>로 기억/저장/등록" 에서 저장할 장소명을 뽑는다(지시/부사어는 제외)."""
@@ -272,6 +288,22 @@ def _location_chain_for(
     """
     text = str(instruction or "")
 
+    # 초기 위치(AMCL) 지정: "<기억된 장소>를 초기 위치로" → set_initial_pose(target_name=장소)
+    # 장소명이 없거나 기억되지 않았으면 좌표를 추측하지 않고 LLM 경로에 맡긴다
+    # (좌표를 지어내면 로봇이 맵의 엉뚱한 곳에 자신을 놓는다).
+    if _INITIAL_POSE_RE.search(text):
+        # "마지막 위치를 초기 위치로" → 장소 조회 없이 기억된 마지막 pose 복원.
+        if _LAST_POSE_RE.search(text):
+            from robo_claw_agent.memory_manager.last_pose import LAST_POSE_DISPLAY_NAME
+
+            return [
+                {"skill": _INITIAL_POSE_SKILL, "params": {"target_name": LAST_POSE_DISPLAY_NAME}}
+            ]
+        place = _known_place_in_text(text, node)
+        if place:
+            return [{"skill": _INITIAL_POSE_SKILL, "params": {"target_name": place}}]
+        return None
+
     # 저장 명령: "…<장소>로 기억/저장/등록" → rag_add 강제(검색 오라우팅 방지)
     if _SAVE_INTENT_RE.search(text):
         save_place = _extract_save_place(text)
@@ -351,6 +383,22 @@ def _route_location_query(
         logger_obj.info(
             f"Save command had no LLM-extracted place name — falling back to "
             f"rule-extracted rag_add(location_name='{target}')"
+        )
+        return forced
+
+    # 초기 위치 설정 라우팅: 좌표·장소명 인자를 고정한다. 물리 이동·조작이 섞인 계획은
+    # 덮어쓰지 않는다(사용자 요청을 삼키지 않기 위해).
+    if forced_skill == _INITIAL_POSE_SKILL:
+        place = str(forced[0]["params"]["target_name"])
+        if len(chain) == 1 and str(chain[0].get("skill") or "") == _INITIAL_POSE_SKILL:
+            cur = str((chain[0].get("params") or {}).get("target_name") or "").strip()
+            if cur == place:
+                return chain
+        allowed = _LOC_READ_SKILLS | {_INITIAL_POSE_SKILL}
+        if chain and not all(str(item.get("skill") or "") in allowed for item in chain):
+            return chain
+        logger_obj.info(
+            f"Routing initial pose request to set_initial_pose(target_name='{place}')"
         )
         return forced
 

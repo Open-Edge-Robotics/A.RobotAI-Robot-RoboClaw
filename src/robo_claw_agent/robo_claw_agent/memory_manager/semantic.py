@@ -74,6 +74,9 @@ _FWD_SKIP_TYPES = frozenset(
         "scan_room",
         "explore_result",
         "patrol_result",
+        # 마지막 위치 스냅샷. 텍스트가 "마지막 위치: x=…" 형태라 장소명 추출기에
+        # "마지막"이 장소로 잡히고, 위치 라우팅이 초기 위치 설정을 장소 이동으로 오인한다.
+        "last_pose",
     }
 )
 

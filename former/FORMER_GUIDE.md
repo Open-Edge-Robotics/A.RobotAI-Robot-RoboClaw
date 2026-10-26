@@ -159,6 +159,20 @@ former/
 
 초기 자세는 각 로봇의 `initpose.md`(예: `~/konjiam/former/initpose.md`)로 주입합니다. 맵 프레임이 바뀌었거나 다른 지점에서 출발하면 RViz의 `2D Pose Estimate`로 새 위치를 지정하고, 그 값을 `initpose.md`에 갱신하세요. `set_initial_pose: true`(자동 주입) + `always_reset_initial_pose: false`(수동 지정값 유지) 조합을 사용합니다.
 
+기동 후 위치를 바꾸려면 RViz 대신 에이전트에 요청해도 됩니다. RoboClaw의 `set_initial_pose` 스킬은 `/initialpose`로 AMCL 초기 위치를 발행하며, 좌표 대신 기억된 장소명을 받습니다.
+
+```text
+사용자: 안방 위치를 초기 위치로 지정해줘
+에이전트: set_initial_pose(target_name="안방")  → 시맨틱 맵/RAG 좌표로 /initialpose 발행
+```
+
+- 장소명은 시맨틱 맵 또는 RAG에 좌표로 등록되어 있어야 합니다(`get_location`으로 조회 가능한 이름). 등록되지 않은 이름은 좌표를 추측하지 않고 실패로 보고합니다.
+- 네비게이션을 재기동해 AMCL 초기 위치를 잃었을 때는 "마지막 위치를 초기 위치로 해줘"로 복구합니다. 에이전트는 TF `map → base_link`가 유효한 동안 마지막 pose(x, y, yaw)를 기억하고(`last_pose` RAG 레코드 1건, 이동 시에만 갱신), 요청 시 그 값을 `/initialpose`로 발행합니다. 복원값은 스냅숏 지연을 감안해 공분산을 넓게(0.25) 넣어 AMCL이 라이다로 보정하게 합니다.
+  - 마지막 위치 기억은 RAG 활성(`enable_rag=true`)일 때만 재기동 후에도 남습니다. RAG가 꺼져 있으면 에이전트 프로세스가 살아 있는 동안에만 유효합니다.
+  - `/odom` 폴백 좌표는 프레임이 달라 마지막 위치로 기록하지 않습니다.
+- 방향은 장소에 저장되지 않으므로 `yaw`를 생략하면 마지막 위치의 yaw(복원 시) 또는 0rad(장소명)로 설정됩니다. 특정 방향이 필요하면 `yaw`(라디안)를 함께 지정합니다.
+- 이 요청은 실행 중인 AMCL 상태만 바꾸며 `initpose.md`를 갱신하지 않습니다. 다음 재기동에도 유지하려면 `initpose.md`를 직접 갱신하세요.
+
 ## 8. 알려진 문제: nav2 스택 간헐 종료 (`Magick: abort due to signal 11`)
 
 증상은 "주행을 시작하면 네비게이션이 멈춘다"로 보이지만, 실제로는 `former00XX_nav` 컨테이너가 **기동 2~3초 내에 죽어** Nav2 노드가 모두 사라진 상태입니다. 크래시 인스턴스 로그에는 골/조이스틱 관련 기록이 전혀 없습니다(기동 로그 254줄, 수명 2.6초).

@@ -359,3 +359,34 @@ def setup_ros_interfaces(node) -> None:
             "Enabled periodic skill self-learning lesson extraction "
             f"(interval: {node._skill_learning_reflect_interval_sec}s)"
         )
+
+
+def setup_last_pose_tracking(node) -> None:
+    """마지막 위치를 주기적으로 기억한다(AMCL 초기 위치 복구용).
+
+    TF `map → base_link` 가 유효한 동안에만 갱신되므로, 네비게이션이 재기동되어
+    TF 가 끊기면 마지막으로 성공한 스냅샷이 그대로 남는다. RAG 저장은 트래커가
+    이동 임계값·최소 간격으로 throttle 한다(정지 중에는 쓰지 않음).
+    """
+    from .last_pose_tracker import SNAPSHOT_INTERVAL_SEC, LastPoseTracker
+
+    node._last_pose_tracker = None
+    if getattr(node, "_tf_buffer", None) is None:
+        node.get_logger().warning("Last pose memory disabled (TF2 unavailable)")
+        return
+
+    # RAG 가 꺼져 있어도 메모리 최신 pose 는 유지한다(에이전트가 살아 있는 동안 복원 가능).
+    persist_enabled = bool(getattr(node, "_enable_rag", False)) and (
+        getattr(node, "_memory", None) is not None
+    )
+    tracker = LastPoseTracker(persist_enabled=persist_enabled, background_persist=True)
+    node._last_pose_tracker = tracker
+    node.create_timer(
+        SNAPSHOT_INTERVAL_SEC,
+        lambda: tracker.update_from_node(node),
+        callback_group=ReentrantCallbackGroup(),
+    )
+    node.get_logger().info(
+        f"Enabled last pose memory (snapshot every {SNAPSHOT_INTERVAL_SEC:.0f}s, "
+        f"rag_persist={persist_enabled})"
+    )

@@ -27,6 +27,7 @@ from .eligibility_gate import step_routing_mode
 from .execution import ExecutionMixin
 from .initialization import (
     load_skills,
+    setup_last_pose_tracking,
     setup_llm,
     setup_memory_and_rag,
     setup_ros_interfaces,
@@ -127,6 +128,7 @@ class AgentNode(Node, ExecutionMixin):
         self._llm: BaseLLMBridge | None = None
         self._mcp_manager = None
         setup_tf(self, p)
+        setup_last_pose_tracking(self)
         setup_llm(self, p, qdrant_primary)
         self._planner = LLMPlanner(self)
         self._task_decomposer = TaskDecomposer(self)

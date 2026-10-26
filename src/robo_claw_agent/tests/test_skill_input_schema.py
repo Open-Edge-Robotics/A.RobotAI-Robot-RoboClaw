@@ -82,3 +82,33 @@ def test_input_schema_ignores_null_for_optional_properties():
     valid, message = skill.validate_input_schema({"mode": "a", "x": None})
     assert valid is True
     assert message == ""
+
+
+class AnyOfSchemaSkill(BaseSkill):
+    name = "any_of_schema_test"
+    description = "anyOf schema test"
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "target_name": {"type": "string"},
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+        },
+        "anyOf": [{"required": ["target_name"]}, {"required": ["x", "y"]}],
+        "additionalProperties": False,
+    }
+
+    def execute(self, params):
+        return self.success_result("ok", params=params)
+
+
+def test_input_schema_accepts_any_of_and_allows_union():
+    """anyOf 는 최소 하나만 만족하면 된다 — 좌표와 장소명을 함께 줘도 거부하지 않는다."""
+    skill = AnyOfSchemaSkill()
+    assert skill.validate_input_schema({"target_name": "안방"}) == (True, "")
+    assert skill.validate_input_schema({"x": 1.0, "y": 2.0}) == (True, "")
+    assert skill.validate_input_schema({"target_name": "안방", "x": 1.0, "y": 2.0}) == (True, "")
+
+    valid, message = skill.validate_input_schema({})
+    assert not valid
+    assert "anyOf" in message

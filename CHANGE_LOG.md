@@ -3,6 +3,19 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 초기 위치를 장소명·마지막 위치로 지정 (AMCL 초기 위치 복구)
+
+- **배경**: `set_initial_pose`가 `x`, `y`, `yaw` 숫자만 받아, "안방 위치를 초기 위치로 지정해줘"처럼 장소명으로 요청하면 좌표를 스스로 조회해야 하는 2단계 계획에 의존했습니다(등록된 이름이 없거나 방향이 필요하면 실패). 또한 네비게이션 재기동으로 AMCL 초기 위치를 잃은 뒤 복구할 수단이 RViz `2D Pose Estimate` 또는 `initpose.md` 편집뿐이었습니다.
+- **조치**:
+  - `skills/navigation_skill/set_initial_pose.py`: `target_name`(기억된 장소명) 또는 좌표 중 하나를 받도록 스키마를 넓히고(`anyOf`), 장소 해석은 `navigate_to`와 같은 `_resolve_target_coordinates` 경로를 재사용했습니다. `yaw`는 선택(생략 시 0rad)이며, 좌표를 함께 주면 좌표를 우선합니다. 등록되지 않은 이름은 좌표를 추측하지 않고 실패로 보고합니다.
+  - `memory_manager/last_pose.py`(신규): 마지막 pose를 `type="last_pose"` RAG 레코드 **1건**으로 upsert합니다(기존 항목 삭제 후 저장, 장소 지식 키는 쓰지 않음). `semantic._FWD_SKIP_TYPES`·`rag._NON_LOCATION_TYPES`에 `last_pose`를 추가해 "마지막"이 장소명으로 추출되지 않게 했습니다.
+  - `agent_node/last_pose_tracker.py`(신규) + `setup_last_pose_tracking`: 5초 주기로 TF `map → base_link`를 읽어 최신 pose를 메모리에 유지하고, 이동 0.3m·회전 0.5rad 또는 15초 간격일 때만 RAG에 저장합니다(임베딩/벡터스토어 쓰기는 백그라운드 스레드). `/odom` 폴백 좌표는 프레임이 달라 기록하지 않습니다. RAG가 꺼져 있어도 프로세스 수명 동안의 최신 pose는 유지합니다.
+  - `set_initial_pose`는 `target_name="마지막 위치"`(마지막 위치/직전 위치/마지막 장소 등)를 받으면 트래커 최신값 → RAG 기록 순으로 복원하고, 스냅숏 지연을 감안해 공분산을 0.25로 넓게 넣습니다(좌표 직접 지정은 0.05 유지).
+  - `planner/routing.py`: "초기 위치" 의도를 장소/저장/위치질의 판정보다 먼저 확인하고, "마지막 위치" 요청은 장소 등록 없이 `set_initial_pose(target_name=마지막 위치)`로 고정합니다. 물리 이동·조작이 섞인 계획은 덮어쓰지 않습니다.
+  - `system1_router.py`: `set_initial_pose`를 `navigate_to`와 같은 장소 인자 스킬로 취급해 `SYSTEM1_SCOPE=navigation`에서만 후보로 넣고, 장소 후보가 있을 때만 직접 실행합니다. `skills/base.py` 스키마 검증기에 `anyOf`를 추가했습니다.
+  - 프롬프트(`prompts.py`)·`docs/SKILLS.md`·`former/FORMER_GUIDE.md`·`validation/system1/skill_catalog.json`(생성물)을 갱신했습니다.
+- **검증**: `task unit-test` 1372건 통과, `uv run ruff check src/`·`task deps-check`·`system1_skill_catalog.py --check`·`validate_skill_catalog.py --strict-docs`·문서 상대 링크 검사 통과. `colcon build --symlink-install --packages-select robo_claw_agent` 성공. 실기 former0047에서 재기동 후 "마지막 위치를 초기 위치로" 복원과 AMCL 수렴은 미검증입니다.
+
 ## 2026-10-26 — Former 정리 요청을 tidy_home 경로로 분리
 
 - **배경**: Former0047 실기에서 "안방 정리해줘" 요청이 `tidy_home` 호출 대신 "Former는 정리할 수 없다"는 일반 답변으로 끝났습니다. 가이드가 조작 거부 규칙을 먼저 제시하고 정리 요청을 그 뒤 bullet 에 깊게 두어, 정리 요청이 조작 요청으로 해석됐습니다. 배포된 Former 가이드도 저장소보다 오래된 판이었습니다.
