@@ -97,6 +97,14 @@
           "x-scope": "robot_profile",
           "x-secret": false
         },
+        "cleanup_run_log_path": {
+          "type": "string",
+          "description": "Optional JSONL path for the cleanup task run log. When set, the agent appends one record per tidy_home run and per cleanup handoff/delegation decision so success rate, peer allocation, delegation result and per-phase timing can be measured. An empty value disables the log and leaves cleanup behaviour unchanged.",
+          "default": "",
+          "x-canonical-name": "agent.cleanup_run_log_path",
+          "x-scope": "host",
+          "x-secret": false
+        },
         "enable_rag": {
           "type": "boolean",
           "description": "Enable retrieval augmented generation.",

@@ -121,6 +121,21 @@
           "config_server"
         ]
     },
+    "agent.cleanup_run_log_path": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "RC_CLEANUP_RUN_LOG_PATH",
+      "api_json": "cleanup_run_log_path",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "rag.enabled": {
       "type": "boolean",
       "scope": "runtime",

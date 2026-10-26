@@ -95,6 +95,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "",
 		Secret:         false,
 	},
+	"agent.cleanup_run_log_path": {
+		Canonical:      "agent.cleanup_run_log_path",
+		Type:           "path",
+		Scope:          "host",
+		Env:            "RC_CLEANUP_RUN_LOG_PATH",
+		APIJSON:        "cleanup_run_log_path",
+		LaunchArgument: "",
+		ROSParameter:   "",
+		Secret:         false,
+	},
 	"rag.enabled": {
 		Canonical:      "rag.enabled",
 		Type:           "boolean",

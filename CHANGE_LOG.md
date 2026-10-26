@@ -3,6 +3,14 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — 런타임 설정 컨트랙트 v2.10.0 반영
+
+- **배경**: 정리 태스크 실험 계측 경로(`RC_CLEANUP_RUN_LOG_PATH`)를 실기 로봇에 주입하려면 공통 컨트랙트를 거쳐야 합니다. 로봇은 AI Config Server가 생성한 `.env`로 환경변수를 받으므로, 로컬 `.env`에만 넣으면 배포 경로에서 반영되지 않습니다.
+- **조치**:
+  - `rcf-config-contract`에 `agent.cleanup_run_log_path`(`RC_CLEANUP_RUN_LOG_PATH`, type `path`, scope `host`, 환경변수 전용)를 등록하고 계약을 `2.10.0`으로 상향했습니다.
+  - `./rclaw contract update --from <release-bundle>` 로 `contracts/`·lock(`2.10.0`)과 생성 아티팩트(`robo_claw_cli/contract/runtime_config_generated.go`, `src/robo_claw_bringup/launch/_generated_runtime_config.py`, `config-schema/generated/*`)를 갱신했습니다. launch 매핑이 없는 환경변수라 `scripts/generated_runtime_env.sh`는 변경되지 않습니다.
+- **검증**: `task contract-check` 통과(lock 체크섬·`.env.example` 문서화·생성 아티팩트 drift 없음), `task unit-test` 1,421건 통과. 실기 로봇에서 AI Config Server 프로필에 값이 배포되는지는 **미검증**입니다(설정 서버 반영 후 확인 필요).
+
 ## 2026-10-26 — 정리 태스크 3조건 실험 러너·위임 결과 계측
 
 - **배경**: run log 계측만으로는 반복 실행·판정·집계를 사람이 손으로 해야 했고, 위임 성공률을 실행 결과의 장소 status 로 추정해야 했습니다. 수신 로봇이 정리를 거부하는 문장을 돌려주면서 성공 플래그를 주면 `delegated_demo` 로 보여 위임 성공률이 실제보다 높게 나오는 문제가 있었습니다.

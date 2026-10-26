@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.9.0",
+  "contract_version": "2.10.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -176,6 +176,28 @@
       "launch_argument": "cloid_navigation_pose_enabled",
       "ros_parameter": "",
       "value_type": "bool",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "agent.cleanup_run_log_path",
+      "type": "path",
+      "scope": "host",
+      "default": "",
+      "secret": false,
+      "description": "Optional JSONL path for the cleanup task run log. When set, the agent appends one record per tidy_home run and per cleanup handoff/delegation decision so success rate, peer allocation, delegation result and per-phase timing can be measured. An empty value disables the log and leaves cleanup behaviour unchanged.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_CLEANUP_RUN_LOG_PATH",
+      "api_json": "cleanup_run_log_path",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
       "modes": [
         "local",
         "docker",
