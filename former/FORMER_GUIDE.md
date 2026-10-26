@@ -241,9 +241,9 @@ global_costmap:
   global_costmap:
     ros__parameters:
       track_unknown_space: false   # RTAB 맵의 미지 영역을 통행 가능으로 처리
-      inflation_layer:
-        inflation_radius: 0.35     # 0.45 에서 완화(통로 inscribed 최소화)
 ```
+
+인플레이션 값은 9.6절을 따른다(0.35 / csf 3.0 은 좁은 문에서 계단 코스트장이 된다).
 
 ### 9.3 남은 항목
 
@@ -288,3 +288,88 @@ amcl:
 ```
 
 위치를 크게 잃은 경우의 자동 복구는 꺼지므로 RViz 에서 initial pose 를 다시 지정합니다. 상세 분석은 저장소 루트의 `NAVI_ISSUE.md` 3.5절을 참고합니다.
+
+### 9.6 좁은 문 통과 실패 — costmap 기하/인플레이션 (실기 적용값)
+
+증상은 "골은 받고 경로도 그리는데 문 앞에서 멈추거나 회피 기동을 반복" 입니다. 원인은 로봇 실측 기하보다 넓게 잡힌 costmap 입니다.
+
+실측 기준값은 URDF collision mesh 입니다. `former_description/meshes/collision/base_link.stl` 은 **0.404 x 0.404 m** 이고 `wheel_separation` 은 0.305 m 이므로 half-width 는 0.202 m, 모서리 반경은 0.286 m 입니다.
+
+| 항목 | 이전 | 현재 | 근거 |
+| --- | --- | --- | --- |
+| local footprint | ±0.21 | **±0.205** | 실측 0.404 |
+| global 형상 | `robot_radius: 0.26` | **local 과 같은 footprint** | 실제 half-width 보다 29% 컸다 |
+| `inflation_radius` | 0.35 | **0.30** | 0.70 m 문의 저비용 밴드가 0 이었다 |
+| `cost_scaling_factor` | 3.0 | **10.0** | 경계 cost 167 → 98 로 절벽 완화 |
+| global `resolution` | 0.025 | **0.05** | 지도 해상도와 동일(셀 4배 낭비 제거) |
+| `BaseObstacle.scale` | 0.02 | **0.10** | PathAlign(32)와 균형, 벽 긁힘 억제 |
+| `angular_dist_threshold` | 0.485 | **0.60** | 문 앞 제자리 회전 회피 |
+
+nav2 `InflationLayer` 의 비용은 `252 * exp(-csf * (d - inscribed))` 이고 `d > inflation_radius` 이면 0 입니다. `csf 3.0` 은 감쇠가 느린데 반경이 0.35 로 짧아 경계에서 cost 167 이 0 으로 끊기는 계단이 되고, 그 결과 0.70 m 문은 내부 전체가 고비용입니다. 좁은 실내에서는 짧고 가파른 감쇠(`csf 10`, 반경 0.30)가 맞습니다.
+
+`robot_radius` 를 0.26 으로 두면 문 폭별 전역 경로 여유가 0.70 m 문 ±9 cm, 0.60 m 문 ±4 cm 로 줄어듭니다. footprint 를 실측값으로 맞추면 ±14 cm, ±10 cm 가 됩니다.
+
+검증은 계약 검사 스크립트로 합니다.
+
+```bash
+python3 former/scripts/check_nav_params.py
+# 결과: PASS (2/2 통과)
+```
+
+이 스크립트는 `recovery_alpha` 0.0, footprint/inscribed 범위, global·local inscribed 일치, inflation 절벽(경계 cost ≤ 140), 지도 해상도 일치, `scan_restamped` 토픽을 검사합니다.
+
+주의할 점:
+
+- 회복 기동(`spin`, `backup`)은 `FootprintCollisionChecker` 로 footprint 전체를 검사하므로 **1.0 m 보다 좁은 통로에서는 구조적으로 실패**합니다. 문 앞에서 `spin failed` 가 나오는 것은 설정 오류가 아니며, 복구는 재계획 또는 `wait` 로 유도해야 합니다.
+- `FollowPath.critics` 에 `ObstacleFootprint` 가 없어 실제 충돌 판정은 중심점 기준입니다. 코스트맵은 넓게 부풀리는데 접촉 검사는 점 하나인 비대칭 상태이므로, 좁은 문에서 벽을 긁으면 이 크리틱 추가를 검토합니다. 추가하면 문 통과가 더 어려워지므로 9.6 값과 함께 시험합니다.
+
+### 9.7 지도 정리 (고립 점/벽 구멍)
+
+RTAB-Map grid map 을 PGM 으로 변환한 지도는 벽이 5~10 cm 로 얇고 잡음 점이 많습니다. `map_konjiam_L_107-1` 기준 occupied 2,968 셀 중 고립 점(이웃 1개 이하)이 216 개였고, 고립 점 하나가 `inflation_radius` 만큼 부풀면 문을 닫습니다.
+
+```bash
+# 진단: 잡음 통계, 병목 폭, clearance 임계값별 계획 가능 면적
+python3 former/scripts/nav_map_tools.py analyze former/maps/map_konjiam_L_107-1.pgm
+
+# 정리: 고립 점 제거 + 벽 1셀 구멍 폐쇄 (원본은 유지)
+python3 former/scripts/nav_map_tools.py clean \
+    former/maps/map_konjiam_L_107-1.pgm \
+    former/maps/map_konjiam_L_107-1_clean.pgm
+```
+
+정리 결과(`map_konjiam_L_107-1_clean.pgm`, 원본과 동일한 0.05 m/origin)는 다음과 같습니다.
+
+| 항목 | 원본 | 정리 후 |
+| --- | --- | --- |
+| occupied 셀 | 2,968 | 2,697 |
+| 고립 점 | 216 | 25 |
+| 계획 가능 면적 (clearance > 0.205 m) | 79,317 | 82,598 |
+| 최대 연결 영역 / 컴포넌트 수 | 77,445 / 8 | 82,592 / 3 |
+
+경로별 최소 통과 폭도 함께 넓어집니다(`route` 하위 명령, 시작 위치 `(-0.731, 4.521)` 기준).
+
+| 목적지 | 원본 | 정리 후 |
+| --- | --- | --- |
+| `(6.59, -2.28)` | 0.70 m | **0.80 m** |
+| `(9.55, 0.45)` | 0.70 m | **0.73 m** |
+| `(-2.80, -1.05)` | 0.70 m | **0.80 m** |
+| `(-1.90, 3.50)` | 0.20 m | **0.60 m** |
+| `(-4.90, 3.00)` | 0.36 m | **0.45 m** |
+
+```bash
+python3 former/scripts/nav_map_tools.py route former/maps/map_konjiam_L_107-1_clean.pgm \
+    -0.731,4.521 6.59,-2.28
+```
+
+`route` 는 clearance 임계값을 높여가며 연결성을 이분 탐색해 "이 두 지점을 지나려면 최소 몇 m 문을 통과해야 하는가" 를 계산합니다. 병목 폭 표보다 안정적인 지표이므로 지도·파라미터 변경 전후 비교에 사용합니다.
+
+정리한 지도로 기동하려면 지도 파일을 지정합니다.
+
+```bash
+RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./restart_nav.sh
+```
+
+주의할 점:
+
+- 지도 origin 과 해상도가 같으므로 `initpose.md` 의 초기 위치는 그대로 쓸 수 있습니다.
+- 로봇 폭보다 좁은 통로를 지도에서 막는 `--min-passage=0.42` 옵션도 있습니다. 이 맵에서는 1,171 셀이 추가로 막혀 지도 형상이 크게 바뀌므로 기본적으로 쓰지 않습니다. 0.41 m 보다 좁은 틈은 `inscribed 0.205` 때문에 계획 단계에서 이미 통행 불가로 처리됩니다.

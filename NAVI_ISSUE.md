@@ -13,6 +13,7 @@
 | 근본 원인 | `params` 의 `recovery_alpha_fast/slow` 가 `0.1 / 0.001`(0 아님). AMCL 이 map 포인터를 NULL 로 저장한 채 무작위 파티클을 주입하다 NULL 역참조 (3.5절) |
 | 해결 | `former/params/nav2_params.yaml`, `nav2_params_narrow.yaml` 의 `recovery_alpha_fast/slow` 를 `0.0` 으로 설정 후 `./restart_nav.sh` |
 | 부수 문제(별개) | 계획 실패(3.1), 주행 명령 미전달(3.2), 스캔 스탬프 불일치(3.3). 각각 다른 증상이며 `run_nav_stable.sh` 가 함께 처리 |
+| 좁은 문 통과 실패 (2026-10-26) | costmap 이 실측 기하보다 넓게 지정됨(global `robot_radius` 0.26 vs 실측 half 0.202, inflation 0.35/csf 3.0 = 계단 코스트장). 실패의 주류는 제어가 아니라 **계획**(0047 로그 52분: 골 42, 도달 12, 계획 실패 19). 3.8절 |
 | 트레이드오프 | 위치를 크게 잃었을 때의 자동 복구(kidnap recovery)가 꺼지므로 RViz 에서 initial pose 를 다시 지정해야 함 |
 
 **크래시가 다시 나면 이 순서로 봅니다.**
@@ -28,6 +29,9 @@
 | `former/params/nav2_params.yaml`, `nav2_params_narrow.yaml` | Nav2 파라미터. `recovery_alpha`, costmap, `scan_restamped` 토픽 |
 | `former/former00XX/run_nav_stable.sh` | 핫픽스를 적용한 nav 기동(0045/0047 동일) |
 | `former/former00XX/restart_nav.sh` | nav 컨테이너만 지우고 재기동 |
+| `former/scripts/check_nav_params.py` | 파라미터 계약 검사(recovery_alpha, footprint, inflation 절벽, 해상도) |
+| `former/scripts/nav_map_tools.py` | 지도 잡음 진단·정리, 병목 폭과 임계값별 계획 가능 면적 계산 |
+| `former/maps/map_konjiam_L_107-1_clean.pgm/.yaml` | 잡음 점 제거·벽 구멍 폐쇄 지도(원본 유지, 3.8절) |
 | `former/FORMER_GUIDE.md` 9절 | 같은 내용의 운영 가이드 |
 | 로봇 `~/konjiam/former/former0047/debug/` | 크래시 core, 백트레이스, 로그(저장소에는 없음) |
 
@@ -127,6 +131,39 @@ Nav2 기본값은 `recovery_alpha_fast: 0.0`, `recovery_alpha_slow: 0.0` 입니�
 
 교훈: 크래시 직전 로그의 공통 문구는 원인이 아니라 같은 시점에 일어나는 다른 사건일 수 있습니다. SIGSEGV 는 추측하지 말고 core 로 확인합니다.
 
+### 3.8 좁은 문 통과 실패 — costmap 과다 지정 (2026-10-26)
+
+증상: 여유가 있는 문(0.7~0.9 m)에서 멈추거나 회피 기동을 반복합니다. 크래시가 아니라 **계획 실패**가 주류입니다(0047 로그 52분: 골 42건, 도달 12건, `GridBased: failed to create plan` 19건, `No valid trajectories` 2건, `spin failed` 5건, `Spin: Collision Ahead` 4건, `clear entirely the global_costmap` 20회).
+
+실측 기하: `base_link` collision mesh **0.404 x 0.404 m**, `wheel_separation` 0.305 m → half-width 0.202 m, 모서리 0.286 m. 선언값은 local footprint ±0.21, global `robot_radius` 0.26 이었습니다.
+
+원인 4가지:
+
+1. **global `robot_radius` 0.26** 이 실측 half-width 보다 29% 커서, 0.70 m 문에서 전역 경로 여유가 ±9 cm, 0.60 m 문은 ±4 cm 로 줄어듭니다.
+2. **inflation 이 계단**입니다. nav2 비용식 `252*exp(-csf*(d-inscribed))` 에 `csf 3.0`, `inflation_radius 0.35` 를 쓰면 경계에서 cost 167 이 0 으로 끊깁니다. 0.70 m 문은 내부 전체가 고비용이고 0.73 m 문의 저비용 밴드는 3 cm 입니다.
+3. **지도 잡음**: occupied 2,968 셀 중 고립 점 216개(7%), 벽 두께 5~10 cm, 1셀 구멍 다수. 고립 점 하나가 inflation 만큼 부풀면 문이 닫힙니다.
+4. **접촉 판정 비대칭**: `FollowPath.critics` 에 `ObstacleFootprint` 가 없어 실제 충돌 판정은 중심점 하나입니다. 코스트맵은 넓게 부풀렸는데 접촉은 관대합니다.
+
+적용값(두 로봇 공통, `former/params/nav2_params.yaml`):
+
+| 항목 | 이전 | 현재 |
+| --- | --- | --- |
+| local footprint | ±0.21 | ±0.205 |
+| global 형상 | `robot_radius: 0.26` | local 과 같은 footprint |
+| `inflation_radius` (global/local) | 0.35 | 0.30 |
+| `cost_scaling_factor` | 3.0 | 10.0 |
+| global `resolution` | 0.025 | 0.05 |
+| `BaseObstacle.scale` | 0.02 | 0.10 |
+| `angular_dist_threshold` | 0.485 | 0.60 |
+
+지도는 `former/scripts/nav_map_tools.py clean` 으로 정리한 `map_konjiam_L_107-1_clean.pgm` 을 준비했습니다(occupied 2,968→2,697, 고립 점 216→25, clearance>0.205 계획 가능 면적 79,317→82,598, 최대 연결 영역 77,445→82,592). 시작 위치 `(-0.731, 4.521)` 에서 본 경로별 최소 통과 폭은 `(6.59,-2.28)` 0.70→**0.80 m**, `(9.55,0.45)` 0.70→**0.73 m**, `(-1.90,3.50)` 0.20→**0.60 m**, `(-4.90,3.00)` 0.36→**0.45 m** 로 넓어졌습니다. 원본 지도는 그대로 두고 `RC_MAP_FILE` 로 선택합니다.
+
+검증과 주의사항은 `former/FORMER_GUIDE.md` 9.6~9.7절을 참고합니다. 요약하면:
+
+- `python3 former/scripts/check_nav_params.py` 가 PASS 여야 합니다(이전 파라미터에서는 FAIL).
+- 회복 기동(`spin`/`backup`)은 footprint 전체를 검사하므로 1.0 m 보다 좁은 통로에서 실패하는 것이 정상입니다.
+- 주행 검증 전에는 실기를 움직이지 않습니다. 검증 지표는 문 통과 성공률, `failed to create plan` 0건, `spin failed` 0건입니다.
+
 ## 4. 현재 적용된 핫픽스 (이미지 재빌드 없이)
 
 `~/konjiam/former/former00XX/run_nav_stable.sh` 가 아래를 자동 적용합니다.
@@ -212,6 +249,8 @@ former0047 의 분석 산출물(core, 백트레이스, 크래시 로그, `core_p
 | D | nav2_amcl 1.1.12 자체 버그 | core dump 백트레이스 | **확정** (3.5절), `recovery_alpha` 0.0 으로 회피 |
 | E | AMCL 대신 slam_toolbox localization 사용 | 동일 구역 1회 매핑 후 `.posegraph/.data` 생성 | 불필요 시 보류 |
 | F | `recovery_alpha` 0.0 적용 후 주행 시 AMCL 생존 | 주행 중 `process has died` 0 건 유지 | **확인** — former0047 에서 기동 후 21:10 까지 `Received a goal` 11건 동안 `process has died` 0, `Message Filter dropping` 0, core 0 (2026-10-23). former0045 는 재기동 후 파라미터 로드와 노드 active 만 확인했고 주행 검증은 아직입니다. 장시간 운용은 계속 관찰합니다. |
+| G | 좁은 문 실패의 주원인은 costmap 과다 지정 | 정적 분석(기하·inflation 계산·지도 병목·로그 집계) | **적용 완료**(3.8절). 0.70~0.73 m 문 왕복 주행으로 확인 필요 |
+| H | 계획 실패 16건은 live costmap 마킹 때문 | 실패 시점 `/global_costmap/costmap` 덤프를 정적 지도와 비교 | 미확인 — 골 `(6.59,-2.28)` 은 정적 지도에서 clearance 0.585 m, 주 연결 영역 안에 있어 정적 요인만으로 설명되지 않습니다 |
 
 ## 8. 참고: 로그 해석 요령
 
