@@ -58,6 +58,7 @@ Schema version: `2.0`
 | `system1.router` | `SYSTEM1_ROUTER` | `system1_router` | `string` | `rule` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.shadow` | `SYSTEM1_SHADOW` | `system1_shadow` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.shadow_log` | `SYSTEM1_SHADOW_LOG` | `system1_shadow_log` | `path` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.step_routing` | `SYSTEM1_STEP_ROUTING` | `system1_step_routing` | `string` | `shadow` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.scope` | `SYSTEM1_SCOPE` | `system1_scope` | `string` | `readonly` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.endpoint` | `SYSTEM1_ENDPOINT` | `system1_endpoint` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.provider` | `SYSTEM1_PROVIDER` | `system1_provider` | `string` | `laya` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -291,6 +292,10 @@ Run the non-selected router in the background for comparison only.
 ### `system1.shadow_log`
 
 Optional JSONL output path for System 1 shadow decisions.
+
+### `system1.step_routing`
+
+Pre-router handling for sub-steps of a decomposed compound command. off sends every step to the LLM, shadow only records the routing decision, on lets eligible self-contained steps run without the LLM.
 
 ### `system1.scope`
 

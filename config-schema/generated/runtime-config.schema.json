@@ -470,6 +470,15 @@
           "x-scope": "runtime",
           "x-secret": false
         },
+        "system1_step_routing": {
+          "type": "string",
+          "description": "Pre-router handling for sub-steps of a decomposed compound command. off sends every step to the LLM, shadow only records the routing decision, on lets eligible self-contained steps run without the LLM.",
+          "default": "shadow",
+          "x-canonical-name": "system1.step_routing",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "enum": ["off","shadow","on"]
+        },
         "system1_scope": {
           "type": "string",
           "description": "Actions System 1 may select directly when Laya is the active router.",

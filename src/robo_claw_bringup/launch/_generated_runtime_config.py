@@ -366,6 +366,13 @@ RUNTIME_CONFIG_FIELDS = {
         "scope": "runtime",
         "secret": False,
     },
+    "system1.step_routing": {
+        "env": "SYSTEM1_STEP_ROUTING",
+        "launch_argument": "",
+        "parameter": "",
+        "scope": "runtime",
+        "secret": False,
+    },
     "system1.scope": {
         "env": "SYSTEM1_SCOPE",
         "launch_argument": "",

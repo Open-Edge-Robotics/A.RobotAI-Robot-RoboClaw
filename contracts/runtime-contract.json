@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.8.0",
+  "contract_version": "2.9.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -1143,6 +1143,32 @@
       "maximum": null,
       "env": "SYSTEM1_SHADOW_LOG",
       "api_json": "system1_shadow_log",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "system1.step_routing",
+      "type": "string",
+      "scope": "runtime",
+      "default": "shadow",
+      "secret": false,
+      "description": "Pre-router handling for sub-steps of a decomposed compound command. off sends every step to the LLM, shadow only records the routing decision, on lets eligible self-contained steps run without the LLM.",
+      "enum": [
+        "off",
+        "shadow",
+        "on"
+      ],
+      "minimum": null,
+      "maximum": null,
+      "env": "SYSTEM1_STEP_ROUTING",
+      "api_json": "system1_step_routing",
       "launch_argument": "",
       "ros_parameter": "",
       "value_type": "env",

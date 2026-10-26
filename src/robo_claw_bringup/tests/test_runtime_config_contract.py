@@ -20,6 +20,17 @@ def _load_generated_runtime_config():
     return module
 
 
+def test_system1_step_routing_mapping() -> None:
+    """하위 단계 라우팅 모드는 환경변수로만 전달된다(launch 인자 아님)."""
+    module = _load_generated_runtime_config()
+    field = module.RUNTIME_CONFIG_FIELDS["system1.step_routing"]
+    assert field["env"] == "SYSTEM1_STEP_ROUTING"
+    assert field["launch_argument"] == ""
+    assert field["parameter"] == ""
+    assert field["scope"] == "runtime"
+    assert field["secret"] is False
+
+
 def test_langsmith_workspace_id_mapping() -> None:
     module = _load_generated_runtime_config()
     field = module.RUNTIME_CONFIG_FIELDS["langsmith.workspace_id"]

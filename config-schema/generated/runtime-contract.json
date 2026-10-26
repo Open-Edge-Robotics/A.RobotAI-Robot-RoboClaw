@@ -777,6 +777,21 @@
           "config_server"
         ]
     },
+    "system1.step_routing": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "SYSTEM1_STEP_ROUTING",
+      "api_json": "system1_step_routing",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "system1.scope": {
       "type": "string",
       "scope": "runtime",

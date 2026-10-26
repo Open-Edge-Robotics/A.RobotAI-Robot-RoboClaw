@@ -535,6 +535,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "",
 		Secret:         false,
 	},
+	"system1.step_routing": {
+		Canonical:      "system1.step_routing",
+		Type:           "string",
+		Scope:          "runtime",
+		Env:            "SYSTEM1_STEP_ROUTING",
+		APIJSON:        "system1_step_routing",
+		LaunchArgument: "",
+		ROSParameter:   "",
+		Secret:         false,
+	},
 	"system1.scope": {
 		Canonical:      "system1.scope",
 		Type:           "string",
