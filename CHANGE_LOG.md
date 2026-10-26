@@ -3,6 +3,14 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-26 — Former 정리 요청을 tidy_home 경로로 분리
+
+- **배경**: Former0047 실기에서 "안방 정리해줘" 요청이 `tidy_home` 호출 대신 "Former는 정리할 수 없다"는 일반 답변으로 끝났습니다. 가이드가 조작 거부 규칙을 먼저 제시하고 정리 요청을 그 뒤 bullet 에 깊게 두어, 정리 요청이 조작 요청으로 해석됐습니다. 배포된 Former 가이드도 저장소보다 오래된 판이었습니다.
+- **조치**:
+  - `src/robo_claw_bringup/config/SKILLS.former.md`: "정리 요청은 조작 요청과 구분" 항목을 별도 bullet 로 올려, 거부 문구 대신 `tidy_home`을 먼저 호출하도록 명시했습니다. `cleanup_demo`는 CLOi 동료만 실행하고 Former는 시연 모션을 실행하지 않는다는 점, 시연은 물체를 옮기지 않는다는 점을 추가했습니다.
+  - AI Config Server `Former_0047_konjiam`(id=14, `kon47`)의 `skills_content`를 1,508자에서 2,236자로 갱신했습니다(백업 `/tmp/config-14-former0047-before-apply.json`).
+- **검증**: `scripts/validate_skill_catalog.py` 105/105, `scripts/check_prompt_tone.py` 10/10, `PUT` 200 후 재조회 일치, 변경 필드는 `skills_content` 하나뿐입니다. 디바이스 파일 엔드포인트(`/files/SKILLS.md?robot_name=former&environment=kon47`) 200 응답. 실기에서 정리 요청이 `tidy_home`으로 라우팅되는지와 2호 시연 요청 성공 여부는 미검증입니다.
+
 ## 2026-10-26 — CLOiD 2호 정리 시연(cleanup_demo) 허용
 
 - **배경**: 2호 상체 수리 이후에도 `cleanup_demo` 스킬은 launch 의 1호 개체 목록(`cloid01`/`cloi01`)에서만 등록됐습니다. 2호는 `execute_cloid_motion` 보유에도 시연 권한이 없어 동료에 위임했고, 2호 문서도 1호 전용 시연으로 안내했습니다.
