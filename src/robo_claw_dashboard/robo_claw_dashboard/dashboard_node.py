@@ -170,11 +170,7 @@ class DashboardNode(Node):
             pass
         # 소스 트리에서 직접 실행하는 경우(개발/테스트)
         candidates.append(
-            str(
-                Path(__file__).resolve().parents[4]
-                / "contracts"
-                / "runtime-contract.json"
-            )
+            str(Path(__file__).resolve().parents[4] / "contracts" / "runtime-contract.json")
         )
         for candidate in candidates:
             if Path(candidate).is_file():
