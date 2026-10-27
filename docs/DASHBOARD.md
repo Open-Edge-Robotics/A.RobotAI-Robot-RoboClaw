@@ -113,6 +113,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `401 ... 권한 토큰이 필요합니다` | 토큰 미설정 또는 불일치 | 브라우저 "접근 토큰" 입력란에 제어 토큰을 넣습니다 |
 | 연결 자체가 거부됨 | 호스트 방화벽 또는 다른 네트워크 | `ufw`, VLAN, 로봇 IP를 확인합니다 |
 | `dashboard_host`를 바꿨는데 그대로 | `use_dashboard`가 꺼져 있거나 다른 launch 인자를 사용 | 기동 로그의 `listening on` 줄을 확인합니다 |
+| 지도가 표시되지 않음 | 로봇 지도 토픽이 `map_topic` 목록에 없음(예: CLOiD `/lio/grid_map`) | `/api/map`의 `available`/`topic`과 기동 로그의 `map topics=` 줄을 확인합니다 |
 
 `http_allowed_cidrs_json`에 작은따옴표(`['192.168.0.0/24']`)를 쓰면 JSON이 아니므로 해석에
 실패합니다. 이때 대시보드는 전체 허용으로 열리지 않고 기본 루프백 제한을 적용하고 오류 로그를
@@ -150,7 +151,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 
 | 노드 파라미터        | 기본값        | 설명                                              |
 | -------------------- | ------------- | ------------------------------------------------- |
-| `map_topic`         | `/map`        | OccupancyGrid 토픽 (transient local 구독)          |
+| `map_topic`         | `/map,/lio/grid_map` | OccupancyGrid 토픽 목록(쉼표 구분, transient local 구독) |
 | `map_frame`         | `map`         | 지도/위치 기준 프레임                              |
 | `base_frame`        | `base_link`   | 로봇 기준 프레임 (map→base TF)                     |
 | `initialpose_topic` | `/initialpose`| 초기 위치 발행 토픽                                |
@@ -204,6 +205,17 @@ curl -s http://127.0.0.1:9090/api/status | jq '.localization'
 
 # 지도 셀 데이터 (base64 uint8, 255 = 미확인 셀)
 curl -s http://127.0.0.1:9090/api/map | jq '{available, width, height, resolution, origin}'
+```
+
+로봇마다 지도 토픽이 다릅니다. former0047 계열은 `/map`(map_server), CLOiD는 `/lio/grid_map`
+(grid_map_node, transient local)을 발행합니다. `map_topic`에 쉼표로 여러 토픽을 지정하면
+**가장 최근에 도착한 지도**를 사용하므로 기본값 `"/map,/lio/grid_map"` 하나로 두 로봇 모두
+표시됩니다. 어느 토픽을 쓰는지는 `/api/map`의 `topic`과 화면 "지도" 항목에 표시됩니다.
+
+```bash
+# CLOiD 처럼 지도 토픽이 다른 경우(노드 파라미터로만 지정)
+ros2 param get /robo_claw_dashboard_node map_topic
+ros2 topic info -v /lio/grid_map   # Durability: TRANSIENT_LOCAL 확인
 ```
 
 지도가 아직 없으면 `available: false`이고, 이때 화면은 "지도 미수신"으로 표시합니다. TF를 못 찾으면

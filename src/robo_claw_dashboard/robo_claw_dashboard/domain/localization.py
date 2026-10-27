@@ -19,6 +19,25 @@ MAX_ABS_COORD_M = 1000.0
 MAP_MARGIN_M = 1.0
 #: AMCL 초기 위치 공분산(명시 입력). robo_claw_agent set_initial_pose 스킬과 동일 값.
 INITIAL_POSE_COVARIANCE = 0.05
+#: 지도 토픽 기본값. 순서가 우선순위이며, 데이터가 들어오는 토픽을 사용한다.
+#: 로봇마다 지도 토픽이 다르다(예: former0047 `/map`, CLOiD `/lio/grid_map`).
+DEFAULT_MAP_TOPICS = ("/map", "/lio/grid_map")
+
+
+def parse_map_topics(raw: Any) -> list[str]:
+    """지도 토픽 설정 문자열을 토픽 목록으로 바꾼다(쉼표 구분, 순서 유지, 중복 제거)."""
+    if raw is None:
+        return list(DEFAULT_MAP_TOPICS)
+    if isinstance(raw, (list, tuple)):
+        candidates = [str(item) for item in raw]
+    else:
+        candidates = str(raw).split(",")
+    topics: list[str] = []
+    for candidate in candidates:
+        topic = candidate.strip()
+        if topic and topic not in topics:
+            topics.append(topic)
+    return topics or list(DEFAULT_MAP_TOPICS)
 
 
 def normalize_yaw(yaw: float) -> float:
@@ -61,13 +80,14 @@ def build_map_snapshot(
     frame_id: str,
     cells: Sequence[Any],
     stamp_ns: int = 0,
+    topic: str = "",
 ) -> dict[str, Any]:
     """OccupancyGrid 를 브라우저 렌더링용 스냅샷 dict 로 정규화한다."""
     _check_map_meta(width=width, height=height, resolution=resolution)
     expected = int(width) * int(height)
     if len(cells) != expected:
         raise ValueError(f"지도 셀 수가 크기와 맞지 않습니다: {len(cells)} != {expected}")
-    return {
+    snapshot = {
         "available": True,
         "frame_id": str(frame_id),
         "stamp_ns": int(stamp_ns),
@@ -82,6 +102,9 @@ def build_map_snapshot(
         "encoding": "uint8",
         "data": encode_cells_base64(cells),
     }
+    if topic:
+        snapshot["topic"] = str(topic)
+    return snapshot
 
 
 def unavailable_map(reason: str = "") -> dict[str, Any]:

@@ -178,6 +178,7 @@
     }
     if (status) {
       status.textContent =
+        (meta.topic ? meta.topic + " · " : "") +
         meta.frame_id + " · " + meta.width + "×" + meta.height + " · " + meta.resolution + " m/cell";
     }
     if (state.mapStampNs === meta.stamp_ns) return;
@@ -209,7 +210,8 @@
       state.mapStampNs = data.stamp_ns;
       setText(
         "map-info",
-        data.frame_id + " · " + data.width + "×" + data.height + " · (" +
+        (data.topic ? data.topic + " · " : "") + data.frame_id + " · " +
+          data.width + "×" + data.height + " · (" +
           data.origin.x.toFixed(2) + ", " + data.origin.y.toFixed(2) + ")"
       );
       draw();

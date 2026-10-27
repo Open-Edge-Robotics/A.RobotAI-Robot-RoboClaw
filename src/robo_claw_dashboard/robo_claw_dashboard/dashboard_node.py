@@ -68,7 +68,9 @@ class DashboardNode(Node):
         self.declare_parameter("battery_topic", "/battery_state")
         self.declare_parameter("status_topic", "")
         self.declare_parameter("request_timeout_sec", 30.0)
-        self.declare_parameter("map_topic", "/map")
+        # 로봇마다 지도 토픽이 다르다(former0047 `/map`, CLOiD `/lio/grid_map`).
+        # 쉼표로 여러 개를 지정하면 데이터가 들어오는 토픽을 사용한다.
+        self.declare_parameter("map_topic", "/map,/lio/grid_map")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("initialpose_topic", "/initialpose")
@@ -86,7 +88,7 @@ class DashboardNode(Node):
         battery_topic = str(self.get_parameter("battery_topic").value)
         status_topic = str(self.get_parameter("status_topic").value)
         timeout = _as_float(self.get_parameter("request_timeout_sec").value, 30.0)
-        map_topic = str(self.get_parameter("map_topic").value or "/map")
+        map_topic = str(self.get_parameter("map_topic").value or "")
         map_frame = str(self.get_parameter("map_frame").value or "map")
         base_frame = str(self.get_parameter("base_frame").value or "base_link")
         initialpose_topic = str(self.get_parameter("initialpose_topic").value or "/initialpose")
@@ -127,6 +129,9 @@ class DashboardNode(Node):
         self._http_thread = threading.Thread(target=self._http_server.serve_forever, daemon=True)
         self._http_thread.start()
         self.get_logger().info(f"[Dashboard] listening on http://{host}:{port} (web={static_root})")
+        self.get_logger().info(
+            f"[Dashboard] map topics={backend.map_topics} frames={map_frame}->{base_frame}"
+        )
         if cidr_error:
             self.get_logger().error(f"[Dashboard] {cidr_error}")
         self._report_exposure(

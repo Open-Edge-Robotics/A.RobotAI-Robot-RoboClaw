@@ -11,6 +11,7 @@ from robo_claw_dashboard.domain.localization import (
     build_pose_snapshot,
     encode_cells_base64,
     normalize_yaw,
+    parse_map_topics,
     validate_initial_pose,
 )
 
@@ -154,3 +155,31 @@ class TestBuildInitialPose:
     def test_yaw_is_normalized_before_encoding(self):
         msg = build_initial_pose(x=0.0, y=0.0, yaw=3 * math.pi, covariance=0.25)
         assert msg["yaw"] == pytest.approx(-math.pi)
+
+
+class TestParseMapTopics:
+    def test_comma_separated_list_is_split_and_trimmed(self):
+        assert parse_map_topics("/map, /lio/grid_map ") == ["/map", "/lio/grid_map"]
+
+    def test_empty_entries_are_dropped(self):
+        assert parse_map_topics("/lio/grid_map,,") == ["/lio/grid_map"]
+
+    def test_single_topic_stays_single(self):
+        assert parse_map_topics("/map") == ["/map"]
+
+    def test_blank_value_falls_back_to_default(self):
+        # 기본값은 로봇 계열별 지도 토픽 목록이다(former `/map`, CLOiD `/lio/grid_map`).
+        assert parse_map_topics("") == ["/map", "/lio/grid_map"]
+        assert parse_map_topics(None) == ["/map", "/lio/grid_map"]
+
+    def test_duplicates_are_removed_preserving_order(self):
+        assert parse_map_topics("/map,/map,/lio/grid_map") == ["/map", "/lio/grid_map"]
+
+
+class TestMapSnapshotTopic:
+    def test_snapshot_records_source_topic(self):
+        cells = [0] * (MAP_META["width"] * MAP_META["height"])
+        snap = build_map_snapshot(
+            frame_id="map", cells=cells, stamp_ns=1, topic="/lio/grid_map", **MAP_META
+        )
+        assert snap["topic"] == "/lio/grid_map"

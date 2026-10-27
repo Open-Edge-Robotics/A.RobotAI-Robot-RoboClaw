@@ -28,6 +28,7 @@ from robo_claw_msgs.srv import ListPeers, QueryState
 from ..domain.localization import (
     build_map_snapshot,
     build_pose_snapshot,
+    parse_map_topics,
     unavailable_map,
     unavailable_pose,
 )
@@ -65,7 +66,7 @@ class RosBackend:
         battery_topic: str = "/battery_state",
         status_topic: str | None = None,
         request_timeout_sec: float = 30.0,
-        map_topic: str = "/map",
+        map_topic: str | list[str] = "",
         map_frame: str = "map",
         base_frame: str = "base_link",
         initialpose_topic: str = "/initialpose",
@@ -85,8 +86,12 @@ class RosBackend:
         self._agent_node_name = agent_namespace
         ns = f"/{agent_namespace.strip('/')}"
 
+        # 토픽별 최신 스냅샷과 도착 시각. 로봇마다 지도 토픽이 달라(예: former0047 `/map`,
+        # CLOiD `/lio/grid_map`) 여러 개를 구독하고 가장 최근에 도착한 지도를 사용한다.
+        self._map_topics = parse_map_topics(map_topic)
+        self._map_by_topic: dict[str, tuple[float, dict[str, Any]]] = {}
         self._latest_map_snapshot: dict[str, Any] = unavailable_map(
-            "지도를 아직 수신하지 못했습니다"
+            "지도를 아직 수신하지 못했습니다: " + ", ".join(self._map_topics)
         )
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, node, spin_thread=False)
@@ -110,13 +115,14 @@ class RosBackend:
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        node.create_subscription(
-            OccupancyGrid,
-            map_topic,
-            self._on_map,
-            map_qos,
-            callback_group=self._cb,
-        )
+        for topic in self._map_topics:
+            node.create_subscription(
+                OccupancyGrid,
+                topic,
+                lambda msg, source=topic: self._on_map(msg, source),
+                map_qos,
+                callback_group=self._cb,
+            )
 
         self._query_client = node.create_client(
             QueryState, f"{ns}/query_state", callback_group=self._cb
@@ -162,9 +168,9 @@ class RosBackend:
             is_charging=charging,
         )
 
-    def _on_map(self, msg: OccupancyGrid) -> None:
+    def _on_map(self, msg: OccupancyGrid, topic: str = "") -> None:
         try:
-            self._latest_map_snapshot = build_map_snapshot(
+            snapshot = build_map_snapshot(
                 width=int(msg.info.width),
                 height=int(msg.info.height),
                 resolution=float(msg.info.resolution),
@@ -181,9 +187,13 @@ class RosBackend:
                 frame_id=str(msg.header.frame_id or self._map_frame),
                 cells=list(msg.data),
                 stamp_ns=_stamp_to_ns(msg.header.stamp),
+                topic=topic or self._map_topics[0],
             )
         except (TypeError, ValueError) as exc:  # 잘못된 지도 메시지는 무시하고 이전 값을 유지
             self._node.get_logger().warning(f"[Dashboard] 지도 메시지 무시: {exc}")
+            return
+        self._map_by_topic[str(topic or self._map_topics[0])] = (time.monotonic(), snapshot)
+        self._latest_map_snapshot = self._select_map()
 
     # ---- DashboardBackend 구현 --------------------------------------------
     def query_state(self) -> str | None:
@@ -300,8 +310,28 @@ class RosBackend:
             )
             return None
 
+    @property
+    def map_topics(self) -> list[str]:
+        """구독 중인 지도 토픽 목록(기동 로그/진단용)."""
+        return list(self._map_topics)
+
+    def _select_map(self) -> dict[str, Any]:
+        """구독 중인 지도 중 가장 최근에 도착한 스냅샷을 고른다(동시 도착은 우선순위 순)."""
+        best: tuple[float, dict[str, Any]] | None = None
+        for topic in self._map_topics:
+            entry = self._map_by_topic.get(topic)
+            if entry is None:
+                continue
+            if best is None or entry[0] > best[0]:
+                best = entry
+        if best is None:
+            return unavailable_map(
+                "지도를 아직 수신하지 못했습니다: " + ", ".join(self._map_topics)
+            )
+        return best[1]
+
     def latest_map(self) -> dict[str, Any]:
-        return dict(self._latest_map_snapshot)
+        return dict(self._select_map())
 
     def latest_pose(self) -> dict[str, Any]:
         """map→base_link TF 를 조회해 로봇 위치를 반환한다(미수신 시 available=false)."""
