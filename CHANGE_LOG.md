@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-27 — 대시보드 원격 접속 조건 명시와 잘못된 CIDR 설정 차단
+
+- **배경**: 대시보드가 기본값(`dashboard_host=127.0.0.1`, `http_allowed_cidrs_json` 루프백 전용)으로 로컬에서만 열리는데, 원격 접속이 안 되는 이유가 로그에 남지 않아 원인 파악이 어려웠습니다. 또한 `http_allowed_cidrs_json`에 작은따옴표 목록처럼 JSON이 아닌 값을 넣으면 파싱에 실패해 빈 목록이 되고, 보안 정책이 빈 목록을 "전체 허용"으로 해석해 IP 제한이 조용히 해제됐습니다.
+- **조치**:
+  - `robo_claw_dashboard/domain/exposure.py`(신규): 바인드 주소·허용 CIDR·토큰 조합을 판정해 `loopback_bind`, `remote_bind_loopback_cidrs`, `remote_bind_open_cidrs`, `remote_bind_no_auth` 항목을 돌려줍니다. 노드가 기동 시 이를 오류/경고 로그로 남기고, 문제가 없으면 `access scope=remote|local only`를 정보 로그로 남깁니다.
+  - `parse_allowed_cidrs`: CIDR JSON이 깨졌으면 전체 허용으로 열지 않고 기본 루프백 목록으로 되돌린 뒤 오류 로그를 남깁니다.
+  - `docs/DASHBOARD.md`: 원격 접속 필요 조건 표, `.env`/`ros2 launch` 실행 예시, `ss`·`curl` 확인 절차, 증상별 트러블슈팅을 추가했습니다. `.env.example` 주석도 같은 내용으로 맞췄습니다.
+- **검증**: `task unit-test` 1,446건 통과(`tests/test_exposure.py` 22건 추가), `uv run ruff check src/`·`ruff format --check` 통과, `task contract-check` 통과. 실행 검증은 `ros2 launch` 경로로 `dashboard_host=0.0.0.0` + LAN CIDR + 토큰을 주고 LAN IP(192.168.50.49) 접속 시 `/health` 200, `/api/status` 토큰 200·무토큰 401을, 같은 조건에서 CIDR JSON을 작은따옴표로 깨뜨렸을 때 403으로 차단됨을 확인했습니다.
+
+
 ## 2026-10-26 — 정리 태스크 실험 산출물 저장소 편입
 
 - **배경**: 3조건 실측 데이터와 보고서를 개인 작업 폴더에만 두어, 저장소를 clone한 사람이 결과를 재확인하거나 재집계할 수 없었습니다.

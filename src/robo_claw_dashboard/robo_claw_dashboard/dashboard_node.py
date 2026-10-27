@@ -17,6 +17,7 @@ from .adapters.http_handlers import make_handler
 from .adapters.ros_adapter import RosBackend
 from .adapters.security import DashboardHttpSecurityPolicy
 from .application.service import DashboardService
+from .domain.exposure import ERROR, exposure_findings, is_loopback_host, parse_allowed_cidrs
 
 DEFAULT_BLOCKED_SKILLS = [
     "delete_file",
@@ -82,10 +83,14 @@ class DashboardNode(Node):
         timeout = _as_float(self.get_parameter("request_timeout_sec").value, 30.0)
         static_root = _resolve_static_root(str(self.get_parameter("static_root").value), self)
 
+        allowed_cidrs, cidr_error = parse_allowed_cidrs(
+            str(self.get_parameter("http_allowed_cidrs_json").value),
+            fallback=_parse_list(DEFAULT_CIDRS_JSON),
+        )
         security = DashboardHttpSecurityPolicy(
             readonly_token=str(self.get_parameter("http_readonly_token").value),
             control_token=str(self.get_parameter("http_control_token").value),
-            allowed_cidrs=_parse_list(str(self.get_parameter("http_allowed_cidrs_json").value)),
+            allowed_cidrs=allowed_cidrs,
             rate_limit_per_minute=_as_int(
                 self.get_parameter("http_rate_limit_per_minute").value, 60
             ),
@@ -107,9 +112,33 @@ class DashboardNode(Node):
         self._http_thread = threading.Thread(target=self._http_server.serve_forever, daemon=True)
         self._http_thread.start()
         self.get_logger().info(f"[Dashboard] listening on http://{host}:{port} (web={static_root})")
+        if cidr_error:
+            self.get_logger().error(f"[Dashboard] {cidr_error}")
+        self._report_exposure(
+            host=host, allowed_cidrs=allowed_cidrs, auth_enabled=security.auth_enabled
+        )
         on_shutdown = getattr(self, "add_on_shutdown_callback", None)
         if on_shutdown is not None:
             on_shutdown(self._shutdown_http)
+
+    def _report_exposure(self, *, host: str, allowed_cidrs: list[str], auth_enabled: bool) -> None:
+        """로컬/원격 접속 가능 여부와 위험한 노출 설정을 기동 시점에 남긴다."""
+        findings = exposure_findings(
+            host=host, allowed_cidrs=allowed_cidrs, auth_enabled=auth_enabled
+        )
+        for finding in findings:
+            message = f"[Dashboard] {finding.message}"
+            if finding.severity == ERROR:
+                self.get_logger().error(message)
+            else:
+                self.get_logger().warning(message)
+        if findings:
+            return
+        scope = "local only" if is_loopback_host(host) else "remote"
+        self.get_logger().info(
+            f"[Dashboard] access scope={scope} allowed_cidrs={allowed_cidrs or ['*']} "
+            f"auth={'on' if auth_enabled else 'off'}"
+        )
 
     def _shutdown_http(self) -> None:
         try:
