@@ -17,6 +17,7 @@ from ..domain.localization import (
     unavailable_pose,
     validate_initial_pose,
 )
+from ..domain.peers import normalize_peers
 from ..domain.validation import validate_chat_message
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ class DashboardService:
             agent_status=self._backend.latest_agent_status(),
             telemetry=self._backend.latest_telemetry(),
             sensor_health=self._backend.latest_sensor_health(),
-            peers=self._backend.list_peers(),
+            peers=normalize_peers(self._backend.list_peers()),
             robot_pose=self._latest_pose(),
             map_snapshot=self._latest_map(),
             now=now,

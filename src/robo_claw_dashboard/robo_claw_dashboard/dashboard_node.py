@@ -69,6 +69,8 @@ class DashboardNode(Node):
         self._declare("dashboard_port", 9090)
         self._declare("agent_name", "robo_claw_agent_node")
         self._declare("battery_topic", "/battery_state")
+        # 동료 로봇 목록 서버는 채널(messenger) 노드다(에이전트 노드는 이 서비스를 제공하지 않음).
+        self._declare("peers_service", "/robo_claw_messenger_client_node/list_peers")
         self._declare("status_topic", "")
         self._declare("request_timeout_sec", 30.0)
         # 로봇마다 지도 토픽이 다르다(former0047 `/map`, CLOiD `/lio/grid_map`).
@@ -98,6 +100,10 @@ class DashboardNode(Node):
         base_frame = str(self.get_parameter("base_frame").value or "base_link")
         initialpose_topic = str(self.get_parameter("initialpose_topic").value or "/initialpose")
         config_timeout = _as_float(self.get_parameter("config_query_timeout_sec").value, 2.0)
+        peers_service = str(
+            self.get_parameter("peers_service").value
+            or "/robo_claw_messenger_client_node/list_peers"
+        )
         param_default_files = str(self.get_parameter("param_default_files").value or "agent.yaml")
         param_config_dir = self._resolve_param_config_dir()
         contract_file = str(self.get_parameter("contract_file").value or "") or (
@@ -130,6 +136,7 @@ class DashboardNode(Node):
             map_frame=map_frame,
             base_frame=base_frame,
             initialpose_topic=initialpose_topic,
+            peers_service=peers_service,
             config_query_timeout_sec=config_timeout,
             param_config_dir=param_config_dir,
             param_default_files=param_default_files,

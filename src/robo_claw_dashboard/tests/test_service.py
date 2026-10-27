@@ -73,7 +73,7 @@ class TestStatus:
             agent_status={"state": 2, "current_skill": "nav"},
             telemetry={"battery": {"percentage": "80.0%"}},
             sensor_health={"lidar": True},
-            peers=[{"name": "peer-1"}],
+            peers=[{"peer_name": "peer-1", "host": "10.0.0.2", "port": 50152, "connected": True}],
         )
         snap = DashboardService(backend).status()
         assert snap["state"]["agent_id"] == "r1"
@@ -81,6 +81,8 @@ class TestStatus:
         assert snap["telemetry"]["battery"]["percentage"] == "80.0%"
         assert snap["sensor_health"]["lidar"] is True
         assert snap["peers"][0]["name"] == "peer-1"
+        assert snap["peers"][0]["host"] == "10.0.0.2"
+        assert snap["peers"][0]["connected"] is True
 
     def test_empty_backend_returns_safe_defaults(self):
         snap = DashboardService(FakeBackend()).status()

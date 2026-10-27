@@ -152,6 +152,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | 노드 파라미터        | 기본값        | 설명                                              |
 | -------------------- | ------------- | ------------------------------------------------- |
 | `map_topic`         | `/map,/lio/grid_map` | OccupancyGrid 토픽 목록(쉼표 구분, transient local 구독) |
+| `peers_service`     | `/robo_claw_messenger_client_node/list_peers` | 동료 로봇 목록 서비스(에이전트 경로로 자동 폴백) |
 | `map_frame`         | `map`         | 지도/위치 기준 프레임                              |
 | `base_frame`        | `base_link`   | 로봇 기준 프레임 (map→base TF)                     |
 | `initialpose_topic` | `/initialpose`| 초기 위치 발행 토픽                                |
@@ -174,6 +175,20 @@ sudo ufw status | grep 9090   # ufw 사용 시
 레이아웃은 상단 고정 헤더(로봇/에이전트 ID, 상태 배지, 연결 상태, 갱신 시각)와 2단 본문으로
 구성됩니다. 넓은 화면에서는 지도(8/12)와 상태 카드(4/12)가 나란히 놓이고, 980 px 이하에서는
 한 단으로 접힙니다. 접근 토큰 입력은 접이식 카드로 숨겨 기본 화면을 가리지 않습니다.
+
+## 동료 로봇 표시
+
+동료 로봇 목록은 채널(messenger) 노드의 `list_peers` 서비스를 사용합니다. 에이전트 노드는 이
+서비스를 직접 제공하지 않으므로(내부적으로 messenger 를 호출하는 클라이언트만 보유) 기본값은
+`/robo_claw_messenger_client_node/list_peers` 이고, 응답이 없으면 `agent_name` 기준 경로로
+폴백합니다. 응답의 `peer_name`/`host`/`port`/`connected` 를 표시하며, 이름이 비어 있으면
+"동료 N" 으로 표시해 빈 칩이 생기지 않게 합니다.
+
+## 폴링과 요청 한도
+
+`/api/status` 폴링은 3초 간격(분당 20회)입니다. `http_rate_limit_per_minute`(기본 60)를 넘으면
+서버가 429 를 반환하는데, 이때 화면은 "요청 한도 초과 — N초 후 재시도"로 표시하고 간격을 최대
+15초까지 늘려 재시도합니다. 여러 탭을 동시에 열면 한도를 쉽게 넘으므로 한 탭 사용을 권장합니다.
 
 ## 실행 설정 패널
 

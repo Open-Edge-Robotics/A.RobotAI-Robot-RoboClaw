@@ -72,6 +72,7 @@ class RosBackend:
         base_frame: str = "base_link",
         initialpose_topic: str = "/initialpose",
         initialpose_subscriber_wait_sec: float = 1.0,
+        peers_service: str = "/robo_claw_messenger_client_node/list_peers",
         config_query_timeout_sec: float = 2.0,
         config_cache_ttl_sec: float = 5.0,
         param_config_dir: str = "",
@@ -142,7 +143,11 @@ class RosBackend:
         self._query_client = node.create_client(
             QueryState, f"{ns}/query_state", callback_group=self._cb
         )
-        self._peers_client = node.create_client(
+        # 동료 로봇 목록은 채널(messenger) 노드가 서버다. 에이전트 노드는 이 서비스를
+        # 제공하지 않으므로 messenger 를 우선 사용하고, 없으면 에이전트 경로로 폴백한다.
+        self._peers_service = peers_service
+        self._peers_client = node.create_client(ListPeers, peers_service, callback_group=self._cb)
+        self._fallback_peers_client = node.create_client(
             ListPeers, f"{ns}/list_peers", callback_group=self._cb
         )
         self._task_client = ActionClient(
@@ -237,21 +242,31 @@ class RosBackend:
         return {}
 
     def list_peers(self) -> list[dict[str, Any]]:
+        result = self._call_list_peers(self._peers_client)
+        if result is None:
+            result = self._call_list_peers(self._fallback_peers_client)
+        if result is None:
+            return []
         peers: list[dict[str, Any]] = []
-        if not self._peers_client.service_is_ready():
-            return peers
-        future = self._peers_client.call_async(ListPeers.Request())
-        if not _wait_future(future, self._timeout) or future.result() is None:
-            return peers
-        result = future.result()
         for item in getattr(result, "peers", None) or []:
             peers.append(
                 {
-                    "name": str(item.name),
+                    "peer_name": str(getattr(item, "peer_name", "") or ""),
+                    "host": str(getattr(item, "host", "") or ""),
+                    "port": _coerce_int(getattr(item, "port", 0) or 0),
                     "connected": bool(getattr(item, "connected", False)),
                 }
             )
         return peers
+
+    def _call_list_peers(self, client: Any) -> Any | None:
+        """ListPeers 서비스 호출. 서비스가 없거나 응답이 없으면 None."""
+        if not client.service_is_ready():
+            return None
+        future = client.call_async(ListPeers.Request())
+        if not _wait_future(future, self._timeout):
+            return None
+        return future.result()
 
     def describe_config(self) -> dict[str, Any] | None:
         """대시보드/에이전트 노드의 실행 파라미터를 수집한다(마스킹은 도메인 계층)."""

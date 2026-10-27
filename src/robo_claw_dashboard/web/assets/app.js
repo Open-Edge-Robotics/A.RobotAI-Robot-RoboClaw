@@ -2,7 +2,8 @@
 (function () {
   "use strict";
 
-  const STATUS_INTERVAL_MS = 2000;
+  const STATUS_INTERVAL_MS = 3000;
+  const STATUS_MAX_BACKOFF_MS = 15000;
   const CONFIG_RETRY_MS = 8000;
   const READONLY_KEY = "rc.dash.readonly";
   const CONTROL_KEY = "rc.dash.control";
@@ -21,6 +22,9 @@
     drag: null,
     configRows: { agent: [], dashboard: [] },
     configLoaded: false,
+    statusInFlight: false,
+    pollDelay: STATUS_INTERVAL_MS,
+    pollTimer: null,
   };
 
   function el(id) {
@@ -77,7 +81,7 @@
       text: ok ? "정상" : "미수신",
     })));
     renderChips("peers", (snap.peers || []).map((peer) => ({
-      label: peer.name,
+      label: peer.host ? peer.name + " (" + peer.host + ":" + peer.port + ")" : peer.name,
       ok: Boolean(peer.connected),
       text: peer.connected ? "연결됨" : "끊김",
     })));
@@ -570,15 +574,27 @@
 
   async function refreshStatus(token) {
     const node = el("connection");
+    if (state.statusInFlight) return null;
+    state.statusInFlight = true;
     try {
       const { data, status } = await fetchJson("/api/status", token);
+      if (status === 429) {
+        // 분당 요청 한도에 걸리면 화면을 멈추지 않고 간격을 늘려 재시도한다.
+        node.textContent = "요청 한도 초과 — " + Math.round(state.pollDelay / 1000) + "초 후 재시도";
+        node.className = "small text-warning";
+        return Math.min(state.pollDelay * 2, STATUS_MAX_BACKOFF_MS);
+      }
       if (status !== 200) throw new Error("status " + status);
       renderSnapshot(data);
       node.textContent = "연결됨";
       node.className = "small text-success";
+      return STATUS_INTERVAL_MS;
     } catch (err) {
       node.textContent = "오류: " + err.message;
       node.className = "small text-danger";
+      return Math.min(state.pollDelay * 2, STATUS_MAX_BACKOFF_MS);
+    } finally {
+      state.statusInFlight = false;
     }
   }
 
@@ -631,10 +647,19 @@
     });
   }
 
+  function schedulePolling(token) {
+    state.pollTimer = setTimeout(async () => {
+      const nextDelay = await refreshStatus(token);
+      state.pollDelay = nextDelay || STATUS_INTERVAL_MS;
+      schedulePolling(token);
+    }, state.pollDelay);
+  }
+
   function startPolling() {
     const tokens = loadTokens();
-    refreshStatus(tokens.readonly).then(() => {
-      setInterval(() => refreshStatus(tokens.readonly), STATUS_INTERVAL_MS);
+    refreshStatus(tokens.readonly).then((delay) => {
+      state.pollDelay = delay || STATUS_INTERVAL_MS;
+      schedulePolling(tokens.readonly);
     });
   }
 
