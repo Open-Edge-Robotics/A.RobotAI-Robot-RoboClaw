@@ -952,3 +952,99 @@ async def test_battery_and_scene_share_native_tool_history():
         "assistant: 배터리를 확인합니다.",
         "assistant: 배터리는 80%입니다. 주변을 분석합니다.",
     ]
+
+
+@pytest.mark.unit
+def test_azure_bridge_preserves_tool_call_id(monkeypatch):
+    """Azure 응답의 tool_call id를 보존한다.
+
+    실측(cloid 2호기, 2026-10-27): Azure 브릿지가 ``ToolCall.id`` 를 채우지 않아
+    대화 이력의 ``messages[5].tool_calls[0].id`` 가 null로 전송되었고, 서버가
+    ``Invalid type ... expected a string, but got null`` 로 400을 반환했다.
+    """
+    from types import SimpleNamespace
+
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    message = SimpleNamespace(
+        content=None,
+        tool_calls=[
+            SimpleNamespace(
+                id="call_abc123",
+                function=SimpleNamespace(name="navigate_to", arguments='{"target_name": "거실"}'),
+            )
+        ],
+    )
+    response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return response
+
+    class FakeClient:
+        chat = SimpleNamespace(completions=FakeCompletions())
+
+    bridge = create_llm_bridge("azure", model="gpt-4.1")
+    monkeypatch.setattr(bridge, "_get_client", lambda: FakeClient())
+
+    turn = bridge.chat_with_tools([], tools=[])
+
+    assert turn.tool_calls[0].name == "navigate_to"
+    assert turn.tool_calls[0].arguments == {"target_name": "거실"}
+    assert turn.tool_calls[0].id == "call_abc123"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_native_tool_history_uses_string_tool_call_ids():
+    """provider가 id를 주지 않아도 assistant/tool 메시지에는 문자열 id가 들어간다."""
+    pytest.importorskip("rclpy")
+    import logging
+    from types import SimpleNamespace
+
+    from robo_claw_agent.agent_node.planner import LLMPlanner
+    from robo_claw_agent.skill_manager import SkillResult
+
+    def execute(name, params, timeout):
+        return SkillResult(name, True, "ok", 0.01, {})
+
+    class Node:
+        _skills = SimpleNamespace(execute=execute, _skills={})
+        _enable_skill_learning = False
+
+        def get_logger(self):
+            return logging.getLogger("test_context")
+
+        def _set_state(self, *args):
+            pass
+
+        async def _run_blocking(self, op, func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+    planner = LLMPlanner(Node())
+    calls = [
+        {
+            "id": None,
+            "type": "function",
+            "function": {"name": "get_status", "arguments": "{}"},
+        }
+    ]
+    messages = []
+    await planner.execute_skill_chain(
+        [{"skill": "get_status"}],
+        messages,
+        "상태를 확인해줘",
+        1,
+        [],
+        [],
+        False,
+        lambda *args: None,
+        native_tool_calls=calls,
+    )
+
+    assistant = next(m for m in messages if m["role"] == "assistant")
+    tool_result = next(m for m in messages if m["role"] == "tool")
+    call_id = assistant["tool_calls"][0]["id"]
+    assert isinstance(call_id, str)
+    assert call_id.strip()
+    assert tool_result["tool_call_id"] == call_id

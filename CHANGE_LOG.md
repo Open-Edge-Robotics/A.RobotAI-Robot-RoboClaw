@@ -3,6 +3,15 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-27 — 도구 호출 id를 문자열로 보장합니다
+
+- Azure 브릿지가 응답의 `tool_calls[].id` 를 버리지 않고 보존합니다.
+- 대화 이력 재전송 직전(`LLMPlanner.execute_skill_chain`)에서 누락된 tool_call id를
+  `call_<index>` 로 보정하고, tool 결과 메시지에 `tool_call_id` 를 항상 넣습니다.
+- 실측(cloid 2호기): `messages[5].tool_calls[0].id` 가 null로 전송되어
+  `Invalid type ... expected a string, but got null` 400으로 계획 수립이 실패했습니다.
+  Ollama 경로는 id를 검증하지 않아 같은 상태에서도 드러나지 않았습니다.
+
 ## 2026-10-27 — 대안 인자 스키마를 LLM 도구 스펙에서 제거합니다
 
 - 스킬 `input_schema` 의 최상위 `oneOf`/`anyOf`/`allOf`/`enum`/`const`/`not` 을

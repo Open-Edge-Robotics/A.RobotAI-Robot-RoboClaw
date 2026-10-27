@@ -49,6 +49,25 @@ def _render_tool_calls(skills: list[SkillChainItem]) -> str:
     return "\n".join(parts)
 
 
+def _with_tool_call_ids(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """assistant/tool 메시지 재전송에 필요한 tool_call id를 문자열로 보장한다.
+
+    OpenAI 호환 서버(Azure 포함)는 대화 이력의 ``tool_calls[].id`` 가 문자열이
+    아니면 요청 전체를 400으로 거부한다(``Invalid type ... expected a string,
+    but got null``). provider가 id를 주지 않거나 브릿지가 유실한 경우에도
+    이력이 깨지지 않도록 누락된 id를 보정한다. 같은 목록을 assistant 메시지와
+    tool 결과 메시지가 공유하므로 양쪽 id가 자동으로 일치한다.
+    """
+    normalized: list[dict[str, Any]] = []
+    for index, call in enumerate(calls):
+        item = dict(call)
+        call_id = item.get("id")
+        if not isinstance(call_id, str) or not call_id.strip():
+            item["id"] = f"call_{index}"
+        normalized.append(item)
+    return normalized
+
+
 class LLMPlanner:
     """LLM을 통한 계획 수립, 컨텍스트 수집 및 스킬 체인 실행 조율 클래스"""
 
@@ -745,6 +764,9 @@ class LLMPlanner:
         chain_success = True
         executed_reports = []
 
+        if native_tool_calls:
+            native_tool_calls = _with_tool_call_ids(native_tool_calls)
+
         # assistant 메시지: 네이티브 tool_calls 형식이 있으면 그것을 사용,
         # llm_resp_content가 있으면 content로 추가 (JSON 모드용)
         if native_tool_calls:
@@ -768,8 +790,8 @@ class LLMPlanner:
                 "tool_name": call.get("function", {}).get("name", ""),
                 "content": json.dumps(data, ensure_ascii=False),
             }
-            if call.get("id"):
-                message["tool_call_id"] = call["id"]
+            # _with_tool_call_ids 가 id를 보장하므로 항상 문자열 id를 넣는다.
+            message["tool_call_id"] = call["id"]
             messages.append(message)
 
         for call_index, item in enumerate(chain):

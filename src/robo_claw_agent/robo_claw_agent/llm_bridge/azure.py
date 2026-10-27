@@ -123,6 +123,10 @@ class AzureOpenAIBridge(BaseLLMBridge):
             ToolCall(
                 name=str(call.function.name),
                 arguments=parse_tool_arguments(call.function.arguments),
+                # 도구 호출 id는 이후 대화 이력(assistant tool_calls / tool 결과
+                # 메시지)에서 반드시 문자열이어야 한다. Azure 게이트웨이는
+                # id가 null인 tool_call을 400(invalid_type)으로 거부한다.
+                id=str(getattr(call, "id", "") or "").strip() or None,
             )
             for call in (message.tool_calls or [])
             if getattr(call.function, "name", None)
