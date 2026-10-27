@@ -9,6 +9,7 @@ import (
 
 	"github.com/wkqco33/wcli"
 	"github.com/wkqco33/wcli/logging"
+	"github.com/wkqco33/wcli/rich"
 	"robo_claw_cli/contract"
 	"robo_claw_cli/launcher"
 )
@@ -225,7 +226,7 @@ func RunCmd() *wcli.Command {
 	var debug bool
 
 	cmd := &wcli.Command{
-		Use:   "run [llm] [model] [channel]",noConfigSummary
+		Use:   "run [llm] [model] [channel]",
 		Short: "로컬 환경(.env)을 기반으로 RoboClaw 시스템을 기동합니다.",
 		Run: func(ctx *wcli.Context) error {
 			projectRoot := launcher.GetProjectRoot()
