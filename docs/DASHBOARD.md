@@ -235,6 +235,9 @@ ros2 topic info -v /lio/grid_map   # Durability: TRANSIENT_LOCAL 확인
 지도가 아직 없으면 `available: false`이고, 이때 화면은 "지도 미수신"으로 표시합니다. TF를 못 찾으면
 위치만 `available: false`가 되고 지도는 계속 표시됩니다.
 
+지도 이미지는 ROS OccupancyGrid 규약(row 0 = 월드 아래쪽)에 맞춰 세로로 뒤집어 그립니다.
+뒤집지 않으면 마커가 지도에 대해 상하 반대로 보입니다.
+
 로봇 마커 좌표는 `resolution`(m/cell)과 무관하게 `px/m` 스케일로 계산합니다. 해상도를 두 번 곱하면
 (cell 인덱스 × px/m) 마커가 캔버스 밖으로 나가므로, `tests/test_map_geometry.py`가 실좌표로
 캔버스 내부 여부와 왕복 변환을 검증합니다.

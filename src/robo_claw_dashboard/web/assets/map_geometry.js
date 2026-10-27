@@ -37,7 +37,25 @@
     };
   }
 
-  const api = { layout, worldToCanvas, canvasToWorld };
+  /**
+   * 지도 이미지를 그릴 캔버스 사각형(px). 지도 데이터 row 0 은 월드 아래쪽이므로
+   * 이미지를 그릴 때 세로로 뒤집어야 캔버스 위쪽이 월드 +Y 가 된다.
+   */
+  function imageRect(view, map) {
+    return {
+      x: view.offsetX,
+      y: view.offsetY,
+      width: map.width * map.resolution * view.scale,
+      height: map.height * map.resolution * view.scale,
+    };
+  }
+
+  /** 지도 데이터 row(0 = 월드 아래쪽)의 중심이 그려지는 캔버스 y(px). */
+  function mapRowToCanvasY(view, map, row) {
+    return view.offsetY + (map.height - 1 - row + 0.5) * map.resolution * view.scale;
+  }
+
+  const api = { layout, worldToCanvas, canvasToWorld, imageRect, mapRowToCanvasY };
   global.RcMapGeometry = api;
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

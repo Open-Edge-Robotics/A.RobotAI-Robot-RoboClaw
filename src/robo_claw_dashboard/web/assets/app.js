@@ -288,15 +288,19 @@
       return;
     }
 
-    const layoutInfo = layout(canvas, map);
+    layout(canvas, map); // state.scale/offset 갱신
     const off = document.createElement("canvas");
     off.width = map.width;
     off.height = map.height;
     const offCtx = off.getContext("2d");
     const image = offCtx.createImageData(map.width, map.height);
+    // 지도 데이터는 row 0 이 월드 아래쪽(ROS OccupancyGrid 규약)이고 캔버스는 위가 0 이므로
+    // 세로로 뒤집어 넣는다. 뒤집지 않으면 마커가 지도에 대해 상하 반대로 보인다.
     for (let index = 0; index < map.cells.length; index += 1) {
       const value = map.cells[index];
-      const offset = index * 4;
+      const row = Math.floor(index / map.width);
+      const col = index % map.width;
+      const offset = ((map.height - 1 - row) * map.width + col) * 4;
       if (value === UNKNOWN_CELL) {
         image.data[offset] = 160;
         image.data[offset + 1] = 170;
@@ -313,20 +317,13 @@
     offCtx.putImageData(image, 0, 0);
 
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-      off,
-      state.offsetX,
-      state.offsetY,
-      layoutInfo.worldW * layoutInfo.scale,
-      layoutInfo.worldH * layoutInfo.scale
+    const rect = RcMapGeometry.imageRect(
+      { scale: state.scale, offsetX: state.offsetX, offsetY: state.offsetY },
+      map
     );
+    ctx.drawImage(off, rect.x, rect.y, rect.width, rect.height);
     ctx.strokeStyle = "#2a3446";
-    ctx.strokeRect(
-      state.offsetX,
-      state.offsetY,
-      layoutInfo.worldW * layoutInfo.scale,
-      layoutInfo.worldH * layoutInfo.scale
-    );
+    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
 
     drawPose(ctx, map);
     if (state.drag) drawCandidate(ctx, map, state.drag);

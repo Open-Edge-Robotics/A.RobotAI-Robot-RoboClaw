@@ -31,13 +31,18 @@ const pose = { x: 4.184, y: 1.582 };
 const point = geometry.worldToCanvas(view, map, pose.x, pose.y);
 const roundTrip = geometry.canvasToWorld(view, map, point.x, point.y);
 const minCorner = geometry.worldToCanvas(view, map, map.origin.x, map.origin.y);
+const rect = geometry.imageRect(view, map);
+const topRow = geometry.mapRowToCanvasY(view, map, map.height - 1);
+const bottomRow = geometry.mapRowToCanvasY(view, map, 0);
 const maxCorner = geometry.worldToCanvas(
   view,
   map,
   map.origin.x + map.width * map.resolution,
   map.origin.y + map.height * map.resolution
 );
-console.log(JSON.stringify({ view, point, roundTrip, minCorner, maxCorner }));
+console.log(
+  JSON.stringify({ view, point, roundTrip, minCorner, maxCorner, rect, topRow, bottomRow })
+);
 """
 
 
@@ -78,3 +83,21 @@ def test_world_to_canvas_round_trip():
     round_trip = data["roundTrip"]
     assert round_trip["x"] == pytest.approx(4.184, abs=1e-6)
     assert round_trip["y"] == pytest.approx(1.582, abs=1e-6)
+
+
+def test_map_image_is_drawn_with_y_flipped():
+    """지도 row 0(월드 아래쪽)이 캔버스 아래쪽에 그려져야 마커와 방향이 맞는다."""
+    data = _run()
+    # row 0 의 캔버스 y 는 row 최대값의 캔버스 y 보다 커야 한다(아래쪽).
+    assert data["bottomRow"] > data["topRow"]
+    # row 중심 기준이므로 이미지 사각형 안쪽 반 칸(0.05 m)만큼 들어간 위치와 같아야 한다.
+    half_cell = data["rect"]["height"] / 307 / 2
+    assert data["topRow"] == pytest.approx(data["rect"]["y"] + half_cell, abs=1e-6)
+    assert data["bottomRow"] == pytest.approx(
+        data["rect"]["y"] + data["rect"]["height"] - half_cell, abs=1e-6
+    )
+    # 월드 원점(좌하단)은 이미지 사각형의 좌하단과 만난다.
+    assert data["minCorner"]["x"] == pytest.approx(data["rect"]["x"], abs=1e-6)
+    assert data["minCorner"]["y"] == pytest.approx(
+        data["rect"]["y"] + data["rect"]["height"], abs=1e-6
+    )
