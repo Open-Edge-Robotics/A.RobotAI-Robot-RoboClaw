@@ -164,6 +164,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 인터넷과 끊긴 망에 있어도 접속 PC만 로봇망에 있으면 그대로 표시됩니다.
 
 - `web/assets/vendor/bootstrap.min.css` · `bootstrap.LICENSE` (MIT, 5.3.8)
+- `web/assets/map_geometry.js`: 월드(m)↔캔버스(px) 좌표 변환(순수 함수, `node`로 회귀 테스트)
 - `web/assets/style.css`: Bootstrap 위에 얹는 최소 오버라이드(지도 캔버스, 설정 표 등)
 - `web/assets/app.js`: 외부 JS 의존성 없음(바닐라). Bootstrap JS 번들은 쓰지 않습니다.
 
@@ -207,6 +208,10 @@ curl -s http://127.0.0.1:9090/api/map | jq '{available, width, height, resolutio
 
 지도가 아직 없으면 `available: false`이고, 이때 화면은 "지도 미수신"으로 표시합니다. TF를 못 찾으면
 위치만 `available: false`가 되고 지도는 계속 표시됩니다.
+
+로봇 마커 좌표는 `resolution`(m/cell)과 무관하게 `px/m` 스케일로 계산합니다. 해상도를 두 번 곱하면
+(cell 인덱스 × px/m) 마커가 캔버스 밖으로 나가므로, `tests/test_map_geometry.py`가 실좌표로
+캔버스 내부 여부와 왕복 변환을 검증합니다.
 
 ## 초기 위치 설정
 

@@ -244,30 +244,31 @@
     }
   }
 
+  // 좌표 변환은 map_geometry.js 순수 함수가 담당한다(스케일은 px/m).
   function layout(canvas, map) {
-    const worldW = map.width * map.resolution;
-    const worldH = map.height * map.resolution;
-    const scale = Math.min(canvas.width / worldW, canvas.height / worldH) * 0.98;
-    state.scale = scale;
-    state.offsetX = (canvas.width - worldW * scale) / 2;
-    state.offsetY = (canvas.height - worldH * scale) / 2;
-    return { worldW, worldH, scale };
+    const view = RcMapGeometry.layout(canvas.width, canvas.height, map);
+    state.scale = view.scale;
+    state.offsetX = view.offsetX;
+    state.offsetY = view.offsetY;
+    return view;
   }
 
   function worldToCanvas(map, x, y) {
-    const worldH = map.height * map.resolution;
-    return {
-      x: state.offsetX + ((x - map.origin.x) / map.resolution) * state.scale,
-      y: state.offsetY + ((map.origin.y + worldH - y) / map.resolution) * state.scale,
-    };
+    return RcMapGeometry.worldToCanvas(
+      { scale: state.scale, offsetX: state.offsetX, offsetY: state.offsetY },
+      map,
+      x,
+      y
+    );
   }
 
   function canvasToWorld(map, px, py) {
-    const worldH = map.height * map.resolution;
-    return {
-      x: map.origin.x + ((px - state.offsetX) / state.scale) * map.resolution,
-      y: map.origin.y + worldH - ((py - state.offsetY) / state.scale) * map.resolution,
-    };
+    return RcMapGeometry.canvasToWorld(
+      { scale: state.scale, offsetX: state.offsetX, offsetY: state.offsetY },
+      map,
+      px,
+      py
+    );
   }
 
   function draw() {
