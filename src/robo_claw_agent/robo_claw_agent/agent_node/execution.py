@@ -15,6 +15,9 @@ from ..tracing import (
     trace_process_outputs,
     traceable,
 )
+from ..tracing import (
+    trace_operation as _trace_runtime_operation,
+)
 from ..types import AgentState
 from .direct_skills import direct_cup_pick_skill, start_background_direct_skill
 from .fast_router import (
@@ -25,6 +28,7 @@ from .fast_router import (
 from .nav_safety import ensure_navigation_safety
 from .skill_result_msg import build_skill_result_msg
 from .task_queue import QueuedTask, TaskQueue
+from .utils import tool_calling_enabled
 
 if TYPE_CHECKING:
     pass
@@ -67,22 +71,6 @@ def resolve_cloid_expression_situation(
         used_base_motion=used_base_motion,
         used_pose_skill=used_pose_skill,
     )
-
-
-@traceable(
-    run_type="chain",
-    name="runtime_operation",
-    process_inputs=trace_process_inputs,
-    process_outputs=trace_process_outputs,
-)
-def _trace_runtime_operation(
-    op_name: str,
-    func: Any,
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-) -> Any:
-    del op_name
-    return func(*args, **kwargs)
 
 
 class ExecutionMixin:
@@ -234,7 +222,12 @@ class ExecutionMixin:
             skill = self._skills.get_skill(name)
             if skill is None:
                 return f"등록되지 않은 스킬입니다: {name}"
-            preconditions_valid, precondition_error = skill.check_preconditions(params)
+            mock_execution = getattr(
+                self._skills, "mock_robot", False
+            ) is True and self._skills._requires_robot(skill)
+            preconditions_valid, precondition_error = (
+                (True, "") if mock_execution else skill.check_preconditions(params)
+            )
             if not preconditions_valid:
                 return f"{name}의 실행 전 조건이 충족되지 않았습니다: {precondition_error}"
             schema_valid, schema_error = skill.validate_input_schema(params)
@@ -272,9 +265,7 @@ class ExecutionMixin:
         if background_skills and len(effective_chain) > 1:
             allowed_pre_background = {"send_message", "say", "log_observation"}
             last_skill_name = str(effective_chain[-1].get("skill") or "").strip()
-            prior_skills = [
-                str(item.get("skill") or "").strip() for item in effective_chain[:-1]
-            ]
+            prior_skills = [str(item.get("skill") or "").strip() for item in effective_chain[:-1]]
             last_skill_obj = self._skills.get_skill(last_skill_name)
             is_last_background = (
                 getattr(last_skill_obj, "terminal_behavior", "terminal") == "background"
@@ -575,6 +566,8 @@ class ExecutionMixin:
 
         if (
             self._llm
+            # 네이티브 도구 루프는 원본 요청과 도구 결과를 한 대화에서 유지합니다.
+            and not tool_calling_enabled(getattr(self, "_llm_tool_calling", False), self._llm)
             and getattr(self, "_enable_task_decomposition", True)
             and (self._task_decomposer.looks_compound(instruction))
         ):

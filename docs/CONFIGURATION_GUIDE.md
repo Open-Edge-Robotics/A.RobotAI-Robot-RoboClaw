@@ -43,6 +43,15 @@ RoboClaw local Registry snapshot은 compatibility 비교용입니다.
 
 ## 실행 방식
 
+`rclaw launch`의 네이티브 실행은 `RMW_IMPLEMENTATION`이 지정되지 않으면
+`rmw_cyclonedds_cpp`를 기본으로 사용합니다. 캐시 `.env`의 비어 있지 않은 설정은
+호스트 환경변수보다 우선하며, 명시한 `CYCLONEDDS_URI`는 유지합니다. 시작 로그의
+`ROS 2 RMW 구현` 항목에서 선택된 구현을 확인합니다.
+
+discovery의 토픽·서비스·액션 목록은 실행 중인 노드의 ROS 그래프에서 직접
+조회합니다. 액션 탐색은 별도의 `ros2 action list` 프로세스나 CLI daemon을 사용하지
+않습니다. 시작 직후 목록이 비어 있으면 다음 주기에서 다시 탐색합니다.
+
 ### 1. 로컬 개발: `./rclaw run` / `./rclaw sim`
 
 ```bash
@@ -148,6 +157,32 @@ Docker 실행:
 # 요약 출력을 생략하고 기동
 ./rclaw launch butler office --no-config-summary
 ```
+
+#### 로봇 없이 gRPC와 LLM을 실행합니다
+
+`--mock-robot`은 기존 서버 동기화·캐시·모델·프롬프트·인증·RAG 설정을 유지하면서
+로봇 의존 스킬을 가짜 성공으로 대체합니다. 로컬 네이티브 실행에서만 지원하며,
+Gazebo·Nav2·Docker 옵션과 함께 사용하지 않습니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+./rclaw launch former seongmin_local --mock-robot
+```
+
+core·manipulator·vision·깊이 relay·peer client 및 하드웨어용 RosGrpc(50051)를
+비활성화합니다. RoboMessenger(기본 50052)는 기존 `enable_grpc`와 토큰 설정을
+따르므로 talk에서 같은 IP·포트·토큰으로 연결합니다.
+
+로봇 의존 스킬은 정책과 입력 스키마를 검증한 뒤 실제 실행·로봇 사전조건 확인 없이
+`success=true`, `mocked=true`, `executed=false`와 호출 인자를 반환합니다.
+배터리·좌표·카메라 값이나 파일을 만들어 반환하지 않습니다. 시간·로컬 파일·RAG
+스킬은 실제 실행하되, 임의 스크립트·현재 위치 조회·외부 플러그인은 보수적으로
+대체합니다. 가짜 스킬 결과는 스킬 학습 이력에 기록하지 않습니다.
+
+이 옵션은 스킬 성공 처리 경로를 확인하는 용도이며 실제 로봇 동작 검증을 대신하지
+않습니다. RAG·MCP 초기화와 LLM 서버 등 로봇 이외의 외부 의존성은 기존 config를
+그대로 사용합니다. 옵션을 빼면 기존 실제 실행으로 돌아갑니다.
 
 ### 3. 직접 `ros2 launch`
 
@@ -478,3 +513,13 @@ DB model
  -> ROS parameter
  -> node consumer
 ```
+
+
+### Ollama 도구 호출의 대화 컨텍스트
+
+Ollama 네이티브 도구 호출은 [공식 agent loop 예제](https://docs.ollama.com/capabilities/tool-calling#python)에 따라 assistant 메시지의 `thinking`, `content`, `tool_calls`를 같은 작업의 후속 요청에 함께 전달합니다. 사용자에게 보여주는 답변에서는 사고 과정 태그를 제거하지만, 후속 도구 호출에 사용하는 원본 메시지는 보존합니다.
+
+각 도구 결과는 `role: tool`, `tool_name`, `content`로 연결합니다. 실행 실패와 안전 차단도 도구 결과로 기록하고, 체인이 실패하여 후속 호출을 실행하지 않은 경우에는 `NotExecuted` 결과를 전달합니다. 컨텍스트 보존은 기존 스킬 검증과 안전 정책을 거친 실행 흐름에 적용합니다.
+
+
+네이티브 도구 호출이 활성화되어 있고 프로바이더가 이를 지원하면, 복합 요청도 원문 그대로 하나의 도구 루프에서 처리합니다. 별도 명령 분해기를 호출하거나 단계마다 대화를 새로 만들지 않습니다. 따라서 도구 호출과 결과 이력이 다음 라운드에 이어지며, 단계 전환을 위한 `[전체 명령]`·`[이전 단계 요약]` system 메시지를 추가하지 않습니다. 네이티브 도구 호출을 사용하지 않는 경로에서는 기존 `enable_task_decomposition` 설정을 적용합니다.

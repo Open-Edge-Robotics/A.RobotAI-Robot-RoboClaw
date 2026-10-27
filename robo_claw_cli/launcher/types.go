@@ -157,6 +157,7 @@ type LaunchFlags struct {
 	ImageTag   string // (Docker) 사용할 이미지 태그. 비면 "latest".
 	Pull       bool   // (Docker) 실행 직전 docker pull 수행 여부.
 	ForceGrpc  bool   // gRPC 서버 노드(use_grpc) 강제 활성화. robo_claw_cli test 연동에 필요.
+	MockRobot  bool   // 로봇 노드를 끄고 로봇 스킬을 표시된 가짜 성공으로 반환합니다.
 }
 
 // ConfigSourceRemote 설정을 원격 서버에서 방금 동기화했음을 나타냅니다.
@@ -213,7 +214,6 @@ func LoadLaunchContext(
 	configSource := ConfigSourceRemote
 	if fetchErr := fetchFn(ctx, robotName, envName); fetchErr != nil {
 		logging.Warn("원격 설정 서버 연결 실패: %v. 로컬 캐시 폴백을 시도합니다.", fetchErr)
-		rich.Println("[yellow]⚠ 경고: 원격 설정 서버 연결 실패 (%v). 로컬 캐시를 사용합니다.[/yellow]", fetchErr)
 
 		configPath := filepath.Join(cacheDir, "config.json")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -224,7 +224,6 @@ func LoadLaunchContext(
 		configSource = ConfigSourceCache
 	} else {
 		logging.Info("원격 설정 동기화 성공")
-		rich.Println("[green]✔[/green] 원격 설정 동기화 성공")
 	}
 
 	return NewLaunchContextFromCache(robotName, envName, flags, cacheDir, configSource)

@@ -2,7 +2,7 @@ from typing import Any
 
 from .anthropic import AnthropicBridge
 from .azure import AzureOpenAIBridge
-from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge, Message
+from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge, Message, ToolCall, ToolTurn
 from .ollama import OllamaBridge
 from .openai import OpenAIBridge
 
@@ -38,6 +38,8 @@ def create_llm_bridge(provider: str, **kwargs: Any) -> BaseLLMBridge:
 __all__ = [
     "BaseLLMBridge",
     "Message",
+    "ToolCall",
+    "ToolTurn",
     "DEFAULT_TIMEOUT_SEC",
     "OllamaBridge",
     "OpenAIBridge",

@@ -99,6 +99,12 @@ def test_plan_envelope_without_answer_is_not_leaked():
     assert _result_message((raw, [], True)) == UNRENDERABLE_ANSWER
 
 
+def test_mock_skill_message_reaches_channel_verbatim():
+    """mock 모드 스킬 메시지('[' 로 시작)는 채널에서 안내 문구로 바뀌지 않아야 한다."""
+    raw = "[MOCK] navigate_to 가짜 성공입니다. 실제 로봇 동작은 실행하지 않았습니다."
+    assert _result_message((raw, [], True)) == raw
+
+
 def test_empty_result_message_becomes_default():
     assert _result_message(("", [], True)) == "완료"
 

@@ -2,7 +2,14 @@ import logging
 import os
 
 from ..tracing import traceable, wrap_openai_client
-from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge, openai_message_to_text
+from .base import (
+    DEFAULT_TIMEOUT_SEC,
+    BaseLLMBridge,
+    ToolCall,
+    ToolTurn,
+    openai_message_to_text,
+    parse_tool_arguments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +75,8 @@ class AzureOpenAIBridge(BaseLLMBridge):
 
     @traceable(name="AzureOpenAIBridge.chat")
     def chat(self, messages, system_prompt=None, **kwargs):
+        # Ollama의 호출별 thinking 옵션은 Azure OpenAI API로 전달하지 않습니다.
+        kwargs.pop("think", None)
         payload = (
             [{"role": "system", "content": system_prompt}] if system_prompt else []
         )
@@ -85,6 +94,41 @@ class AzureOpenAIBridge(BaseLLMBridge):
         content = openai_message_to_text(resp.choices[0].message)
         logger.debug("Azure OpenAI response: %s", content)
         return content
+
+    def supports_tools(self) -> bool:
+        """Azure OpenAI Chat Completions 는 네이티브 tool calling 을 지원한다."""
+        return True
+
+    @traceable(name="AzureOpenAIBridge.chat_with_tools")
+    def chat_with_tools(self, messages, system_prompt=None, tools=None, **kwargs) -> ToolTurn:
+        """도구 목록을 전달해 호출 요청을 받고, 호출 목록을 구조화해 반환한다."""
+        payload = (
+            [{"role": "system", "content": system_prompt}] if system_prompt else []
+        )
+        payload.extend(messages)
+        if "max_tokens" in kwargs:
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+
+        logger.debug("Azure OpenAI tool call: messages=%s, tools=%d", payload, len(tools or []))
+        client = self._get_client()
+        resp = client.chat.completions.create(
+            model=self._deployment,
+            messages=payload,
+            tools=list(tools or []),
+            **kwargs,
+        )
+        message = resp.choices[0].message
+        content = message.content or ""
+        tool_calls = [
+            ToolCall(
+                name=str(call.function.name),
+                arguments=parse_tool_arguments(call.function.arguments),
+            )
+            for call in (message.tool_calls or [])
+            if getattr(call.function, "name", None)
+        ]
+        logger.debug("Azure OpenAI tool response: %d call(s)", len(tool_calls))
+        return ToolTurn(content=content, tool_calls=tool_calls)
 
     @traceable(name="AzureOpenAIBridge.embed")
     def embed(self, text: str) -> list[float]:

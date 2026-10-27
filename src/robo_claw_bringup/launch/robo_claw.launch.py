@@ -798,24 +798,17 @@ def _launch_setup(context, *args, **kwargs):
     use_moveit_manipulator = (
         run_manipulator.lower() in ("1", "true", "yes", "on") and robot_config != "stretch3"
     )
-    print("\n" + "=" * 50)
-    print(" [RoboClaw] 런치 환경 변수(env) 로딩 및 해석 정보")
-    print(f"  * 로봇 설정 (robot_config)      : {robot_config}")
-    print(f"  * LLM 공급자 (llm_provider)      : {llm_provider}")
-    print(f"  * LLM 모델명 (llm_model)         : {llm_model}")
-    if llm_base_url:
-        print(f"  * Ollama 엔드포인트 (base_url)   : {llm_base_url}")
-    if ollama_options_json and ollama_options_json != "{}":
-        print(f"  * Ollama 세부 옵션 (options)     : {ollama_options_json}")
-    if agent_workspace_dir:
-        print(f"  * 에이전트 작업 공간 (workspace) : {agent_workspace_dir}")
-    if robot_soul_file:
-        print(f"  * 로봇 개성 가이드 (soul)        : {robot_soul_file}")
-    if robot_limits_file:
-        print(f"  * 로봇 구동 스펙 (limits)        : {robot_limits_file}")
-    if troubleshooting_guide_file:
-        print(f"  * 장애 조치 가이드 (troubleshoot): {troubleshooting_guide_file}")
-    print("=" * 50 + "\n")
+    from launch.logging import get_logger
+
+    get_logger("robo_claw.config").info(
+        f"최종 설정: robot={robot_config} · LLM={llm_provider}/{llm_model} · "
+        f"core={LaunchConfiguration('run_core').perform(context)} · "
+        f"manipulator={use_moveit_manipulator}"
+    )
+    get_logger("robo_claw.config").debug(
+        f"workspace={agent_workspace_dir} · soul={robot_soul_file} · "
+        f"limits={robot_limits_file} · troubleshoot={troubleshooting_guide_file}"
+    )
 
     launch_nodes = [
         core_node,
@@ -891,7 +884,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "discovery_log_interval_sec",
-                default_value="60.0",
+                default_value="600.0",
                 description="Discovery 요약 로그 출력 간격 (초). 0 이하면 매 스캔마다 출력합니다.",
             ),
             DeclareLaunchArgument(

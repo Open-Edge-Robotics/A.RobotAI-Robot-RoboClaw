@@ -9,7 +9,6 @@ import (
 
 	"github.com/wkqco33/wcli"
 	"github.com/wkqco33/wcli/logging"
-	"github.com/wkqco33/wcli/rich"
 	"robo_claw_cli/contract"
 	"robo_claw_cli/launcher"
 )
@@ -196,6 +195,7 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	}
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", launchFile}, launchArgs...)
+	logging.Debug("실행 명령어: ros2 %s", launcher.FormatLaunchLogArgs(argsToExec))
 	logging.Info("실행 명령어: ros2 %s", launcher.MaskCommandSecrets(argsToExec))
 	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", launcher.MaskCommandSecrets(argsToExec))
 
@@ -209,8 +209,12 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	}
 
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	consoleOut := launcher.NewConsoleLogWriter(os.Stdout)
+	consoleErr := launcher.NewConsoleLogWriter(os.Stderr)
+	defer consoleOut.Flush()
+	defer consoleErr.Flush()
+	cmd.Stdout = consoleOut
+	cmd.Stderr = consoleErr
 	cmd.Stdin = os.Stdin
 
 	return cmd.Run()
@@ -221,7 +225,7 @@ func RunCmd() *wcli.Command {
 	var debug bool
 
 	cmd := &wcli.Command{
-		Use:   "run [llm] [model] [channel]",
+		Use:   "run [llm] [model] [channel]",noConfigSummary
 		Short: "로컬 환경(.env)을 기반으로 RoboClaw 시스템을 기동합니다.",
 		Run: func(ctx *wcli.Context) error {
 			projectRoot := launcher.GetProjectRoot()

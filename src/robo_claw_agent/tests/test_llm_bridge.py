@@ -127,6 +127,82 @@ def test_embed_batch_default_fallback():
     assert bridge.embed.call_count == 3
 
 
+@pytest.mark.parametrize("default_think", [True, False, None])
+def test_ollama_think_override_only_affects_one_chat_call(monkeypatch, default_think):
+    import json
+
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    calls = []
+
+    class FakeClient:
+        def chat(self, **kwargs):
+            calls.append(kwargs)
+            return {"message": {"content": "주방 위치"}}
+
+    bridge = create_llm_bridge("ollama", options_json=json.dumps({"think": default_think}))
+    monkeypatch.setattr(bridge, "_get_client", lambda: FakeClient())
+    monkeypatch.setattr(bridge, "_supports_think", lambda: True)
+
+    bridge.chat([], think=False, response_format="json")
+    bridge.chat([])
+    bridge.chat_with_tools([])
+
+    assert calls[0]["think"] is False
+    assert calls[0]["format"] == "json"
+    assert calls[1].get("think") is default_think
+    assert calls[2].get("think") is default_think
+    assert bridge._think is default_think
+
+
+def test_ollama_think_override_is_omitted_for_unsupported_client(monkeypatch, caplog):
+    from unittest.mock import Mock
+
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    client = Mock()
+    client.chat.return_value = {"message": {"content": "주방 위치"}}
+    bridge = create_llm_bridge("ollama", options_json='{"think": true}')
+    monkeypatch.setattr(bridge, "_get_client", lambda: client)
+    monkeypatch.setattr(bridge, "_supports_think", lambda: False)
+
+    assert bridge.chat([], think=False) == "주방 위치"
+
+    assert "think" not in client.chat.call_args.kwargs
+    assert bridge._think is True
+    assert "think=False" in caplog.text
+
+
+@pytest.mark.parametrize("provider", ["openai", "azure", "anthropic"])
+def test_other_providers_do_not_forward_ollama_think_option(monkeypatch, provider):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    create = Mock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="query"))],
+            content=[SimpleNamespace(type="text", text="query")],
+        )
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+        messages=SimpleNamespace(create=create),
+    )
+    bridge = create_llm_bridge(provider, model="test-model")
+    if provider == "anthropic":
+        monkeypatch.setattr("anthropic.Anthropic", lambda **kwargs: client)
+        monkeypatch.setattr(
+            "robo_claw_agent.llm_bridge.anthropic.wrap_anthropic_client", lambda value: value
+        )
+    else:
+        monkeypatch.setattr(bridge, "_get_client", lambda: client)
+
+    assert bridge.chat([{"role": "user", "content": "query"}], think=False) == "query"
+    assert "think" not in create.call_args.kwargs
+
+
 def test_ollama_think_false_keeps_json_format(monkeypatch):
     from robo_claw_agent.llm_bridge import create_llm_bridge
 

@@ -105,6 +105,27 @@ def looks_like_json(text: str) -> bool:
     return stripped.startswith("{") or stripped.startswith("[")
 
 
+# JSON 배열의 첫 원소가 시작될 수 있는 문자 (따옴표/중괄호/대괄호/숫자/부호).
+_JSON_ARRAY_START_CHARS = "\"'[{[-0123456789"
+
+
+def _looks_like_broken_json(text: str) -> bool:
+    """파싱에 실패한 텍스트가 '깨진 JSON'으로 보여야 하는지 판정한다.
+
+    ``{`` 로 시작하면 JSON 객체로 본다. ``[`` 로 시작할 때는 두 번째 문자가
+    JSON 배열 원소가 시작될 수 있는 문자일 때만 JSON 으로 본다. 대괄호로
+    시작하는 사람이 읽는 문장(예: ``[MOCK] navigate_to ...``)은 JSON 이
+    아니므로 안내 문구로 덮어쓰지 않는다.
+    """
+    stripped = (text or "").strip()
+    if stripped.startswith("{"):
+        return True
+    if not stripped.startswith("["):
+        return False
+    rest = stripped[1:].lstrip()
+    if not rest:
+        return True
+    return rest[0] in _JSON_ARRAY_START_CHARS
 def loads_lenient(text: str) -> Any | None:
     """후행 쉼표 정도의 사소한 오류를 보정해 JSON을 파싱한다. 실패 시 None."""
     candidate = (text or "").strip()
@@ -208,6 +229,7 @@ def sanitize_final_answer(text: Any) -> str:
     - JSON envelope 이면 ``response`` 본문을 꺼낸다.
     - 본문 없는 계획 JSON이면 원문 대신 안내 문구로 대체한다.
     - 그 밖의 구조체 JSON은 사람이 읽을 수 있는 텍스트로 평탄화한다.
+    - JSON 이 아닌 일반 문장은(대괄호로 시작해도) 원문 그대로 둔다.
     """
     raw = str(text or "")
     if not raw.strip():
@@ -221,7 +243,11 @@ def sanitize_final_answer(text: Any) -> str:
 
     parsed = loads_lenient(candidate)
     if parsed is None:
-        return UNRENDERABLE_ANSWER
+        # 진짜로 깨진 JSON 은 원문을 숨기고, JSON 이 아닌 일반 문장
+        # (예: "[MOCK] navigate_to ...")은 그대로 통과시킨다.
+        if _looks_like_broken_json(candidate):
+            return UNRENDERABLE_ANSWER
+        return _clip_text_length(candidate)
     if isinstance(parsed, dict):
         if "response" in parsed:
             return _clip_text_length(_render_payload(parsed["response"]))

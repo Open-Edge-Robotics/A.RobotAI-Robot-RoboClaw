@@ -134,6 +134,7 @@ def setup_llm(node, p: AgentParams, qdrant_primary: QdrantVectorStore | None) ->
             endpoint=p.llm_base_url or p.azure_endpoint,
             api_key=p.azure_key or p.openai_key or p.anthropic_key,
             options_json=p.ollama_options_json,
+            timeout_sec=p.llm_timeout_sec,
         )
 
         # provider별 필수 설정 검증
@@ -274,7 +275,7 @@ def load_skills(node, p: AgentParams) -> None:
             node.get_logger().error(f"MCP init failed: {e}")
 
     loaded_skills = [s["name"] for s in node._skills.list_skills()]
-    node.get_logger().info(f"Loaded {len(loaded_skills)} skill(s): {', '.join(loaded_skills)}")
+    node.get_logger().debug(f"Loaded {len(loaded_skills)} skill(s): {', '.join(loaded_skills)}")
 
 
 def setup_ros_interfaces(node) -> None:

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ _DEFAULT_SYSTEM_PROMPT = """
 4. 필수 파라미터가 없어서 잘못 호출할 가능성이 높다면, 틀린 추측으로 실행하지 말고 `response`로 짧게 필요한 정보를 요청하세요.
 5. 도구 실행이 실패하면 같은 상황에 맞는 다른 도구 조합이나 재계획을 시도하세요.
 6. **날짜/시간 정확성**: 현재 날짜, 시간, 요일이 필요하면 로봇 상태 컨텍스트의 `datetime_info` 필드 값을 기본 참조하세요. 값이 없거나 정확성이 중요해 재확인이 필요할 때만 `get_datetime`을 호출하세요. 날짜/시간을 추측해 지어내지 마세요.
-7. **스킬이 필요없는 질문 판단 기준**: 다음 유형은 반드시 `{"skill": null, "response": "..."}`로만 응답하고 절대 스킬을 호출하지 마세요:
+7. **스킬이 필요없는 질문 판단 기준**: 다음 유형은 `{"skill": null, "response": "..."}`로만 응답하고 절대 스킬을 호출하지 마세요:
    - 인사/작별 ("안녕", "고마워", "잘가", "수고해", "반가워")
    - 자기소개 요청 ("누구야?", "뭐하는 로봇이야?", "이름이 뭐야?")
    - 능력/할일 문의 ("뭐 할 수 있어?", "뭐해?", "할 일 있어?")
@@ -271,6 +272,110 @@ _RESPONSE_FORMAT_REMINDER = """[응답 형식 (최종 확인 — 반드시 준�
 - 응답은 위 JSON 형식 중 하나로만 출력하세요."""
 
 
+# ---------------------------------------------------------------------------
+# 네이티브 도구(tool) 호출 모드
+#
+# 도구 호출 모드에서는 스킬 목록이 프롬프트가 아니라 LLM API 의 ``tools``
+# 파라미터로 전달된다. 따라서 스킬 목록/파라미터 규칙/JSON 응답 형식 섹션은
+# 토큰 낭비이면서 동시에 모델이 "JSON 으로 답해야 한다"는 잘못된 제약을
+# 주므로 제거한다. [도구 선택 전략] 은 그대로 둔다 — 실측에서 이 섹션을
+# 빼면 툴 선택 정확도가 74% → 60% 로 떨어진다.
+# ---------------------------------------------------------------------------
+
+# 툴 호출 모드에서 제거할 프롬프트 섹션(헤더 이름 기준).
+_TOOL_MODE_DROP_SECTIONS = (
+    "사용 가능한 스킬",
+    "파라미터 규칙",
+    "응답 작성 규칙",
+    "응답 형식 (JSON만 반환, 설명 없이)",
+    "중요 사항",
+)
+
+# 툴 호출 모드에서 문구를 바꾼다. (긴 문자열부터 적용된다)
+_TOOL_MODE_TEXT_REPLACEMENTS = (
+    (
+        "보유한 [사용 가능한 스킬]을 정확히 이해하고,",
+        "제공된 도구(tool) 목록을 정확히 이해하고,",
+    ),
+    (
+        "4. 필수 파라미터가 없어서 잘못 호출할 가능성이 높다면, 틀린 추측으로 실행하지 말고 "
+        "`response`로 짧게 필요한 정보를 요청하세요.",
+        "4. 필수 파라미터가 없어서 잘못 호출할 가능성이 높다면, 틀린 추측으로 실행하지 말고 "
+        "도구를 호출하지 않은 채 짧게 필요한 정보를 요청하세요.",
+    ),
+    (
+        '7. **스킬이 필요없는 질문 판단 기준**: 다음 유형은 `{"skill": null, "response": "..."}`'
+        "로만 응답하고 절대 스킬을 호출하지 마세요:",
+        "7. **스킬이 필요없는 질문 판단 기준**: 다음 유형은 도구를 호출하지 말고 "
+        "평문으로만 답변하세요:",
+    ),
+    # 잔여 참조(도구 선택 전략 14번, 스킬 가이드 등)를 통일한다.
+    ("[사용 가능한 스킬]", "제공된 도구(tool) 목록"),
+    ("[파라미터 규칙]", "도구 스키마"),
+)
+
+# 툴 호출 모드 전용 응답 작성 규칙. (JSON 형식 강제가 사라지므로 평문 답변이 자연스럽다)
+_TOOL_MODE_RESPONSE_RULES = """[응답 작성 규칙]
+1. 도구를 사용했다면 어떤 도구를 왜 골랐는지를 답변에 간단히 밝히세요.
+2. 조회·목록·정보 요청은 도구 실행 결과(result_data)를 근거로 사용자에게 자세히 정리해 답하세요. 도구가 돌려준 JSON을 그대로 출력하지 마세요.
+3. 도구가 필요 없으면 도구를 호출하지 말고 평문으로 바로 답변하세요."""
+
+# 툴 호출 모드 전용 도구 사용 규칙.
+_TOOL_MODE_TOOL_RULES = """[도구 사용 규칙]
+1. 도구 호출이 필요한 질문은 도구를 호출해 확인한 뒤 답하세요. 값을 추측하거나 지어내지 마세요. (예: 현재 배터리가 몇 %인지 물으면 `get_status`를 호출해서 확인한 뒤 답하세요.)
+2. 도구 호출이 필요하면 함수 호출 형식으로 요청하세요. 함수 호출 형식 외에 설명 문장을 먼저 출력하지 마세요.
+3. 도구 결과를 받은 뒤, 그 결과로 사용자에게 답하세요. 다음 도구가 필요하면 다시 함수 호출을 하세요.
+4. 한 번에 여러 도구를 호출할 때는 서로 독립적인 도구만 묶으세요. 순서 의존이 있으면 하나씩 호출하세요.
+5. 복합 조작 스킬(`adaptive_pick_object`, `grasp`, `place`, `vla_pick_*`, `pick_*`, `prepare_right_side_pick`, `servo_gripper_to_object`)은 자체완결형이라 다른 도구와 함께 묶지 마세요.
+6. 백그라운드 스킬(`autonomous_act`, `reactive_navigate`)은 안내 도구(`send_message`, `say`, `log_observation`) 선행만 허용되며 마지막이어야 합니다."""
+
+# 섹션 헤더 인식: "[헤더]" 한 줄로만 이루어진 줄.
+_SECTION_HEADER_RE = re.compile(r"^\[([^\[\]]+)\]\s*$")
+
+
+def _split_sections(text: str) -> list[tuple[str | None, str]]:
+    """프롬프트를 ``[헤더]`` 로 시작하는 구간으로 나눈다.
+
+    Returns:
+        ``(헤더 이름, 구간 본문)`` 리스트. 첫 구간(헤더 이전)의 이름은 None.
+    """
+    sections: list[tuple[str | None, str]] = []
+    header: str | None = None
+    buf: list[str] = []
+    for line in text.split("\n"):
+        match = _SECTION_HEADER_RE.match(line)
+        if match:
+            if buf:
+                sections.append((header, "\n".join(buf)))
+            header = match.group(1).strip()
+            buf = [line]
+        else:
+            buf.append(line)
+    if buf:
+        sections.append((header, "\n".join(buf)))
+    return sections
+
+
+def strip_json_response_sections(prompt_text: str) -> str:
+    """프롬프트에서 JSON 응답을 강제하는 섹션을 제거하고 문구를 툴 호출 모드로 바꾼다.
+
+    기본 프롬프트뿐 아니라 사용자가 넘긴 커스텀 프롬프트 파일에도 같은
+    변환을 적용하므로, 프롬프트 파일을 따로 관리하는 배포에서도 툴 호출
+    모드가 동작한다.
+    """
+    kept: list[str] = []
+    for header, body in _split_sections(prompt_text):
+        if header in _TOOL_MODE_DROP_SECTIONS:
+            continue
+        kept.append(body)
+    text = "\n".join(kept)
+    for old, new in _TOOL_MODE_TEXT_REPLACEMENTS:
+        text = text.replace(old, new)
+    # 툴 목록이 도구 스펙으로 전달되므로 스킬 목록 자리표시자는 비운다.
+    text = text.replace("{skill_list}", "")
+    return text.strip()
+
+
 _STRETCH_NAVIGATION_SAFETY_POLICY = """[Stretch3 주행 안전 정책]
 - Stretch3는 가로로 늘어나는 팔 구조라 팔/그리퍼가 펴진 상태로 주행하면 벽, 문틀, 가구, 장애물에 걸릴 수 있습니다.
 - Stretch3에서 베이스가 움직이는 모든 요청(`navigate_to`, `move_relative`, `approach_object`, `rotate`, `face_direction`, `follow_waypoints`, `patrol`, `explore`, `reactive_navigate`, `condition_reactive` 등) 전에는 팔/그리퍼가 주행 안전 자세인지 확인해야 합니다.
@@ -486,16 +591,8 @@ def _compact_skill_prompt_enabled(node) -> bool:
         return True
 
 
-def assemble_static_prompt_base(node) -> str:
-    """스킬 목록·가이드 등 정적 프롬프트 영역을 1회만 조립해 캐시한다.
-
-    스킬 구성과 가이드는 초기화 이후 바뀌지 않으므로, 매 태스크마다
-    반복 조립하지 않고 ``node._system_prompt_base_cache`` 에 캐시된 문자열을
-    재사용한다. node.py 의 ``_static_prompt_base`` 에서 위임.
-    """
-    if node._system_prompt_base_cache is not None:
-        return node._system_prompt_base_cache
-
+def _build_skill_lines(node) -> str:
+    """스킬 목록을 프롬프트용 평문 목록으로 조립한다(JSON 응답 모드 전용)."""
     skills = node._skills.list_skills(include_internal=False)
     skill_lines_list = []
     for skill in skills:
@@ -536,16 +633,11 @@ def assemble_static_prompt_base(node) -> str:
                     schema_text = str(schema)
                 line += f"\n    MCP 입력 JSON Schema: {schema_text}"
         skill_lines_list.append(line)
-    skill_lines = "\n".join(skill_lines_list)
-    base = node._system_prompt
-    if "{skill_list}" in base:
-        # .format()는 프롬프트 본문의 리터럴 중괄호(예: JSON 예시 {"skill": ...})를
-        # 치환 필드로 오인해 KeyError를 낸다(기본 프롬프트든 커스텀 프롬프트 파일이든).
-        # 단순 토큰 치환으로 바꿔 어떤 중괄호가 있어도 안전하게 한다.
-        base = base.replace("{skill_list}", skill_lines)
-    else:
-        base = base + f"\n\n[사용 가능한 스킬]\n{skill_lines}"
+    return "\n".join(skill_lines_list)
 
+
+def _append_shared_sections(node, base: str) -> str:
+    """JSON 응답과 무관한 가이드/정책 영역을 프롬프트 뒤에 이어붙인다."""
     # 스킬 가이드(SKILLS.md) 주입
     if node._skills_guide:
         base = base + f"\n\n[기본 스킬 가이드]\n{node._skills_guide}"
@@ -580,19 +672,53 @@ def assemble_static_prompt_base(node) -> str:
 
     if node._startup_knowledge_ctx:
         base = base + f"\n\n{node._startup_knowledge_ctx}"
-
-    node._system_prompt_base_cache = base
     return base
 
 
-def assemble_system_prompt(node) -> str:
+def assemble_static_prompt_base(node, *, tool_mode: bool = False) -> str:
+    """스킬 목록·가이드 등 정적 프롬프트 영역을 1회만 조립해 캐시한다.
+
+    스킬 구성과 가이드는 초기화 이후 바뀌지 않으므로, 매 태스크마다
+    반복 조립하지 않고 ``node._system_prompt_base_cache`` 에 캐시된 문자열을
+    재사용한다. node.py 의 ``_static_prompt_base`` 에서 위임.
+
+    ``tool_mode=True`` 면 스킬 목록을 프롬프트에 넣지 않고 JSON 응답 강제
+    섹션도 제거한다 — 스킬 목록은 LLM API 의 ``tools`` 파라미터로 전달되므로
+    프롬프트에 평문으로 중복 노출할 필요가 없다.
+    """
+    cache_attr = "_tool_prompt_base_cache" if tool_mode else "_system_prompt_base_cache"
+    cached = getattr(node, cache_attr, None)
+    if cached is not None:
+        return cached
+
+    if tool_mode:
+        # 스킬 목록은 도구 스펙이 대신한다. JSON 응답 강제 섹션도 제거한다.
+        base = strip_json_response_sections(node._system_prompt)
+    else:
+        skill_lines = _build_skill_lines(node)
+        base = node._system_prompt
+        if "{skill_list}" in base:
+            # .format()는 프롬프트 본문의 리터럴 중괄호(예: JSON 예시 {"skill": ...})를
+            # 치환 필드로 오인해 KeyError를 낸다(기본 프롬프트든 커스텀 프롬프트 파일이든).
+            # 단순 토큰 치환으로 바꿔 어떤 중괄호가 있어도 안전하게 한다.
+            base = base.replace("{skill_list}", skill_lines)
+        else:
+            base = base + f"\n\n[사용 가능한 스킬]\n{skill_lines}"
+
+    base = _append_shared_sections(node, base)
+
+    setattr(node, cache_attr, base)
+    return base
+
+
+def assemble_system_prompt(node, *, tool_mode: bool = False) -> str:
     """최종 시스템 프롬프트 조립.
 
     정적 베이스 위에 학습된 스킬 교훈(append-only overlay)을 얹고,
     robot_soul 이 있으면 그 뒤에 결합한다. node.py 의 ``_build_system_prompt``
     에서 위임.
     """
-    base = assemble_static_prompt_base(node)
+    base = assemble_static_prompt_base(node, tool_mode=tool_mode)
 
     # 학습된 스킬 교훈 주입 (append-only overlay, dirty 시에만 재계산)
     lessons_ctx = node._skill_lessons_section()
@@ -604,4 +730,7 @@ def assemble_system_prompt(node) -> str:
 
     # 소형 LLM은 프롬프트 끝부분의 지시에 가장 크게 영향을 받으므로(recency bias),
     # 스킬 교훈/로봇 소울까지 모두 결합한 뒤 응답 형식을 마지막에 재확인한다.
+    if tool_mode:
+        # 툴 호출 모드에서는 JSON 형식 재확인 대신 툴 사용 규칙으로 마무리한다.
+        return f"{base}\n\n{_TOOL_MODE_RESPONSE_RULES}\n\n{_TOOL_MODE_TOOL_RULES}"
     return f"{base}\n\n{_RESPONSE_FORMAT_REMINDER}"

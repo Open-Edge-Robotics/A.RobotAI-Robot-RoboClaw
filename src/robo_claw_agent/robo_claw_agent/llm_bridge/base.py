@@ -1,12 +1,45 @@
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from typing import Any
 
 # LLM API 호출 기본 timeout (초)
 DEFAULT_TIMEOUT_SEC = 60.0
 
 Message = dict[str, str]
+
+
+@dataclass(slots=True)
+class ToolCall:
+    """LLM 이 요청한 도구(tool) 호출 1건.
+
+    ``arguments`` 는 프로바이더 응답의 원본(JSON 문자열)을 파싱한 dict 다.
+    인자가 JSON 이 아닌 형태(빈 문자열 등)로 오면 빈 dict 로 정규화된다.
+    ``id`` 는 프로바이더가 부여한 호출 고유 ID (네이티브 tool 결과 매핑용).
+    """
+
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    id: str | None = None
+
+
+@dataclass(slots=True)
+class ToolTurn:
+    """도구 호출을 지원하는 LLM 응답 1턴.
+
+    - ``content``: 도구를 호출하지 않고 평문으로 답한 경우의 텍스트
+    - ``tool_calls``: 모델이 요청한 도구 호출 목록 (없으면 빈 리스트)
+    """
+
+    content: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    # 다음 도구 라운드에 전달할 프로바이더 원본 assistant 메시지입니다.
+    assistant_message: dict[str, Any] | None = None
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
 
 
 def openai_message_to_text(message: Any) -> str:
@@ -43,6 +76,27 @@ def openai_message_to_text(message: Any) -> str:
     return json.dumps({"tool_calls": calls}, ensure_ascii=False)
 
 
+def parse_tool_arguments(raw: Any) -> dict[str, Any]:
+    """프로바이더가 돌려준 도구 인자를 ``dict`` 로 정규화한다.
+
+    OpenAI 는 ``arguments`` 를 JSON 문자열로, Ollama 는 이미 파싱된 dict 로
+    준다. Anthropic 은 dict 다. JSON 파싱에 실패하거나 dict 가 아니면 빈 dict
+    를 반환한다 — 스킬 실행 단계의 스키마 검증이 잘못된 인자를 걸러낸다.
+    """
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 class BaseLLMBridge(ABC):
     """LLM 백엔드 공통 추상 인터페이스"""
 
@@ -53,7 +107,35 @@ class BaseLLMBridge(ABC):
         system_prompt: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """메시지 목록으로 응답 생성"""
+        """메시지 목록으로 응답을 생성합니다.
+
+        ``think``는 Ollama의 호출별 thinking 옵션입니다. 지정하지 않으면
+        브릿지 설정을 사용하며, 다른 provider에서는 무시합니다.
+        """
+
+    def supports_tools(self) -> bool:
+        """네이티브 도구(tool) 호출을 지원하는지 여부.
+
+        기본값은 False 다. 지원하지 않는 프로바이더에서는 플래너가
+        기존 JSON 응답 경로로 자동 폴백한다.
+        """
+        return False
+
+    def chat_with_tools(
+        self,
+        messages: list[Message],
+        system_prompt: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> ToolTurn:
+        """도구 목록을 넘겨 응답을 받고, 도구 호출 요청을 구조화해 반환한다.
+
+        기본 구현은 미지원 예외를 던진다. ``supports_tools()`` 가 True 인
+        프로바이더만 override 한다.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}는 네이티브 도구(tool) 호출을 지원하지 않습니다."
+        )
 
     def chat_stream(
         self,

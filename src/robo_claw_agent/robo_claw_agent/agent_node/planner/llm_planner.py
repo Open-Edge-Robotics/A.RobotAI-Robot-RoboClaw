@@ -5,10 +5,17 @@ import threading
 from typing import Any
 
 from ...answer import looks_like_json
-from ...tracing import traceable
-from ...types import AgentState
+from ...llm_bridge.base import ToolTurn
+from ...tracing import (
+    trace_context_outputs,
+    trace_process_inputs,
+    trace_process_outputs,
+    trace_summary_inputs,
+    traceable,
+)
+from ...types import AgentState, LLMPlanResult, SkillChainItem
 from ..nav_safety import ensure_navigation_safety
-from ..utils import _omit_base64_data
+from ..utils import _omit_base64_data, tool_calling_enabled
 from .answers import _MAX_ANSWER_ROUNDS, _compose_result_answer
 from .classify import (
     _ACTION_TERMINAL_SKILLS,
@@ -23,6 +30,23 @@ from .routing import (
     _preserve_user_navigation_target,
     _route_location_query,
 )
+
+
+def _render_tool_calls(skills: list[SkillChainItem]) -> str:
+    """도구 호출 목록을 사람이 읽을 수 있는 요약으로 렌더링한다.
+
+    대화 이력에 assistant 메시지로 남겨 모델이 "무엇을 호출했는지" 다시 볼 수
+    있게 한다. 프로바이더별 네이티브 tool 메시지 형식 차이를 흡수하는 목적도
+    있다. 실행되지 않는(등록되지 않은) 호출은 이미 걸러진 상태다.
+    """
+    parts: list[str] = []
+    for item in skills:
+        try:
+            args_text = json.dumps(item.params, ensure_ascii=False)
+        except (TypeError, ValueError):
+            args_text = str(item.params)
+        parts.append(f"[{item.skill}] {args_text}")
+    return "\n".join(parts)
 
 
 class LLMPlanner:
@@ -86,26 +110,45 @@ class LLMPlanner:
             return False
         return all(self._is_informational_skill(str(item.get("skill") or "")) for item in chain)
 
-    @traceable(name="collect_task_context")
+    @traceable(
+        name="collect_task_context",
+        process_inputs=trace_process_inputs,
+        process_outputs=trace_context_outputs,
+    )
     async def collect_task_context(
         self, instruction: str, goal_handle: Any
     ) -> tuple[list[dict[str, str]], dict]:
         """RAG 검색, 로봇 상태 수집, 스킬 교훈 인출을 수행해 LLM messages를 구성한다."""
+        messages: list[dict[str, str]] = []
+        if self.node._llm:
+            history = self.node._memory.get_conversation_history(self.node._multiturn_n)
+            # task_received 이벤트가 현재 명령을 이미 이력에 포함할 수 있습니다.
+            # 검색어 재작성과 planning에서 같은 대화를 사용하며 중복 추가하지 않습니다.
+            messages = list(history)
+            if not (
+                history
+                and history[-1].get("role") == "user"
+                and history[-1].get("content") == instruction
+            ):
+                messages.append({"role": "user", "content": instruction})
+
         knowledge_ctx = ""
         if self.node._enable_rag:
             search_query = instruction
             if self.node._llm:
                 try:
                     reformulate_prompt = (
-                        "다음 사용자 명령에서 RAG 지식 검색을 위한 핵심 키워드 및 환경 요소를 추출하여 검색 쿼리 하나만 반환하세요.\n"
-                        "불필요한 지시어나 서술어는 제거하고 핵심 명사나 명사구 위주로 작성하세요. 다른 텍스트는 절대 출력하지 마세요.\n\n"
-                        f"명령: {instruction}\n"
-                        "쿼리:"
+                        "대화 내역을 참고하여 마지막 사용자 명령에 필요한 RAG 지식 검색 쿼리 하나만 반환하세요.\n"
+                        "'거기', '그것' 같은 표현은 대화에서 확인된 장소나 대상의 이름으로 구체화하세요.\n"
+                        "불필요한 지시어나 서술어는 제거하고 핵심 명사나 명사구 위주로 작성하세요.\n"
+                        "명령을 실행하거나 사용자에게 답변하지 마세요. 검색 쿼리 외의 텍스트는 출력하지 마세요."
                     )
                     reformulated = await self.node._run_blocking(
                         "query_reformulate",
                         self.node._llm.chat,
-                        [{"role": "user", "content": reformulate_prompt}],
+                        list(messages),
+                        system_prompt=reformulate_prompt,
+                        think=False,
                         timeout_sec=getattr(self.node, "_llm_timeout_sec", 60.0),
                     )
                     reformulated = reformulated.strip().strip('"').strip("'")
@@ -161,7 +204,9 @@ class LLMPlanner:
         robot_summary: dict = {}
         try:
             status_skill = self.node._skills._skills.get("get_status")
-            if hasattr(status_skill, "get_robot_summary"):
+            if getattr(self.node._skills, "mock_robot", False) is True:
+                robot_summary = {"mocked": True, "hardware_connected": False}
+            elif hasattr(status_skill, "get_robot_summary"):
                 robot_summary = await self.node._run_blocking(
                     "get_robot_summary", status_skill.get_robot_summary
                 )
@@ -171,11 +216,7 @@ class LLMPlanner:
             )
 
         # LLM messages 구성
-        messages: list[dict[str, str]] = []
         if self.node._llm:
-            history = self.node._memory.get_conversation_history(self.node._multiturn_n)
-            messages = history + [{"role": "user", "content": instruction}]
-
             health_state = self.node._get_robot_health_state(robot_summary)
             messages.insert(
                 0,
@@ -218,7 +259,178 @@ class LLMPlanner:
 
         return messages, robot_summary
 
-    @traceable(name="run_llm_planning_loop")
+    def _tool_mode_enabled(self) -> bool:
+        """네이티브 도구(tool) 호출 모드 사용 여부.
+
+        설정(``llm_tool_calling``)이 켜져 있고, 연결된 프로바이더가 도구
+        호출을 지원해야 실제 툴 경로를 쓴다. 지원하지 않는 프로바이더에서는
+        자동으로 기존 JSON 응답 경로로 폴백한다.
+
+        프롬프트 조립(node._build_system_prompt)도 같은 판정 함수를 쓰므로
+        두 경로가 어긋나지 않는다.
+        """
+        return tool_calling_enabled(
+            getattr(self.node, "_llm_tool_calling", False),
+            getattr(self.node, "_llm", None),
+        )
+
+    def _resolve_tool_skill_name(self, name: str) -> str | None:
+        """툴 호출 이름을 등록된 스킬 이름으로 정규화한다.
+
+        대소문자만 다른 표기는 등록된 실제 이름으로 바꿔 주고, 등록되지 않은
+        이름이면 None 을 돌려준다(오픈된 스킬 목록에 없는 도구 호출은
+        실행하지 않는다).
+        """
+        if not name:
+            return None
+        try:
+            specs = self.node._tool_specs()
+        except Exception:
+            return name
+        names = [
+            str(spec.get("function", {}).get("name", ""))
+            for spec in specs
+            if isinstance(spec, dict)
+        ]
+        names = [value for value in names if value]
+        if not names:
+            return name
+        if name in names:
+            return name
+        lowered = name.strip().lower()
+        for candidate in names:
+            if candidate.lower() == lowered:
+                return candidate
+        return None
+
+    async def _request_plan(
+        self, messages: list[dict[str, str]], timeout: float
+    ) -> tuple[LLMPlanResult, str]:
+        """LLM 에게 계획을 요청하고 정규화된 계획과 원문 응답을 돌려준다.
+
+        툴 호출 모드에서는 스킬을 LLM API 의 ``tools`` 로 등록해 도구 호출
+        요청을 받고, 호출 이름/인자를 스킬 체인으로 정규화한다. 최종 답변은
+        평문이다 — JSON envelope 파싱이 필요 없다.
+
+        JSON 모드에서는 기존 envelope(``{"skill"|"skills", ...}``)를 파싱한다.
+
+        두 경로 모두 동일한 ``LLMPlanResult`` 로 정규화되므로 이후의
+        (체인 검증 → 안전 보정 → 실행) 로직은 완전히 공유된다.
+        """
+        if not self._tool_mode_enabled():
+            from ..utils import parse_llm_plan
+
+            llm_resp = await self.node._run_blocking(
+                "llm_chat",
+                self.node._llm.chat,
+                messages,
+                system_prompt=self.node._build_system_prompt(),
+                response_format={"type": "json_object"},
+                timeout_sec=getattr(self.node, "_llm_timeout_sec", timeout),
+            )
+            # JSON 모드도 동일한 반환 형식 맞춤: (plan, raw_response, native_tool_calls)
+            return parse_llm_plan(llm_resp), llm_resp, []
+
+        turn = await self.node._run_blocking(
+            "llm_chat_tools",
+            self.node._llm.chat_with_tools,
+            messages,
+            system_prompt=self.node._build_system_prompt(),
+            tools=self.node._tool_specs(),
+            timeout_sec=getattr(self.node, "_llm_timeout_sec", timeout),
+        )
+
+        skills: list[SkillChainItem] = []
+        tool_call_ids: list[str] = []
+        native_tool_calls: list[dict[str, Any]] = []
+        unknown: list[str] = []
+        for call in turn.tool_calls:
+            resolved = self._resolve_tool_skill_name(call.name)
+            if resolved is None:
+                unknown.append(call.name)
+                continue
+            skills.append(SkillChainItem(skill=resolved, params=dict(call.arguments or {})))
+            if call.id:
+                tool_call_ids.append(call.id)
+            # 네이티브 tool_calls 형식 보존 (LLM 메시지에 그대로 전달)
+            native_tool_calls.append(
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments or {}, ensure_ascii=False),
+                    },
+                }
+            )
+        if unknown:
+            self.node.get_logger().warning(
+                "LLM requested unknown tool(s) %s — dropped. "
+                "Only tools registered in the tool list are executable.",
+                ", ".join(unknown),
+            )
+
+        if skills:
+            rendered = _render_tool_calls(skills)
+            return (
+                LLMPlanResult(
+                    skills=skills, final=False, reason=rendered, tool_call_ids=tool_call_ids
+                ),
+                turn,
+                native_tool_calls,
+            )
+
+        # 도구 호출이 없으면 모델이 직접 답한 것이다. 툴 호출 모드에서는
+        # 최종 답변이 평문이므로 JSON 파싱 실패 같은 형식 오류가 없다.
+        content = (turn.content or "").strip()
+        return (
+            LLMPlanResult(
+                skills=[],
+                response=content,
+                final=bool(content),
+                # 도구 호출도 평문 답변도 없으면 형식 오류로 보고 교정 재시도를 건다.
+                parse_failed=not content,
+            ),
+            turn,
+            [],
+        )
+
+    def _format_correction_instruction(self) -> str:
+        """형식 교정 재시도 지시문(응답 방식에 맞춰 분기)."""
+        if self._tool_mode_enabled():
+            return (
+                "도구 호출이 필요하면 반드시 도구를 호출하고, 필요 없으면 "
+                "설명 없이 최종 답변만 남기세요. 도구 호출 형식 외에 다른 형식은 "
+                "사용하지 마세요. 등록된 도구 목록에 있는 도구만 호출하세요."
+            )
+        return (
+            "응답이 올바른 JSON 형식이 아닙니다. "
+            "반드시 다음 형식 중 하나로만 다시 응답해 주세요.\n"
+            '{"skill": "<스킬명>", "params": {...}, "reason": "..."}\n'
+            '또는 {"skills": [{"skill": "<스킬명>", "params": {...}}], "reason": "..."}\n'
+            '또는 {"skill": null, "response": "<답변>"}\n'
+            "tool_calls 형식은 사용하지 마세요. "
+            "[사용 가능한 스킬]에 있는 스킬명만 사용하세요. "
+            "장소/좌표 지식 조회는 get_location, 현재 로봇 좌표 조회는 get_status를 사용하세요."
+        )
+
+    def _conversational_retry_instruction(self) -> str:
+        """대화형 쿼리 재요구 지시문(응답 방식에 맞춰 분기)."""
+        if self._tool_mode_enabled():
+            return (
+                "사용자의 요청은 도구가 필요하지 않은 대화형 질문입니다. "
+                "도구를 호출하지 말고 평문으로만 답변하세요."
+            )
+        return (
+            "사용자의 요청은 스킬이 필요하지 않은 대화형 질문입니다. "
+            '반드시 {"skill": null, "response": "<답변>"} 형식으로만 응답하세요.'
+        )
+
+    @traceable(
+        name="run_llm_planning_loop",
+        process_inputs=trace_summary_inputs,
+        process_outputs=trace_process_outputs,
+    )
     async def run_llm_planning_loop(
         self,
         goal_handle: Any,
@@ -256,22 +468,20 @@ class LLMPlanner:
 
             try:
                 self.node.get_logger().info(f"Starting LLM planning (round {current_round})")
-                llm_resp = await self.node._run_blocking(
-                    "llm_chat",
-                    self.node._llm.chat,
-                    messages,
-                    system_prompt=self.node._build_system_prompt(),
-                    response_format={"type": "json_object"},
-                    timeout_sec=getattr(self.node, "_llm_timeout_sec", timeout),
+                plan, llm_resp_content, native_tool_calls = await self._request_plan(
+                    messages, timeout
                 )
-                from ..utils import parse_llm_plan
-
-                plan = parse_llm_plan(llm_resp)
+                assistant_message = None
+                if isinstance(llm_resp_content, ToolTurn):
+                    assistant_message = llm_resp_content.assistant_message
+                    llm_resp_content = llm_resp_content.content
+                    if native_tool_calls and llm_resp_content.strip():
+                        send_fb(f"assistant: {llm_resp_content.strip()}", 10 + current_round * 5)
                 self.node.get_logger().info(
                     f"LLM planning complete: {len(plan.skills)} skills planned, final={plan.final}"
                 )
             except Exception as e:
-                self.node.get_logger().error(f"Failed to parse LLM response: {e}")
+                self.node.get_logger().error(f"Failed to obtain LLM plan: {e}")
                 result_msg = f"해석 오류: {e}"
                 task_success = False
                 self.node._set_state(AgentState.ERROR, "", f"LLM 에러: {e}")
@@ -310,18 +520,18 @@ class LLMPlanner:
                         "LLM returned no skill for a location/navigation command "
                         f"(final={plan.final}, parse_failed={plan.parse_failed}) — "
                         f"forcing '{forced_chain[0].get('skill')}' deterministically. "
-                        f"Raw response (first 200 chars): {llm_resp[:200]}"
+                        f"Raw response (first 200 chars): {llm_resp_content[:200]}"
                     )
                     chain_success, recovered_pending = await self.execute_skill_chain(
                         forced_chain,
                         messages,
-                        llm_resp,
                         instruction,
                         timeout,
                         skill_results,
                         pending_send_events,
                         recovered_pending,
                         send_fb,
+                        llm_resp_content=llm_resp_content,
                     )
                     if chain_success and skill_results and skill_results[-1].success:
                         result_msg = skill_results[-1].message or "완료"
@@ -347,22 +557,13 @@ class LLMPlanner:
                     )
                     # raw 응답의 앞부분을 로깅하여 디버깅 지원
                     self.node.get_logger().info(
-                        f"Raw LLM response (first 300 chars): {llm_resp[:300]}"
+                        f"Raw LLM response (first 300 chars): {llm_resp_content[:300]}"
                     )
-                    messages.append({"role": "assistant", "content": llm_resp})
+                    messages.append({"role": "assistant", "content": llm_resp_content})
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "응답이 올바른 JSON 형식이 아닙니다. "
-                                "반드시 다음 형식 중 하나로만 다시 응답해 주세요.\n"
-                                '{"skill": "<스킬명>", "params": {...}, "reason": "..."}\n'
-                                '또는 {"skills": [{"skill": "<스킬명>", "params": {...}}], "reason": "..."}\n'
-                                '또는 {"skill": null, "response": "<답변>"}\n'
-                                "tool_calls 형식은 사용하지 마세요. "
-                                "[사용 가능한 스킬]에 있는 스킬명만 사용하세요. "
-                                "장소/좌표 지식 조회는 get_location, 현재 로봇 좌표 조회는 get_status를 사용하세요."
-                            ),
+                            "content": self._format_correction_instruction(),
                         }
                     )
                     # 형식 교정 재시도는 계획 라운드 예산을 소모하지 않는다.
@@ -388,7 +589,7 @@ class LLMPlanner:
                     self.node.get_logger().warning(
                         f"Format correction retries ({max_format_retries}) exhausted with "
                         "still-unparseable output — using raw text as final answer "
-                        f"(first 300 chars): {llm_resp[:300]}"
+                        f"(first 300 chars): {llm_resp_content[:300]}"
                     )
                 result_msg = plan.response or "완료"
                 if answering and (not plan.response or looks_like_json(plan.response)):
@@ -408,14 +609,11 @@ class LLMPlanner:
                 self.node.get_logger().info(
                     f"Conversational query '{instruction}' got skill plan — requesting re-evaluation"
                 )
-                messages.append({"role": "assistant", "content": llm_resp})
+                messages.append({"role": "assistant", "content": llm_resp_content})
                 messages.append(
                     {
                         "role": "user",
-                        "content": (
-                            "사용자의 요청은 스킬이 필요하지 않은 대화형 질문입니다. "
-                            '반드시 {"skill": null, "response": "<답변>"} 형식으로만 응답하세요.'
-                        ),
+                        "content": self._conversational_retry_instruction(),
                     }
                 )
                 continue
@@ -441,7 +639,7 @@ class LLMPlanner:
             policy_error = self.node._validate_skill_chain(raw_chain)
             if policy_error:
                 self.node.get_logger().warning(f"Plan policy validation failed: {policy_error}")
-                messages.append({"role": "assistant", "content": llm_resp})
+                messages.append({"role": "assistant", "content": llm_resp_content})
                 messages.append(
                     {
                         "role": "user",
@@ -458,23 +656,40 @@ class LLMPlanner:
                 )
                 continue
 
-            # 스킬 체인 실행
+            # 스킬 체인 실행 (네이티브 tool_calls 전달)
             chain_success, recovered_pending = await self.execute_skill_chain(
                 raw_chain,
                 messages,
-                llm_resp,
                 instruction,
                 timeout,
                 skill_results,
                 pending_send_events,
                 recovered_pending,
                 send_fb,
+                native_tool_calls=native_tool_calls,
+                assistant_message=assistant_message,
+                llm_resp_content=llm_resp_content,
             )
 
             if chain_success:
-                # 정보성 스킬만으로 이루어진 체인은 결과 데이터를 사용자에게 정리해
-                # 답해야 한다. 예전에는 마지막 스킬의 message(ros_command 는
-                # "실행 완료")를 그대로 답변으로 써서 실제 조회 결과가 사라졌다.
+                # 네이티브 tool calling 모드에서는 체인 실행 후 **항상 다음 LLM 라운드로**
+                # 넘어가 tool 결과를 LLM이 보고 다음 행동(추가 tool call 또는 최종 답변)을
+                # 결정하게 한다. JSON 모드에서만 "action 스킬이면 즉시 종료" 로직을 유지.
+                if self._tool_mode_enabled():
+                    # LLM이 이미 최종 답변을 냈으면(final=True, skills=[]) 종료
+                    if plan.final and not plan.skills:
+                        last_result = skill_results[-1] if skill_results else None
+                        result_msg = (
+                            (last_result.message if last_result else "")
+                            or _compose_result_answer(skill_results)
+                            or plan.response
+                            or "완료"
+                        )
+                        break
+                    # 그렇지 않으면 tool 결과가 messages에 이미 들어갔으므로 다음 라운드 진행
+                    continue
+
+                # JSON 모드: 기존 로직 유지 (action 스킬 있으면 즉시 종료)
                 if (
                     not plan.final
                     and not answering
@@ -488,13 +703,8 @@ class LLMPlanner:
                         f"final answer from executed results "
                         f"({answer_rounds}/{_MAX_ANSWER_ROUNDS})"
                     )
-                    # execute_skill_chain 이 이미 messages 에 실행 결과 요약과 최종
-                    # 답변 요청을 넣었다. 다음 라운드가 그것을 소비한다.
                     continue
 
-                # 물리 동작/백그라운드 스킬이거나 요약 라운드 예산을 다 쓴 경우:
-                # 마지막 스킬의 결과 메시지로 종료한다. reason 은 내부 전략
-                # 필드이므로 사용자 답변으로 쓰지 않는다.
                 last_result = skill_results[-1] if skill_results else None
                 result_msg = (
                     (last_result.message if last_result else "")
@@ -516,22 +726,53 @@ class LLMPlanner:
         self,
         chain: list[dict[str, Any]],
         messages: list[dict[str, str]],
-        llm_resp: str,
         instruction: str,
         timeout: float,
         skill_results: list[Any],
         pending_send_events: list[threading.Event],
         recovered_pending: bool,
         send_fb: Any,
+        native_tool_calls: list[dict[str, Any]] | None = None,
+        llm_resp_content: str | None = None,
+        assistant_message: dict[str, Any] | None = None,
     ) -> tuple[bool, bool]:
-        """스킬 체인을 순차 실행하고 결과를 messages에 반영한다."""
+        """스킬 체인을 순차 실행하고 결과를 messages에 반영한다.
+
+        native_tool_calls 가 주어지면 네이티브 tool calling 형식으로
+        assistant 메시지(tool_calls 필드)와 tool 결과 메시지(role="tool", tool_name=...)를 추가한다.
+        llm_resp_content 가 주어지면(기존 JSON 모드) assistant 메시지에 content로 추가한다.
+        """
         chain_success = True
         executed_reports = []
 
-        # assistant 메시지는 체인 실행 전 1회만 추가하여 중복 누적 방지
-        messages.append({"role": "assistant", "content": llm_resp})
+        # assistant 메시지: 네이티브 tool_calls 형식이 있으면 그것을 사용,
+        # llm_resp_content가 있으면 content로 추가 (JSON 모드용)
+        if native_tool_calls:
+            messages.append(
+                assistant_message
+                or {
+                    "role": "assistant",
+                    "content": llm_resp_content or "",
+                    "tool_calls": native_tool_calls,
+                }
+            )
+        elif llm_resp_content is not None:
+            messages.append({"role": "assistant", "content": llm_resp_content})
 
-        for item in chain:
+        def append_tool_result(index: int, data: Any) -> None:
+            if not native_tool_calls or index >= len(native_tool_calls):
+                return
+            call = native_tool_calls[index]
+            message = {
+                "role": "tool",
+                "tool_name": call.get("function", {}).get("name", ""),
+                "content": json.dumps(data, ensure_ascii=False),
+            }
+            if call.get("id"):
+                message["tool_call_id"] = call["id"]
+            messages.append(message)
+
+        for call_index, item in enumerate(chain):
             name, params = item.get("skill"), item.get("params", {})
             if not name:
                 continue
@@ -544,6 +785,14 @@ class LLMPlanner:
                 )
                 executed_reports.append(
                     f"- '{name}': 실행하지 않음. 대화형 요청이라 물리 동작 스킬은 차단됩니다."
+                )
+                append_tool_result(
+                    call_index,
+                    {
+                        "success": False,
+                        "error_type": "SafetyRejection",
+                        "message": "대화형 요청이라 물리 동작 스킬은 차단됩니다.",
+                    },
                 )
                 continue
 
@@ -569,7 +818,9 @@ class LLMPlanner:
 
             skill_results.append(res)
 
-            if getattr(self.node, "_enable_skill_learning", False):
+            if getattr(self.node, "_enable_skill_learning", False) and not res.result_data.get(
+                "mocked"
+            ):
                 try:
                     await self.node._run_blocking(
                         "record_skill_episode",
@@ -587,6 +838,23 @@ class LLMPlanner:
                     self.node.get_logger().warning(f"Failed to record skill experience: {e}")
 
             if not res.success:
+                append_tool_result(
+                    call_index,
+                    {
+                        "success": False,
+                        "message": res.message,
+                        "result_data": clean_result_data,
+                    },
+                )
+                for pending_index in range(call_index + 1, len(native_tool_calls or [])):
+                    append_tool_result(
+                        pending_index,
+                        {
+                            "success": False,
+                            "error_type": "NotExecuted",
+                            "message": "앞선 도구 실행 실패로 실행하지 않았습니다.",
+                        },
+                    )
                 self.node.get_logger().error(
                     f"Skill '{name}' failed: {res.message}. Collecting telemetry and attempting replanning..."
                 )
@@ -652,18 +920,30 @@ class LLMPlanner:
                     f"- '{name}': 성공. 결과: {json.dumps(clean_result_data, ensure_ascii=False)}"
                 )
 
+                append_tool_result(call_index, clean_result_data)
+
         if chain_success:
-            results_summary = "\n".join(executed_reports)
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        f"스킬 체인 실행 결과:\n{results_summary}\n\n"
+            # 네이티브 모드에서는 개별 tool 메시지가 이미 추가됐으므로 다음 LLM 호출로 바로 진행
+            if not native_tool_calls:
+                results_summary = "\n".join(executed_reports)
+                if self._tool_mode_enabled():
+                    next_step = (
+                        "요청된 도구들이 성공적으로 수행되었습니다. "
+                        "다음 행동이 필요하면 도구를 다시 호출하고, 완료됐으면 도구를 호출하지 말고 "
+                        "평문으로만 최종 답변을 남기세요."
+                    )
+                else:
+                    next_step = (
                         "요청된 스킬들이 성공적으로 수행되었습니다. "
                         "다음 행동이 필요하면 스킬을 실행하고, 완료됐으면 반드시 JSON 형식으로만 최종 답변하세요: "
                         '{"skill": null, "response": "<최종 답변>"}'
-                    ),
-                }
-            )
+                    )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"스킬 체인 실행 결과:\n{results_summary}\n\n{next_step}",
+                    }
+                )
+            # else: native tool calling - tool 결과가 이미 messages에 있으므로 바로 다음 라운드로
 
         return chain_success, recovered_pending

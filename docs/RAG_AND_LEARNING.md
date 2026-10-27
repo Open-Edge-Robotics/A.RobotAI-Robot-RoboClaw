@@ -1,4 +1,6 @@
-# RAG / Qdrant 설정 및 스킬 자가 학습
+# 검색 증강 생성과 Qdrant 및 스킬 자가 학습
+
+이 문서는 로컬·Qdrant RAG 설정과 스킬 자가 학습의 운영 방법을 설명합니다.
 
 ## 1. 로컬 RAG
 
@@ -12,6 +14,21 @@ robo_claw_agent_node:
     rag_top_k: 2
     rag_score_threshold: 0.7
 ```
+
+### 검색 쿼리 재작성
+
+RAG 검색 전에는 최근 대화 내역과 현재 명령을 LLM에 전달하여 검색 쿼리를 재작성합니다.
+대화 범위는 기존 `multiturn_n` 설정을 따르며, 현재 명령이 이력의 마지막 사용자 메시지에
+이미 있으면 중복 추가하지 않습니다. 이전 대화는 "거기", "그것" 같은 표현의 대상을
+구체화하는 데 사용합니다.
+
+Ollama에서는 이 호출에만 `think=False`를 지정하여 검색어 생성 중 thinking을 끕니다.
+일반 계획 수립과 도구 호출은 기존 thinking 설정을 유지하며, 다른 provider에는 Ollama의
+`think` 필드를 전달하지 않습니다. 구형 Ollama 클라이언트가 `think` 인자를 지원하지 않으면
+경고를 남기고 해당 인자를 생략합니다.
+
+재작성에는 기존 `llm_timeout_sec` 제한을 적용합니다. 응답이 비거나 timeout·오류가 발생하면
+현재 명령 원문으로 검색합니다. 재작성 단계는 도구를 호출하거나 로봇 명령을 실행하지 않습니다.
 
 ## 2. Qdrant RAG
 
@@ -27,6 +44,19 @@ robo_claw_agent_node:
     rag_top_k: 2
     rag_score_threshold: 0.7
 ```
+
+### Qdrant 클라이언트 버전 관리
+
+Qdrant 서버 1.19.x에 맞춰 Python 클라이언트는 1.19.1을 사용합니다.
+`pyproject.toml`은 `>=1.19.1,<1.20` 범위를 선언하고, `uv.lock`과
+`Dockerfile`은 1.19.1로 고정합니다. 서버 버전과 클라이언트 버전의 patch 번호는
+같을 필요가 없습니다.
+
+클라이언트 버전을 변경하면 세 파일을 함께 갱신하고 `task deps-check`와
+벡터 저장소 테스트로 개발 환경과 배포 이미지의 일치를 확인합니다.
+`uv sync --locked --inexact --no-dev`로 실행 환경을 동기화한 뒤 에이전트를
+재시작합니다. Docker 실행 환경은 변경된 Dockerfile로 이미지를 다시 빌드합니다.
+호환성 경고를 숨기는 `check_compatibility=False` 대신 버전을 맞춥니다.
 
 ## 3. 관련 파라미터
 

@@ -34,10 +34,45 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 | `robo_claw_vision`    | **C++**    | ONNX Runtime + YOLOv8 실시간 객체 인식, Detection2DArray 발행                                                                                                    |
 
 ## 🛠️ 설치 및 의존성
+```cmd
+# ROS 2 Jazzy와의 의존성 때문에 Ubuntu 24.04 버전이 필요하다.
+wsl --install -d Ubuntu-24.04
+```
 
 ```bash
+# uv 설치
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# task 설치
+curl -1sLf 'https://dl.cloudsmith.io/public/task/task/setup.deb.sh' | sudo bash
+sudo apt install task
+
 # 개발 도구 및 필수 라이브러리 설치
 task setup-deps
+
+# go 설치
+sudo apt install golang-go
+
+# ROS 2 Jazzy Jalisco 설치
+sudo apt update && sudo apt install -y software-properties-common curl && \
+sudo add-apt-repository -y universe && \
+ROS_APT_SOURCE_VERSION=$(curl -fsSL https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F '"tag_name"' | awk -F'"' '{print $4}') && \
+curl -fL -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb" && \
+sudo dpkg -i /tmp/ros2-apt-source.deb && \
+sudo apt update && sudo apt upgrade -y && \
+sudo apt install -y \
+    ros-jazzy-desktop \
+    ros-dev-tools \
+    ros-jazzy-vision-msgs \
+    ros-jazzy-moveit-ros-planning-interface \
+    ros-jazzy-control-msgs \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-turtlebot4-navigation \
+    ros-jazzy-turtlebot4-simulator \
+    ros-jazzy-irobot-create-nodes \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup
+source /opt/ros/jazzy/setup.bash
 ```
 
 ## 🚀 빠른 시작 (`task` & `rclaw`)
@@ -65,7 +100,7 @@ task unit-test
 ./rclaw run camera_topic:=/camera/color/image_raw
 
 # 6. 시뮬레이션 실행 (Nav2/AMCL 포함)
-./rclaw sim --nav2
+./rclaw sim --nav2 sim_engine:=gz
 
 # 7. 실행 프로세스 및 점유 포트 강제 정리
 ./rclaw kill
@@ -277,6 +312,58 @@ ros2 launch robo_claw_bringup robo_claw.launch.py \
 ## 🛠️ 주요 스킬
 
 에이전트가 사용할 수 있는 스킬(네비게이션, 매니퓰레이션, 인지, 자율 행동, RAG, 자가 학습, 동료 로봇 협업, HRI, 안전, 시스템 등)은 [docs/SKILLS.md](docs/SKILLS.md)의 전체 레퍼런스 표를 참고하세요.
+
+## 🔀 스킬 선택: 네이티브 tool calling
+
+LLM planner가 스킬을 고를 때, 스킬 목록을 프롬프트에 **평문으로 나열**하지 않고
+LLM API 의 `tools` 파라미터로 **등록**해 모델이 직접 호출하게 합니다(Ollama 의
+tool calling 과 동일 방식). 스킬이 선택되면 그 스킬의 `input_schema` 가 그대로
+호출 인자로 오므로, 응답을 JSON 으로 파싱하는 코드가 없어집니다.
+
+| | 기존 (JSON 응답) | 네이티브 tool calling |
+|---|---|---|
+| 스킬 목록 전달 | 프롬프트에 평문 나열 | API `tools` 파라미터로 등록 |
+| 스킬 선택 결과 | `{"skill": "...", "params": {...}}` 파싱 | `tool_calls` 의 name/arguments |
+| 프롬프트 강제 | `[응답 형식 (JSON만 반환)]` 섹션 | `[도구 사용 규칙]` 섹션 |
+
+**스위치**: `llm_tool_calling` (ROS 파라미터, `src/robo_claw_bringup/config/agent.yaml`)
+
+- `true` (기본): 네이티브 tool calling 사용
+- `false`: 기존 JSON 경로로 되돌림 (A/B 비교 기준선)
+- provider 가 tool calling 을 지원하지 않으면 자동으로 JSON 경로로 fallback 합니다.
+
+### A/B 평가 (원본 대비 개선량 측정)
+
+`scripts/eval_tool_calling.py` 가 **실제 배포와 동일한 프롬프트 조립 코드**
+(`assemble_system_prompt`) 와 **동일한 스킬 모듈 목록**으로 두 경로를 비교합니다.
+평가용 프롬프트를 따로 만들지 않으므로 측정값이 실제 동작과 어긋나지 않습니다.
+
+```bash
+# 43개 케이스 × 3회 반복, 두 경로 비교
+./scripts/run_in_ros_env.sh --ws python3 scripts/eval_tool_calling.py \
+    --model <모델> --repeats 3 --json-out /tmp/tool_calling_ab.json
+
+# 한쪽 경로만, 프롬프트/페이로드 미리보기
+./scripts/run_in_ros_env.sh --ws python3 scripts/eval_tool_calling.py --mode tool --dry-run
+```
+
+측정 지표: 스킬 **선택 정확도**, **무도구 응답 비율**, **프롬프트 토큰 수**
+(`prompt_eval_count`), **지연시간**. 케이스는 `validation/system1/tool_calling_cases.jsonl`
+(기대 스킬이 지정된 43개 지시문)에 있습니다.
+
+측정 예시 (로컬 모델, 43 케이스 × 3회):
+
+| 지표 | 기존 (JSON) | tool calling | 개선 |
+|---|---|---|---|
+| 스킬 선택 정확도 | 44.2% | **74.4%** | **+30.2%p** |
+| 무도구 응답 비율 | 58.1% | **14.0%** | **-44.1%p** |
+| 프롬프트 토큰 (평균) | 25,309 | **21,347** | **-3,962 (-15.7%)** |
+| 응답 지연 (평균) | 1.24s | **0.87s** | **-0.37s (-30%)** |
+
+가장 큰 차이는 **무도구 응답 비율** 입니다. JSON 경로에서는 "스킬이 필요 없다"고
+판단해 아무것도 호출하지 않는 경우가 절반이었고, tool calling 경로에서는 스킬
+선택이 86.0% 에서 성공했습니다. 케이스 단위로 보면 14개가 맞아떨어졌고, 1개
+(`지도 보여줘` → `capture_map` 기대, `get_map_visual` 선택)는 어긋났습니다.
 
 ## 🔧 개발 (Lint / Test)
 

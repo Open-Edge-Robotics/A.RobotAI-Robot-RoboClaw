@@ -20,17 +20,22 @@ func RunLocalMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	launchArgs := buildLocalLaunchArgs(lctx)
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", lctx.LaunchTarget}, launchArgs...)
+	logging.Debug("실행 명령어: ros2 %s", FormatLaunchLogArgs(argsToExec))
+	logging.Info("최종 실행 설정: %s · mock_robot=%t", launchSummary(launchArgs), lctx.MockRobot)
 	logging.Info("실행 명령어: ros2 %s", MaskCommandSecrets(argsToExec))
 	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", MaskCommandSecrets(argsToExec))
 
 	cmdLaunch := exec.Command("ros2", argsToExec...)
 	cmdLaunch.Env = mergedEnv
-	cmdLaunch.Stdout = os.Stdout
-	cmdLaunch.Stderr = os.Stderr
+	consoleOut := NewConsoleLogWriter(os.Stdout)
+	consoleErr := NewConsoleLogWriter(os.Stderr)
+	defer consoleOut.Flush()
+	defer consoleErr.Flush()
+	cmdLaunch.Stdout = consoleOut
+	cmdLaunch.Stderr = consoleErr
 	cmdLaunch.Stdin = os.Stdin
 
 	logging.Info("RoboClaw 시스템 기동 시작...")
-	rich.Println("[cyan]🚀 RoboClaw 시스템 기동 중...[/cyan]")
 
 	// 시그널 채널 생성 및 등록
 	sigChan := make(chan os.Signal, 1)
@@ -41,7 +46,7 @@ func RunLocalMode(ctx *wcli.Context, lctx *LaunchContext) error {
 		return fmt.Errorf("RoboClaw 런치 시작 에러: %w", err)
 	}
 
-	logging.Info("RoboClaw 프로세스 기동 성공 (PID: %d)", cmdLaunch.Process.Pid)
+	logging.Info("RoboClaw 프로세스 시작 (서비스 초기화 대기) (PID: %d)", cmdLaunch.Process.Pid)
 
 	// 프로세스 종료 대기 채널
 	done := make(chan error, 1)
@@ -129,6 +134,8 @@ func buildLocalLaunchArgs(lctx *LaunchContext) []string {
 // buildMergedEnv 시스템 환경변수, .env 값, 설정값을 병합하여 최종 환경변수 슬라이스를 반환합니다.
 func buildMergedEnv(ctx *wcli.Context, lctx *LaunchContext) []string {
 	env := append(os.Environ(), lctx.EnvSlice...)
+	// CLI 실행 옵션으로만 선택합니다. 캐시나 이전 셸의 테스트 모드는 상속하지 않습니다.
+	env = append(env, fmt.Sprintf("RC_MOCK_ROBOT=%t", lctx.MockRobot))
 
 	// RC_DEBUG 환경변수 또는 --debug 플래그가 활성화된 경우 ROS 2 디버그 로깅 활성화
 	if lctx.Debug || isEnvTrue(lctx.EnvMap, "RC_DEBUG") {
@@ -206,7 +213,6 @@ func applyVenv(ctx *wcli.Context, projectRoot string, env []string) []string {
 	}
 
 	logging.Debug("Python 가상환경(.venv) 적용 완료")
-	rich.Println("[green]✔[/green] Python 가상환경(.venv) 적용 완료")
 	return env
 }
 

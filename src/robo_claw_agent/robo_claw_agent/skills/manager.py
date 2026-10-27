@@ -6,6 +6,7 @@
 import importlib
 import inspect
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -41,6 +42,7 @@ class SkillManager:
     def __init__(self, node: Optional["AgentNode"] = None) -> None:
         self._skills: dict[str, BaseSkill] = {}
         self._node = node
+        self.mock_robot = os.environ.get("RC_MOCK_ROBOT", "").strip().lower() == "true"
         self._metrics = OperationTracker()
         self._allowed_skills: set[str] = set()
         self._blocked_skills: set[str] = set()
@@ -75,12 +77,6 @@ class SkillManager:
             sorted(self._blocked_skills) or "(none blocked)",
         )
 
-    @traceable(
-        run_type="chain",
-        name="skill_policy_check",
-        process_inputs=trace_process_inputs,
-        process_outputs=trace_process_outputs,
-    )
     def _check_skill_policy(self, skill_name: str) -> str | None:
         """스킬 정책 위반 여부를 검사한다.
 
@@ -203,9 +199,30 @@ class SkillManager:
                 _standard_failure_data("skill_not_found"),
             )
 
-        early_failure = self._validate_execution(skill_name, skill, params)
+        mock_execution = self.mock_robot and self._requires_robot(skill)
+        early_failure = self._validate_execution(
+            skill_name, skill, params, mock_execution=mock_execution
+        )
         if early_failure is not None:
             return early_failure
+
+        if mock_execution:
+            message = f"[MOCK] {skill_name} 가짜 성공입니다. 실제 로봇 동작은 실행하지 않았습니다."
+            logger.warning("%s params=%s", message, params)
+            return SkillResult(
+                skill_name,
+                True,
+                message,
+                0.0,
+                {
+                    "success": True,
+                    "message": message,
+                    "status": "completed",
+                    "mocked": True,
+                    "executed": False,
+                    "params": params,
+                },
+            )
 
         skill.set_timeout_hint(timeout_sec if timeout_sec and timeout_sec > 0 else 0.0)
 
@@ -221,8 +238,28 @@ class SkillManager:
         result_data = self._run_with_retries(skill, skill_name, params, timeout_sec)
         return self._finalize_execution(skill_name, skill, params, result_data, start, timeout_sec)
 
+    @staticmethod
+    def _requires_robot(skill: "BaseSkill") -> bool:
+        # 로컬 파일/시간/RAG 이외의 스킬과 외부 플러그인은 보수적으로 대체합니다.
+        # 현재 위치 조회 및 임의 스크립트는 로봇에 접근할 수 있으므로 예외입니다.
+        local_modules = (
+            "robo_claw_agent.skills.system_skill.datetime",
+            "robo_claw_agent.skills.system_skill.rag",
+            "robo_claw_agent.skills.system_skill.learning",
+            "robo_claw_agent.skills.file_skill",
+        )
+        module = type(skill).__module__
+        return skill.name in {"get_location", "identify_location", "run_script"} or not any(
+            module == prefix or module.startswith(prefix + ".") for prefix in local_modules
+        )
+
     def _validate_execution(
-        self, skill_name: str, skill: "BaseSkill", params: dict[str, Any]
+        self,
+        skill_name: str,
+        skill: "BaseSkill",
+        params: dict[str, Any],
+        *,
+        mock_execution: bool = False,
     ) -> SkillResult | None:
         """정책·사전조건·스키마·파라미터 검증. 실패 시 SkillResult, 통과 시 None."""
         # 공통 스킬 정책 검사 (HTTP, gRPC, 메신저, ROS service 공통)
@@ -237,8 +274,8 @@ class SkillManager:
                 _standard_failure_data("safety_rejected"),
             )
 
-        preconditions_valid, precondition_error = _trace_skill_preconditions(
-            skill_name, skill, params
+        preconditions_valid, precondition_error = (
+            (True, "") if mock_execution else _trace_skill_preconditions(skill_name, skill, params)
         )
         if not preconditions_valid:
             logger.warning("Skill precondition failed: %s: %s", skill_name, precondition_error)

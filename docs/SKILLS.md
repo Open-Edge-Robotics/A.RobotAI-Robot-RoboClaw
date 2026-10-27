@@ -17,6 +17,12 @@
 `action` 으로 남아 실행 결과 메시지를 그대로 보고합니다(추가 LLM 라운드가 두 번째
 물리 동작을 계획하는 위험을 피하기 위함입니다).
 
+`rclaw launch ... --mock-robot`에서는 로봇 의존 스킬을 실행하지 않고 가짜 성공을
+반환합니다. 정책·입력 스키마 검증은 유지하며 결과 JSON의 `mocked=true`,
+`executed=false`로 실제 실행과 구분합니다. 시간·로컬 파일·RAG 기능은 실제 실행하되,
+임의 스크립트·현재 위치 조회·외부 플러그인은 대체합니다. 자세한 실행 방법은
+[설정 가이드](CONFIGURATION_GUIDE.md#로봇-없이-grpc와-llm을-실행합니다)를 참고합니다.
+
 | 카테고리 | 스킬 | 공개 범위 | 위험도 | 백엔드 | 설명 |
 | --- | --- | --- | --- | --- | --- |
 | Manipulation | `adaptive_pick_object` | Public | action | stretch | 물체 탐색부터 정렬·파지·복귀까지 수행 |

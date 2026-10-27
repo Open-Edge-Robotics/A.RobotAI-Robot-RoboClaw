@@ -196,3 +196,26 @@ def test_unrecovered_final_failure_is_reported_as_failure():
     _, _, task_success = _run(node, "주방으로 이동해줘")
 
     assert task_success is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("enabled,supported", [(True, True), (False, True), (True, False)])
+def test_native_tool_loop_keeps_compound_request_in_one_conversation(enabled, supported):
+    from types import SimpleNamespace
+
+    instruction = "배터리 상태를 확인하고 주변 환경을 분석해줘."
+    planner = _FakePlanner(("배터리와 주변 환경 확인 완료", [], True, []))
+    decomposer = _FakeDecomposer(("분해 실행 완료", [], True, []))
+    node = _Node(planner, decomposer)
+    node._llm_tool_calling = enabled
+    node._llm = SimpleNamespace(supports_tools=lambda: supported)
+
+    _, _, success = _run(node, instruction)
+
+    assert success is True
+    if enabled and supported:
+        assert decomposer.calls == []
+        assert planner.loop_calls == [instruction]
+    else:
+        assert decomposer.calls == [instruction]
+        assert planner.loop_calls == []

@@ -91,6 +91,23 @@ def test_broken_json_is_replaced_with_unrenderable_notice():
     assert sanitize_final_answer('{"topics": ["/a", ') == UNRENDERABLE_ANSWER
 
 
+# ── 대괄호로 시작하는 일반 문장은 JSON 이 아니므로 그대로 둔다 ──────────
+
+
+def test_bracket_prefixed_plain_text_is_not_replaced_with_unrenderable_notice():
+    """mock 스킬 메시지처럼 '[' 로 시작하는 일반 문장이 안내 문구로 덮어써지지 않아야 한다."""
+    text = "[MOCK] navigate_to 가짜 성공입니다. 실제 로봇 동작은 실행하지 않았습니다."
+    assert sanitize_final_answer(text) == text
+
+
+def test_broken_json_array_is_still_replaced_with_unrenderable_notice():
+    assert sanitize_final_answer('["a", "b"') == UNRENDERABLE_ANSWER
+
+
+def test_python_repr_list_is_still_replaced_with_unrenderable_notice():
+    assert sanitize_final_answer("['a', 'b']") == UNRENDERABLE_ANSWER
+
+
 # ── think 블록/코드펜스 정리 ─────────────────────────────────────────────
 
 

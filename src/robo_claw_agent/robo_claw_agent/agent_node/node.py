@@ -56,6 +56,7 @@ from .skill_result_msg import build_failure_skill_result_msg, build_skill_result
 from .system1_router import System1Config, build_router
 from .task_planner import TaskDecomposer
 from .task_queue import bypasses_queue
+from .utils import tool_calling_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +72,9 @@ class AgentNode(Node, ExecutionMixin):
         declare_agent_parameters(self)
         p = read_agent_parameters(self)
 
-        self.get_logger().info(f"Python path (sys.path): {sys.path[:3]} ...")
-        self.get_logger().info(f"Parameters loaded: skill_modules={p.skill_modules}")
-        self.get_logger().info(f"Camera topic parameter: {p.camera_topic or '(not set)'}")
+        self.get_logger().debug(f"Python path (sys.path): {sys.path[:3]} ...")
+        self.get_logger().debug(f"Parameters loaded: skill_modules={p.skill_modules}")
+        self.get_logger().debug(f"Camera topic parameter: {p.camera_topic or '(not set)'}")
         if p.gripper_camera_topic:
             self.get_logger().info(
                 f"Gripper camera topic parameter: {p.gripper_camera_topic}"
@@ -116,6 +117,12 @@ class AgentNode(Node, ExecutionMixin):
         self._skill_lessons_dirty = True
         # 정적 시스템 프롬프트 캐시 (스킬/가이드 영역 1회 조립)
         self._system_prompt_base_cache = None
+        # 툴 호출 모드 정적 프롬프트 캐시 (JSON 응답 강제 섹션을 제거한 별도 베이스)
+        self._tool_prompt_base_cache = None
+        # 네이티브 도구 스펙 캐시 (스킬 목록이 고정이라 1회만 조립)
+        self._tool_specs_cache: list[dict[str, Any]] | None = None
+        # 네이티브 도구(tool) 호출 사용 여부. False 면 기존 JSON 응답 경로를 쓴다.
+        self._llm_tool_calling = bool(p.llm_tool_calling)
         # 센서 점검 캐시 (매 태스크마다 동기 대기 방지)
         self._sensor_cache: dict[str, bool] | None = None
         self._sensor_cache_ts: float = 0.0
@@ -124,6 +131,8 @@ class AgentNode(Node, ExecutionMixin):
         # 메모리/RAG → 스킬매니저 → LLM/TF 순서로 구성 (원본 순서 유지)
         qdrant_primary = setup_memory_and_rag(self, p)
         self._skills = SkillManager(self)  # type: ignore
+        if self._skills.mock_robot:
+            self.get_logger().warning("MOCK ROBOT: 로봇 스킬은 실제 실행 없이 가짜 성공을 반환합니다.")
         self._apply_skill_policy(p)
         self._llm: BaseLLMBridge | None = None
         self._mcp_manager = None
@@ -159,16 +168,21 @@ class AgentNode(Node, ExecutionMixin):
             self._init_task_queue(max_size=_qmax)
         else:
             self._task_queue = None
-            self.get_logger().info("TaskQueue disabled (task_queue_max_size=0) — parallel execution")
-
-        if self._llm is None:
-            self.get_logger().warning(
-                f"AgentNode starting in restricted mode [id={p.agent_id}] — "
-                "LLM was not initialized. Natural language reasoning and LLM-dependent skills are unavailable. "
-                "Check the LLM configuration (llm_provider/endpoint/api_key)."
+            self.get_logger().info(
+                "TaskQueue disabled (task_queue_max_size=0) — parallel execution"
             )
-        else:
-            self.get_logger().info(f"AgentNode ready [id={p.agent_id}]")
+
+        from ..domain.startup_summary import startup_summary
+
+        level, message = startup_summary(
+            p.agent_id,
+            self._skills.mock_robot,
+            self._llm is not None,
+            p.enable_rag,
+            self._enable_rag,
+            len(self._skills.list_skills()),
+        )
+        getattr(self.get_logger(), level)(message)
 
     def _apply_skill_policy(self, p) -> None:
         """AgentParams에서 스킬 허용/차단 정책을 파싱해 SkillManager에 주입한다."""
@@ -290,8 +304,27 @@ class AgentNode(Node, ExecutionMixin):
         return assemble_static_prompt_base(self)
 
     def _build_system_prompt(self) -> str:
-        """최종 시스템 프롬프트 조립. 구현은 prompts.assemble_system_prompt."""
-        return assemble_system_prompt(self)
+        """최종 시스템 프롬프트 조립. 구현은 prompts.assemble_system_prompt.
+
+        툴 호출 모드 여부는 planner 가 쓰는 판정과 같은 로직을 쓴다 —
+        프롬프트만 툴 모드인데 실행은 JSON 경로로 가면 응답 형식이 어긋난다.
+        """
+        return assemble_system_prompt(
+            self, tool_mode=tool_calling_enabled(self._llm_tool_calling, self._llm)
+        )
+
+    def _tool_specs(self) -> list[dict[str, Any]]:
+        """스킬 목록을 네이티브 도구 스펙으로 변환한다(캐시 포함).
+
+        스킬 구성은 초기화 이후 바뀌지 않으므로 1회만 조립해 재사용한다.
+        """
+        if self._tool_specs_cache is None:
+            from ..skills.tool_specs import build_tool_specs
+
+            self._tool_specs_cache = build_tool_specs(
+                self._skills.list_skills(include_internal=False)
+            )
+        return self._tool_specs_cache
 
     def _set_state(self, state: AgentState, skill: str = "", msg: str = "") -> None:
         self._state = state
@@ -317,6 +350,8 @@ class AgentNode(Node, ExecutionMixin):
 
     def _get_robot_health_state(self, robot_summary: dict = None) -> dict:
         """로봇 배터리·측위·센서 상태 취합. 구현은 sensor_health.get_robot_health_state."""
+        if self._skills.mock_robot:
+            return {"mocked": True, "hardware_connected": False}
         return _get_robot_health_state_impl(self, robot_summary)
 
     def _handle_execute_skill(self, request, response):
@@ -388,7 +423,8 @@ class AgentNode(Node, ExecutionMixin):
         )
         if task_id is None:
             response.result = build_failure_skill_result_msg(
-                self.get_clock(), skill_name,
+                self.get_clock(),
+                skill_name,
                 "처리 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요.",
             )
             return response

@@ -1,0 +1,43 @@
+{"id": "tc-01", "instruction": "거실로 가줘", "expected_skill": "navigate_to"}
+{"id": "tc-02", "instruction": "앞으로 3미터 가줘", "expected_skill": "move_relative"}
+{"id": "tc-03", "instruction": "지금 배터리 얼마나 남았어?", "expected_skill": "get_status"}
+{"id": "tc-04", "instruction": "여기가 어디야?", "expected_skill": "identify_location"}
+{"id": "tc-05", "instruction": "거실 위치 알려줘", "expected_skill": "get_location"}
+{"id": "tc-06", "instruction": "지금 몇 시야?", "expected_skill": "get_datetime"}
+{"id": "tc-07", "instruction": "앞에 뭐가 있어?", "expected_skill": "analyze_scene"}
+{"id": "tc-08", "instruction": "주변 설명해줘", "expected_skill": "describe_surroundings"}
+{"id": "tc-09", "instruction": "카메라 사진 보내줘", "expected_skill": "capture_camera_image"}
+{"id": "tc-10", "instruction": "지도 보여줘", "expected_skill": "capture_map"}
+{"id": "tc-11", "instruction": "지도 분석해줘", "expected_skill": "analyze_map"}
+{"id": "tc-12", "instruction": "갈 수 있는 곳이 어디야?", "expected_skill": "find_reachable_places"}
+{"id": "tc-13", "instruction": "컵이 어디에 있어?", "expected_skill": "find_object"}
+{"id": "tc-14", "instruction": "컵 집어줘", "expected_skill": "adaptive_pick_object"}
+{"id": "tc-15", "instruction": "그리퍼 열어줘", "expected_skill": "open_gripper"}
+{"id": "tc-16", "instruction": "그리퍼 닫아줘", "expected_skill": "close_gripper"}
+{"id": "tc-17", "instruction": "싱크대에 컵 놔줘", "expected_skill": "place"}
+{"id": "tc-18", "instruction": "오른쪽으로 90도 돌아", "expected_skill": "rotate"}
+{"id": "tc-19", "instruction": "북쪽을 봐", "expected_skill": "face_direction"}
+{"id": "tc-20", "instruction": "머리 왼쪽으로 돌려봐", "expected_skill": "head_pan_tilt"}
+{"id": "tc-21", "instruction": "토픽 목록 보여줘", "expected_skill": "list_topics"}
+{"id": "tc-22", "instruction": "어제 저장한 지식 찾아줘", "expected_skill": "rag_search"}
+{"id": "tc-23", "instruction": "저장된 지식 목록 알려줘", "expected_skill": "rag_list"}
+{"id": "tc-24", "instruction": "지금 위치 기억해줘", "expected_skill": "rag_add"}
+{"id": "tc-25", "instruction": "멈춰", "expected_skill": "stop"}
+{"id": "tc-26", "instruction": "긴급 정지해", "expected_skill": "emergency_stop"}
+{"id": "tc-27", "instruction": "알아서 행동해줘", "expected_skill": "autonomous_act"}
+{"id": "tc-28", "instruction": "방을 순찰해줘", "expected_skill": "patrol"}
+{"id": "tc-29", "instruction": "주변 탐험해줘", "expected_skill": "explore"}
+{"id": "tc-30", "instruction": "파일 목록 보여줘", "expected_skill": "list_files"}
+{"id": "tc-31", "instruction": "메모.txt 읽어줘", "expected_skill": "read_text_file"}
+{"id": "tc-32", "instruction": "동료 로봇 목록 알려줘", "expected_skill": "list_peer_robots"}
+{"id": "tc-33", "instruction": "와이파이 드론을 하나 사줘", "expected_skill": null}
+{"id": "tc-34", "instruction": "안녕", "expected_skill": null}
+{"id": "tc-35", "instruction": "너는 무슨 로봇이야?", "expected_skill": null}
+{"id": "tc-36", "instruction": "주변에 컵 있는지 확인해줘", "expected_skill": "find_object"}
+{"id": "tc-37", "instruction": "팔을 home 자세로", "expected_skill": "arm_pose"}
+{"id": "tc-38", "instruction": "저장된 이미지 분석해줘", "expected_skill": "analyze_stored_file"}
+{"id": "tc-39", "instruction": "쓰레기 좀 치워줘", "expected_skill": "tidy_home"}
+{"id": "tc-40", "instruction": "동료에게 심부름 시켜줘", "expected_skill": "delegate_task"}
+{"id": "tc-41", "instruction": "지도에 거실 표시해줘", "expected_skill": "annotate_map"}
+{"id": "tc-42", "instruction": "위치 다시 잡아줘", "expected_skill": "self_localize"}
+{"id": "tc-43", "instruction": "거리가 얼마나 남았어?", "expected_skill": "get_distance"}

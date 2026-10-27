@@ -368,7 +368,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("run_core", default_value="false"),
             DeclareLaunchArgument("run_manipulator", default_value="false"),
             DeclareLaunchArgument("scan_interval_sec", default_value="10.0"),
-            DeclareLaunchArgument("discovery_log_interval_sec", default_value="60.0"),
+            DeclareLaunchArgument("discovery_log_interval_sec", default_value="600.0"),
             DeclareLaunchArgument("memory_path", default_value=""),
             DeclareLaunchArgument("rag_local_mirror", default_value=""),
             DeclareLaunchArgument("use_vision", default_value="true"),

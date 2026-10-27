@@ -308,6 +308,26 @@ def parse_llm_response(llm_response: str) -> dict[str, Any]:
     return parsed
 
 
+def tool_calling_enabled(flag: bool, llm: Any | None) -> bool:
+    """네이티브 도구(tool) 호출 경로를 실제로 쓸 수 있는지 판정한다.
+
+    설정 플래그가 켜져 있고, 연결된 프로바이더가 도구 호출을 지원해야 한다.
+    지원하지 않는 프로바이더에서는 기존 JSON 응답 경로로 폴백한다.
+
+    프롬프트 조립(node)과 계획 요청(planner)이 **같은 판정**을 써야 한다 —
+    프롬프트는 JSON 강제 섹션이 제거돼 있는데 실행은 JSON 경로로 가면
+    응답 형식이 어긋나기 때문이다. 그래서 판정 로직은 여기 한곳에 둔다.
+    """
+    if not flag:
+        return False
+    if llm is None:
+        return False
+    try:
+        return bool(llm.supports_tools())
+    except Exception:
+        return False
+
+
 @traceable(
     run_type="chain",
     name="parse_llm_plan",
