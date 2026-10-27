@@ -46,6 +46,10 @@ SCOPE_NAVIGATION = "navigation"
 _VALID_SCOPES = (SCOPE_READONLY, SCOPE_NAVIGATION)
 
 NAVIGATE_SKILL = "navigate_to"
+# 기억된 장소명을 `target_name` 인자로 받는 스킬. 후보 구성·장소 질문·직접 실행 판정을
+# navigate_to 와 동일하게 취급한다(예: "안방을 초기 위치로 지정해줘").
+INITIAL_POSE_SKILL = "set_initial_pose"
+PLACE_TARGET_SKILLS: frozenset[str] = frozenset({NAVIGATE_SKILL, INITIAL_POSE_SKILL})
 NONE_OPTION = "none"
 
 # intent 선택지. 문구는 Laya 의 option-marker scorer 가 읽으므로 짧고 중립적으로 쓴다.
@@ -234,7 +238,7 @@ def _skill_candidates(node: Any, cfg: System1Config) -> dict[str, str]:
         name = str(item.get("name") or "")
         if not name or (allow and name not in allow):
             continue
-        if name == NAVIGATE_SKILL:
+        if name in PLACE_TARGET_SKILLS:
             if cfg.scope != SCOPE_NAVIGATION:
                 continue
         else:
@@ -391,7 +395,7 @@ def interpret_response(
         and skill_conf >= th["skill"]
     ):
         params: dict[str, Any] = {}
-        if skill == NAVIGATE_SKILL:
+        if skill in PLACE_TARGET_SKILLS:
             if place not in places or place_conf < th["target_place"]:
                 return _llm()
             params = {"target_name": place}
@@ -438,9 +442,14 @@ class SystemOneRouter:
             raise System1Unavailable("circuit open")
 
         skills = _skill_candidates(node, self.cfg)
-        places = _place_candidates(node, instruction, self.cfg) if NAVIGATE_SKILL in skills else []
-        if NAVIGATE_SKILL in skills and not places:
-            skills = {k: v for k, v in skills.items() if k != NAVIGATE_SKILL}
+        places = (
+            _place_candidates(node, instruction, self.cfg)
+            if any(name in skills for name in PLACE_TARGET_SKILLS)
+            else []
+        )
+        if not places:
+            # 장소 후보가 없으면 장소 기반 스킬은 선택지에서 뺀다(이름 없는 target_name 방지).
+            skills = {k: v for k, v in skills.items() if k not in PLACE_TARGET_SKILLS}
         questions = build_questions(skills, places)
         state = {"instruction": instruction}
 

@@ -43,6 +43,11 @@ class _Skills:
             },
             {"name": "move_relative", "description": "상대 이동", "risk_level": "action"},
             {"name": "navigate_to", "description": "장소로 이동", "risk_level": "action"},
+            {
+                "name": "set_initial_pose",
+                "description": "AMCL 초기 위치 설정",
+                "risk_level": "action",
+            },
         ]
 
 
@@ -300,6 +305,22 @@ class TestQuestions:
         assert "navigate_to" in questions["skill"]["criteria"]
         assert set(questions["target_place"]["criteria"]) == {"주방", "거실", "none"}
 
+    def test_navigation_scope_adds_set_initial_pose_candidate(self):
+        """초기 위치 설정도 장소명 후보를 받아야 한다."""
+        router, client = _laya(_resp("question"), scope="navigation")
+        _decide(router, "안방을 초기 위치로 지정해줘")
+
+        _, questions = client.calls[0]
+        assert "set_initial_pose" in questions["skill"]["criteria"]
+        assert "target_place" in questions
+
+    def test_readonly_scope_excludes_set_initial_pose(self):
+        router, client = _laya(_resp("question"))
+        _decide(router, "안방을 초기 위치로 지정해줘")
+
+        _, questions = client.calls[0]
+        assert "set_initial_pose" not in questions["skill"]["criteria"]
+
     def test_skill_allowlist(self):
         router, client = _laya(_resp("question"), skills=["get_status"])
         _decide(router, "상태")
@@ -354,6 +375,22 @@ class TestInterpret:
 
         missing = interpret_response(
             _resp("single_skill", skill="navigate_to", place="none"), self.skills, ["주방"], {}
+        )
+        assert missing.kind == ROUTE_LLM
+
+    def test_set_initial_pose_requires_known_place(self):
+        """장소명이 확인된 경우에만 set_initial_pose 를 직접 실행한다."""
+        skills = {"set_initial_pose": "", "navigate_to": ""}
+
+        ok = interpret_response(
+            _resp("single_skill", skill="set_initial_pose", place="안방"), skills, ["안방"], {}
+        )
+        assert ok.kind == ROUTE_DIRECT_SKILL
+        assert ok.skill == "set_initial_pose"
+        assert ok.params == {"target_name": "안방"}
+
+        missing = interpret_response(
+            _resp("single_skill", skill="set_initial_pose", place="none"), skills, ["안방"], {}
         )
         assert missing.kind == ROUTE_LLM
 

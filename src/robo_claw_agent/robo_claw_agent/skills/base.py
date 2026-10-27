@@ -329,6 +329,11 @@ class BaseSkill(ABC):
                 valid = sum(check(value, option, path) is None for option in spec["oneOf"])
                 if valid != 1:
                     return f"{path}가 oneOf 조건을 만족하지 않습니다."
+            if "anyOf" in spec:
+                # anyOf 는 최소 하나만 만족하면 된다 — 좌표와 장소명을 함께 줘도
+                # 거부하지 않아야 하는 스킬(예: set_initial_pose)에서 쓴다.
+                if all(check(value, option, path) is not None for option in spec["anyOf"]):
+                    return f"{path}가 anyOf 조건을 만족하지 않습니다."
             if isinstance(value, dict):
                 required = spec.get("required", [])
                 missing = [key for key in required if key not in value]

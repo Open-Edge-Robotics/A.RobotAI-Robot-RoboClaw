@@ -74,6 +74,223 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   실행에서만 지원합니다.
 - 로봇 스킬은 정책·입력 검증 후 `mocked=true`, `executed=false`를 포함한 가짜
   성공을 반환합니다. 가짜 실행은 스킬 학습 이력에 기록하지 않습니다.
+## 2026-10-27 — 대시보드 원격 접속 조건 명시와 잘못된 CIDR 설정 차단
+
+- **배경**: 대시보드가 기본값(`dashboard_host=127.0.0.1`, `http_allowed_cidrs_json` 루프백 전용)으로 로컬에서만 열리는데, 원격 접속이 안 되는 이유가 로그에 남지 않아 원인 파악이 어려웠습니다. 또한 `http_allowed_cidrs_json`에 작은따옴표 목록처럼 JSON이 아닌 값을 넣으면 파싱에 실패해 빈 목록이 되고, 보안 정책이 빈 목록을 "전체 허용"으로 해석해 IP 제한이 조용히 해제됐습니다.
+- **조치**:
+  - `robo_claw_dashboard/domain/exposure.py`(신규): 바인드 주소·허용 CIDR·토큰 조합을 판정해 `loopback_bind`, `remote_bind_loopback_cidrs`, `remote_bind_open_cidrs`, `remote_bind_no_auth` 항목을 돌려줍니다. 노드가 기동 시 이를 오류/경고 로그로 남기고, 문제가 없으면 `access scope=remote|local only`를 정보 로그로 남깁니다.
+  - `parse_allowed_cidrs`: CIDR JSON이 깨졌으면 전체 허용으로 열지 않고 기본 루프백 목록으로 되돌린 뒤 오류 로그를 남깁니다.
+  - `docs/DASHBOARD.md`: 원격 접속 필요 조건 표, `.env`/`ros2 launch` 실행 예시, `ss`·`curl` 확인 절차, 증상별 트러블슈팅을 추가했습니다. `.env.example` 주석도 같은 내용으로 맞췄습니다.
+- **검증**: `task unit-test` 1,446건 통과(`tests/test_exposure.py` 22건 추가), `uv run ruff check src/`·`ruff format --check` 통과, `task contract-check` 통과. 실행 검증은 `ros2 launch` 경로로 `dashboard_host=0.0.0.0` + LAN CIDR + 토큰을 주고 LAN IP(192.168.50.49) 접속 시 `/health` 200, `/api/status` 토큰 200·무토큰 401을, 같은 조건에서 CIDR JSON을 작은따옴표로 깨뜨렸을 때 403으로 차단됨을 확인했습니다.
+
+
+## 2026-10-26 — 정리 태스크 실험 산출물 저장소 편입
+
+- **배경**: 3조건 실측 데이터와 보고서를 개인 작업 폴더에만 두어, 저장소를 clone한 사람이 결과를 재확인하거나 재집계할 수 없었습니다.
+- **조치**: `validation/cleanup-experiment/results/2026-10-26/`에 원시 JSONL 5개, 러너 리포트 4개, 종합 보고서(`EXPERIMENT_REPORT.md`), 재생성 스크립트(`build_report.py`), 피어 설정 백업을 추가했습니다. `docs/CLEANUP_EXPERIMENT_RUNBOOK.md`와 `validation/cleanup-experiment/README.md`에서 연결합니다.
+- **검증**: 새 위치에서 `python3 build_report.py`를 실행해 기존 보고서와 동일하게 재생성됨을 확인했습니다(작성 시각 제외 diff 0). 문서 상대 링크 검사 통과.
+
+## 2026-10-26 — 정리 태스크 협업 실험 재실행 가이드
+
+- **배경**: 실험을 1회 완료했지만 절차가 세션 기록에만 남아 있어, 나중에 같은 두 로봇으로 다시 측정하려면 매번 시행착오가 필요했습니다.
+- **조치**: `docs/CLEANUP_EXPERIMENT_RUNBOOK.md`(신규)를 추가했습니다. 대상 환경·사전 조건, 실행 위치 분담, 사전 점검 명령, 조건별 실행(정상 협업 / 기능 제약 / 실패 및 복구), 집계, 결과 해석 규칙, 트러블슈팅, 마무리 점검, 2026-10-26 실측값을 담았습니다. `README.md` 상세 가이드와 `docs/CLEANUP_RUN_METRICS.md`에서 연결합니다.
+- **검증**: 저장소 전체 상대 링크 검사 통과(깨진 링크 0건). 문서만의 변경이므로 별도 테스트는 실행하지 않았습니다.
+
+## 2026-10-26 — 정상 협업 10회·기능 제약 10회 실측
+
+- **배경**: former0047 + Cloid 2호로 표 2의 두 조건을 실측했습니다. 컨트랙트 v2.10.0의 `RC_CLEANUP_RUN_LOG_PATH`를 AI Config Server 프로필(`former`/`kon47`)에 배포하고, 에이전트 재기동으로 컨테이너에 주입한 뒤 러너를 백그라운드로 실행했습니다.
+- **결과**:
+  - 정상 협업 10회: 전체 성공률 100%, 할당 정확도 100%(전 회차 `Cloid 2호`), 위임 성공률 100%, 평균 147.0s(navigate 4.5s / observe 27.1s / discovery 12.4ms / delegate 104.6s).
+  - 기능 제약 10회(프로필 피어 목록 제거): 전체 성공률 0%, 기대 동작 준수 10/10, 전 회차 `unhandled`·차단 10건, 평균 27.0s.
+- **조치**: `scripts/cleanup_run_report.py`에서 위임을 시도한 실행이 없을 때 위임 성공률을 `0%`가 아니라 `n/a`로 표기합니다. 프로필은 실험 후 원복했습니다(.env diff 0).
+- **검증**: `task unit-test` 1,424건 통과. 실측 데이터는 저장소에 커밋하지 않고 `~/Documents/robo_claw_experiment/`에 보관했습니다.
+- **실패 및 복구**: Cloid 2호를 `cloi down -f robo-claw dev`로 내린 뒤 3회 실행해 전 회차 `unhandled`·차단(피어 미연결 시 요청하지 않는 설계)으로 실패를 정확히 보고했고(`기대 동작 준수 3/3`), `cloi up robo-claw dev` 후 3회 중 2회 성공했습니다(66.7%). 첫 회차는 위임은 전달됐지만 Cloid 2호가 `CLOiD 포장 자세 실행이 실패했습니다: timeout after 60.0 s`로 실패를 반환했습니다. 재기동 직후 boxing 자세 스크립트의 콜드 스타트로 보이며, 2·3회차는 정상 수행(`delegated_demo`)됐습니다.
+- **참고**: `cloi up`은 컨테이너 내부에서 `/ws/build`·`/ws/install`을 지우고 colcon 빌드를 다시 수행하므로 수 분이 걸립니다. 그 사이 Cloid 2호의 RoboMessenger가 내려가 former0047의 피어 연결도 끊깁니다.
+
+## 2026-10-26 — 1차 실기 예비 실행 및 delegate 구간 단위 수정
+
+- **배경**: former0047에서 `'안방 정리해줘'` 1회를 실행해 계측 경로를 확인했습니다. 전 구간이 정상 동작했고(`tidy_home` → `cleanup_handoff` → Cloid 2호 위임 → `cleanup_delegate` → `cleanup_run`), `delegated_demo`·`success=true`로 기록됐습니다. 다만 `phase_ms.delegate`가 `90.6`(초 단위)로 기록되어 다른 구간(밀리초)과 단위가 어긋났습니다.
+- **조치**:
+  - `skills/autonomous_skill/execution_nodes.py`: 위임 스킬 `duration_sec`를 밀리초로 환산해 구간 계측에 더합니다.
+  - `scripts/cleanup_run_report.py`: 위임 구간 평균은 `cleanup_delegate.duration_ms`를 우선 사용합니다. 단위가 어긋난 과거 기록도 정확히 집계됩니다.
+  - 테스트: 구간 단위(12.5초 → 12500ms), 위임 레코드 우선 집계 각 1건.
+- **검증**: `task unit-test` 1,423건 통과. 실기 1회 기록으로 `scripts/cleanup_run_report.py --expect-peer "Cloid 2호"`가 표 2 행을 출력함을 확인했습니다.
+- **실측값(1회)**: 전체 성공률 100%, 할당 정확도 100%(peer=Cloid 2호), 위임 성공률 100%, 총 178.1s(navigate 43.0s / observe 27.2s / discovery 12.4ms / delegate 90.6s / handle 107.9s).
+
+## 2026-10-26 — 실험 러너 gRPC 채팅 인증 지원
+
+- **배경**: former0047 에이전트에 `GRPC_PEER_TOKEN`이 설정되어 있어 `SendCommand`도 인증을 요구합니다. `validation/talk/robo_talk.py`는 토큰을 보내지 않아 실험 러너의 명령 전송이 거부됩니다.
+- **조치**:
+  - `validation/talk/robo_talk.py`: `RoboTalk(token=...)` 과 `--token`(기본값 `ROBO_CLAW_PEER_TOKEN`)을 추가하고, 토큰이 있으면 `ChatMessage.metadata["auth_token"]`으로 전달합니다.
+  - `validation/cleanup-experiment/run_cleanup_experiment.py`: `--grpc-token`(기본값 동일 환경변수)을 추가해 `RoboTalk`에 전달합니다.
+- **검증**: 러너 테스트 20건 통과(신규 1건: 토큰 전달 경로), `ruff check`·`ruff format --check` 통과. 실기 예비 실행은 이어서 확인합니다.
+
+## 2026-10-26 — 런타임 설정 컨트랙트 v2.10.0 반영
+
+- **배경**: 정리 태스크 실험 계측 경로(`RC_CLEANUP_RUN_LOG_PATH`)를 실기 로봇에 주입하려면 공통 컨트랙트를 거쳐야 합니다. 로봇은 AI Config Server가 생성한 `.env`로 환경변수를 받으므로, 로컬 `.env`에만 넣으면 배포 경로에서 반영되지 않습니다.
+- **조치**:
+  - `rcf-config-contract`에 `agent.cleanup_run_log_path`(`RC_CLEANUP_RUN_LOG_PATH`, type `path`, scope `host`, 환경변수 전용)를 등록하고 계약을 `2.10.0`으로 상향했습니다.
+  - `./rclaw contract update --from <release-bundle>` 로 `contracts/`·lock(`2.10.0`)과 생성 아티팩트(`robo_claw_cli/contract/runtime_config_generated.go`, `src/robo_claw_bringup/launch/_generated_runtime_config.py`, `config-schema/generated/*`)를 갱신했습니다. launch 매핑이 없는 환경변수라 `scripts/generated_runtime_env.sh`는 변경되지 않습니다.
+- **검증**: `task contract-check` 통과(lock 체크섬·`.env.example` 문서화·생성 아티팩트 drift 없음), `task unit-test` 1,421건 통과. 실기 로봇에서 AI Config Server 프로필에 값이 배포되는지는 **미검증**입니다(설정 서버 반영 후 확인 필요).
+
+## 2026-10-26 — 정리 태스크 3조건 실험 러너·위임 결과 계측
+
+- **배경**: run log 계측만으로는 반복 실행·판정·집계를 사람이 손으로 해야 했고, 위임 성공률을 실행 결과의 장소 status 로 추정해야 했습니다. 수신 로봇이 정리를 거부하는 문장을 돌려주면서 성공 플래그를 주면 `delegated_demo` 로 보여 위임 성공률이 실제보다 높게 나오는 문제가 있었습니다.
+- **조치**:
+  - `skills/cleanup_run_metrics.py`: `cleanup_delegate` 이벤트를 추가했습니다. 위임 요청 1건의 성공 여부·응답 메시지·소요 시간을 남깁니다.
+  - `skills/autonomous_skill/execution_nodes.py`: `ExecuteDecidedAction` 이 위임 결과를 `cleanup_delegate` 로 기록합니다(계측 실패는 실행 결과에 영향을 주지 않음).
+  - `scripts/cleanup_run_report.py`: 위임 성공률을 `cleanup_delegate` 의 `success` 비율로 계산하고, 레코드가 없는 로그에서는 기존 status 기반 계산으로 대체합니다(`delegation_source` 로 구분).
+  - `validation/cleanup-experiment/`(신규): 조건 정의 3종(정상 협업·기능 제약·실패 및 복구)과 `run_cleanup_experiment.py` 러너를 추가했습니다. 회차마다 gRPC 응답과 `cleanup_handoff`·`cleanup_delegate`·`cleanup_run` 레코드를 `run_id` 로 묶어 판정하고 표 2 형식 리포트를 만듭니다. 재계획 성공률은 `--agent-log` 를 준 경우에만 계산합니다. `--dry-run` 은 사전 준비 항목만 출력하고 명령을 보내지 않습니다.
+  - `docs/CLEANUP_RUN_METRICS.md`: `cleanup_delegate` 이벤트와 3조건 실험 절차를 반영했습니다.
+- **검증**: `task unit-test` 1,419건 통과(신규 21건: 계측 2, 집계 2, 실험 러너 17), `uv run ruff check`·`ruff format --check` 통과. 가짜 sender 로 run log 를 생성하는 통합 테스트에서 러너가 표 2 행(`| 정상 협업 | 1 | 100.0% | 100.0% | 100.0% | 65.0s | n/a |`)을 만들고, 기대 불일치 시 종료 코드 1 을 반환하는 것을 확인했습니다. 실기 로봇에서 3조건을 실행한 측정값은 **미확보**입니다.
+
+## 2026-10-26 — 정리 태스크 실험 계측(run log) 및 표 2 집계
+
+- **배경**: 실험 결과 표(전체 성공률·할당 정확도·위임 성공률·평균 시간)를 채출 데이터가 없었습니다. `tidy_home` 은 `terminal_behavior="background"` 라 호출 결과가 `status="started"` 뿐이고, 위임 결정·실행 결과는 사람이 읽는 메시지와 흘어진 로그 줄로만 남았습니다. 스킬별 `OperationTracker` 통계는 메모리 누적값이라 실행 1회를 구분할 수 없었습니다.
+- **조치**:
+  - `skills/cleanup_run_metrics.py`(신규): `RC_CLEANUP_RUN_LOG_PATH` 가 지정된 더위 JSONL 한 줄씩 `cleanup_handoff`·`cleanup_run` 레코드를 쓰는 계측 모듈입니다. 미설정이면 아무 파일도 쓰지 않고, 쓰기 실패는 경고 1회만 남기고 정리 동작을 막지 않습니다.
+  - `skills/autonomous_skill/execution_nodes.py`: `ResolveCleanupHandoff` 의 위임 결정·차단 분기에서 선택된 동료, 전송 경로, 후보 스냅샷(`_discover_peer_agents`, 추가 RPC 없음), 차단 사유, 동료 탐색 소요를 기록합니다. `ExecuteDecidedAction` 은 위임 스킬의 `duration_sec` 를 구간 계측에 누적합니다.
+  - `skills/tidy_home_skill.py`: 실행 1회마다 `run_id` 를 만들고(`execute()` 결과에도 포함) 장소별 navigate·observe·handle 구간 시간과 결과를 `finally` 에서 기록합니다. 예외로 중단되면 `error` 와 `success=false` 가 남습니다.
+  - `scripts/cleanup_run_report.py`(신규): run log 를 반복 횟수·전체 성공률·할당 정확도·위임 성공률·구간별 평균 시간으로 집계해 `--markdown` 표 한 행을 출력합니다.
+  - `docs/CLEANUP_RUN_METRICS.md`(신규), `README.md` 상세 가이드 행, `.env.example` 항목을 추가했습니다.
+- **검증**: `task unit-test` 1,398건 통과(신규 19건: 계측 15, 집계 4), `task lint`(`ruff check`, 스킬 카탈로그, 프롬프트 톤, `check_docker_deps`, `go vet`)·`task contract-check` 통과, 변경 파일 `ruff format --check` 통과. 실제 계측 경로로 3회분 레코드를 생성해 `scripts/cleanup_run_report.py --expect-peer cloid2 --markdown` 이 표 행과 구간별 평균을 출력하는 것을 확인했습니다. 실기 로봇에서 2호 위임과 함께 기록되는지는 **미검증**입니다.
+
+## 2026-10-26 — set_initial_pose 실기 실패 수정 (`Publisher.wait_for_subscribers` 제거)
+
+- **배경**: former0047 실기에서 "안방을 초기 위치로 잡아줘" 요청이 5회 재플래닝 끝에 실패했습니다. `set_initial_pose` 가 `/initialpose` 퍼블리셔 대기 루프에서 `pub.wait_for_subscribers(...)` 를 호출했지만 `rclpy.publisher.Publisher` 에는 그런 메서드가 없어 `AttributeError` 가 발생했습니다. 단위 테스트의 퍼블리셔 대역이 존재하지 않는 메서드를 흉내 내고 있어 테스트는 통과했습니다.
+- **조치**:
+  - `skills/navigation_skill/set_initial_pose.py`: 대기 로직을 `_wait_for_subscribers()` 헬퍼로 분리하고 공개 API 인 `get_subscription_count()` 폴링으로 바꿨습니다. 구독자 수를 확인할 수 없는 구현이면 발행을 막지 않고 그대로 진행하며(기존 best-effort 동작 유지), 대기 시간(기본 2초)이 지나면 경고를 남기고 발행합니다.
+  - `tests/test_navigation_lifecycle_and_safety.py`: 퍼블리셔 대역을 실제 rclpy API(`publish`, `get_subscription_count`)만 노출하는 `_FakeInitialPosePublisher` 로 교체했습니다. 회귀 테스트 2건(공개 API 만으로 대기, 구독자 없을 때도 발행)을 추가했습니다.
+- **검증**: `task unit-test` 1379건 통과(신규 2건), 변경 모듈 `uv run ruff check` 통과, `git diff --check` OK. 실기 재기동 후 "안방을 초기 위치로" 발행 확인은 **미검증**입니다.
+
+## 2026-10-26 — boxing 자세를 만든 직후 자동 표현 모션 재생 차단
+
+- **배경**: cloid02 실기에서 `set_cloid_packing_pose` 로 박싱 자세를 만든 직후, 태스크 완료 후 자동 재생되는 상황별 표현 모션이 팔을 움직여 그 자세를 바로 풀어 버렸습니다. 표현 모션은 이동 없는 태스크를 `talking` 으로 판정해 매번 실행되므로, 자세 요청 자체가 무효화되는 문제였습니다.
+- **조치**:
+  - `skills/cloid_expression_policy.py`: `classify_situation` 에 `used_pose_skill` 인자를 추가해, **그 태스크가 boxing 자세를 성공적으로 만들었으면** 표현 상황을 `None` 으로 반환합니다. 자세를 만든 태스크가 아니면 기존대로 재생합니다(대화 중 모션은 그대로 허용).
+  - `agent_node/execution.py`: `resolve_cloid_expression_situation` 이 완료된 스킬 결과에서 `CLOID_NAV_SAFETY_SKILLS`(`set_cloid_packing_pose`, `cloid_navigation_pose`)의 성공 여부를 확인해 `used_pose_skill` 로 전달합니다. 실패한 자세 요청은 예외에 해당하지 않아 실패 표현이 정상 동작합니다.
+  - `skills/cloid_packing_pose_skill.py`: 성공 메시지에 "팔을 움직이는 모션이 실행되면 자세가 풀립니다" 안내를 추가했습니다.
+  - `agent_node/prompts.py`, `config/SKILLS.cloid.1.md`, `config/SKILLS.cloid.2.md`, `docs/CLOiD_GUIDE.md`, `docs/SKILLS.md`: 자세 직후 1회만 재생을 건너뛰고 이후 태스크는 정상 동작한다는 규칙을 명시했습니다.
+- **검증**: `task unit-test` 1379건 통과(신규 5건: 상황 판정 4, 정책 1), `uv run ruff check src/`·변경 파일 `ruff format --check` 통과, `scripts/validate_skill_catalog.py --strict-docs` 105/105, `scripts/system1_skill_catalog.py --check` 최신, `scripts/check_prompt_tone.py` 10/10. cloid02 실행 인자에서 `cloid_expression_enabled:=true`·`cloid_navigation_pose_enabled:=true` 임을 확인했습니다. 실기에서 재빌드·재기동 후 박싱 자세가 유지되는지는 **미검증**입니다.
+
+## 2026-10-26 — former0047 nav2 부팅 자동 시작 (systemd unit)
+
+- **배경**: former0047 은 로봇 베이스(`former_bringup.service`)와 카메라(`realsense_bringup.service`)를 systemd 로 자동 기동하지만, nav2 는 사람이 `run_nav_stable.sh` 를 실행해야 올라왔습니다. 재부팅 후 네비게이션이 빠진 상태로 남고, launch 프로세스가 죽어도 재기동해 주는 감시가 없었습니다.
+- **조치**:
+  - `former/former0047/former_nav_bringup.service.in`(신규): `run_nav_stable.sh` 를 `RC_FOREGROUND=1` 로 실행하는 unit 템플릿입니다. `docker.service`·`cyclonedds_tunes`·`former_bringup`·`realsense_bringup` 이후에 기동하고, `ExecStartPre=-docker rm -f former0047_nav` 로 동명 컨테이너를 정리해 중복 기동을 막습니다. launch 종료 시 `Restart=on-failure`(15초), `ExecStop` 은 lifecycle 종료를 감안해 `docker stop --time 30` 입니다.
+  - `former/former0047/install_nav_autostart.sh`(신규): unit 경로/맵/홈을 치환해 `/etc/systemd/system` 에 등록하고 `enable`·즉시 기동합니다. `status`·`stop`·`disable` 하위 명령을 함께 둡니다.
+  - `former/former0047/run_nav_stable.sh`: `RC_FOREGROUND=1` 이면 `--daemon` 없이 실행해 `docker run` 이 전경에 붙게 했습니다(systemd 가 프로세스 생존으로 상태를 판단).
+  - `former/former0047/run_former_env.sh`: stdin/stdout 이 TTY 가 아니면 `docker run -t` 를 빼고 `-i` 만 씁니다. systemd 처럼 TTY 가 없는 환경에서 `-t` 는 `the input device is not a TTY` 로 즉시 실패합니다.
+  - `former/FORMER_GUIDE.md`·`former/former0047/README.md`: 설치/해제 절차와 주의 사항(설치 시 기존 nav 컨테이너 재기동, 자동 시작 중에는 부팅 직후부터 주행 명령 수신 가능)을 추가했습니다.
+- **검증**: `bash -n` 3개 스크립트 통과, unit 템플릿은 `systemd-analyze verify` 에서 `docker.service not found`(로컬 미설치) 외 오류 없음. 로봇에서 fake `docker` 로 전경 경로를 실행해 생성 명령이 `docker run -i --rm --name former0047_nav ... use_composition:=False` 임을 확인했습니다(현재 운용 중인 컨테이너 inspect 결과와 동일, `-t` 없음). 실기 former0047 에 unit 을 설치한 뒤 `former0047_nav` 1개만 기동되고 `lifecycle_manager_navigation: Managed nodes are active`, `/amcl` 1개, `/base_controller/cmd_vel_unstamped` 의 nav 쪽 publisher 가 `velocity_smoother` 1개임을 확인했습니다. **재부팅 후 자동 기동은 미검증**입니다.
+
+## 2026-10-26 — 초기 위치를 장소명·마지막 위치로 지정 (AMCL 초기 위치 복구)
+
+- **배경**: `set_initial_pose`가 `x`, `y`, `yaw` 숫자만 받아, "안방 위치를 초기 위치로 지정해줘"처럼 장소명으로 요청하면 좌표를 스스로 조회해야 하는 2단계 계획에 의존했습니다(등록된 이름이 없거나 방향이 필요하면 실패). 또한 네비게이션 재기동으로 AMCL 초기 위치를 잃은 뒤 복구할 수단이 RViz `2D Pose Estimate` 또는 `initpose.md` 편집뿐이었습니다.
+- **조치**:
+  - `skills/navigation_skill/set_initial_pose.py`: `target_name`(기억된 장소명) 또는 좌표 중 하나를 받도록 스키마를 넓히고(`anyOf`), 장소 해석은 `navigate_to`와 같은 `_resolve_target_coordinates` 경로를 재사용했습니다. `yaw`는 선택(생략 시 0rad)이며, 좌표를 함께 주면 좌표를 우선합니다. 등록되지 않은 이름은 좌표를 추측하지 않고 실패로 보고합니다.
+  - `memory_manager/last_pose.py`(신규): 마지막 pose를 `type="last_pose"` RAG 레코드 **1건**으로 upsert합니다(기존 항목 삭제 후 저장, 장소 지식 키는 쓰지 않음). `semantic._FWD_SKIP_TYPES`·`rag._NON_LOCATION_TYPES`에 `last_pose`를 추가해 "마지막"이 장소명으로 추출되지 않게 했습니다.
+  - `agent_node/last_pose_tracker.py`(신규) + `setup_last_pose_tracking`: 5초 주기로 TF `map → base_link`를 읽어 최신 pose를 메모리에 유지하고, 이동 0.3m·회전 0.5rad 또는 15초 간격일 때만 RAG에 저장합니다(임베딩/벡터스토어 쓰기는 백그라운드 스레드). `/odom` 폴백 좌표는 프레임이 달라 기록하지 않습니다. RAG가 꺼져 있어도 프로세스 수명 동안의 최신 pose는 유지합니다.
+  - `set_initial_pose`는 `target_name="마지막 위치"`(마지막 위치/직전 위치/마지막 장소 등)를 받으면 트래커 최신값 → RAG 기록 순으로 복원하고, 스냅숏 지연을 감안해 공분산을 0.25로 넓게 넣습니다(좌표 직접 지정은 0.05 유지).
+  - `planner/routing.py`: "초기 위치" 의도를 장소/저장/위치질의 판정보다 먼저 확인하고, "마지막 위치" 요청은 장소 등록 없이 `set_initial_pose(target_name=마지막 위치)`로 고정합니다. 물리 이동·조작이 섞인 계획은 덮어쓰지 않습니다.
+  - `system1_router.py`: `set_initial_pose`를 `navigate_to`와 같은 장소 인자 스킬로 취급해 `SYSTEM1_SCOPE=navigation`에서만 후보로 넣고, 장소 후보가 있을 때만 직접 실행합니다. `skills/base.py` 스키마 검증기에 `anyOf`를 추가했습니다.
+  - 프롬프트(`prompts.py`)·`docs/SKILLS.md`·`former/FORMER_GUIDE.md`·`validation/system1/skill_catalog.json`(생성물)을 갱신했습니다.
+- **검증**: `task unit-test` 1372건 통과, `uv run ruff check src/`·`task deps-check`·`system1_skill_catalog.py --check`·`validate_skill_catalog.py --strict-docs`·문서 상대 링크 검사 통과. `colcon build --symlink-install --packages-select robo_claw_agent` 성공. 실기 former0047에서 재기동 후 "마지막 위치를 초기 위치로" 복원과 AMCL 수렴은 미검증입니다.
+
+## 2026-10-26 — Former 정리 요청을 tidy_home 경로로 분리
+
+- **배경**: Former0047 실기에서 "안방 정리해줘" 요청이 `tidy_home` 호출 대신 "Former는 정리할 수 없다"는 일반 답변으로 끝났습니다. 가이드가 조작 거부 규칙을 먼저 제시하고 정리 요청을 그 뒤 bullet 에 깊게 두어, 정리 요청이 조작 요청으로 해석됐습니다. 배포된 Former 가이드도 저장소보다 오래된 판이었습니다.
+- **조치**:
+  - `src/robo_claw_bringup/config/SKILLS.former.md`: "정리 요청은 조작 요청과 구분" 항목을 별도 bullet 로 올려, 거부 문구 대신 `tidy_home`을 먼저 호출하도록 명시했습니다. `cleanup_demo`는 CLOi 동료만 실행하고 Former는 시연 모션을 실행하지 않는다는 점, 시연은 물체를 옮기지 않는다는 점을 추가했습니다.
+  - AI Config Server `Former_0047_konjiam`(id=14, `kon47`)의 `skills_content`를 1,508자에서 2,236자로 갱신했습니다(백업 `/tmp/config-14-former0047-before-apply.json`).
+- **검증**: `scripts/validate_skill_catalog.py` 105/105, `scripts/check_prompt_tone.py` 10/10, `PUT` 200 후 재조회 일치, 변경 필드는 `skills_content` 하나뿐입니다. 디바이스 파일 엔드포인트(`/files/SKILLS.md?robot_name=former&environment=kon47`) 200 응답. 실기에서 정리 요청이 `tidy_home`으로 라우팅되는지와 2호 시연 요청 성공 여부는 미검증입니다.
+
+## 2026-10-26 — CLOiD 2호 정리 시연(cleanup_demo) 허용
+
+- **배경**: 2호 상체 수리 이후에도 `cleanup_demo` 스킬은 launch 의 1호 개체 목록(`cloid01`/`cloi01`)에서만 등록됐습니다. 2호는 `execute_cloid_motion` 보유에도 시연 권한이 없어 동료에 위임했고, 2호 문서도 1호 전용 시연으로 안내했습니다.
+- **조치**:
+  - `robo_claw_bringup/launch/robo_claw.launch.py`: 정리 시연 등록 게이트를 "1호만"에서 "cloid 프로필 + 검토된 allowlist"로 넓혔습니다. 기본 allowlist `[22,60]`은 1호에만 유지하고, 다른 개체는 `cloid_cleanup_demo_motion_ids_json`을 명시해야 등록됩니다. 빈 allowlist 경고는 cloid 프로필에서만 출력합니다.
+  - `test_cloid_robot_config.py`: 2호 allowlist 등록, 2호 allowlist 미지정 시 미등록, 비 cloid 프로필 미등록 케이스를 고정했습니다(기존 "2호는 절대 미등록" 검증 대체).
+  - `SKILLS.cloid.2.md`, `SKILLS.cloid.1.md`: 2호가 로컬 시연을 수행하고 allowlist가 없을 때만 위임하는 흐름으로 수정했습니다.
+  - `docs/CLOiD_GUIDE.md`, `docs/SKILLS.md`, `docs/PEER_COLLABORATION.md`, `.env.example`: 시연 대상을 CLOi 개체 전체로 정리하고 기본 allowlist 적용 범위를 명시했습니다.
+  - 2호 테스트 docstring·주석을 개체 번호 대신 "시연 스킬 보유 여부" 기준으로 바꿨습니다.
+- **검증**: `robo_claw_bringup` 테스트 27건과 `test_autonomous_cleanup_demo_routing.py` 포함 70건 통과, `scripts/check_prompt_tone.py` 10/10, Ruff 통과. 실기 2호에서 시연 모션 실행은 미검증입니다(이미지 재빌드·컨테이너 재기동 필요).
+
+## 2026-10-26 — CLOiD 2호 상체 구동 수리 반영 (소울·스킬 가이드)
+
+- **배경**: CLOiD 2호의 팔·waist·neck 구동 수리가 완료되어 상체 구동 장애가 해소되었습니다. `ROBOT.cloid.2.md`·`SKILLS.cloid.2.md`가 여전히 "상체 구동 오류로 상체 동작 불가"를 전제로 서술되어 있어, 2호 에이전트가 등록 모션 요청을 이유 없이 거절하고 배포 문서도 수리 전 상태를 안내했습니다.
+- **조치**:
+  - `src/robo_claw_bringup/config/ROBOT.cloid.2.md`: 수리 완료 상태를 반영해 자기 소개·전문 분야·커뮤니케이션 스타일을 다시 썼습니다. 관찰·순찰 중심 개성은 유지하고, 등록 모션 기반 표현을 할 수 있는 개체로 서술했습니다.
+  - `src/robo_claw_bringup/config/SKILLS.cloid.2.md`: 1호 가이드와 같은 구조로 재작성했습니다. `execute_cloid_motion`·packing pose·표현 모션·주행 전 boxing prelude를 사용할 수 있고, 일반 조작 백엔드 미구현(`manipulation_enabled=false`)과 CLOiD 공통 제약(LaserScan 없음, AMCL 없음, compressed 카메라)만 유지했습니다. 정리 시연(`cleanup_demo`)은 1호 배포 전용이므로 2호는 관찰·위임으로 안내합니다.
+  - `src/robo_claw_bringup/config/SKILLS.cloid.1.md`: 2호 관련 서술을 "상체 오류"에서 "시연 스킬은 1호 배포 전용"으로 고쳤습니다.
+  - `src/robo_claw_bringup/tests/test_cloid_robot_config.py`: 두 문서 검증 테스트를 개체 역할 기준으로 바꿨습니다. 2호 문서에 "구동 오류" 서술이 남지 않고 `cleanup_demo`가 1호 전용임을 고정합니다.
+  - `docs/CLOiD_GUIDE.md`, `docs/ROBOT_CONFIG.md`, `.env.example`: 프로필 표·개체 선택 안내·정리 시연·표현 모션·주행 전 자세 안내를 수리 후 상태로 갱신했습니다.
+  - `robo_claw.launch.py`: `cloid_navigation_pose_enabled` 인자 설명에서 개체 상태 대신 "상체 모션을 쓰지 않는 배포" 기준으로 표현했습니다.
+- **검증**: `src/robo_claw_bringup/tests/test_cloid_robot_config.py` 26건, `test_runtime_config_contract.py` 5건 통과. `python3 scripts/check_prompt_tone.py` 합계 10/10(한도 10) 유지. 실기 2호에서 등록 모션 실행 확인은 미검증입니다.
+
+## 2026-10-26 — Former Nav2 좁은 문 통과 개선 (costmap 기하 정합 + 지도 정리)
+
+- **배경**: former0045/0047 실기에서 여유가 있는 문(0.7~0.9 m)을 통과하지 못하는 증상이 있었습니다. 0047 로그 52분 기준 골 42건 중 도달 12건, 계획 실패 19건으로 실패의 주류는 제어가 아니라 계획이었습니다. 원인은 costmap 이 실측 기하보다 넓게 지정된 것입니다(실측 `base_link` collision mesh 0.404 m, global `robot_radius` 0.26, `inflation_radius` 0.35 + `cost_scaling_factor` 3.0 → 경계 cost 167 절벽).
+- **조치**:
+  - `former/params/nav2_params.yaml`, `nav2_params_narrow.yaml`: global 도 local 과 같은 footprint(±0.205)를 쓰도록 `robot_radius` 제거, `inflation_radius` 0.30 / `cost_scaling_factor` 10.0, global `resolution` 0.025→0.05, `BaseObstacle.scale` 0.02→0.10, `angular_dist_threshold` 0.485→0.60. narrow 파일의 중복 `pf_z` 키도 제거했습니다.
+  - `former/scripts/check_nav_params.py` 추가: `recovery_alpha` 0.0, footprint/inscribed 범위, global·local 일치, inflation 절벽, 해상도, `scan_restamped` 토픽을 계약으로 검사합니다(이전 파라미터는 FAIL, 현재 PASS).
+  - `former/scripts/nav_map_tools.py` 추가: 지도 잡음 통계·병목 폭·clearance 임계값별 계획 가능 면적을 계산하고(`analyze`), 고립 점 제거 + 벽 1셀 구멍 폐쇄(`clean`)를 수행합니다.
+  - `former/maps/map_konjiam_L_107-1_clean.pgm/.yaml` 생성: occupied 2,968→2,697, 고립 점 216→25, clearance>0.205 계획 가능 면적 79,317→82,598, 최대 연결 영역 77,445→82,592(컴포넌트 8→3). 경로별 최소 통과 폭은 `(6.59,-2.28)` 0.70→0.80 m, `(9.55,0.45)` 0.70→0.73 m, `(-1.90,3.50)` 0.20→0.60 m, `(-4.90,3.00)` 0.36→0.45 m 로 넓어졌습니다. 원본 지도는 유지합니다.
+- **검증**: `python3 former/scripts/check_nav_params.py` PASS(2/2), 정리 지도 재분석 결과 위 수치 재현. 실기 주행 검증(0.70~0.73 m 문 왕복, `failed to create plan`/`spin failed` 0건)은 대기 상태이며, 절차와 주의사항은 `former/FORMER_GUIDE.md` 9.6~9.7절과 `NAVI_ISSUE.md` 3.8절에 정리했습니다.
+
+## 2026-10-24 — 복합 명령 하위 단계 Eligibility Gate
+
+- **배경**: 복합 명령은 TaskDecomposer가 단계로 나눈 뒤 모든 단계를 LLM(`run_llm_planning_loop`)으로 처리했다. 사전 라우터는 분해 전
+  원래 명령에만 한 번 적용되고 복합 명령 가드에 걸려 곧바로 LLM으로 갔으므로, "카메라로 촬영해" 같은 단순 단계도 LLM 지연을 거쳤다.
+  반면 "촬영한 이미지를 전송해"처럼 앞 단계 결과에 의존하는 단계를 라우터로 보내면 문맥 없이 잘못 실행될 수 있다.
+- **조치**:
+  - `agent_node/eligibility_gate.py`: 하위 단계가 혼자 완결되는지 판정한다. 탈락 사유는 `depends_on_previous`(촬영한·찾은·방금·그거 등),
+    `conditional`(~이하면·보이면·만약·경우·할 때 등, "화면/정면"의 '면'은 제외), `compound`(`looks_compound`), `empty`.
+  - `TaskDecomposer._try_step_fast_path`: 단계마다 관문 → 사전 라우터(`SYSTEM1_ROUTER`의 rule/laya) → 처리 순서로 동작하고
+    `System1 step gate: {...}` 판정 로그를 남긴다. 직접 실행 실패·라우터 오류 시 같은 단계를 LLM으로 처리한다. 백그라운드 직접 실행은
+    단계 경로에서 쓰지 않는다(시작 즉시 성공 보고로 다음 단계가 먼저 시작되는 문제).
+  - `ExecutionMixin._execute_direct_route`: 최상위 명령의 직접 실행 코드를 메서드로 분리해 하위 단계와 공유한다(주행 안전 규칙, 상태 갱신,
+    결과 이미지 전송). 최상위 경로 동작은 바뀌지 않는다.
+  - `SYSTEM1_STEP_ROUTING`: `off` / `shadow`(기본, 판정만 기록) / `on`. 기본값에서는 실행 동작이 바뀌지 않는다.
+  - 문서 `docs/SYSTEM1_ELIGIBILITY_GATE.md`를 추가하고 `SYSTEM1_FAST_ROUTER.md`, `.env.example`, README 표를 갱신했다.
+- **검증**: `tests/test_eligibility_gate.py` 28건(실기 분해 단계를 포함한 판정 규칙, on/shadow/off, 백그라운드 제외, 실패 시 LLM 대체,
+  라우터 오류, Simple_Reply) 통과. `test_execution_routing.py` 5건은 ROS 스텁 환경에서 리팩터링 전후 모두 통과했다. `robo_claw_agent`
+  전체(로컬)는 778 passed이며 실패·수집 오류 목록은 변경 전과 같은 ROS 의존 항목이다.
+- **남은 과제**: 실기 `shadow` 기록으로 실제 분해 문장의 판정을 확인한 뒤 `on`으로 전환한다. AI Config Server 웹 설정에 `SYSTEM1_STEP_ROUTING`
+  필드를 추가해야 웹에서 관리할 수 있다.
+
+## 2026-10-22 — 구동 시 적용 설정 상세 요약 및 요약 로그 추가
+
+- **배경**: `rclaw launch` 는 설정 서버에서 받은 값을 docker 실행 명령(`--env-file`)
+  형태로만 보여 주어, 실제로 어떤 LLM 옵션·RAG·채널·센서 설정으로 구동했는지 확인하기
+  어려웠습니다. 특히 `--env-file` 방식은 `.env` 값이 출력되지 않아 구동 후 재현이
+  불가능했습니다. 실행 명령 로그에는 `telegram_token` 같은 secret 인자가 그대로 찍히는
+  문제도 있었습니다.
+- **조치**
+  - `robo_claw_cli/launcher/config_summary.go` 추가 — 캐시된 `config.json`/`.env` 로
+    실제 구동에 적용되는 값을 7개 섹션(실행 프로파일, LLM, 임베딩·RAG, 채널·HTTP·gRPC,
+    센서·비전, 에이전트·태스크, 설정 파일)으로 정리합니다. 각 항목에 값의 출처
+    (`config.json` / `.env` / `runtime`)를 함께 표시하고, `ollama_options_json` 은 키별
+    항목으로 펼칩니다. launch 경로가 사용하지 않는 `.env` 값(예: `RC_LLM_MODEL`)은
+    무시된다는 안내를 덧붙입니다.
+  - `rclaw launch` 는 기동 직전에 요약을 출력하고
+    `<cache>/logs/applied_config_<YYYYmmdd_HHMMSS>.log`(0600, 최근 30개 보관)로
+    저장합니다. `--no-config-summary` 로 생략할 수 있습니다.
+  - `rclaw config-summary <robot> <env>` 서브커맨드 추가 — 원격 동기화 없이 캐시 기준
+    요약을 다시 확인합니다(`--write-log` 로 파일 저장).
+  - `launcher/types.go` — `LaunchContext` 에 설정 프로비넌스(`ConfigSource`,
+    `ConfigRevision`, `ConfigCachedAt`)를 추가하고, 동기화 없이 캐시만으로 컨텍스트를
+    만드는 `NewLaunchContextFromCache`/`DefaultCacheDir` 를 분리했습니다.
+  - secret 마스킹 — `MaskSecretValue`/`MaskCommandSecrets` 를 추가해 요약과 실행 명령
+    로그(`launch`, `--dry-run`)에서 token/API key 를 `********` 로 가립니다.
+    `target_peers_json`/`mcp_servers_json` 은 구조를 유지하고 내부 secret 키만
+    마스킹합니다.
+- **문서**: `docs/CONFIGURATION_GUIDE.md`(적용 설정 요약·로그, 구동 당시 설정 확인 절차,
+  체크리스트), `robo_claw_cli/README.md`(`config-summary`, `--no-config-summary`).
+- **검증**: `cd robo_claw_cli && go test ./...`, `go vet ./...` 통과. 신규 테스트
+  `launcher/config_summary_test.go` 9건(masking, ollama 옵션 펼치기, `.env` 출처 표시,
+  무시되는 `.env` 안내, 프로파일 메타데이터, 설정 파일 목록, 로그 파일 생성/보관 개수,
+  실행 명령 secret 마스킹). 가짜 캐시로 `rclaw config-summary`/`launch --dry-run` 출력 확인.
 
 ## 2026-10-15 — CLOiD 주행 전 boxing 자세 자동 prelude 및 설정 계약 추가
 

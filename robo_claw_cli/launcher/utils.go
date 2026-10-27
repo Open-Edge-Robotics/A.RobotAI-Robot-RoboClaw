@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -39,6 +40,23 @@ func FindAvailablePort(startPort string) string {
 		}
 	}
 	return startPort // 전체 실패 시 폴백
+}
+
+// readConfigRevision 캐시 디렉터리의 manifest.json에서 config revision을 읽습니다.
+// v2 manifest를 지원하지 않는 서버에서는 캐시에 manifest.json이 없으므로 빈 문자열을 반환합니다.
+func readConfigRevision(cacheDir string) string {
+	manifestPath := filepath.Join(cacheDir, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	var manifest struct {
+		ConfigRevision string `json:"config_revision"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(manifest.ConfigRevision)
 }
 
 // ResolveVenvSitePackages 가상환경 site-packages 경로를 찾아 반환합니다.

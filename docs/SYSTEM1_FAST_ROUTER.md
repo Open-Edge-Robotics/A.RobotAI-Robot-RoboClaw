@@ -213,6 +213,7 @@ Thor 내장 방식(3.2절)은 `SYSTEM1_ENDPOINT` 대신 `SYSTEM1_LOCAL_SERVER=tr
 | `SYSTEM1_PROVIDER` | `laya` | 로그와 trace에 표시되는 provider 이름입니다(`route.source`). |
 | `SYSTEM1_API_KEY` | (없음) | `Authorization: Bearer`로 전송됩니다. 인증을 켠 엣지 서버(`LAYA_API_KEY`)나 외부 유료 provider(Jev 등)를 쓸 때 넣습니다. `rclaw config-effective`에서 마스킹됩니다. |
 | `SYSTEM1_HEALTH_WAIT_SEC` | 내장 서버 `120`, 그 외 `0` | 기동 시 health check가 서버 준비를 기다리는 최대 시간(초)입니다. 모델 로딩 중 실패는 장애로 세지 않습니다. |
+| `SYSTEM1_STEP_ROUTING` | `shadow` | 복합 명령을 분해한 하위 단계에도 사전 라우터를 적용합니다. `off` / `shadow`(판정만 기록) / `on`(혼자 완결되는 단계를 직접 처리). 상세: [SYSTEM1_ELIGIBILITY_GATE.md](SYSTEM1_ELIGIBILITY_GATE.md) |
 
 Thor 내장 서버(`SYSTEM1_LOCAL_SERVER=true`)에만 쓰는 항목입니다.
 

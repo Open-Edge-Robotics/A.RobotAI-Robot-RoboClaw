@@ -1437,17 +1437,14 @@
       "module": "navigation_skill",
       "risk_level": "action",
       "internal": false,
-      "required": [
-        "x",
-        "y",
-        "yaw"
-      ],
+      "required": [],
       "properties": [
+        "target_name",
         "x",
         "y",
         "yaw"
       ],
-      "description": "로봇의 초기 위치를 지정된 x, y 좌표와 yaw(라디안)로 설정합니다. AMCL 파티클 필터의 초기 추정치를 해당 위치로 좁힙니다. 예: {'x': 0.0, 'y': 0.0, 'yaw': 0.0}",
+      "description": "로봇의 초기 위치(AMCL)를 지정된 x, y 좌표와 yaw(라디안)로 설정합니다. 좌표 대신 기억된 장소명(target_name) 또는 '마지막 위치'를 전달할 수 있습니다. '마지막 위치'는 로봇이 마지막으로 파악한 pose(x, y, yaw)를 복원합니다(네비게이션 재기동 후 위치 복구용). yaw를 생략하면 0rad(정면)로 설정합니다. 예: {'x': 0.0, 'y': 0.0, 'yaw': 0.0}, {'target_name': '안방'}, {'target_name': '마지막 위치'}",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/navigation_skill/set_initial_pose.py"
     },
     {

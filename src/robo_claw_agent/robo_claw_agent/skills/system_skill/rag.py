@@ -101,7 +101,14 @@ def _is_location_metadata(metadata: dict[str, Any]) -> bool:
 
 # 역방향 조회(좌표→이름) 폴백에서 위치로 취급하지 않을 운영 로그 타입
 _NON_LOCATION_TYPES = frozenset(
-    {"skill_episode", "observation", "navigated_coordinate", "blocked_coordinate"}
+    {
+        "skill_episode",
+        "observation",
+        "navigated_coordinate",
+        "blocked_coordinate",
+        # 마지막 위치 스냅샷은 장소 지식이 아니다(좌표→이름 역조회에서 제외).
+        "last_pose",
+    }
 )
 _XY_IN_TEXT = re.compile(
     r"x\s*[:=]\s*(-?\d+(?:\.\d+)?)\D+?y\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE

@@ -22,6 +22,8 @@ func RunLocalMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	argsToExec := append([]string{"launch", "robo_claw_bringup", lctx.LaunchTarget}, launchArgs...)
 	logging.Debug("실행 명령어: ros2 %s", FormatLaunchLogArgs(argsToExec))
 	logging.Info("최종 실행 설정: %s · mock_robot=%t", launchSummary(launchArgs), lctx.MockRobot)
+	logging.Info("실행 명령어: ros2 %s", MaskCommandSecrets(argsToExec))
+	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", MaskCommandSecrets(argsToExec))
 
 	cmdLaunch := exec.Command("ros2", argsToExec...)
 	cmdLaunch.Env = mergedEnv

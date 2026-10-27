@@ -138,7 +138,8 @@ def request_packing_pose(skill: Any, timeout_sec: float) -> dict[str, Any]:
 
         return skill.success_result(
             "CLOiD 포장용 최소(boxing) 자세 실행 요청을 완료했습니다. "
-            "스크립트는 정상 종료했지만 실제 자세 도달은 확인하지 않았습니다.",
+            "스크립트는 정상 종료했지만 실제 자세 도달은 확인하지 않았습니다. "
+            "팔을 움직이는 모션이 실행되면 자세가 풀립니다.",
             status="completed",
             pose="packing",
             executable=PACKING_POSE_EXECUTABLE,

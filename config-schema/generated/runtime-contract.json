@@ -121,6 +121,21 @@
           "config_server"
         ]
     },
+    "agent.cleanup_run_log_path": {
+      "type": "path",
+      "scope": "host",
+      "secret": false,
+      "env": "RC_CLEANUP_RUN_LOG_PATH",
+      "api_json": "cleanup_run_log_path",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "rag.enabled": {
       "type": "boolean",
       "scope": "runtime",
@@ -768,6 +783,21 @@
       "secret": false,
       "env": "SYSTEM1_SHADOW_LOG",
       "api_json": "system1_shadow_log",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "system1.step_routing": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "SYSTEM1_STEP_ROUTING",
+      "api_json": "system1_step_routing",
       "launch_argument": "",
       "ros_parameter": "",
       "modes": [

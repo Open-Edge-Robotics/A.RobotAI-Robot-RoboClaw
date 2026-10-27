@@ -53,6 +53,15 @@ def test_classify_failure_and_talking() -> None:
     assert classify_situation("청소해줘", task_success=True) == SITUATION_TALKING
 
 
+def test_classify_skips_tasks_that_just_set_the_boxing_pose() -> None:
+    # boxing 자세를 만든 태스크 직후의 표현 모션은 그 자세를 바로 푼다.
+    assert (
+        classify_situation("박싱 자세로 만들어줘", task_success=True, used_pose_skill=True) is None
+    )
+    # 자세를 만든 태스크가 아니면 기존대로 재생한다.
+    assert classify_situation("안녕하세요", task_success=True) == SITUATION_GREETING
+
+
 def test_classify_skips_base_motion_tasks() -> None:
     assert classify_situation("주방으로 이동해", task_success=True) is None
     assert classify_situation("앞으로 2미터 가줘", task_success=True) is None

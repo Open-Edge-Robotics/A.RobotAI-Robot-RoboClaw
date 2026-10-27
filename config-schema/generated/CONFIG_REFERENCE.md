@@ -14,6 +14,7 @@ Schema version: `2.0`
 | `agent.cloid_cleanup_demo_motion_ids_json` | `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON` | `cloid_cleanup_demo_motion_ids_json` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_expression_enabled` | `RC_CLOID_EXPRESSION_ENABLED` | `cloid_expression_enabled` | `boolean` | `False` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_navigation_pose_enabled` | `RC_CLOID_NAVIGATION_POSE_ENABLED` | `cloid_navigation_pose_enabled` | `boolean` | `False` | `robot_profile` | `false` | local, docker, simulation, config_server |
+| `agent.cleanup_run_log_path` | `RC_CLEANUP_RUN_LOG_PATH` | `cleanup_run_log_path` | `path` | `` | `host` | `false` | local, docker, simulation, config_server |
 | `rag.enabled` | `RC_ENABLE_RAG` | `enable_rag` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `rag.top_k` | `RC_RAG_TOP_K` | `rag_top_k` | `integer` | `2` | `runtime` | `false` | local, docker, simulation, config_server |
 | `task.strict_config` | `RC_STRICT_CONFIG` | `strict_config` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -58,6 +59,7 @@ Schema version: `2.0`
 | `system1.router` | `SYSTEM1_ROUTER` | `system1_router` | `string` | `rule` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.shadow` | `SYSTEM1_SHADOW` | `system1_shadow` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.shadow_log` | `SYSTEM1_SHADOW_LOG` | `system1_shadow_log` | `path` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `system1.step_routing` | `SYSTEM1_STEP_ROUTING` | `system1_step_routing` | `string` | `shadow` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.scope` | `SYSTEM1_SCOPE` | `system1_scope` | `string` | `readonly` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.endpoint` | `SYSTEM1_ENDPOINT` | `system1_endpoint` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.provider` | `SYSTEM1_PROVIDER` | `system1_provider` | `string` | `laya` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -115,6 +117,10 @@ CLOiD situation-based expression motion switch. When enabled, the agent plays at
 ### `agent.cloid_navigation_pose_enabled`
 
 CLOiD pre-navigation posture switch. When enabled, the runtime requests the compact boxing posture (tofu script_runner cloid.move_boxing) once before every base motion skill and rejects the motion when the request fails. Registered for the cloid profile only; the packing posture is not restored automatically.
+
+### `agent.cleanup_run_log_path`
+
+Optional JSONL path for the cleanup task run log. When set, the agent appends one record per tidy_home run and per cleanup handoff/delegation decision so success rate, peer allocation, delegation result and per-phase timing can be measured. An empty value disables the log and leaves cleanup behaviour unchanged.
 
 ### `rag.enabled`
 
@@ -291,6 +297,10 @@ Run the non-selected router in the background for comparison only.
 ### `system1.shadow_log`
 
 Optional JSONL output path for System 1 shadow decisions.
+
+### `system1.step_routing`
+
+Pre-router handling for sub-steps of a decomposed compound command. off sends every step to the LLM, shadow only records the routing decision, on lets eligible self-contained steps run without the LLM.
 
 ### `system1.scope`
 

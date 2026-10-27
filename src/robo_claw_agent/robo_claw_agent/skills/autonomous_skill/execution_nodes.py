@@ -1,6 +1,7 @@
 import json
 import logging
 import random
+import time
 import uuid
 from typing import Any
 
@@ -18,11 +19,66 @@ from ..cleanup_policy import (
     _safe_cleanup_storage_targets,
     _select_cleanup_demo_motion,
 )
+from ..cleanup_run_metrics import (
+    peer_candidates,
+    record_cleanup_delegate,
+    record_cleanup_handoff,
+)
 from .core import BTNode, NodeStatus
 from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE, release_autonomous
-from .helpers import _find_connected_peer_with_capability, _has_cleanup_capability
+from .helpers import (
+    _discover_peer_agents,
+    _find_connected_peer_with_capability,
+    _has_cleanup_capability,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _peer_candidate_snapshot(node: Any, selected: str = "") -> list[dict[str, Any]]:
+    """설정에 등록된 동료 목록을 계측용 후보 스냅샷으로 만든다.
+
+    ``_discover_peer_agents`` 는 환경변수/파라미터/ROS 그래프만 읽으므로 추가 RPC
+    없이 호출할 수 있다. 실패하면 후보 목록 없이 결정만 기록한다.
+    """
+    try:
+        return peer_candidates(_discover_peer_agents(node), selected)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[BT] Peer candidate snapshot failed: %s", exc)
+        return []
+
+
+def _record_delegate(
+    *,
+    blackboard: dict[str, Any],
+    node: Any,
+    skill_name: str,
+    params: dict[str, Any],
+    success: bool,
+    message: str,
+    duration_sec: float,
+) -> None:
+    """위임 요청 1건의 결과를 기록한다. 계측 실패는 실행 결과에 영향을 주지 않는다."""
+    try:
+        record_cleanup_delegate(
+            run_id=str(blackboard.get("cleanup_run_id", "") or ""),
+            source="tidy_home" if blackboard.get("cleanup_run_id") else "autonomous_patrol",
+            agent_id=str(getattr(node, "_agent_id", "") or ""),
+            place=str(blackboard.get("patrol_last_place", "") or ""),
+            peer=str(params.get("peer_name") or params.get("agent_id") or ""),
+            send_path=str(skill_name),
+            success=bool(success),
+            message=message,
+            duration_ms=duration_sec * 1000.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[BT] Cleanup delegate record failed: %s", exc)
+
+
+def _phase_ms(blackboard: dict[str, Any]) -> dict[str, float] | None:
+    """호출한 정리 실행이 넘긴 구간 계측 dict(없으면 None)."""
+    phase = blackboard.get("cleanup_phase_ms")
+    return phase if isinstance(phase, dict) else None
 
 
 class EmergencyLowBattery(BTNode):
@@ -191,7 +247,7 @@ class ResolveCleanupHandoff(BTNode):
         target_description: str,
     ) -> bool:
         """시연 로봇이 로컬에서 바로 정리 시연 모션을 수행하도록 결정을 채운다."""
-        # 시연 로봇(1호 등): 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
+        # 시연 가능 개체: 동료를 부르지 않고 로컬에서 바로 정리 시연 모션 실행
         catalog_res = None
         try:
             catalog_res = skills.execute(
@@ -295,6 +351,35 @@ class ResolveCleanupHandoff(BTNode):
         node = self._skill.node
         if node is None:
             return NodeStatus.SUCCESS
+        # 실험 계측 — 이미 내려놓은 판단을 그대로 기록하기 위한 값만 준비한다.
+        run_id = str(blackboard.get("cleanup_run_id", "") or "")
+        metric_source = "tidy_home" if run_id else "autonomous_patrol"
+        phase = _phase_ms(blackboard)
+
+        def _find_peer(capability: str) -> dict[str, str] | None:
+            """동료 탐색 소요 시간을 구간 계측에 누적하며 선택 결과를 돌려준다."""
+            started = time.monotonic()
+            try:
+                return _find_connected_peer_with_capability(node, capability)
+            finally:
+                if phase is not None:
+                    phase["discovery"] = phase.get("discovery", 0.0) + (time.monotonic() - started)
+
+        def _record_handoff(*, place: str, target: str, **fields: Any) -> None:
+            # 계측 실패는 위임 결정과 메시지 전송을 막지 않는다.
+            try:
+                record_cleanup_handoff(
+                    run_id=run_id,
+                    source=metric_source,
+                    agent_id=str(getattr(node, "_agent_id", "") or ""),
+                    place=place,
+                    target=target,
+                    discovery_ms=(float(phase.get("discovery", 0.0)) if phase is not None else 0.0),
+                    **fields,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[BT] Cleanup handoff record failed: %s", exc)
+
         local_cleanup_capable = _has_cleanup_capability(node)
         missing_local_destination = False
         objects = blackboard.get("detected_objects", []) or []
@@ -374,7 +459,7 @@ class ResolveCleanupHandoff(BTNode):
         location = "; ".join(location_parts) or "정확한 위치는 알 수 없음"
 
         # [불가능할 때 동료를 불러 시연/조작 요청]
-        peer = _find_connected_peer_with_capability(node, "manipulation")
+        peer = _find_peer("manipulation")
         handoff_kind = "manipulation"
         all_candidate_labels = list(cleanup_targets)
         for st in _cleanup_target_labels([], scene):
@@ -409,7 +494,7 @@ class ResolveCleanupHandoff(BTNode):
 
         if peer is None:
             if demo_target:
-                peer = _find_connected_peer_with_capability(node, "cleanup_demo")
+                peer = _find_peer("cleanup_demo")
                 if peer is not None:
                     handoff_kind = "cleanup_demo"
                     if not place:
@@ -446,6 +531,15 @@ class ResolveCleanupHandoff(BTNode):
             blackboard["decided_skill"] = "none"
             blackboard["decided_params"] = {}
             blackboard["decided_reason"] = blackboard["cleanup_handoff_status"]
+            _record_handoff(
+                place=place,
+                target=demo_target or target_description,
+                # 동료를 찾지 못해 위임 종류가 확정되지 않았다.
+                handoff_kind="",
+                blocked=True,
+                reason=str(blackboard["cleanup_handoff_status"]),
+                candidates=_peer_candidate_snapshot(node),
+            )
             self._skill.send_user_message(
                 f"정리 대상 '{target_description}'을 처리하지 않았습니다. "
                 f"{blackboard['cleanup_handoff_status']}"
@@ -485,6 +579,17 @@ class ResolveCleanupHandoff(BTNode):
             blackboard["decided_skill"] = "none"
             blackboard["decided_params"] = {}
             blackboard["decided_reason"] = blackboard["cleanup_handoff_status"]
+            _record_handoff(
+                place=place,
+                target=demo_target or target_description,
+                handoff_kind=handoff_kind,
+                peer=str(peer["peer_name"]),
+                transport=str(peer["transport"]),
+                send_path=skill_name,
+                blocked=True,
+                reason=str(blackboard["cleanup_handoff_status"]),
+                candidates=_peer_candidate_snapshot(node, peer["peer_name"]),
+            )
             self._skill.send_user_message(
                 f"정리 대상 '{target_description}'을 발견했지만 동료에게 작업을 전달할 수 없어 처리하지 않았습니다."
             )
@@ -506,6 +611,16 @@ class ResolveCleanupHandoff(BTNode):
             f"{peer['peer_name']}에게 임시 정리 시연 모션을 요청합니다."
             if handoff_kind == "cleanup_demo"
             else f"{peer['peer_name']}에게 정리 작업을 요청합니다."
+        )
+        _record_handoff(
+            place=place,
+            target=str(blackboard["cleanup_handoff_target"]),
+            handoff_kind=handoff_kind,
+            peer=str(peer["peer_name"]),
+            transport=str(peer["transport"]),
+            send_path=skill_name,
+            reason=str(blackboard["decided_reason"]),
+            candidates=_peer_candidate_snapshot(node, peer["peer_name"]),
         )
         logger.info("[BT] Prepared cleanup handoff to %s via %s", peer["peer_name"], skill_name)
         return NodeStatus.SUCCESS
@@ -585,6 +700,23 @@ class ExecuteDecidedAction(BTNode):
             self._blackboard["last_action_result"] = getattr(result, "result_data", {})
             self._blackboard["last_action_success"] = getattr(result, "success", False)
             success = getattr(result, "success", False)
+            # 실험 계측 — 위임 요청 1건의 소요 시간을 정리 실행 구간 합계에 누적한다.
+            duration_sec = float(getattr(result, "duration_sec", 0.0) or 0.0)
+            self._blackboard["last_action_duration_sec"] = duration_sec
+            if cleanup_handoff:
+                phase = _phase_ms(self._blackboard)
+                if phase is not None:
+                    # phase_ms 는 밀리초 단위이므로 초 단위 duration 을 환산해 더한다.
+                    phase["delegate"] = phase.get("delegate", 0.0) + duration_sec * 1000.0
+                _record_delegate(
+                    blackboard=self._blackboard,
+                    node=node,
+                    skill_name=skill_name,
+                    params=params,
+                    success=success,
+                    message=str(getattr(result, "message", "") or ""),
+                    duration_sec=duration_sec,
+                )
             if not success:
                 self._blackboard["queue_execution_failed"] = True
             logger.info(

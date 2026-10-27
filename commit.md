@@ -119,3 +119,50 @@ fix(agent): 폴백 답변·단계 요약에서 이미지 base64 제외 및 단�
 참고(이번 범위 밖):
 - 같은 로그에서 1단계 LLM이 3단계(analyze_scene)까지 미리 실행했고, 요약 라운드가 답변 대신
   스킬 계획을 반환했다(planner 동작). 로봇에 map 프레임이 없어 /odom 으로 대체 중이다.
+
+
+# 2026.10.24
+
+feat(agent): 복합 명령 하위 단계 Eligibility Gate 추가
+
+TaskDecomposer 가 나눈 각 하위 단계가 혼자 완결되는지 판정해, 완결되는 단계만
+사전 라우터(Rule / System 1)로 보내고 나머지는 이전 단계 요약을 참고하는 LLM 이 처리한다.
+기본값(shadow)은 판정만 기록하므로 실행 동작은 바뀌지 않는다.
+
+배경:
+- 지금까지는 분해된 모든 단계가 LLM(run_llm_planning_loop)을 거쳐, "카메라로 촬영해" 같은
+  단순 단계도 단계마다 LLM 지연(라운드당 약 2~3초)이 쌓였다.
+- "촬영한 이미지를 전송해"처럼 앞 단계 결과에 의존하는 단계를 라우터로 보내면 문맥 없이
+  잘못 실행될 수 있어, 단계별 적격성 판정이 필요하다.
+
+주요 변경사항:
+- agent_node/eligibility_gate.py (신규): 탈락 사유 depends_on_previous / conditional /
+  compound / empty 판정, SYSTEM1_STEP_ROUTING(off | shadow | on) 파싱
+- task_planner: TaskDecomposer._try_step_fast_path — 관문 → 라우터 → 처리,
+  "System1 step gate: {...}" 판정 로그. 직접 실행 실패·라우터 오류 시 LLM 으로 대체,
+  백그라운드 직접 실행(컵 집기 등)은 단계 경로에서 제외
+- execution: 직접 실행 코드를 _execute_direct_route 로 분리해 최상위 명령과 하위 단계가
+  공유(주행 안전 규칙, 상태 갱신, 결과 이미지 전송). 최상위 동작은 동일
+- node: 기동 시 SYSTEM1_STEP_ROUTING 읽기 및 모드 로그
+- 문서: docs/SYSTEM1_ELIGIBILITY_GATE.md (신규), SYSTEM1_FAST_ROUTER.md 환경변수 표,
+  .env.example, README 상세 가이드 표, CHANGE_LOG.md
+
+검증:
+- tests/test_eligibility_gate.py 28 passed (실기 분해 단계 포함 판정 규칙, on/shadow/off,
+  백그라운드 제외, 직접 실행 실패 시 LLM 대체, 라우터 오류, Simple_Reply)
+- test_execution_routing.py 5건: ROS 스텁 환경에서 리팩터링 전후 모두 통과
+- robo_claw_agent 전체(로컬, ROS 미설치): 778 passed, 실패·수집 오류 목록은 변경 전과 동일
+- Ruff check 통과
+
+변경 파일:
+- src/robo_claw_agent/robo_claw_agent/agent_node/eligibility_gate.py (신규)
+- src/robo_claw_agent/robo_claw_agent/agent_node/task_planner.py
+- src/robo_claw_agent/robo_claw_agent/agent_node/execution.py
+- src/robo_claw_agent/robo_claw_agent/agent_node/node.py
+- src/robo_claw_agent/tests/test_eligibility_gate.py (신규)
+- docs/SYSTEM1_ELIGIBILITY_GATE.md (신규), docs/SYSTEM1_FAST_ROUTER.md
+- .env.example, README.md, CHANGE_LOG.md, commit.md
+
+남은 일:
+- 실기 shadow 기록으로 실제 분해 문장의 판정을 확인한 뒤 SYSTEM1_STEP_ROUTING=on 으로 전환
+- AI Config Server 웹 설정에 SYSTEM1_STEP_ROUTING 필드 추가(동료 작업)

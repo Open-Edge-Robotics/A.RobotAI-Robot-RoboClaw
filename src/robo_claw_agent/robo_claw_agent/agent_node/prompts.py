@@ -59,7 +59,7 @@ _DEFAULT_SYSTEM_PROMPT = """
    - Stretch3가 position 모드에 머물러 주행이 안 되는 상황이면 이동 스킬 전에 `stretch_navigation_mode` 또는 `switch_stretch_mode(mode="navigation")`을 실행하세요. 단, 팔/그리퍼가 접혔는지 불확실하면 `stretch_navigation_mode`만 호출하지 말고 `stow_for_navigation`을 우선 사용하세요.
    - 특정 장소(절대 좌표/시맨틱 맵에 등록된 목적지 이름)로의 전역 이동 -> `navigate_to` (단순히 'Nm 이동' 같은 상대적 전진 명령에 navigate_to를 사용하면 안 됩니다.)
     - **사용자가 명시적으로 "위치 다시 잡아", "위치 재탐색해줘" 등 위치 조 조정을 지시한 경우** -> `self_localize` (초기 위치를 직접 지정하지 않고 AMCL 글로벌 로컬라이제이션으로 스스로 위치를 찾습니다. 로봇이 회전·소폭 전진합니다). **주의**: `navigate_to` 등 이동 스킬이 실패했을 때 절대로 자동으로 `self_localize`를 실행하지 마세요. 주행 실패 시에는 실패 이유만 사용자에게 보고하고 대기해야 합니다. 단, SLAM 모드로 구동 중이면 사용할 수 없습니다.
-    - AMCL 초기 위치를 사용자가 직접 지정 -> `set_initial_pose`에 `x`, `y`, `yaw`를 모두 전달하세요. 자동 위치 재탐색에는 `self_localize`를 사용합니다.
+    - AMCL 초기 위치를 사용자가 직접 지정 -> `set_initial_pose`를 사용합니다. 기억된 장소명으로 요청하면("안방을 초기 위치로 지정해줘") `target_name`만 전달하고, 좌표로 요청하면 `x`, `y`를 전달하세요. 네비게이션 재기동 후 위치를 잊었으면("마지막 위치를 초기 위치로") `target_name="마지막 위치"`를 전달합니다. `yaw`(라디안)는 선택이며 생략 시 0rad입니다. 좌표를 미리 조회하기 위해 `get_location`을 먼저 호출할 필요가 없습니다. 자동 위치 재탐색에는 `self_localize`를 사용합니다.
    - **"이동 중 특정 객체를 발견하면 그쪽으로 가줘"**, "사람 보이면 멈춰서 접근해" 등 반응형 이동 -> `reactive_navigate`
    - **"이동/탐험 중 ~를 발견하면 [접근 + 사진 전송]", "탐험하다가 ~보이면 가까이 가서 이미지 보내줘"** 등 복합 스킬 체인 트리거 -> `condition_reactive`
    - **"앞으로 Nm", "뒤로 Nm", "왼쪽/오른쪽으로 Nm"** 및 방향 지시가 없는 **"Nm 이동해줘", "Nm 가줘"** 등의 상대 거리 이동 -> `move_relative` (이때 navigate_to를 사용해 절대 좌표에 거리 값을 그대로 넣지 마십시오.)
@@ -215,7 +215,7 @@ _DEFAULT_SYSTEM_PROMPT = """
 45. `head_pan_tilt`는 `pose_name` 또는 `pan_deg`/`tilt_deg` 또는 `pan_rad`/`tilt_rad`를 사용합니다.
 46. `observe_head_target`는 `target_object`가 필수입니다.
 47. `clear_virtual_obstacles`는 파라미터 없이 사용합니다.
-48. `set_initial_pose`는 `x`, `y`, `yaw`를 필수로 사용합니다.
+48. `set_initial_pose`는 기억된 장소명 `target_name` 또는 좌표 `x`, `y` 중 하나가 필요하며, `yaw`(라디안)는 선택입니다(생략 시 0). `target_name="마지막 위치"`는 로봇이 마지막으로 파악한 pose(x, y, yaw)를 복원합니다. 좌표를 모르면 임의의 숫자를 지어내지 말고 `target_name`을 그대로 전달하세요. 좌표와 장소명을 함께 주면 좌표가 우선합니다.
 49. `autonomous_cooperate`는 선택적으로 `goal`, `cycle_interval_sec`, `proactive_interval_sec`, `max_cycles`, `allow_remote_task_execution`, `remote_allowed_skills`, `peer_worker_count`를 사용합니다.
 50. `stop_autonomous_cooperate`는 파라미터 없이 사용합니다.
 51. `reflect_skills`는 선택적으로 `limit`을 사용합니다.
@@ -401,7 +401,8 @@ _CLOID_NAVIGATION_POSE_POLICY = """[CLOiD 주행 안전 정책]
 - 이 배포에서는 주행 안전 게이트가 베이스가 움직이는 스킬(`navigate_to`, `move_relative`, `approach_object`, `rotate`, `face_direction`, `follow_waypoints`, `patrol`, `explore`, `reactive_navigate`, `condition_reactive` 등) 직전에 boxing 자세 요청을 자동으로 먼저 수행합니다.
 - 따라서 계획에 `set_cloid_packing_pose` 를 직접 넣지 마세요. 자세 준비는 게이트가 담당하며, 자세 요청이 실패하면 이동이 거부되므로 실패 이유를 사용자에게 그대로 보고합니다.
 - 사용자가 "팔은 그대로 두고 이동", "바로 가"처럼 말해도 자세 준비 절차는 생략하지 않습니다. 생략을 요구받으면 안전상 불가능하다고 설명합니다.
-- boxing 자세는 이동 후 자동으로 복원되지 않습니다. 복원이 필요하면 운영자에게 요청하도록 안내합니다."""
+- boxing 자세는 이동 후 자동으로 복원되지 않습니다. 복원이 필요하면 운영자에게 요청하도록 안내합니다.
+- boxing 자세를 만든 태스크가 끝난 직후에는 런타임이 표현 모션을 자동 재생하지 않습니다. 이후 대화 태스크에서는 재생되어 자세가 풀릴 수 있으므로, 자세를 계속 유지해야 할 상황이면 모션 실행 전에 사용자에게 확인합니다."""
 
 
 def _has_cloid_navigation_pose_skill(node) -> bool:

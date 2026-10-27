@@ -46,6 +46,7 @@ func main() {
 		cmd.FetchCmd(),
 		cmd.DoctorCmd(),
 		cmd.EffectiveCmd(),
+		cmd.ConfigSummaryCmd(),
 		cmd.LaunchCmd(),
 		cmd.RunCmd(),
 		cmd.SimCmd(),

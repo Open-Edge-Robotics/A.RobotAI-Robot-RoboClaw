@@ -160,6 +160,12 @@ type LaunchFlags struct {
 	MockRobot  bool   // 로봇 노드를 끄고 로봇 스킬을 표시된 가짜 성공으로 반환합니다.
 }
 
+// ConfigSourceRemote 설정을 원격 서버에서 방금 동기화했음을 나타냅니다.
+const ConfigSourceRemote = "remote"
+
+// ConfigSourceCache 원격 동기화 없이 로컬 캐시를 사용했음을 나타냅니다.
+const ConfigSourceCache = "cache"
+
 // LaunchContext launch 커맨드 실행에 필요한 모든 상태를 보관합니다.
 type LaunchContext struct {
 	LaunchFlags
@@ -167,6 +173,11 @@ type LaunchContext struct {
 	// 식별 정보
 	RobotName string
 	EnvName   string
+
+	// 설정 프로비넌스
+	ConfigSource   string
+	ConfigRevision string
+	ConfigCachedAt time.Time
 
 	// 파생 경로
 	CacheDir     string
@@ -195,15 +206,12 @@ func LoadLaunchContext(
 	flags LaunchFlags,
 	fetchFn func(*wcli.Context, string, string) error,
 ) (*LaunchContext, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("홈 디렉토리를 가져올 수 없습니다: %w", err)
-	}
-
-	cacheDir := filepath.Join(homeDir, ".robo_claw", "config_cache", fmt.Sprintf("%s_%s", robotName, envName))
+	cacheDir := DefaultCacheDir(robotName, envName)
 
 	// 원격 설정 동기화 (실패 시 로컬 캐시로 폴백)
 	logging.Info("원격 서버에서 설정 동기화 시도 중... (로봇: %s, 환경: %s)", robotName, envName)
+	rich.Println("[cyan]⚡[/cyan] 원격 서버에서 설정 동기화 시도 중...")
+	configSource := ConfigSourceRemote
 	if fetchErr := fetchFn(ctx, robotName, envName); fetchErr != nil {
 		logging.Warn("원격 설정 서버 연결 실패: %v. 로컬 캐시 폴백을 시도합니다.", fetchErr)
 
@@ -213,10 +221,30 @@ func LoadLaunchContext(
 			// 표준 error를 래핑하거나 launcher 내부 에러 구조체로 처리하는 것이 좋습니다.
 			return nil, fmt.Errorf("설정 캐시를 찾을 수 없습니다. 원격 서버 및 로컬 캐시가 모두 존재하지 않습니다 (네트워크 오류: %w)", fetchErr)
 		}
+		configSource = ConfigSourceCache
 	} else {
 		logging.Info("원격 설정 동기화 성공")
 	}
 
+	return NewLaunchContextFromCache(robotName, envName, flags, cacheDir, configSource)
+}
+
+// DefaultCacheDir 로봇/환경별 설정 캐시 디렉터리를 반환합니다.
+func DefaultCacheDir(robotName, envName string) string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+	}
+	return filepath.Join(homeDir, ".robo_claw", "config_cache", fmt.Sprintf("%s_%s", robotName, envName))
+}
+
+// NewLaunchContextFromCache 캐시된 config.json/.env만으로 LaunchContext를 구성합니다.
+// 원격 동기화를 수행하지 않으므로 `config-summary` 처럼 캐시 상태를 조회할 때 사용합니다.
+func NewLaunchContextFromCache(
+	robotName, envName string,
+	flags LaunchFlags,
+	cacheDir, configSource string,
+) (*LaunchContext, error) {
 	// config.json 로드
 	configPath := filepath.Join(cacheDir, "config.json")
 	logging.Debug("설정 파일 로드 시도: %s", configPath)
@@ -227,6 +255,11 @@ func LoadLaunchContext(
 	var activeConfig RoboClawConfig
 	if err := json.Unmarshal(configData, &activeConfig); err != nil {
 		return nil, fmt.Errorf("설정 파일 역직렬화 실패: %w", err)
+	}
+
+	cachedAt := time.Time{}
+	if info, statErr := os.Stat(configPath); statErr == nil {
+		cachedAt = info.ModTime()
 	}
 
 	// .env 파일 파싱
@@ -266,18 +299,21 @@ func LoadLaunchContext(
 	logging.Debug("설정된 Launch 타겟: %s", launchTarget)
 
 	lctx := &LaunchContext{
-		LaunchFlags:  flags,
-		RobotName:    robotName,
-		EnvName:      envName,
-		CacheDir:     cacheDir,
-		EnvFilePath:  envFilePath,
-		ProjectRoot:  GetProjectRoot(),
-		LaunchTarget: launchTarget,
-		RosDistro:    rosDistro,
-		ActualPort:   actualPort,
-		ActiveConfig: activeConfig,
-		EnvSlice:     envSlice,
-		EnvMap:       envMap,
+		LaunchFlags:    flags,
+		RobotName:      robotName,
+		EnvName:        envName,
+		ConfigSource:   configSource,
+		ConfigRevision: readConfigRevision(cacheDir),
+		ConfigCachedAt: cachedAt,
+		CacheDir:       cacheDir,
+		EnvFilePath:    envFilePath,
+		ProjectRoot:    GetProjectRoot(),
+		LaunchTarget:   launchTarget,
+		RosDistro:      rosDistro,
+		ActualPort:     actualPort,
+		ActiveConfig:   activeConfig,
+		EnvSlice:       envSlice,
+		EnvMap:         envMap,
 	}
 	lctx.CommonLaunchArgs = BuildCommonLaunchArgs(lctx)
 

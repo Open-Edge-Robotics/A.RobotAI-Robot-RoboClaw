@@ -1,0 +1,43 @@
+{
+  "condition": "normal",
+  "label": "정상 협업",
+  "description": "former0047이 안방에서 정리 대상을 발견하고, 시연 권한이 있는 동료 cloid2에게 위임해 시연 모션 실행 요청까지 성공하는 조건입니다.",
+  "setup": {
+    "operator_steps": [
+      "cloid2가 기동 중이고 former0047의 GRPC_TARGET_PEERS_JSON에 agent_name=cloid2, capabilities=[\"cleanup_demo\"] 로 등록되어 연결 상태여야 합니다.",
+      "cloid2에 시연 권한을 부여합니다: RC_CLOID_CLEANUP_DEMO_ENABLED=true, RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON=[22] (검토된 모션 ID만).",
+      "cloid2를 재기동한 뒤 스킬 목록에 cleanup_demo 가 있는지 확인합니다.",
+      "former0047 기억 장소에 '안방' 좌표가 등록되어 있어야 합니다.",
+      "안방에 정리 대상(수건·쿠션·명확한 폐기물 중 하나)을 두고 시연 로봇이 접근할 공간을 확보합니다.",
+      "former0047 에이전트를 RC_CLEANUP_RUN_LOG_PATH 를 지정해 재기동합니다."
+    ],
+    "required_env": {
+      "former0047": {
+        "RC_CLEANUP_RUN_LOG_PATH": "<host path>/cleanup_runs.jsonl"
+      },
+      "cloid2": {
+        "RC_CLOID_CLEANUP_DEMO_ENABLED": "true",
+        "RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22]"
+      }
+    }
+  },
+  "run_timeout_sec": 300,
+  "settle_sec": 10,
+  "phases": [
+    {
+      "key": "normal",
+      "prompt": "안방 정리해줘",
+      "repeat": 10,
+      "row": true,
+      "expect": {
+        "run_present": true,
+        "run_success": true,
+        "place_status": ["delegated_demo"],
+        "peer": "Cloid 2호",
+        "delegate_success": true,
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리할 수 없", "실패:", "[스킬"]
+      }
+    }
+  ]
+}

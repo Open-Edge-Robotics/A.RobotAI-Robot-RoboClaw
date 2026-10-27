@@ -58,6 +58,13 @@ RUNTIME_CONFIG_FIELDS = {
         "scope": "robot_profile",
         "secret": False,
     },
+    "agent.cleanup_run_log_path": {
+        "env": "RC_CLEANUP_RUN_LOG_PATH",
+        "launch_argument": "",
+        "parameter": "",
+        "scope": "host",
+        "secret": False,
+    },
     "rag.enabled": {
         "env": "RC_ENABLE_RAG",
         "launch_argument": "enable_rag",
@@ -361,6 +368,13 @@ RUNTIME_CONFIG_FIELDS = {
     },
     "system1.shadow_log": {
         "env": "SYSTEM1_SHADOW_LOG",
+        "launch_argument": "",
+        "parameter": "",
+        "scope": "runtime",
+        "secret": False,
+    },
+    "system1.step_routing": {
+        "env": "SYSTEM1_STEP_ROUTING",
         "launch_argument": "",
         "parameter": "",
         "scope": "runtime",

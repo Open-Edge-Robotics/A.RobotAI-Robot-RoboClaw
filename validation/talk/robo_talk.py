@@ -389,9 +389,11 @@ def _format_referenced(result_json: str) -> list[str]:
 
 
 class RoboTalk:
-    def __init__(self, host: str, port: int, sender_id: str = "robo_talk"):
+    def __init__(self, host: str, port: int, sender_id: str = "robo_talk", token: str = ""):
         self.target = f"{host}:{port}"
         self.sender_id = sender_id
+        # 에이전트에 GRPC_PEER_TOKEN이 설정된 경우 SendCommand도 인증이 필요하다.
+        self.token = (token or "").strip()
         self._channel = grpc.insecure_channel(self.target)
         self._stub = pb_grpc.RoboMessengerStub(self._channel)
 
@@ -409,6 +411,8 @@ class RoboTalk:
             content=text,
             timestamp=int(time.time()),
         )
+        if self.token:
+            msg.metadata["auth_token"] = self.token
         resp = self._stub.SendCommand(msg, timeout=timeout_sec)
         return resp.success, resp.message, resp.result_json
 
@@ -637,6 +641,12 @@ def main():
     ap.add_argument("--host", required=True, help="로봇 IP (예: 10.159.172.69). 로봇에서 실행 시 localhost")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"RoboMessenger 포트 (기본 {DEFAULT_PORT})")
     ap.add_argument("--sender-id", default="robo_talk", help="발신자 ID")
+    ap.add_argument(
+        "--token",
+        default=os.environ.get("ROBO_CLAW_PEER_TOKEN", ""),
+        help="gRPC 채팅 인증 토큰(에이전트에 GRPC_PEER_TOKEN이 설정된 경우 필요). "
+        "환경변수 ROBO_CLAW_PEER_TOKEN 로도 지정 가능.",
+    )
     ap.add_argument("--scenario", help="테스트 케이스 JSON 경로 (first-use-scenario-auto.json 형식)")
     ap.add_argument("--output", help="마크다운 리포트 저장 경로")
     ap.add_argument("--only", help="특정 케이스만 실행(쉼표 구분, id 부분일치). 예: tc03,tc16")
@@ -691,7 +701,7 @@ def main():
         if _LAST_BUILD_ERROR:
             sys.stderr.write(f"[WARN] 빌드 정보 조회 실패 — {_LAST_BUILD_ERROR}\n")
 
-    talk = RoboTalk(args.host, args.port, sender_id=args.sender_id)
+    talk = RoboTalk(args.host, args.port, sender_id=args.sender_id, token=args.token)
     if not talk.wait_ready(5.0):
         sys.stderr.write(
             f"[ERROR] {talk.target} 연결 실패. 확인: 로봇 에이전트 기동 여부, "

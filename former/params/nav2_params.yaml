@@ -1,6 +1,6 @@
 amcl:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     alpha1: 0.2
     alpha2: 0.2
     alpha3: 0.2
@@ -14,10 +14,10 @@ amcl:
     global_frame_id: "map"
     lambda_short: 0.1
     laser_likelihood_max_dist: 2.0
-    laser_max_range: 100.0
+    laser_max_range: 20.0
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
-    max_beams: 60
+    max_beams: 120
     max_particles: 2000
     min_particles: 500
     odom_frame_id: odom
@@ -30,16 +30,16 @@ amcl:
     save_pose_rate: 2.0
     sigma_hit: 0.2
     tf_broadcast: true
-    transform_tolerance: 1.0
+    transform_tolerance: 0.5
     update_min_a: 0.1
     update_min_d: 0.15
-    z_hit: 0.5
+    z_hit: 0.7
     z_max: 0.05
-    z_rand: 0.5
+    z_rand: 0.1
     z_short: 0.05
-    scan_topic: scan
+    scan_topic: scan_restamped
     set_initial_pose: true
-    always_reset_initial_pose: true
+    always_reset_initial_pose: false
     initial_pose:
       x: -0.731
       y: 4.521
@@ -49,7 +49,7 @@ amcl:
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     global_frame: map
     robot_base_frame: base_link
     odom_topic: /base_controller/odom
@@ -109,15 +109,15 @@ bt_navigator:
 
 bt_navigator_navigate_through_poses_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 bt_navigator_navigate_to_pose_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 controller_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
@@ -143,7 +143,8 @@ controller_server:
       plugin: "nav2_rotation_shim_controller::RotationShimController"
       primary_controller: "dwb_core::DWBLocalPlanner"
 
-      angular_dist_threshold: 0.485
+      angular_dist_threshold: 0.60   # 문 앞 제자리 회전 회피 (기존 0.485). 회전은 circumscribed
+                                     # 반경(0.29 m)을 요구하므로 좁은 통로에서 실패한다.
       forward_sampling_distance: 0.5
       rotate_to_heading_angular_vel: 1.8
       max_angular_accel: 2.4
@@ -176,7 +177,8 @@ controller_server:
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      BaseObstacle.scale: 0.10       # PathAlign(32)와 균형. 0.02는 비용 회피가 사실상 무효라
+                                     # 좁은 문에서 경로에 붙어 벽을 긁는다.
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -190,7 +192,7 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      use_sim_time: True
+      use_sim_time: False
       update_frequency: 5.0
       publish_frequency: 2.0
       global_frame: odom
@@ -200,12 +202,16 @@ local_costmap:
       height: 5
       resolution: 0.025
       # robot_radius: 0.325
-      footprint: '[[0.21, 0.21], [0.21, -0.21], [-0.21, -0.21], [-0.21, 0.21]]'
+      # 실측 base_link collision mesh 0.404 x 0.404 -> half-width 0.202
+      footprint: '[[0.205, 0.205], [0.205, -0.205], [-0.205, -0.205], [-0.205, 0.205]]'
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.45
+        # cost = 252*exp(-csf*(d-inscribed)) (d>R 이면 0). csf=3, R=0.35 는 R 경계에서
+        # cost 167 -> 0 으로 끊기는 계단이라 0.70 m 문 전체가 고비용이 된다.
+        # 좁은 실내에서는 짧고 가파른 감쇠(csf 10, R 0.30)가 맞다.
+        cost_scaling_factor: 10.0
+        inflation_radius: 0.30
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -217,7 +223,7 @@ local_costmap:
         mark_threshold: 0
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_restamped
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -234,22 +240,23 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      use_sim_time: True
+      use_sim_time: False
       update_frequency: 1.0
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.26
-      # footprint: '[[0.25, 0.25], [0.25, -0.25], [-0.25, -0.25], [-0.25, 0.25]]'
-      resolution: 0.025
-      track_unknown_space: true
+      # robot_radius: 0.26 은 실측 half-width(0.202)보다 29% 커서 0.60 m 문에서
+      # 전역 경로 여유를 ±4 cm로 만든다. local costmap과 같은 footprint를 쓴다.
+      footprint: '[[0.205, 0.205], [0.205, -0.205], [-0.205, -0.205], [-0.205, 0.205]]'
+      resolution: 0.05              # 지도(map_konjiam_L_107-1 0.05)와 일치. 0.025는 정보 이득 없이 셀 4배
+      track_unknown_space: false
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_restamped
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -263,20 +270,20 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.45
+        cost_scaling_factor: 10.0   # local_costmap과 동일 (기존 3.0)
+        inflation_radius: 0.30      # (기존 0.35) 0.73 m 문 저비용 밴드 3 cm -> 13 cm
       always_send_full_costmap: True
 
 map_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     # Overridden in launch by the "map" launch configuration or provided default value.
     # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
     yaml_filename: ""
 
 map_saver:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     save_map_timeout: 5.0
     free_thresh_default: 0.25
     occupied_thresh_default: 0.65
@@ -285,7 +292,7 @@ map_saver:
 planner_server:
   ros__parameters:
     # expected_planner_frequency: 20.0
-    use_sim_time: True
+    use_sim_time: False
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
@@ -295,7 +302,7 @@ planner_server:
 
 smoother_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     smoother_plugins: ["simple_smoother"]
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
@@ -305,7 +312,7 @@ smoother_server:
 
 behavior_server:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: False
     local_costmap_topic: local_costmap/costmap_raw
     global_costmap_topic: global_costmap/costmap_raw
     local_footprint_topic: local_costmap/published_footprint
@@ -333,11 +340,11 @@ behavior_server:
 
 robot_state_publisher:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 waypoint_follower:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     loop_rate: 20
     stop_on_failure: false
     waypoint_task_executor_plugin: "wait_at_waypoint"
@@ -348,7 +355,7 @@ waypoint_follower:
 
 velocity_smoother:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"

@@ -16,6 +16,9 @@ import re
 import threading
 from typing import Any
 
+from .eligibility_gate import STEP_ROUTING_OFF, STEP_ROUTING_ON, check_step_eligibility
+from .fast_router import ROUTE_DIRECT_SKILL, ROUTE_SIMPLE_REPLY
+
 logger = logging.getLogger(__name__)
 
 # 순차 연결을 나타내는 명시적 접속 표현.
@@ -171,6 +174,74 @@ class TaskDecomposer:
         margin = _PER_STEP_WAIT_MARGIN_SEC * max_steps * (1 + max_retries)
         return min(margin, cap)
 
+    async def _try_step_fast_path(
+        self, index: int, step: str, timeout: float, send_fb: Any
+    ) -> tuple[str, list[Any], bool, list[threading.Event]] | None:
+        """Eligibility Gate → 사전 라우터로 하위 단계를 처리한다. LLM 으로 넘길 단계는 ``None``.
+
+        ``SYSTEM1_STEP_ROUTING`` (노드의 ``_step_routing_mode``):
+
+        * ``off``: 판정하지 않는다(기존 동작).
+        * ``shadow``(기본): 판정과 라우터 결정을 로그로만 남기고 실행은 LLM 이 한다.
+        * ``on``: 적격 단계에서 라우터가 ``direct_skill`` / ``simple_reply`` 를 고르면 그대로 처리한다.
+
+        백그라운드 직접 실행(예: 규칙 라우터의 컵 집기)은 시작 즉시 성공으로 보고되어 다음 단계가
+        동작 완료 전에 시작되므로 단계 경로에서는 쓰지 않는다.
+        """
+        node = self.node
+        mode = getattr(node, "_step_routing_mode", STEP_ROUTING_OFF)
+        router = getattr(node, "_router", None)
+        if mode == STEP_ROUTING_OFF or router is None:
+            return None
+
+        gate = check_step_eligibility(step)
+        route = None
+        error = None
+        if gate.eligible:
+            try:
+                route = await router.decide(node, step)
+            except Exception as exc:  # noqa: BLE001 — 라우터 장애는 LLM 경로로 대체
+                error = f"{type(exc).__name__}: {exc}"
+
+        would = "llm"
+        if route is not None:
+            if route.kind == ROUTE_DIRECT_SKILL and not route.background:
+                would = "direct_skill"
+            elif route.kind == ROUTE_SIMPLE_REPLY:
+                would = "simple_reply"
+        action = would if mode == STEP_ROUTING_ON else "llm"
+        if action == "direct_skill" and not hasattr(node, "_execute_direct_route"):
+            action = "llm"
+
+        record = {
+            "mode": mode,
+            "step_index": index + 1,
+            "step": step,
+            "eligible": gate.eligible,
+            "reasons": gate.reasons,
+            "route": None
+            if route is None
+            else {
+                "kind": route.kind,
+                "skill": route.skill,
+                "params": route.params,
+                "background": route.background,
+                "source": route.source,
+                "confidence": route.confidence,
+                "fallback": route.fallback,
+            },
+            "would": would,
+            "action": action,
+            "error": error,
+        }
+        node.get_logger().info(f"System1 step gate: {json.dumps(record, ensure_ascii=False)}")
+
+        if action == "direct_skill":
+            return await node._execute_direct_route(route, step, timeout, send_fb)
+        if action == "simple_reply":
+            return route.reply, [], True, []
+        return None
+
     async def run(
         self,
         goal_handle: Any,
@@ -230,10 +301,22 @@ class TaskDecomposer:
                 })
             step_messages.append({"role": "user", "content": step})
 
-            attempt = 0
             step_success = False
             step_msg = ""
             step_results: list[Any] = []
+            # Eligibility Gate: 혼자 완결되는 단계는 사전 라우터(Rule / System 1)로 먼저 처리한다.
+            fast = await self._try_step_fast_path(i, step, timeout, send_fb)
+            if fast is not None:
+                step_msg, step_results, step_success, step_events = fast
+                all_pending_events.extend(step_events)
+                if not step_success:
+                    # 빠른 경로가 실패하면 기록을 남기고 기존 LLM 경로로 다시 시도한다.
+                    all_skill_results.extend(step_results)
+                    node.get_logger().warning(
+                        f"TaskDecomposer: 단계 {i + 1} 빠른 경로 실패 — LLM 으로 처리: {step_msg}"
+                    )
+
+            attempt = 0
             while attempt <= max_retries and not step_success:
                 attempt += 1
                 step_msg, step_results, step_success, step_events = (

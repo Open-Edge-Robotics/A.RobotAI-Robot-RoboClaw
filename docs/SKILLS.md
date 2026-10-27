@@ -60,7 +60,7 @@
 | Navigation | `patrol` | Public | action | 공통 | 지정 장소 반복 순찰 |
 | Navigation | `rotate` | Public | action | 공통 | 상대 각도 회전 |
 | Navigation | `self_localize` | Public | action | 공통 | AMCL 글로벌 위치 재탐색 |
-| Navigation | `set_initial_pose` | Public | action | 공통 | AMCL 초기 x/y/yaw 지정 |
+| Navigation | `set_initial_pose` | Public | action | 공통 | AMCL 초기 위치 지정(좌표·기억된 장소명·마지막 위치) |
 | Navigation | `stop` | Public | action | 공통 | 현재 이동·회전 작업 취소 |
 | Navigation | `stop_patrol` | Public | action | 공통 | 순찰 중단 |
 | Perception | `describe_surroundings` | Public | action | 공통 | 센서/VLM 주변 설명, 선택적 4방향 회전 관찰 및 시작 방향 복귀 요청 |
@@ -92,13 +92,13 @@
 | Motion | `stop_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 정지 요청 |
 | Motion | `set_cloid_packing_pose` | Public | dangerous | CLOiD | 포장용 최소 부피 boxing 자세 실행 요청(정지 상태, confirm 필요). 주행 전에는 prelude 스킬이 자동 수행 |
 | Motion | `cloid_navigation_pose` | Internal | dangerous | CLOiD | 주행 전 boxing 자세 prelude(게이트가 베이스 이동 직전 자동 삽입, confirm 없음, cloid_navigation_pose_enabled 필요) |
-| Motion | `cloid_express` | Internal | action | CLOiD | 상황별 표현 모션 자동 재생(태스크당 1회, 주행 태스크 제외) |
+| Motion | `cloid_express` | Internal | action | CLOiD | 상황별 표현 모션 자동 재생(태스크당 1회, 주행 태스크·boxing 자세 직후 제외) |
 | Collaboration | `autonomous_cooperate` | Public | action | 공통 | 동료 로봇과 지속적 자연어 협동 |
 | Collaboration | `broadcast_to_peers` | Public | action | 공통 | 모든 동료 로봇에 메시지 전송 |
 | Collaboration | `call_peer_robot` | Public | action | 공통 | 원격 동료 로봇에 작업 요청 |
 | Collaboration | `coordinate_peer_task` | Public | action | 공통 | 동료에게 복합 작업을 순차 위임 |
 | Collaboration | `delegate_task` | Public | action | 공통 | 같은 ROS 네트워크 에이전트에 작업 위임 |
-| Collaboration | `cleanup_demo` | Restricted | dangerous | CLOi 1호, allowlist 필요 | 기본 경로 플래그는 true; 검토된 모션 ID가 없으면 미등록. 기억 장소 이동·재관찰 후 실행 요청 |
+| Collaboration | `cleanup_demo` | Restricted | dangerous | CLOi(allowlist 필요) | 기본 경로 플래그는 true; 검토된 모션 ID가 없으면 미등록. 기억 장소 이동·재관찰 후 실행 요청 |
 | Collaboration | `list_peer_robots` | Public | read | 공통 | 연결된 동료 로봇 목록 조회 |
 | Collaboration | `query_peer_capabilities` | Public | read | 공통 | 동료 로봇 능력 목록 조회 |
 | Collaboration | `query_peer_status` | Public | read | 공통 | 동료 로봇 상태 조회 |

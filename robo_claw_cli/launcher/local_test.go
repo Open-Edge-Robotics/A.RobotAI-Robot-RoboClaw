@@ -81,3 +81,21 @@ func lastEnvValue(t *testing.T, env []string, key string) string {
 	t.Fatalf("environment key %q not found", key)
 	return ""
 }
+
+// TestBuildMergedEnvKeepsSystem1StepRouting 은 서버가 배포한 .env의
+// SYSTEM1_STEP_ROUTING이 ros2 launch 프로세스 환경으로 그대로 전달되는지 검증한다.
+// SYSTEM1_* 는 launch 인자가 아니라 환경변수이므로 이 경로가 끊기면
+// 웹에서 고른 step routing 모드가 조용히 무시된다.
+func TestBuildMergedEnvKeepsSystem1StepRouting(t *testing.T) {
+	t.Setenv("SYSTEM1_STEP_ROUTING", "")
+
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot: t.TempDir(),
+		EnvSlice:    []string{"SYSTEM1_STEP_ROUTING=on"},
+		EnvMap:      map[string]string{"SYSTEM1_STEP_ROUTING": "on"},
+	})
+
+	if got := lastEnvValue(t, env, "SYSTEM1_STEP_ROUTING"); got != "on" {
+		t.Fatalf("expected SYSTEM1_STEP_ROUTING from env artifact, got %q", got)
+	}
+}

@@ -97,6 +97,14 @@
           "x-scope": "robot_profile",
           "x-secret": false
         },
+        "cleanup_run_log_path": {
+          "type": "string",
+          "description": "Optional JSONL path for the cleanup task run log. When set, the agent appends one record per tidy_home run and per cleanup handoff/delegation decision so success rate, peer allocation, delegation result and per-phase timing can be measured. An empty value disables the log and leaves cleanup behaviour unchanged.",
+          "default": "",
+          "x-canonical-name": "agent.cleanup_run_log_path",
+          "x-scope": "host",
+          "x-secret": false
+        },
         "enable_rag": {
           "type": "boolean",
           "description": "Enable retrieval augmented generation.",
@@ -469,6 +477,15 @@
           "x-canonical-name": "system1.shadow_log",
           "x-scope": "runtime",
           "x-secret": false
+        },
+        "system1_step_routing": {
+          "type": "string",
+          "description": "Pre-router handling for sub-steps of a decomposed compound command. off sends every step to the LLM, shadow only records the routing decision, on lets eligible self-contained steps run without the LLM.",
+          "default": "shadow",
+          "x-canonical-name": "system1.step_routing",
+          "x-scope": "runtime",
+          "x-secret": false,
+          "enum": ["off","shadow","on"]
         },
         "system1_scope": {
           "type": "string",

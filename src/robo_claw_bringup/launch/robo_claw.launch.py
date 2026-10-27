@@ -23,6 +23,7 @@ from _common_launch_args import common_launch_arguments  # pyright: ignore[repor
 from _system1_launch import system1_local_server_actions  # pyright: ignore[reportMissingImports]
 
 _CLOID1_CLEANUP_DEMO_DEFAULT_MOTION_IDS = (22, 60)
+# 기본 allowlist 를 제공하는 1호 개체 ID. 다른 CLOi 개체는 검토된 allowlist 를 명시해야 한다.
 _CLOID1_AGENT_IDS = {"cloi01", "cloid01"}
 
 
@@ -317,11 +318,12 @@ def _launch_setup(context, *args, **kwargs):
         for character in LaunchConfiguration("agent_id").perform(context).casefold()
         if character.isalnum()
     )
-    is_cloid1_profile = cleanup_demo_agent_id in _CLOID1_AGENT_IDS
+    is_cloid_profile = robot_config == "cloid"
+    has_cloid1_default_allowlist = cleanup_demo_agent_id in _CLOID1_AGENT_IDS
     cleanup_demo_ids_raw = (
         LaunchConfiguration("cloid_cleanup_demo_motion_ids_json").perform(context).strip()
     )
-    if not cleanup_demo_ids_raw and is_cloid1_profile:
+    if not cleanup_demo_ids_raw and has_cloid1_default_allowlist:
         cleanup_demo_ids_value = list(_CLOID1_CLEANUP_DEMO_DEFAULT_MOTION_IDS)
     else:
         try:
@@ -338,9 +340,9 @@ def _launch_setup(context, *args, **kwargs):
         )
         else []
     )
-    if not is_cloid1_profile:
+    if not is_cloid_profile:
         cleanup_demo_enabled = False
-    if cleanup_demo_enabled and not cleanup_demo_ids:
+    elif cleanup_demo_enabled and not cleanup_demo_ids:
         print(
             "[RoboClaw][WARN] CLOi cleanup demo disabled: configure a non-empty, valid "
             "cloid_cleanup_demo_motion_ids_json allowlist.",
@@ -509,7 +511,7 @@ def _launch_setup(context, *args, **kwargs):
         # 스킬 모듈 자체를 등록하지 않으면 nav_safety 게이트도 함께 비활성화된다.
         if cloid_navigation_pose_enabled:
             skill_modules.append("robo_claw_agent.skills.cloid_navigation_pose_skill")
-        if cleanup_demo_enabled and is_cloid1_profile:
+        if cleanup_demo_enabled:
             skill_modules.append("robo_claw_agent.skills.cleanup_demo_skill")
             agent_parameters[-1]["cloid_cleanup_demo_motion_ids_json"] = json.dumps(
                 cleanup_demo_ids, separators=(",", ":")
@@ -858,12 +860,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "cloid_cleanup_demo_enabled",
                 default_value="true",
-                description="CLOi 1호의 정리 시연 경로를 기본 활성화합니다. 검토된 모션 allowlist가 없으면 등록하지 않습니다.",
+                description="CLOi 정리 시연 경로 스위치(기본 true). 검토된 모션 allowlist가 없으면 스킬을 등록하지 않습니다.",
             ),
             DeclareLaunchArgument(
                 "cloid_cleanup_demo_motion_ids_json",
                 default_value="",
-                description="CLOi 1호 기본 allowlist는 [22,60]입니다. []를 지정하면 비활성화합니다. 모션 카탈로그의 pre_id가 있으면 실행하지 않습니다.",
+                description="CLOi 정리 시연 allowlist(모션 ID JSON 배열). 1호 기본값은 [22,60]이며 다른 개체는 명시해야 합니다. []를 지정하면 비활성화합니다. 모션 카탈로그의 pre_id가 있으면 실행하지 않습니다.",
             ),
             DeclareLaunchArgument(
                 "cloid_expression_enabled",
@@ -873,7 +875,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "cloid_navigation_pose_enabled",
                 default_value="false",
-                description="CLOiD 주행 전 boxing 자세 prelude 스위치(기본 false). 활성화하면 베이스 이동·회전 스킬 직전에 cloid.move_boxing 실행을 한 번 요청하고 실패 시 이동을 거부합니다. 상체 구동 오류 개체는 false 로 둡니다.",
+                description="CLOiD 주행 전 boxing 자세 prelude 스위치(기본 false). 활성화하면 베이스 이동·회전 스킬 직전에 cloid.move_boxing 실행을 한 번 요청하고 실패 시 이동을 거부합니다. 상체 모션을 쓰지 않는 배포는 false 로 둡니다.",
             ),
             DeclareLaunchArgument(
                 "scan_interval_sec",

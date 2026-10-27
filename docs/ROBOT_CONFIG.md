@@ -82,7 +82,7 @@ nano /path/to/ROBOT.md
 | :--- | :--- |
 | `src/robo_claw_bringup/config/ROBOT.md` | 공통 기본 소울(다른 로봇 프로필과 공유) |
 | `src/robo_claw_bringup/config/ROBOT.cloid.1.md` | CLOiD 1호. 팔·상체 모션을 쓰는 정상 개체의 개성 |
-| `src/robo_claw_bringup/config/ROBOT.cloid.2.md` | CLOiD 2호. 팔·상체 구동 오류 상태를 담담히 알리는 개성 |
+| `src/robo_claw_bringup/config/ROBOT.cloid.2.md` | CLOiD 2호. 관찰·순찰 중심으로 공간을 살피는 개성 |
 
 `robot_config:=cloid` 로 기동하면서 `robot_soul_file`/`RC_ROBOT_SOUL_FILE` 을 지정하지 않으면,
 launch 가 `ROBOT.cloid.md` 를 먼저 찾고 없으면 `ROBOT.cloid.1.md` 를 씁니다. 2호는 소울 파일

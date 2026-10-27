@@ -196,6 +196,8 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", launchFile}, launchArgs...)
 	logging.Debug("실행 명령어: ros2 %s", launcher.FormatLaunchLogArgs(argsToExec))
+	logging.Info("실행 명령어: ros2 %s", launcher.MaskCommandSecrets(argsToExec))
+	rich.Println("[green]▶[/green] 실행 명령어: [bold]ros2 %s[/bold]", launcher.MaskCommandSecrets(argsToExec))
 
 	helperScript := filepath.Join(projectRoot, "scripts", "run_in_ros_env.sh")
 	var cmd *exec.Cmd
@@ -223,7 +225,7 @@ func RunCmd() *wcli.Command {
 	var debug bool
 
 	cmd := &wcli.Command{
-		Use:   "run [llm] [model] [channel]",
+		Use:   "run [llm] [model] [channel]",noConfigSummary
 		Short: "로컬 환경(.env)을 기반으로 RoboClaw 시스템을 기동합니다.",
 		Run: func(ctx *wcli.Context) error {
 			projectRoot := launcher.GetProjectRoot()

@@ -64,9 +64,16 @@ def classify_situation(
     *,
     task_success: bool = True,
     used_base_motion: bool = False,
+    used_pose_skill: bool = False,
 ) -> str | None:
-    """태스크 결과/명령에서 표현 상황을 정한다. 재생하지 않을 때는 None."""
-    if used_base_motion or looks_like_base_motion(instruction):
+    """태스크 결과/명령에서 표현 상황을 정한다. 재생하지 않을 때는 None.
+
+    ``used_pose_skill`` 은 이번 태스크가 boxing(포장/주행 전) 자세를 성공적으로
+    만들었는지를 뜻한다. 자세를 만든 직후의 팔 모션은 그 자세를 바로 풀어 버리므로
+    표현 모션을 재생하지 않는다. 자세를 계속 유지할지는 다음 태스크의 판단이므로
+    이후 태스크는 막지 않는다.
+    """
+    if used_base_motion or used_pose_skill or looks_like_base_motion(instruction):
         return None
     text = str(instruction or "").strip().lower()
     if any(keyword in text for keyword in GREETING_KEYWORDS):

@@ -418,12 +418,15 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md)                                     | 운영 파라미터, 태스크 큐(순차 실행), MCP 서버 연동                        |
 | [docs/SKILLS.md](docs/SKILLS.md)                                             | 전체 스킬 레퍼런스                                                        |
+| [docs/SKILL_MANAGER_AND_TOOLS.md](docs/SKILL_MANAGER_AND_TOOLS.md)           | 아키텍처 Skill Manager(내장 스킬)·Tool(MCP 외부 도구) 구성                |
 | [docs/CONFIGURATION_GUIDE.md](docs/CONFIGURATION_GUIDE.md)                   | 설정 소유권, 실행 방식별 우선순위, AI Config Server profile               |
 | [docs/RAG_AND_LEARNING.md](docs/RAG_AND_LEARNING.md)                         | RAG/Qdrant 설정, 스킬 자가 학습, 탐험 관찰 로깅                           |
 | [docs/ROBOT_CONFIG.md](docs/ROBOT_CONFIG.md)                                 | `ROBOT.md` 개성, `ROBOT_LIMITS.json`, 장애 조치 `TROUBLESHOOTING.md`      |
 | [docs/behavior-tree/README.md](docs/behavior-tree/README.md)                 | 자율 행동(BT) 요약과 트리 전체 구조·노드 카탈로그                         |
 | [docs/behavior-tree/README.md](docs/behavior-tree/README.md)                 | BT 엔진 코어, 자율행동/반응형 트리 전체 구조와 노드 카탈로그              |
 | [docs/PEER_COLLABORATION.md](docs/PEER_COLLABORATION.md)                     | 멀티 에이전트(동료 로봇) gRPC 협업/작업 위임                              |
+| [docs/CLEANUP_RUN_METRICS.md](docs/CLEANUP_RUN_METRICS.md)                   | 정리 태스크 실험 계측(run log)과 표 2 지표 집계                           |
+| [docs/CLEANUP_EXPERIMENT_RUNBOOK.md](docs/CLEANUP_EXPERIMENT_RUNBOOK.md)     | former0047·Cloid 2호 협업 실험 재실행 절차(3조건)                        |
 | [docs/MANIPULATION.md](docs/MANIPULATION.md)                                 | MoveIt 기반 매니퓰레이션 설정, Stretch3 백엔드                            |
 | [docs/HTTP_API.md](docs/HTTP_API.md)                                         | HTTP API 전체 레퍼런스                                                    |
 | [docs/MESSENGER_GUIDE.md](docs/MESSENGER_GUIDE.md)                           | Discord/Slack/Telegram 연동 가이드                                        |
@@ -431,6 +434,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/LANGSMITH_INTEGRATION.md](docs/LANGSMITH_INTEGRATION.md)               | LangSmith LLM 트레이싱/모니터링 활성화                                    |
 | [docs/SYSTEM1_FAST_ROUTER.md](docs/SYSTEM1_FAST_ROUTER.md)                   | System 1 Fast Router(Laya) 설정·환경변수·운영 가이드                      |
 | [docs/SYSTEM1_LAYA_DOCKER.md](docs/SYSTEM1_LAYA_DOCKER.md)                   | Laya 서버 Docker 실행(같은 호스트 AGX Orin / 다른 호스트 엣지 서버)       |
+| [docs/SYSTEM1_ELIGIBILITY_GATE.md](docs/SYSTEM1_ELIGIBILITY_GATE.md)         | 복합 명령 하위 단계의 사전 라우팅 적격성 판정(Eligibility Gate)           |
 | [docs/SYSTEM1_FAST_ROUTER_DESIGN.md](docs/SYSTEM1_FAST_ROUTER_DESIGN.md)     | System 1 Fast Router(Laya) 설계·단계별 도입 계획                          |
 | [docs/DOCKER_GUIDE.md](docs/DOCKER_GUIDE.md)                                 | Docker 실행(`run_robo_claw_docker.sh`) 및 이미지 빌드(`task docker-*`)    |
 | [docs/BUILD_TROUBLESHOOTING.md](docs/BUILD_TROUBLESHOOTING.md)               | 빌드/설치/실행 오류 해결                                                  |
