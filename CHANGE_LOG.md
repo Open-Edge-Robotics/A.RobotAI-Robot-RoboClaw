@@ -3,6 +3,21 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-27 — 실행 설정 패널에서 기본값 사용 항목을 흐리게 구분합니다
+
+- 프로필/launch에서 값을 작성하지 않아 기본값이 쓰인 파라미터를 흐리게 표시하고, 요약에
+  `기본값 N개(흐림)`을 함께 보여 줍니다.
+- 기본값 판정은 계약 기본값(`contracts/runtime-contract.json`)과 launch가 실제로 쓰는
+  파라미터 파일(`agent.yaml` + 에이전트 `robot_config`에 해당하는 `<robot>_config.yaml`)을
+  병합해 비교합니다. 두 출처에 없는 값은 `unknown`으로 두고 흐리게 표시하지 않습니다.
+- 대시보드 자신의 파라미터는 선언 시점 기본값을 그대로 기록해 비교합니다.
+- 계약 기본값 JSON을 대시보드 패키지에 함께 설치해(`share/robo_claw_dashboard/config/`)
+  컨테이너에서도 기본값을 알 수 있게 했습니다. 경로는 `param_default_files`,
+  `contract_file` 파라미터로 바꿀 수 있습니다.
+- 검증: `test_config_view.py`에 계약/파라미터 기본값 파싱·비교·판정 테스트를 추가했고(183
+  passed), ROS2 스모크에서 건드리지 않은 파라미터는 `default`, 덮어쓴 파라미터는 `explicit`로
+  보고되는 것을 확인했습니다.
+
 ## 2026-10-27 — 로봇별 지도 토픽 차이를 흡수해 CLOiD 지도도 표시합니다
 
 - CLOiD는 지도를 `/lio/grid_map`(grid_map_node, TRANSIENT_LOCAL)으로 발행하고 `/map`에는

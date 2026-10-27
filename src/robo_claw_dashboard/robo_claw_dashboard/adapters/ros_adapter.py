@@ -33,6 +33,7 @@ from ..domain.localization import (
     unavailable_pose,
 )
 from ..domain.telemetry import build_battery_telemetry
+from .param_defaults import default_param_paths, load_contract_defaults, load_param_defaults
 
 
 def _wait_future(future: Any, timeout_sec: float) -> bool:
@@ -73,6 +74,10 @@ class RosBackend:
         initialpose_subscriber_wait_sec: float = 1.0,
         config_query_timeout_sec: float = 2.0,
         config_cache_ttl_sec: float = 5.0,
+        param_config_dir: str = "",
+        param_default_files: str = "agent.yaml",
+        contract_file: str = "",
+        declared_defaults: dict[str, Any] | None = None,
     ) -> None:
         self._node = node
         self._timeout = request_timeout_sec
@@ -82,6 +87,16 @@ class RosBackend:
         self._initialpose_wait = initialpose_subscriber_wait_sec
         self._config_timeout = config_query_timeout_sec
         self._config_cache: tuple[float, dict[str, Any]] | None = None
+        # 기본값 파일: launch 가 쓰는 파라미터 파일에서 "작성하지 않은 값"을 판정한다.
+        self._param_config_dir = param_config_dir
+        self._param_default_files = [
+            name.strip() for name in str(param_default_files).split(",") if name.strip()
+        ]
+        self._param_defaults_cache: tuple[str, dict[str, Any]] | None = None
+        # 대시보드 자신의 파라미터는 선언 시점 기본값을 그대로 알고 있다.
+        self._declared_defaults = dict(declared_defaults or {})
+        self._contract_file = contract_file
+        self._contract_defaults: dict[str, Any] | None = None
         self._config_cache_ttl = config_cache_ttl_sec
         self._agent_node_name = agent_namespace
         ns = f"/{agent_namespace.strip('/')}"
@@ -243,11 +258,14 @@ class RosBackend:
         cached = self._config_cache
         if cached is not None and time.monotonic() - cached[0] < self._config_cache_ttl:
             return dict(cached[1])
+        agent_parameters = self._fetch_parameters(self._agent_node_name)
         snapshot = {
             "agent_node": self._agent_node_name,
-            "agent_parameters": self._fetch_parameters(self._agent_node_name),
+            "agent_parameters": agent_parameters,
+            "agent_defaults": self._agent_param_defaults(agent_parameters),
             "dashboard_node": self._node.get_name(),
             "dashboard_parameters": self._local_parameters(),
+            "dashboard_defaults": dict(self._declared_defaults),
         }
         self._config_cache = (time.monotonic(), snapshot)
         return snapshot
@@ -309,6 +327,35 @@ class RosBackend:
                 f"[Dashboard] {node_name} 파라미터 조회 실패", exc_info=True
             )
             return None
+
+    def _agent_param_defaults(
+        self, agent_parameters: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """에이전트 기본값을 파라미터 파일에서 읽는다(로봇 프로필 파일 포함)."""
+        if not self._param_config_dir or not self._param_default_files:
+            return None
+        robot_config = ""
+        if isinstance(agent_parameters, dict):
+            robot_config = str(agent_parameters.get("robot_config") or "").strip()
+        names = list(self._param_default_files)
+        if robot_config:
+            names.append(f"{robot_config}_config.yaml")
+        cache_key = ",".join(names)
+        cached = self._param_defaults_cache
+        if cached is not None and cached[0] == cache_key:
+            return dict(cached[1])
+        # 계약 기본값을 먼저 깔고, launch 가 실제로 쓰는 파라미터 파일 값으로 덮는다.
+        defaults = self._contract_default_map()
+        defaults.update(load_param_defaults(default_param_paths(self._param_config_dir, names)))
+        self._param_defaults_cache = (cache_key, defaults)
+        return dict(defaults)
+
+    def _contract_default_map(self) -> dict[str, Any]:
+        if self._contract_defaults is None:
+            self._contract_defaults = (
+                load_contract_defaults(self._contract_file) if self._contract_file else {}
+            )
+        return dict(self._contract_defaults)
 
     @property
     def map_topics(self) -> list[str]:

@@ -14,6 +14,13 @@ install(DIRECTORY web
   PATTERN "__pycache__" EXCLUDE
 )
 
+# 계약 기본값(설정 패널의 '기본값' 판정용) — contract 생성물이 있으면 함께 설치한다.
+install(FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../contracts/runtime-contract.json
+  DESTINATION share/${PROJECT_NAME}/config
+  OPTIONAL
+)
+
 # 실행 가능한 스크립트 등록
 install(PROGRAMS
   scripts/dashboard_node

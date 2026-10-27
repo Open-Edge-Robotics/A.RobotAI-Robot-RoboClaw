@@ -221,13 +221,34 @@ class TestSetInitialPose:
 
 
 class TestConfigPanel:
+    def test_config_panel_marks_default_values(self):
+        backend = FakeBackend(
+            config={
+                "agent_node": "robo_claw_agent_node",
+                "agent_parameters": {"use_rag": True},
+                "agent_defaults": {"use_rag": True},
+                "dashboard_node": "robo_claw_dashboard_node",
+                "dashboard_parameters": {"dashboard_port": 9090},
+                "dashboard_defaults": {"dashboard_port": 9090},
+            }
+        )
+        panel = DashboardService(backend).config_snapshot()
+        assert panel["agent"]["parameters"][0]["source"] == "default"
+        assert panel["default_counts"] == {"agent": 1, "dashboard": 1}
+
     def test_config_panel_is_built_from_backend_sections(self):
         backend = FakeBackend(
             config={
                 "agent_node": "robo_claw_agent_node",
-                "agent_parameters": {"llm_model": "gemma4:31b", "http_control_token": "abc"},
+                "agent_parameters": {
+                    "llm_model": "gemma4:31b",
+                    "use_rag": True,
+                    "http_control_token": "abc",
+                },
+                "agent_defaults": {"llm_model": "gpt-4.1", "use_rag": True},
                 "dashboard_node": "robo_claw_dashboard_node",
                 "dashboard_parameters": {"dashboard_port": 9090},
+                "dashboard_defaults": {"dashboard_port": 9090},
             }
         )
         panel = DashboardService(backend).config_snapshot()

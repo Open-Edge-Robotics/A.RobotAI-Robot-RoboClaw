@@ -497,10 +497,13 @@
       const secretCount =
         state.configRows.agent.filter((row) => row.secret).length +
         state.configRows.dashboard.filter((row) => row.secret).length;
+      const defaultCount =
+        ((data.default_counts || {}).agent || 0) + ((data.default_counts || {}).dashboard || 0);
       setText(
         "config-summary",
         "에이전트 " + state.configRows.agent.length + "개 · 대시보드 " +
-          state.configRows.dashboard.length + "개 · 마스킹 " + secretCount + "개"
+          state.configRows.dashboard.length + "개 · 마스킹 " + secretCount + "개 · " +
+          "기본값 " + defaultCount + "개(흐림)"
       );
       renderConfigTable("config-agent-body", state.configRows.agent);
       renderConfigTable("config-dashboard-body", state.configRows.dashboard);
@@ -544,6 +547,7 @@
     for (const row of rows) {
       const tr = document.createElement("tr");
       tr.dataset.search = (row.name + " " + formatConfigValue(row.value)).toLowerCase();
+      if (row.source === "default") tr.classList.add("rc-default");
       const nameCell = document.createElement("td");
       nameCell.textContent = row.name;
       const valueCell = document.createElement("td");

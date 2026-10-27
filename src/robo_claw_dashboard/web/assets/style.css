@@ -118,6 +118,10 @@ main {
   color: var(--bs-warning);
 }
 
+.rc-table-scroll tr.rc-default td {
+  opacity: 0.55;
+}
+
 .rc-table-scroll tr.rc-empty td {
   color: var(--bs-secondary-color);
   font-style: italic;

@@ -7,6 +7,7 @@
 import json
 import threading
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -62,25 +63,29 @@ class DashboardNode(Node):
     def __init__(self) -> None:
         super().__init__("robo_claw_dashboard_node")
 
-        self.declare_parameter("dashboard_host", "127.0.0.1")
-        self.declare_parameter("dashboard_port", 9090)
-        self.declare_parameter("agent_name", "robo_claw_agent_node")
-        self.declare_parameter("battery_topic", "/battery_state")
-        self.declare_parameter("status_topic", "")
-        self.declare_parameter("request_timeout_sec", 30.0)
+        #: 선언 시점 기본값. "작성하지 않은 값"을 화면에서 구분하는 데 쓴다.
+        self._declared_defaults: dict = {}
+        self._declare("dashboard_host", "127.0.0.1")
+        self._declare("dashboard_port", 9090)
+        self._declare("agent_name", "robo_claw_agent_node")
+        self._declare("battery_topic", "/battery_state")
+        self._declare("status_topic", "")
+        self._declare("request_timeout_sec", 30.0)
         # 로봇마다 지도 토픽이 다르다(former0047 `/map`, CLOiD `/lio/grid_map`).
         # 쉼표로 여러 개를 지정하면 데이터가 들어오는 토픽을 사용한다.
-        self.declare_parameter("map_topic", "/map,/lio/grid_map")
-        self.declare_parameter("map_frame", "map")
-        self.declare_parameter("base_frame", "base_link")
-        self.declare_parameter("initialpose_topic", "/initialpose")
-        self.declare_parameter("config_query_timeout_sec", 2.0)
-        self.declare_parameter("static_root", "")
-        self.declare_parameter("http_readonly_token", "")
-        self.declare_parameter("http_control_token", "")
-        self.declare_parameter("http_allowed_cidrs_json", DEFAULT_CIDRS_JSON)
-        self.declare_parameter("http_rate_limit_per_minute", 60)
-        self.declare_parameter("http_blocked_skills_json", json.dumps(DEFAULT_BLOCKED_SKILLS))
+        self._declare("map_topic", "/map,/lio/grid_map")
+        self._declare("map_frame", "map")
+        self._declare("base_frame", "base_link")
+        self._declare("initialpose_topic", "/initialpose")
+        self._declare("config_query_timeout_sec", 2.0)
+        self._declare("param_default_files", "agent.yaml")
+        self._declare("contract_file", "")
+        self._declare("static_root", "")
+        self._declare("http_readonly_token", "")
+        self._declare("http_control_token", "")
+        self._declare("http_allowed_cidrs_json", DEFAULT_CIDRS_JSON)
+        self._declare("http_rate_limit_per_minute", 60)
+        self._declare("http_blocked_skills_json", json.dumps(DEFAULT_BLOCKED_SKILLS))
 
         host = str(self.get_parameter("dashboard_host").value)
         port = _as_int(self.get_parameter("dashboard_port").value, 9090)
@@ -93,6 +98,11 @@ class DashboardNode(Node):
         base_frame = str(self.get_parameter("base_frame").value or "base_link")
         initialpose_topic = str(self.get_parameter("initialpose_topic").value or "/initialpose")
         config_timeout = _as_float(self.get_parameter("config_query_timeout_sec").value, 2.0)
+        param_default_files = str(self.get_parameter("param_default_files").value or "agent.yaml")
+        param_config_dir = self._resolve_param_config_dir()
+        contract_file = str(self.get_parameter("contract_file").value or "") or (
+            self._resolve_contract_file()
+        )
         static_root = _resolve_static_root(str(self.get_parameter("static_root").value), self)
 
         allowed_cidrs, cidr_error = parse_allowed_cidrs(
@@ -121,6 +131,10 @@ class DashboardNode(Node):
             base_frame=base_frame,
             initialpose_topic=initialpose_topic,
             config_query_timeout_sec=config_timeout,
+            param_config_dir=param_config_dir,
+            param_default_files=param_default_files,
+            contract_file=contract_file,
+            declared_defaults=self._declared_defaults,
         )
         self._service = DashboardService(backend)
         handler = make_handler(self._service, static_root, security)
@@ -140,6 +154,41 @@ class DashboardNode(Node):
         on_shutdown = getattr(self, "add_on_shutdown_callback", None)
         if on_shutdown is not None:
             on_shutdown(self._shutdown_http)
+
+    def _declare(self, name: str, default):
+        """파라미터를 선언하고 기본값을 기록한다(설정 패널의 기본값 표시용)."""
+        self._declared_defaults[name] = default
+        self.declare_parameter(name, default)
+
+    def _resolve_contract_file(self) -> str:
+        """계약 기본값 파일(runtime-contract.json) 경로를 찾는다(없으면 빈 문자열)."""
+        candidates = []
+        try:
+            share = get_package_share_directory("robo_claw_dashboard")
+            candidates.append(f"{share}/config/runtime-contract.json")
+        except Exception:  # noqa: BLE001 - 설치본이 아닌 환경
+            pass
+        # 소스 트리에서 직접 실행하는 경우(개발/테스트)
+        candidates.append(
+            str(
+                Path(__file__).resolve().parents[4]
+                / "contracts"
+                / "runtime-contract.json"
+            )
+        )
+        for candidate in candidates:
+            if Path(candidate).is_file():
+                return candidate
+        return ""
+
+    def _resolve_param_config_dir(self) -> str:
+        """launch 가 쓰는 파라미터 파일 디렉터리(robo_claw_bringup/config)를 찾는다."""
+        try:
+            share = get_package_share_directory("robo_claw_bringup")
+        except Exception:  # noqa: BLE001 - bringup 미설치 환경(단독 실행)에서는 기본값 없이 동작
+            self.get_logger().debug("robo_claw_bringup share 디렉터리를 찾지 못했습니다.")
+            return ""
+        return f"{share}/config"
 
     def _report_exposure(self, *, host: str, allowed_cidrs: list[str], auth_enabled: bool) -> None:
         """로컬/원격 접속 가능 여부와 위험한 노출 설정을 기동 시점에 남긴다."""

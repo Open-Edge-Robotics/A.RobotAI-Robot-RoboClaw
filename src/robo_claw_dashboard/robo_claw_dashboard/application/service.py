@@ -82,8 +82,10 @@ class DashboardService:
         return build_config_panel(
             agent_node=str(sections.get("agent_node") or "robo_claw_agent_node"),
             agent_parameters=sections.get("agent_parameters"),
+            agent_defaults=sections.get("agent_defaults"),
             dashboard_node=str(sections.get("dashboard_node") or "robo_claw_dashboard_node"),
             dashboard_parameters=sections.get("dashboard_parameters"),
+            dashboard_defaults=sections.get("dashboard_defaults"),
         )
 
     def map_snapshot(self) -> dict[str, Any]:

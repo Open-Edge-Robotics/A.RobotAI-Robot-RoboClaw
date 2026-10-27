@@ -156,6 +156,8 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `base_frame`        | `base_link`   | 로봇 기준 프레임 (map→base TF)                     |
 | `initialpose_topic` | `/initialpose`| 초기 위치 발행 토픽                                |
 | `config_query_timeout_sec` | `2.0`  | 실행 설정 조회 타임아웃(초)                        |
+| `param_default_files`      | `agent.yaml` | 기본값 판정에 쓸 파라미터 YAML(쉼표 구분)     |
+| `contract_file`            | `""`   | 계약 기본값 JSON 경로(비우면 자동 탐색)             |
 
 보안 정책은 `robo_claw_channel`의 `HttpSecurityPolicy`를 확장한 대시보드 전용 클래스를 사용합니다. 토큰이 모두 비어 있으면 인증 미활성(공개)이며, 기본 바인드가 `127.0.0.1`이므로 외부 노출 시 반드시 `dashboard_host=0.0.0.0`와 CIDR/토큰을 함께 설정합니다. 외부 바인드 상태에서 CIDR 이 루프백 전용이거나 토큰이 비어 있으면 기동 시 오류 로그로 알립니다.
 
@@ -183,13 +185,25 @@ sudo ufw status | grep 9090   # ufw 사용 시
 - 대시보드 자신의 파라미터도 같은 형식으로 함께 표시합니다.
 - 이름에 `token`, `secret`, `password`, `api_key` 등이 들어간 값은 `***`로 마스킹합니다.
   빈 값은 마스킹하지 않고 빈 칸으로 두어 "미설정"을 구분합니다.
+- 프로필/launch에서 **작성하지 않아 기본값이 쓰인 항목은 흐리게(opacity 0.55)** 표시합니다.
+  상단 요약에 `기본값 N개(흐림)`으로 개수를 함께 보여 줍니다.
 - 긴 문자열(160자 초과)과 배열(20개 초과)은 화면 표시용으로 줄입니다.
+- 기본값 판정은 다음 두 출처를 병합해 비교합니다(뒤가 우선).
+  1. `contracts/runtime-contract.json`의 `default` (계약 기본값, 44개 파라미터)
+  2. launch가 실제로 쓰는 파라미터 파일 `robo_claw_bringup/config/agent.yaml` +
+     에이전트 `robot_config` 값에 해당하는 `<robot>_config.yaml`
+- 두 출처에 없는 파라미터(노드 내부 값 등)는 `source: unknown`으로 두고 흐리게 표시하지
+  않습니다. 즉 **흐린 행 = 기본값이 그대로 쓰인 항목**입니다.
+- 기본값 파일 경로는 노드 파라미터로 바꿀 수 있습니다: `param_default_files`(기본
+  `agent.yaml`, 쉼표 구분), `contract_file`(기본 자동 탐색).
 - 조회 결과는 5초 캐시합니다. `/api/status` 폴링이 파라미터 서비스 지연에 영향받지 않습니다.
 - 에이전트 노드가 없거나 파라미터 서비스가 응답하지 않으면 해당 영역만 "응답 없음"으로
   표시하고 나머지 화면은 정상 동작합니다.
 
 ```bash
-curl -s http://127.0.0.1:9090/api/config | jq '.counts, (.agent.parameters[] | select(.secret))'
+curl -s http://127.0.0.1:9090/api/config | jq '.counts, .default_counts'
+# 기본값이 쓰인 항목만 보기
+curl -s http://127.0.0.1:9090/api/config | jq -r '.agent.parameters[] | select(.source=="default") | .name'
 ```
 
 ## 지도와 현재 위치

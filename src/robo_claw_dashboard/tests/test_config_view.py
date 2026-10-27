@@ -6,9 +6,13 @@ from robo_claw_dashboard.domain.config_view import (
     MAX_LIST_ITEMS,
     MAX_VALUE_CHARS,
     build_config_panel,
+    flatten_param_docs,
     is_secret_name,
     mask_parameters,
     normalize_value,
+    parse_contract_defaults,
+    source_of,
+    values_match,
 )
 
 pytestmark = pytest.mark.unit
@@ -135,3 +139,118 @@ class TestBuildConfigPanel:
         )
         row = panel["agent"]["parameters"][0]
         assert row["truncated"] is True
+
+
+class TestFlattenParamDocs:
+    def test_nested_node_and_wildcard_docs_are_flattened(self):
+        docs = [
+            {"robo_claw_agent_node": {"ros__parameters": {"llm_model": "gemma4:31b"}}},
+            {"/**": {"ros__parameters": {"use_rag": True}}},
+        ]
+        assert flatten_param_docs(docs) == {"llm_model": "gemma4:31b", "use_rag": True}
+
+    def test_later_docs_override_earlier_values(self):
+        docs = [
+            {"a": {"ros__parameters": {"camera_topic": "/oakd/image"}}},
+            {"b": {"ros__parameters": {"camera_topic": "/former0047/camera"}}},
+        ]
+        assert flatten_param_docs(docs)["camera_topic"] == "/former0047/camera"
+
+    def test_missing_ros_parameters_is_ignored(self):
+        assert flatten_param_docs([{"a": {}}, {}, None]) == {}
+
+
+class TestValuesMatch:
+    def test_int_and_float_are_compared_numerically(self):
+        assert values_match(9090, 9090.0) is True
+        assert values_match(0.30000000000000004, 0.3) is True
+
+    def test_bool_is_not_equal_to_number(self):
+        assert values_match(True, 1) is False
+        assert values_match(False, 0) is False
+        assert values_match(True, True) is True
+
+    def test_string_and_number_do_not_match(self):
+        assert values_match("9090", 9090) is False
+
+    def test_lists_are_compared_element_wise(self):
+        assert values_match([1, 2], [1, 2]) is True
+        assert values_match([1, 2], [1, 3]) is False
+
+
+class TestSourceOf:
+    def test_equal_value_is_default(self):
+        assert source_of("dashboard_port", 9090, {"dashboard_port": 9090}) == "default"
+
+    def test_different_value_is_explicit(self):
+        assert source_of("dashboard_port", 9190, {"dashboard_port": 9090}) == "explicit"
+
+    def test_missing_default_is_unknown(self):
+        assert source_of("dashboard_port", 9090, {}) == "unknown"
+        assert source_of("unknown_param", 1, {"dashboard_port": 9090}) == "unknown"
+
+
+class TestPanelSources:
+    def test_rows_carry_source_and_counts(self):
+        panel = build_config_panel(
+            agent_node="agent",
+            agent_parameters={"llm_model": "gemma4:31b", "use_rag": True},
+            agent_defaults={"llm_model": "gpt-4.1", "use_rag": True},
+            dashboard_node="dash",
+            dashboard_parameters={"dashboard_port": 9090},
+            dashboard_defaults={"dashboard_port": 9090},
+        )
+        rows = {row["name"]: row for row in panel["agent"]["parameters"]}
+        assert rows["llm_model"]["source"] == "explicit"
+        assert rows["use_rag"]["source"] == "default"
+        assert panel["dashboard"]["parameters"][0]["source"] == "default"
+        assert panel["default_counts"] == {"agent": 1, "dashboard": 1}
+
+    def test_secret_rows_keep_source(self):
+        panel = build_config_panel(
+            agent_node="agent",
+            agent_parameters={"http_control_token": "abc"},
+            agent_defaults={"http_control_token": ""},
+            dashboard_node="dash",
+            dashboard_parameters={},
+        )
+        row = panel["agent"]["parameters"][0]
+        assert row["secret"] is True
+        assert row["source"] == "explicit"
+
+
+class TestParseContractDefaults:
+    def test_contract_fields_map_to_ros_parameter_defaults(self):
+        contract = {
+            "fields": [
+                {
+                    "canonical": "dashboard.port",
+                    "ros_parameter": "dashboard_port",
+                    "default": 9090,
+                },
+                {"canonical": "rag.enabled", "ros_parameter": "enable_rag", "default": False},
+                {"canonical": "host.only", "ros_parameter": "", "default": "/tmp"},
+                {"canonical": "no.default", "ros_parameter": "x_param"},
+            ]
+        }
+        assert parse_contract_defaults(contract) == {
+            "dashboard_port": 9090,
+            "enable_rag": False,
+            "x_param": None,
+        }
+
+    def test_canonical_keyed_fields_are_supported(self):
+        contract = {
+            "fields": {
+                "dashboard.port": {"ros_parameter": "dashboard_port", "default": 9090},
+                "rag.enabled": {"ros_parameter": "enable_rag", "default": False},
+            }
+        }
+        assert parse_contract_defaults(contract) == {
+            "dashboard_port": 9090,
+            "enable_rag": False,
+        }
+
+    def test_broken_contract_returns_empty_mapping(self):
+        assert parse_contract_defaults(None) == {}
+        assert parse_contract_defaults({"fields": "nope"}) == {}
