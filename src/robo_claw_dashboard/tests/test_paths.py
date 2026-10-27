@@ -1,3 +1,5 @@
+import pathlib
+
 """대시보드 순수 규칙 — 웹 리소스 경로 해석 테스트."""
 
 import pytest
@@ -51,3 +53,17 @@ class TestMimeType:
 
     def test_no_extension_defaults(self):
         assert mime_type("LICENSE") == "application/octet-stream"
+
+
+#: 대시보드 웹 리소스 루트 (패키지에 함께 배포된다).
+WEB_ROOT = pathlib.Path(__file__).resolve().parents[1] / "web"
+
+
+def test_index_html_links_vendored_bootstrap_and_app_assets():
+    """Bootstrap 은 CDN 이 아니라 패키지에 포함된 파일을 참조해야 오프라인 로봇에서도 열린다."""
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    assert "/assets/vendor/bootstrap.min.css" in html
+    assert "/assets/style.css" in html
+    assert "/assets/app.js" in html
+    assert "cdn.jsdelivr.net" not in html
+    assert (WEB_ROOT / "assets" / "vendor" / "bootstrap.min.css").is_file()

@@ -18,6 +18,15 @@ class FakeService:
     def send_message(self, message):
         return dict(self._send_result)
 
+    def map_snapshot(self):
+        return {"available": False}
+
+    def config_snapshot(self):
+        return {"available": False}
+
+    def set_initial_pose(self, payload):
+        return {"success": True, "message": "ok"}
+
 
 def _policy(**kw):
     return DashboardHttpSecurityPolicy(
@@ -152,3 +161,112 @@ class TestIpBlock:
             security=security,
         )
         assert resp.status == 403
+
+
+class TestLocalizationEndpointsAuth:
+    def test_initial_pose_requires_control(self, web_root):
+        security = _policy(control="c-secret")
+        resp = handle_request(
+            "POST",
+            "/api/initial_pose",
+            client_ip="127.0.0.1",
+            headers={},
+            body=b'{"x": 1.0, "y": 2.0}',
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert resp.status == 401
+
+    def test_initial_pose_with_control_token_ok(self, web_root):
+        security = _policy(control="c-secret")
+        resp = handle_request(
+            "POST",
+            "/api/initial_pose",
+            client_ip="127.0.0.1",
+            headers={"X-RoboClaw-Token": "c-secret"},
+            body=b'{"x": 1.0, "y": 2.0}',
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert resp.status == 200
+
+    def test_readonly_token_cannot_set_initial_pose(self, web_root):
+        security = _policy(readonly="r-secret", control="c-secret")
+        resp = handle_request(
+            "POST",
+            "/api/initial_pose",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer r-secret"},
+            body=b'{"x": 1.0, "y": 2.0}',
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert resp.status == 401
+
+    def test_map_requires_readonly_when_auth_enabled(self, web_root):
+        security = _policy(readonly="r-secret")
+        denied = handle_request(
+            "GET",
+            "/api/map",
+            client_ip="127.0.0.1",
+            headers={},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "GET",
+            "/api/map",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer r-secret"},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 200
+
+    def test_map_open_when_no_tokens(self, web_root):
+        resp = handle_request(
+            "GET",
+            "/api/map",
+            client_ip="127.0.0.1",
+            headers={},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=_policy(),
+        )
+        assert resp.status == 200
+
+
+class TestConfigEndpointAuth:
+    def test_config_requires_readonly_when_auth_enabled(self, web_root):
+        security = _policy(readonly="r-secret")
+        denied = handle_request(
+            "GET",
+            "/api/config",
+            client_ip="127.0.0.1",
+            headers={},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "GET",
+            "/api/config",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer r-secret"},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 200

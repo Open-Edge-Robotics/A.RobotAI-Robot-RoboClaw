@@ -10,14 +10,15 @@ from robo_claw_channel.security import HttpSecurityPolicy
 class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
     """대시보드 경로에 맞는 역할 요구사항을 정의한다.
 
-    - GET  / (static), /health  : 공개
-    - GET  /api/status          : auth 활성 시 readonly 이상
-    - POST /api/chat            : control
+    - GET  / (static), /health   : 공개
+    - GET  /api/status, /api/map, /api/config : auth 활성 시 readonly 이상
+    - POST /api/chat             : control
+    - POST /api/initial_pose     : control (AMCL 초기 위치 변경)
     """
 
     def _required_role(self, *, method: str, path: str) -> str:
-        if method == "POST" and path == "/api/chat":
+        if method == "POST" and path in ("/api/chat", "/api/initial_pose"):
             return "control"
-        if method == "GET" and path == "/api/status":
+        if method == "GET" and path in ("/api/status", "/api/map", "/api/config"):
             return "readonly" if self.auth_enabled else "public"
         return "public"

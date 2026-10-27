@@ -68,6 +68,11 @@ class DashboardNode(Node):
         self.declare_parameter("battery_topic", "/battery_state")
         self.declare_parameter("status_topic", "")
         self.declare_parameter("request_timeout_sec", 30.0)
+        self.declare_parameter("map_topic", "/map")
+        self.declare_parameter("map_frame", "map")
+        self.declare_parameter("base_frame", "base_link")
+        self.declare_parameter("initialpose_topic", "/initialpose")
+        self.declare_parameter("config_query_timeout_sec", 2.0)
         self.declare_parameter("static_root", "")
         self.declare_parameter("http_readonly_token", "")
         self.declare_parameter("http_control_token", "")
@@ -81,6 +86,11 @@ class DashboardNode(Node):
         battery_topic = str(self.get_parameter("battery_topic").value)
         status_topic = str(self.get_parameter("status_topic").value)
         timeout = _as_float(self.get_parameter("request_timeout_sec").value, 30.0)
+        map_topic = str(self.get_parameter("map_topic").value or "/map")
+        map_frame = str(self.get_parameter("map_frame").value or "map")
+        base_frame = str(self.get_parameter("base_frame").value or "base_link")
+        initialpose_topic = str(self.get_parameter("initialpose_topic").value or "/initialpose")
+        config_timeout = _as_float(self.get_parameter("config_query_timeout_sec").value, 2.0)
         static_root = _resolve_static_root(str(self.get_parameter("static_root").value), self)
 
         allowed_cidrs, cidr_error = parse_allowed_cidrs(
@@ -104,6 +114,11 @@ class DashboardNode(Node):
             battery_topic=battery_topic,
             status_topic=status_topic or None,
             request_timeout_sec=timeout,
+            map_topic=map_topic,
+            map_frame=map_frame,
+            base_frame=base_frame,
+            initialpose_topic=initialpose_topic,
+            config_query_timeout_sec=config_timeout,
         )
         self._service = DashboardService(backend)
         handler = make_handler(self._service, static_root, security)

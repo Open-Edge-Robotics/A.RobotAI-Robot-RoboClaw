@@ -1,99 +1,145 @@
-:root {
-  --bg: #0f1420;
-  --card: #171e2d;
-  --line: #2a3446;
-  --text: #e6ebf2;
-  --muted: #9aa7b8;
-  --acc: #4f9cff;
-  --ok: #3ecf7a;
-  --err: #ff6b6b;
-}
+/* RoboClaw Dashboard — Bootstrap 5.3 위에 얹는 최소 오버라이드 */
 
-* { box-sizing: border-box; }
+:root {
+  --rc-map-height: 460px;
+}
 
 body {
-  margin: 0;
-  font-family: "Segoe UI", system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  min-height: 100vh;
 }
-
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--line);
-  background: var(--card);
-}
-
-header h1 { font-size: 20px; }
-
-.connection { color: var(--muted); font-size: 14px; }
-.connection.ok { color: var(--ok); }
-.connection.err { color: var(--err); }
 
 main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px 20px 32px;
-  max-width: 1100px;
-  margin: 0 auto;
+  max-width: 1400px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+.navbar .navbar-brand {
+  letter-spacing: 0.02em;
 }
 
-.card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 14px 16px;
-}
-
-.card h2 { font-size: 15px; margin: 0 0 10px; color: var(--acc); }
-.card h2 small { color: var(--muted); font-weight: normal; }
-
-dl { margin: 0; }
-dl > div, dt { font-size: 13px; color: var(--muted); }
-dt { margin-top: 6px; }
-dd { margin: 0 0 2px; font-size: 15px; }
-
-.kv { list-style: none; margin: 0; padding: 0; }
-.kv li { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
-.kv .k { color: var(--muted); }
-
-label { display: block; margin: 6px 0; font-size: 13px; }
-input, textarea {
-  width: 100%;
-  padding: 7px 9px;
-  margin-top: 4px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-}
-
-button {
-  margin-top: 8px;
-  padding: 7px 14px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--acc);
-  color: #fff;
-  font-size: 14px;
+/* 접근 토큰 접기 */
+.rc-token-card summary {
   cursor: pointer;
+  list-style: none;
+}
+.rc-token-card summary::-webkit-details-marker {
+  display: none;
+}
+.rc-token-card summary::marker {
+  content: "";
+}
+.rc-token-card summary::before {
+  content: "▸ ";
+  color: var(--bs-secondary-color);
+}
+.rc-token-card[open] summary::before {
+  content: "▾ ";
 }
 
-button:disabled { opacity: 0.6; cursor: not-allowed; }
+.rc-agent-id {
+  max-width: 260px;
+  border-left: 1px solid var(--bs-border-color);
+  padding-left: 10px;
+}
 
-.result { margin-top: 8px; font-size: 13px; }
-.result.ok { color: var(--ok); }
-.result.err { color: var(--err); }
+/* 지도 캔버스 */
+.rc-map-wrap {
+  position: relative;
+  width: 100%;
+}
 
-footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 0 20px; }
+#map-canvas {
+  display: block;
+  width: 100%;
+  height: var(--rc-map-height);
+  background: #0a0d14;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  touch-action: none;
+}
+
+#map-canvas.pose-mode {
+  cursor: crosshair;
+}
+
+.rc-pose-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+}
+.rc-pose-kv b {
+  color: var(--bs-body-color);
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+/* 배터리 */
+.rc-battery {
+  height: 0.6rem;
+  border: 1px solid var(--bs-border-color);
+}
+
+/* 실행 설정 표 */
+.rc-config-filter {
+  width: 220px;
+}
+
+.rc-table-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-sm);
+}
+
+.rc-table-scroll table td {
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+  word-break: break-word;
+  border-bottom: 1px dashed var(--bs-border-color);
+}
+
+.rc-table-scroll table tr:last-child td {
+  border-bottom: 0;
+}
+
+.rc-table-scroll td:first-child {
+  width: 48%;
+  color: var(--bs-secondary-color);
+  font-family: var(--bs-font-monospace);
+}
+
+.rc-table-scroll td:last-child {
+  font-family: var(--bs-font-monospace);
+}
+
+.rc-table-scroll td.rc-secret {
+  color: var(--bs-warning);
+}
+
+.rc-table-scroll tr.rc-empty td {
+  color: var(--bs-secondary-color);
+  font-style: italic;
+}
+
+/* 결과 메시지 */
+#map-result.text-success,
+#config-result.text-success,
+#chat-result.text-success {
+  color: var(--bs-success) !important;
+}
+#map-result.text-danger,
+#config-result.text-danger,
+#chat-result.text-danger {
+  color: var(--bs-danger) !important;
+}
+
+@media (max-width: 991.98px) {
+  :root {
+    --rc-map-height: 360px;
+  }
+  .rc-config-filter {
+    width: 100%;
+  }
+}

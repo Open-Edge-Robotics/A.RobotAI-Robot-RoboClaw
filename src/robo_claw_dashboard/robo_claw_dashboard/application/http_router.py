@@ -34,10 +34,10 @@ def _serve_static(static_root: str, request_path: str) -> HttpResponse:
     return HttpResponse(200, mime_type(file_path), Path(file_path).read_bytes())
 
 
-def _handle_chat(body: Any, service: Any) -> HttpResponse:
-    """POST /api/chat - JSON body 를 검증하고 에이전트 메시지 전송."""
+def _parse_body(body: Any) -> tuple[bool, Any]:
+    """요청 본문을 JSON 으로 파싱한다. (ok, payload) 를 반환한다."""
     if body in (None, b"", ""):
-        return _json({"error": "잘못된 JSON"}, 400)
+        return False, None
     try:
         payload = (
             json.loads(body.decode("utf-8"))
@@ -45,10 +45,26 @@ def _handle_chat(body: Any, service: Any) -> HttpResponse:
             else (json.loads(body) if isinstance(body, str) else body)
         )
     except (TypeError, ValueError):
+        return False, None
+    return True, payload
+
+
+def _handle_chat(body: Any, service: Any) -> HttpResponse:
+    """POST /api/chat - JSON body 를 검증하고 에이전트 메시지 전송."""
+    ok, payload = _parse_body(body)
+    if not ok:
         return _json({"error": "잘못된 JSON"}, 400)
 
     message = payload.get("message", "") if isinstance(payload, dict) else ""
     return _json(service.send_message(message))
+
+
+def _handle_initial_pose(body: Any, service: Any) -> HttpResponse:
+    """POST /api/initial_pose - 좌표를 검증하고 AMCL 초기 위치를 설정한다."""
+    ok, payload = _parse_body(body)
+    if not ok:
+        return _json({"error": "잘못된 JSON"}, 400)
+    return _json(service.set_initial_pose(payload))
 
 
 def route_http(
@@ -70,7 +86,13 @@ def route_http(
         return _json(service.status())
     if method == "GET" and request_path == "/health":
         return _json({"status": "ok", "dashboard": "robo_claw_dashboard"})
+    if method == "GET" and request_path == "/api/map":
+        return _json(service.map_snapshot())
+    if method == "GET" and request_path == "/api/config":
+        return _json(service.config_snapshot())
     if method == "POST" and request_path == "/api/chat":
         return _handle_chat(body, service)
+    if method == "POST" and request_path == "/api/initial_pose":
+        return _handle_initial_pose(body, service)
 
     return _json({"error": f"알 수 없는 경로: {method} {request_path}"}, 404)

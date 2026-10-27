@@ -3,6 +3,29 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-27 — 대시보드에 지도·현재 위치·초기 위치 설정을 추가합니다
+
+- `robo_claw_dashboard`가 `map_topic`(기본 `/map`) OccupancyGrid를 transient local로 구독하고,
+  `map_frame`→`base_frame`(기본 `map`→`base_link`) TF로 현재 위치를 취합해 화면에 표시합니다.
+- `/api/status`의 `localization`에 위치(`pose`)와 지도 메타(`map`)만 싣고, 셀 데이터는
+  `/api/map`으로 분리해 `stamp_ns`가 바뀔 때만 다시 받습니다.
+- `/api/initial_pose`로 AMCL 초기 위치를 설정합니다. `control` 권한이 필요하고, 지도 미수신,
+  비유한 값, 지도 경계(여유 1 m) 밖 좌표는 발행 전에 거부합니다. 공분산은 에이전트
+  `set_initial_pose` 스킬과 같은 0.05를 씁니다.
+- 웹 화면에 지도 캔버스와 "초기 위치 설정" 모드(클릭 후 드래그로 방향 지정, 확인 대화상자)를
+  추가했습니다.
+- 화면을 Bootstrap 5.3.8 기반으로 재구성했습니다. CSS는 CDN이 아니라 패키지에 포함해
+  (`web/assets/vendor/`) 외부 인터넷이 없는 로봇망에서도 그대로 표시됩니다. 헤더(로봇 ID·상태
+  배지·연결 상태)와 2단 레이아웃, 배터리 진행 바, 센서/피어 칩, 접이식 토큰 카드로 정리했습니다.
+- `/api/config`와 "실행 설정" 패널을 추가했습니다. 에이전트/대시보드 노드의 ROS2 파라미터
+  (`/list_parameters`, `/get_parameters`)를 읽어 실제 적용값을 보여주고, `token`·`secret`·
+  `password`·`api_key` 등은 `***`로 마스킹합니다. 조회는 5초 캐시라 상태 폴링에 영향을 주지 않습니다.
+- 검증: `tests/test_localization.py`·`test_config_view.py` 신규, `test_service.py`/
+  `test_http_router.py`/`test_http_handlers.py`/`test_paths.py` 보강(158 passed), `colcon test
+  --packages-select robo_claw_dashboard` 168/168 통과. 로컬 ROS2 스모크 23개 항목 통과:
+  위치(1.00, 2.00, 0.5 rad), `/api/map` 셀 수, `/initialpose` 발행(프레임·공분산), 지도 밖 좌표
+  거부, 에이전트 파라미터 수집·시크릿 마스킹, vendored Bootstrap 서빙.
+
 ## 2026-10-27 — 설정 서버 프로필로 대시보드를 켤 수 있게 합니다
 
 - 공통 계약(`rcf-config-contract`) v2.11.0의 `dashboard.enabled`(`RC_USE_DASHBOARD`)를 반영합니다.

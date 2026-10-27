@@ -11,6 +11,8 @@ class FakeService:
         self._status = status_payload or {}
         self._send_result = send_result or {"success": True, "message": "완료"}
         self.sent: list[str] = []
+        self.initial_pose_payloads: list = []
+        self._initial_pose_result = {"success": True, "message": "초기 위치를 설정했습니다"}
 
     def status(self):
         return dict(self._status)
@@ -18,6 +20,16 @@ class FakeService:
     def send_message(self, message):
         self.sent.append(message)
         return dict(self._send_result)
+
+    def map_snapshot(self):
+        return {"available": False}
+
+    def config_snapshot(self):
+        return {"available": False, "agent": {"parameters": []}}
+
+    def set_initial_pose(self, payload):
+        self.initial_pose_payloads.append(payload)
+        return dict(self._initial_pose_result)
 
 
 @pytest.fixture
@@ -119,3 +131,53 @@ def test_unauthorized_returns_401(web_root):
         authorizer=lambda m, p: False,
     )
     assert resp.status == 401
+
+
+def test_get_map_returns_service_snapshot(web_root):
+    class MapService(FakeService):
+        def map_snapshot(self):
+            return {"available": True, "width": 2, "height": 1, "data": "AAE="}
+
+    resp = route_http("GET", "/api/map", static_root=web_root, service=MapService())
+    assert resp.status == 200
+    assert b'"width": 2' in resp.body
+
+
+def test_post_initial_pose_forwards_payload(web_root):
+    service = FakeService()
+    resp = route_http(
+        "POST",
+        "/api/initial_pose",
+        static_root=web_root,
+        service=service,
+        body=b'{"x": 1.5, "y": -2.0, "yaw": 0.3}',
+    )
+    assert resp.status == 200
+    assert service.initial_pose_payloads == [{"x": 1.5, "y": -2.0, "yaw": 0.3}]
+    assert b"success" in resp.body
+
+
+def test_post_initial_pose_rejects_invalid_json(web_root):
+    service = FakeService()
+    resp = route_http(
+        "POST", "/api/initial_pose", static_root=web_root, service=service, body=b"{oops"
+    )
+    assert resp.status == 400
+    assert service.initial_pose_payloads == []
+
+
+def test_post_initial_pose_rejects_empty_body(web_root):
+    resp = route_http(
+        "POST", "/api/initial_pose", static_root=web_root, service=FakeService(), body=b""
+    )
+    assert resp.status == 400
+
+
+def test_get_config_returns_panel(web_root):
+    class ConfigService(FakeService):
+        def config_snapshot(self):
+            return {"available": True, "counts": {"agent": 1, "dashboard": 0}}
+
+    resp = route_http("GET", "/api/config", static_root=web_root, service=ConfigService())
+    assert resp.status == 200
+    assert b'"available": true' in resp.body
