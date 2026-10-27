@@ -426,7 +426,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/behavior-tree/README.md](docs/behavior-tree/README.md)                 | BT 엔진 코어, 자율행동/반응형 트리 전체 구조와 노드 카탈로그              |
 | [docs/PEER_COLLABORATION.md](docs/PEER_COLLABORATION.md)                     | 멀티 에이전트(동료 로봇) gRPC 협업/작업 위임                              |
 | [docs/CLEANUP_RUN_METRICS.md](docs/CLEANUP_RUN_METRICS.md)                   | 정리 태스크 실험 계측(run log)과 표 2 지표 집계                           |
-| [docs/CLEANUP_EXPERIMENT_RUNBOOK.md](docs/CLEANUP_EXPERIMENT_RUNBOOK.md)     | former0047·Cloid 2호 협업 실험 재실행 절차(3조건)                        |
+| [docs/CLEANUP_EXPERIMENT_RUNBOOK.md](docs/CLEANUP_EXPERIMENT_RUNBOOK.md)     | former0047·Cloid 2호 협업 실험 재실행 절차(3조건, 4장소 순환)            |
 | [docs/MANIPULATION.md](docs/MANIPULATION.md)                                 | MoveIt 기반 매니퓰레이션 설정, Stretch3 백엔드                            |
 | [docs/HTTP_API.md](docs/HTTP_API.md)                                         | HTTP API 전체 레퍼런스                                                    |
 | [docs/MESSENGER_GUIDE.md](docs/MESSENGER_GUIDE.md)                           | Discord/Slack/Telegram 연동 가이드                                        |

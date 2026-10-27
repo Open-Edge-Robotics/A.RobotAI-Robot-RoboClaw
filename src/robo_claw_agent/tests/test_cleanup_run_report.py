@@ -184,3 +184,76 @@ def test_delegation_rate_is_not_applicable_when_no_handoff_prepared(tmp_path):
     assert summary["delegation_success_rate"] is None
     assert summary["handoff_prepared"] == 0
     assert summary["handoff_blocked"] == 1
+
+
+def _run_at(run_id, place, status="delegated_demo", success=True):
+    record = _run(run_id, status, success)
+    record["target_location"] = place
+    record["places"] = [place]
+    record["results"] = [{"place": place, "status": status, "partial_observation": False}]
+    return record
+
+
+def test_split_by_place_writes_one_file_per_place(tmp_path):
+    """4장소 순환 로그를 장소별 파일로 나누고, 같은 위임/실행 기록을 함께 옮긴다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("r1", "cloid2"),
+            _run_at("r1", "안방"),
+            _handoff("r2", "cloid2"),
+            _run_at("r2", "거실"),
+            _run_at("r3", "안방"),
+        ],
+    )
+    out = tmp_path / "by_place"
+
+    written = script.split_by_place(script.load_records(path), str(out))
+
+    assert sorted(written) == ["거실", "안방"]
+    bedroom = script.load_records(written["안방"])
+    assert [record["event"] for record in bedroom] == [
+        "cleanup_handoff",
+        "cleanup_run",
+        "cleanup_run",
+    ]
+    assert len(script.load_records(written["거실"])) == 2
+    assert script.summarize(bedroom)["repeat_count"] == 2
+
+
+def test_split_by_place_falls_back_to_record_place_without_run(tmp_path):
+    """실행 기록 없이 남은 위임 결정도 버리지 않고 장소 파일로 분류한다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            {
+                "event": "cleanup_handoff",
+                "run_id": "r9",
+                "place": "부엌",
+                "peer": "",
+                "blocked": True,
+            }
+        ],
+    )
+
+    written = script.split_by_place(script.load_records(path), str(tmp_path / "by_place"))
+
+    assert list(written) == ["부엌"]
+    assert len(script.load_records(written["부엌"])) == 1
+
+
+def test_render_place_table_lists_each_place():
+    script = _load_script()
+    path_records = [
+        _run_at("r1", "안방"),
+        _run_at("r2", "신발장", status="needs_clarification", success=False),
+    ]
+    rows = [(record["target_location"], script.summarize([record])) for record in path_records]
+
+    table = script.render_place_table(rows)
+
+    assert "| 장소 | 반복 횟수 |" in table
+    assert "| 안방 | 1 | 100.0% |" in table
+    assert "| 신발장 | 1 | 0.0% |" in table

@@ -25,6 +25,10 @@ run log 경로는 에이전트가 실행 중인 호스트의 파일이어야 한
     # 실패 유발 단계만
     python3 validation/cleanup-experiment/run_cleanup_experiment.py \\
         --condition recovery --phase fail_injected ...
+
+조건 파일에 ``cycle: true`` 와 ``cycles: N`` 이 있으면 phases 를 한 주기로 묶어 N회
+반복한다(예: 안방 → 거실 → 부엌 → 신발장 한 주기 × 10). 그 외 조건은 기존처럼 phase 를
+연속 반복한다.
 """
 
 from __future__ import annotations
@@ -70,6 +74,24 @@ def load_conditions(directory: Path) -> dict[str, dict]:
         condition["source"] = str(path)
         conditions[key] = condition
     return conditions
+
+
+def build_schedule(
+    condition: dict, phases: list[dict], repeat_override: int = 0
+) -> list[tuple[int | None, dict]]:
+    """실행 순서를 (주기 번호, phase) 목록으로 만든다.
+
+    ``cycle`` 조건은 phases 를 한 주기로 묶어 ``cycles`` 회 반복하고, 그 외 조건은
+    phase 별 ``repeat`` 회를 이어 붙인다. ``repeat_override`` 는 둘 다 덮어쓴다.
+    """
+    if condition.get("cycle"):
+        cycles = repeat_override or int(condition.get("cycles") or 1)
+        return [(cycle, phase) for cycle in range(1, cycles + 1) for phase in phases]
+    schedule: list[tuple[int | None, dict]] = []
+    for phase in phases:
+        repeat = repeat_override or int(phase.get("repeat") or 1)
+        schedule.extend((None, phase) for _ in range(repeat))
+    return schedule
 
 
 def apply_peer_override(condition: dict, peer: str) -> None:
@@ -291,6 +313,26 @@ def build_condition_row(attempts: list[dict], expect_peer: str = "") -> dict:
     }
 
 
+def build_place_rows(
+    attempts: list[dict], condition: dict, expect_peer: str = ""
+) -> list[tuple[str, dict]]:
+    """장소(phase)별로 회차를 나눠 표 2 행을 만든다.
+
+    4장소 순환 조건처럼 phase 가 장소를 뜻할 때, 전체 표와 별도로 장소별 성공률·평균
+    시간을 따로 본다. 위임이 없는 장소(예: 신발장에서 대상 미확인)는 위임 성공률이
+    ``None``(n/a)으로 남는다.
+    """
+    rows: list[tuple[str, dict]] = []
+    for phase in condition.get("phases") or []:
+        subset = [attempt for attempt in attempts if attempt.get("phase_key") == phase["key"]]
+        if not subset:
+            continue
+        peer = str((phase.get("expect") or {}).get("peer") or expect_peer)
+        label = str(phase.get("place") or phase.get("label") or phase["key"])
+        rows.append((label, build_condition_row(subset, expect_peer=peer)))
+    return rows
+
+
 def _fmt_rate(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.1f}%"
 
@@ -299,7 +341,12 @@ def _fmt_ms(value: float | None) -> str:
     return "n/a" if value is None else f"{value / 1000.0:.1f}s"
 
 
-def render_report(condition: dict, attempts: list[dict], row: dict) -> str:
+def render_report(
+    condition: dict,
+    attempts: list[dict],
+    row: dict,
+    place_rows: list[tuple[str, dict]] | None = None,
+) -> str:
     """조건 1건의 마크다운 리포트(요약 표 + 회차 상세)를 만든다."""
     label = str(condition.get("label") or condition.get("condition"))
     expect_peer = ""
@@ -345,13 +392,34 @@ def render_report(condition: dict, attempts: list[dict], row: dict) -> str:
     for index, attempt in enumerate(attempts, start=1):
         statuses = ", ".join(attempt.get("statuses") or []) or "-"
         verdict = "PASS" if attempt["ok"] else "FAIL: " + "; ".join(attempt["reasons"])
+        unit = str(attempt.get("phase_key", "-"))
+        if attempt.get("cycle") is not None:
+            unit = f"{attempt['cycle']}주기 {unit}"
         lines.append(
-            f"| {index} | {attempt.get('phase_key', '-')} "
+            f"| {index} | {unit} "
             f"| {_short(attempt.get('message', ''))} "
             f"| {_fmt_ms(attempt.get('latency_ms'))} "
             f"| {attempt.get('run_id') or '-'} | {statuses} "
             f"| {attempt.get('peer') or '-'} | {verdict} |"
         )
+
+    if place_rows and len(place_rows) > 1:
+        lines += [
+            "",
+            "## 장소별 표",
+            "",
+            "| 장소 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 기대 동작 준수 |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+        for label, place_row in place_rows:
+            lines.append(
+                f"| {label} | {place_row['repeat']} "
+                f"| {_fmt_rate(place_row['success_rate'])} "
+                f"| {_fmt_rate(place_row['allocation_accuracy'])} "
+                f"| {_fmt_rate(place_row['delegation_success_rate'])} "
+                f"| {_fmt_ms(place_row['mean_elapsed_ms'])} "
+                f"| {place_row['verdict_pass']}/{place_row['repeat']} |"
+            )
 
     if row["mean_phase_ms"]:
         lines += ["", "## 구간별 평균", ""]
@@ -493,9 +561,18 @@ def _print_setup(condition: dict) -> None:
     for robot, env in required.items():
         print(f"  * {robot}: " + ", ".join(f"{key}={value}" for key, value in env.items()))
     print("\n단계:")
+    cycles = int(condition.get("cycles") or 0) if condition.get("cycle") else 0
     for phase in condition["phases"]:
         marker = "표 2 행" if phase.get("row") else "근거 단계"
-        print(f"  - [{phase['key']}] '{phase['prompt']}' × {phase['repeat']}회 ({marker})")
+        if cycles:
+            print(f"  - [{phase['key']}] '{phase['prompt']}' × {cycles}주기 ({marker})")
+        else:
+            print(f"  - [{phase['key']}] '{phase['prompt']}' × {phase['repeat']}회 ({marker})")
+    if cycles:
+        print(
+            f"  · 순서: 한 주기에 {len(condition['phases'])}개 요청을 위 순서로 보내고 "
+            f"{cycles}주기 반복합니다(요청 {cycles * len(condition['phases'])}회)."
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -521,7 +598,12 @@ def main(argv: list[str] | None = None) -> int:
         help="기대 동료 이름을 덮어쓴다(예: 'Cloid 2호'). 조건 파일의 expect.peer 보다 우선한다",
     )
     parser.add_argument("--output", default="", help="리포트 마크다운 경로")
-    parser.add_argument("--repeat", type=int, default=0, help="조건 파일의 반복 횟수를 덮어쓴다")
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=0,
+        help="조건 파일의 반복 횟수를 덮어쓴다(cycle 조건에서는 주기 수)",
+    )
     parser.add_argument("--settle-sec", type=float, default=None, help="회차 사이 대기 초")
     parser.add_argument(
         "--dry-run", action="store_true", help="계획만 출력하고 명령을 보내지 않는다"
@@ -570,48 +652,55 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes and sys.stdin.isatty():
                 input("사전 준비를 마쳤으면 Enter (중단: Ctrl+C) ")
             attempts: list[dict] = []
-            for phase in condition["phases"]:
-                if args.phase and phase["key"] != args.phase:
-                    continue
-                repeat = args.repeat or int(phase["repeat"])
-                for index in range(1, repeat + 1):
-                    print(f"  💬 [{phase['key']}] {index}/{repeat} …", end="", flush=True)
-                    attempt = run_attempt(
-                        phase=phase,
-                        send=send,
-                        run_log=args.run_log,
-                        tail=tail,
-                        timeout_sec=float(condition.get("run_timeout_sec", 300)),
-                    )
-                    attempts.append(attempt)
-                    mark = "✅" if attempt["ok"] else "❌"
-                    print(f" {mark} run_id={attempt['run_id'] or '-'}")
-                    if not attempt["ok"]:
-                        for reason in attempt["reasons"]:
-                            print(f"      - {reason}")
-                    settle = (
-                        args.settle_sec
-                        if args.settle_sec is not None
-                        else float(condition.get("settle_sec", 10))
-                    )
-                    if index < repeat and settle > 0:
-                        time.sleep(settle)
+            phases = [
+                phase
+                for phase in condition["phases"]
+                if not args.phase or phase["key"] == args.phase
+            ]
+            schedule = build_schedule(condition, phases, repeat_override=int(args.repeat or 0))
+            for position, (cycle, phase) in enumerate(schedule, start=1):
+                marker = f"{cycle}주기 " if cycle is not None else ""
+                print(
+                    f"  💬 [{marker}{phase['key']}] {position}/{len(schedule)} …",
+                    end="",
+                    flush=True,
+                )
+                attempt = run_attempt(
+                    phase=phase,
+                    send=send,
+                    run_log=args.run_log,
+                    tail=tail,
+                    timeout_sec=float(condition.get("run_timeout_sec", 300)),
+                )
+                if cycle is not None:
+                    attempt["cycle"] = cycle
+                attempts.append(attempt)
+                mark = "✅" if attempt["ok"] else "❌"
+                print(f" {mark} run_id={attempt['run_id'] or '-'}")
+                if not attempt["ok"]:
+                    for reason in attempt["reasons"]:
+                        print(f"      - {reason}")
+                settle = (
+                    args.settle_sec
+                    if args.settle_sec is not None
+                    else float(condition.get("settle_sec", 10))
+                )
+                if position < len(schedule) and settle > 0:
+                    time.sleep(settle)
             if not attempts:
                 continue
+            row_phase_keys = {phase["key"] for phase in condition["phases"] if phase.get("row")}
             row_attempts = [
-                attempt
-                for attempt in attempts
-                if next(
-                    phase for phase in condition["phases"] if phase["key"] == attempt["phase_key"]
-                ).get("row")
+                attempt for attempt in attempts if attempt["phase_key"] in row_phase_keys
             ] or attempts
             expect_peer = ""
             for phase in condition["phases"]:
                 if phase.get("row") and phase.get("expect", {}).get("peer"):
                     expect_peer = str(phase["expect"]["peer"])
             row = build_condition_row(row_attempts, expect_peer=expect_peer)
+            place_rows = build_place_rows(attempts, condition, expect_peer=expect_peer)
             condition["measured_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            reports.append(render_report(condition, attempts, row))
+            reports.append(render_report(condition, attempts, row, place_rows))
             print(
                 f"  → 표 2 행: 반복 {row['repeat']}회, 전체 성공률 {_fmt_rate(row['success_rate'])}, "
                 f"할당 정확도 {_fmt_rate(row['allocation_accuracy'])}, "
@@ -620,6 +709,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"재계획 {_fmt_rate(row['replan_success_rate'])}, "
                 f"기대 동작 준수 {row['verdict_pass']}/{row['repeat']}"
             )
+            for label, place_row in place_rows:
+                print(
+                    f"     장소 {label}: {place_row['verdict_pass']}/{place_row['repeat']}, "
+                    f"성공률 {_fmt_rate(place_row['success_rate'])}, "
+                    f"평균 {_fmt_ms(place_row['mean_elapsed_ms'])}"
+                )
             if row["repeat"] and row["verdict_pass"] < row["repeat"]:
                 exit_code = 1
     finally:

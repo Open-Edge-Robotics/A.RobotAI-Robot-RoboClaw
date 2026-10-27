@@ -1,0 +1,91 @@
+{
+  "condition": "cycle4",
+  "label": "4장소 순환 협업",
+  "description": "안방 → 거실 → 부엌(주방) → 신발장을 한 주기로 묶어 10주기(요청 40회)를 연속 실행합니다. 장소마다 정리 대상을 두고, 매 요청이 해당 장소로 이동해 관찰한 뒤 시연 권한이 있는 동료 Cloid 2호에게 위임하는지 확인합니다. 표 2 행은 40회 전체로 계산하고, 같은 리포트의 장소별 표에서 4개 장소를 따로 집계합니다.",
+  "cycle": true,
+  "cycles": 10,
+  "run_timeout_sec": 300,
+  "settle_sec": 10,
+  "setup": {
+    "operator_steps": [
+      "cloid2가 기동 중이고 former0047의 GRPC_TARGET_PEERS_JSON에 agent_name='Cloid 2호', capabilities=['cleanup_demo'] 로 등록되어 연결 상태여야 합니다.",
+      "cloid2에 시연 권한이 부여되어 있어야 합니다: cloid_cleanup_demo_enabled=true, cloid_cleanup_demo_motion_ids_json=[22].",
+      "former0047 기억 장소에 안방·거실·주방·신발장 좌표가 등록되어 있어야 합니다. 부엌은 주방 별칭으로 해석됩니다.",
+      "각 장소에 정리 대상(수건·쿠션·명확한 폐기물 중 하나)을 두고 시연 로봇이 접근할 공간을 확보합니다. 시연 모션은 물체를 옮기지 않으므로 한 번 배치하면 주기마다 유지됩니다.",
+      "신발장 요청은 '신발 정리해줘'로 보냅니다. 실행 전에 get_location(location_name='신발')로 좌표가 해석되는지 확인하고, 해석되지 않으면 신발장 좌표를 신발 별칭으로 등록한 뒤 시작합니다.",
+      "former0047 에이전트에 RC_CLEANUP_RUN_LOG_PATH 가 지정되어 있어야 합니다(예: /ros2_ws/agent_workspace/cleanup_runs.jsonl).",
+      "주기 사이 로봇 위치가 매번 달라지므로 navigate 구간은 '직전 장소에서 다음 장소로' 이동 시간입니다. 조건 간 비교가 필요하면 주기 시작 위치를 고정합니다."
+    ],
+    "required_env": {
+      "former0047": {
+        "RC_CLEANUP_RUN_LOG_PATH": "<host path>/cleanup_runs.jsonl"
+      },
+      "cloid2": {
+        "RC_CLOID_CLEANUP_DEMO_ENABLED": "true",
+        "RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "[22]"
+      }
+    }
+  },
+  "phases": [
+    {
+      "key": "bedroom",
+      "place": "안방",
+      "prompt": "안방 정리해줘",
+      "row": true,
+      "expect": {
+        "run_present": true,
+        "run_success": true,
+        "place_status": ["delegated_demo"],
+        "peer": "Cloid 2호",
+        "delegate_success": true,
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리할 수 없", "실패:", "[스킬"]
+      }
+    },
+    {
+      "key": "living_room",
+      "place": "거실",
+      "prompt": "거실 정리해줘",
+      "row": true,
+      "expect": {
+        "run_present": true,
+        "run_success": true,
+        "place_status": ["delegated_demo"],
+        "peer": "Cloid 2호",
+        "delegate_success": true,
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리할 수 없", "실패:", "[스킬"]
+      }
+    },
+    {
+      "key": "kitchen",
+      "place": "부엌(주방)",
+      "prompt": "부엌 정리해줘",
+      "row": true,
+      "expect": {
+        "run_present": true,
+        "run_success": true,
+        "place_status": ["delegated_demo"],
+        "peer": "Cloid 2호",
+        "delegate_success": true,
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리할 수 없", "실패:", "[스킬"]
+      }
+    },
+    {
+      "key": "shoe_rack",
+      "place": "신발장",
+      "prompt": "신발 정리해줘",
+      "row": true,
+      "expect": {
+        "run_present": true,
+        "run_success": true,
+        "place_status": ["delegated_demo"],
+        "peer": "Cloid 2호",
+        "delegate_success": true,
+        "expected_keywords": ["정리"],
+        "fail_keywords": ["정리할 수 없", "실패:", "[스킬"]
+      }
+    }
+  ]
+}

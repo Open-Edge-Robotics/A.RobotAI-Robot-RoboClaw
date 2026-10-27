@@ -52,7 +52,7 @@ def test_load_conditions_covers_three_conditions():
 
     conditions = runner.load_conditions(_CONDITIONS)
 
-    assert set(conditions) == {"normal", "constrained", "recovery"}
+    assert set(conditions) == {"normal", "constrained", "recovery", "cycle4"}
     assert [phase["key"] for phase in conditions["recovery"]["phases"]] == [
         "fail_injected",
         "recovered",
@@ -60,6 +60,149 @@ def test_load_conditions_covers_three_conditions():
     # 표 2 행으로 쓰는 단계는 복구 단계뿐이다.
     assert [phase["row"] for phase in conditions["recovery"]["phases"]] == [False, True]
     assert conditions["normal"]["phases"][0]["repeat"] == 10
+
+
+def test_load_conditions_cycle_condition_orders_four_places():
+    runner = _load_runner()
+
+    condition = runner.load_conditions(_CONDITIONS)["cycle4"]
+
+    assert condition["cycle"] is True
+    assert condition["cycles"] == 10
+    assert [phase["prompt"] for phase in condition["phases"]] == [
+        "안방 정리해줘",
+        "거실 정리해줘",
+        "부엌 정리해줘",
+        "신발 정리해줘",
+    ]
+    assert all(phase["row"] for phase in condition["phases"])
+    schedule = runner.build_schedule(condition, condition["phases"])
+    assert len(schedule) == 40
+    assert [phase["key"] for _cycle, phase in schedule[:5]] == [
+        "bedroom",
+        "living_room",
+        "kitchen",
+        "shoe_rack",
+        "bedroom",
+    ]
+
+
+def test_build_schedule_falls_back_to_per_phase_repeat():
+    runner = _load_runner()
+    condition = {"condition": "normal", "phases": []}
+    phases = [
+        {"key": "fail_injected", "repeat": 3},
+        {"key": "recovered", "repeat": 2},
+    ]
+
+    assert runner.build_schedule(condition, phases) == [
+        (None, phases[0]),
+        (None, phases[0]),
+        (None, phases[0]),
+        (None, phases[1]),
+        (None, phases[1]),
+    ]
+    assert len(runner.build_schedule(condition, phases, repeat_override=1)) == 2
+
+
+def test_build_place_rows_groups_attempts_by_place():
+    runner = _load_runner()
+    condition = {
+        "phases": [
+            {"key": "bedroom", "place": "안방", "row": True, "expect": {"peer": "cloid2"}},
+            {"key": "shoe_rack", "place": "신발장", "row": True, "expect": {}},
+        ]
+    }
+    attempts = [
+        {
+            "phase_key": "bedroom",
+            "ok": True,
+            "run_success": True,
+            "peer": "cloid2",
+            "delegate_successes": [True],
+            "run_elapsed_ms": 60000.0,
+            "phase_ms": {},
+            "run_present": True,
+            "replan_attempts": 0,
+            "replan_tracked": False,
+        },
+        {
+            "phase_key": "shoe_rack",
+            "ok": False,
+            "run_success": False,
+            "peer": "",
+            "delegate_successes": [],
+            "run_elapsed_ms": 40000.0,
+            "phase_ms": {},
+            "run_present": True,
+            "replan_attempts": 0,
+            "replan_tracked": False,
+        },
+    ]
+
+    rows = runner.build_place_rows(attempts, condition, expect_peer="cloid2")
+
+    assert [label for label, _row in rows] == ["안방", "신발장"]
+    assert rows[0][1]["verdict_pass"] == 1
+    assert rows[0][1]["delegation_success_rate"] == pytest.approx(100.0)
+    # 위임 기록이 없는 장소는 위임 성공률을 계산하지 않는다.
+    assert rows[1][1]["delegation_success_rate"] is None
+
+
+def test_render_report_adds_place_table_for_cycle_condition():
+    runner = _load_runner()
+    condition = {
+        "condition": "cycle4",
+        "label": "4장소 순환 협업",
+        "phases": [
+            {"key": "bedroom", "place": "안방", "row": True, "expect": {}},
+            {"key": "living_room", "place": "거실", "row": True, "expect": {}},
+        ],
+    }
+    attempts = [
+        {
+            "phase_key": "bedroom",
+            "ok": True,
+            "reasons": [],
+            "message": "정리",
+            "latency_ms": 1000.0,
+            "run_id": "r1",
+            "statuses": ["delegated_demo"],
+            "peer": "cloid2",
+            "run_present": True,
+            "run_success": True,
+            "run_elapsed_ms": 60000.0,
+            "phase_ms": {},
+            "delegate_successes": [True],
+            "replan_attempts": 0,
+            "replan_tracked": False,
+        },
+        {
+            "phase_key": "living_room",
+            "ok": True,
+            "reasons": [],
+            "message": "정리",
+            "latency_ms": 1000.0,
+            "run_id": "r2",
+            "statuses": ["delegated_demo"],
+            "peer": "cloid2",
+            "run_present": True,
+            "run_success": True,
+            "run_elapsed_ms": 80000.0,
+            "phase_ms": {},
+            "delegate_successes": [True],
+            "replan_attempts": 0,
+            "replan_tracked": False,
+        },
+    ]
+    row = runner.build_condition_row(attempts, expect_peer="cloid2")
+    place_rows = runner.build_place_rows(attempts, condition, expect_peer="cloid2")
+
+    report = runner.render_report(condition, attempts, row, place_rows)
+
+    assert "## 장소별 표" in report
+    assert "| 안방 | 1 |" in report
+    assert "| 거실 | 1 |" in report
 
 
 def test_extract_run_id_from_nested_result_json():
@@ -271,14 +414,20 @@ def test_render_report_contains_table_2_row():
 
 def _fake_sender_writing_log(run_log, *, status, success, peer="cloid2", delegate=True):
     """에이전트 역할을 대신해 run log 를 쓰고 gRPC 응답을 돌려주는 sender."""
+    counter = {"n": 0}
+    prompts: list[str] = []
 
     def _send(prompt, timeout_sec):
-        run_id = "former0047-test-000001"
+        counter["n"] += 1
+        prompts.append(str(prompt))
+        run_id = f"former0047-test-{counter['n']:06d}"
+        place = str(prompt).replace(" 정리해줘", "") or "안방"
         _append(
             run_log,
             {
                 "event": "cleanup_handoff",
                 "run_id": run_id,
+                "place": place,
                 "peer": peer,
                 "blocked": not peer,
             },
@@ -293,8 +442,9 @@ def _fake_sender_writing_log(run_log, *, status, success, peer="cloid2", delegat
             {
                 "event": "cleanup_run",
                 "run_id": run_id,
+                "target_location": place,
                 "success": success,
-                "results": [{"place": "안방", "status": status}],
+                "results": [{"place": place, "status": status}],
                 "elapsed_ms": 65000.0,
                 "phase_ms": {"navigate": 18000.0},
             },
@@ -307,6 +457,7 @@ def _fake_sender_writing_log(run_log, *, status, success, peer="cloid2", delegat
         }
 
     _send.close = lambda: None
+    _send.prompts = prompts
     return _send
 
 
@@ -346,6 +497,52 @@ def test_main_runs_experiment_end_to_end(tmp_path, monkeypatch):
     report = output.read_text(encoding="utf-8")
     assert "정리 태스크 실험 결과 — 정상 협업" in report
     assert "| 정상 협업 | 1 | 100.0% | 100.0% | 100.0% | 65.0s | n/a |" in report
+
+
+def test_main_runs_cycle_condition_in_place_order(tmp_path, monkeypatch):
+    runner = _load_runner()
+    run_log = tmp_path / "runs.jsonl"
+    output = tmp_path / "report.md"
+    sender = _fake_sender_writing_log(run_log, status="delegated_demo", success=True)
+    monkeypatch.setattr(runner, "send_via_robotalk", lambda *_args, **_kwargs: sender)
+
+    code = runner.main(
+        [
+            "--condition",
+            "cycle4",
+            "--host",
+            "127.0.0.1",
+            "--run-log",
+            str(run_log),
+            "--expect-peer",
+            "cloid2",
+            "--repeat",
+            "2",
+            "--settle-sec",
+            "0",
+            "--yes",
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert code == 0
+    assert sender.prompts == [
+        "안방 정리해줘",
+        "거실 정리해줘",
+        "부엌 정리해줘",
+        "신발 정리해줘",
+        "안방 정리해줘",
+        "거실 정리해줘",
+        "부엌 정리해줘",
+        "신발 정리해줘",
+    ]
+    report = output.read_text(encoding="utf-8")
+    assert "정리 태스크 실험 결과 — 4장소 순환 협업" in report
+    assert "| 4장소 순환 협업 | 8 | 100.0% | 100.0% | 100.0% | 65.0s | n/a |" in report
+    assert "## 장소별 표" in report
+    assert "| 안방 | 2 | 100.0% |" in report
+    assert "| 신발장 | 2 | 100.0% |" in report
 
 
 def test_main_returns_failure_when_verdict_fails(tmp_path, monkeypatch):

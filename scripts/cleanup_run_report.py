@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections import defaultdict
 
@@ -143,6 +144,63 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
     return summary
 
 
+def place_of_run(run: dict) -> str:
+    """실행 1회가 향한 장소명을 고른다(단일 방 요청은 target_location)."""
+    place = str(run.get("target_location") or "").strip()
+    if place:
+        return place
+    places = [str(item) for item in run.get("places") or [] if str(item).strip()]
+    return ",".join(places) if places else "unknown"
+
+
+def split_by_place(records: list[dict], directory: str) -> dict[str, str]:
+    """run log 를 장소별 JSONL 로 나누어 쓴다.
+
+    4장소 순환 실험처럼 한 파일에 여러 장소가 섞일 때 장소별로 따로 집계할 수 있도록
+    ``cleanup_runs_<장소>.jsonl`` 을 만든다. 반환값은 장소 → 파일 경로다.
+    """
+    place_by_run: dict[str, str] = {}
+    for record in records:
+        if record.get("event") == "cleanup_run":
+            place_by_run.setdefault(str(record.get("run_id", "")), place_of_run(record))
+
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        run_id = str(record.get("run_id", ""))
+        place = place_by_run.get(run_id)
+        if place is None:
+            # 실행 기록 없이 남은 handoff/delegate 는 레코드 자체의 장소를 쓴다.
+            place = str(record.get("place") or "").strip() or "unknown"
+        buckets[place].append(record)
+
+    os.makedirs(directory, exist_ok=True)
+    written: dict[str, str] = {}
+    for place in sorted(buckets):
+        safe = re.sub(r"[^\w가-힣.-]+", "_", place).strip("_") or "unknown"
+        path = os.path.join(directory, f"cleanup_runs_{safe}.jsonl")
+        with open(path, "w", encoding="utf-8") as handle:
+            for record in buckets[place]:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        written[place] = path
+    return written
+
+
+def render_place_table(rows: list[tuple[str, dict]]) -> str:
+    """장소별 집계를 표 2 열 구성으로 출력한다."""
+    lines = [
+        "| 장소 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 재계획 성공률 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for place, summary in rows:
+        lines.append(
+            f"| {place} | {summary['repeat_count']} | {_fmt_rate(summary['success_rate'])} "
+            f"| {_fmt_rate(summary['allocation_accuracy'])} "
+            f"| {_fmt_rate(summary['delegation_success_rate'])} "
+            f"| {_fmt_ms(summary['mean_elapsed_ms'])} | 해당 없음 |"
+        )
+    return "\n".join(lines)
+
+
 def _fmt_rate(value: float | None) -> str:
     return "-" if value is None else f"{value:.1f}%"
 
@@ -185,6 +243,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"JSONL 경로(기본: ${ENV_RUN_LOG_PATH})",
     )
     parser.add_argument("--expect-peer", default="", help="할당 정답으로 기대하는 동료 이름")
+    parser.add_argument(
+        "--split-dir",
+        default="",
+        help="지정하면 장소별 JSONL(cleanup_runs_<장소>.jsonl)을 쓰고 장소별 표를 출력한다",
+    )
     parser.add_argument("--markdown", action="store_true", help="표 2 형식 마크다운으로 출력")
     parser.add_argument("--json", action="store_true", help="집계 결과를 JSON으로 출력")
     args = parser.parse_args(argv)
@@ -205,6 +268,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     summary = summarize(records, expect_peer=args.expect_peer)
+    if args.split_dir:
+        written = split_by_place(records, args.split_dir)
+        place_rows = [
+            (place, summarize(load_records(path), expect_peer=args.expect_peer))
+            for place, path in written.items()
+        ]
+        print(render_place_table(place_rows))
+        for place, path in written.items():
+            print(f"- {place}: {path}")
+        if args.json:
+            print(json.dumps(dict(place_rows), ensure_ascii=False, indent=2))
+        return 0
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     elif args.markdown:
