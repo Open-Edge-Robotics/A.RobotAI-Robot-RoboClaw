@@ -370,6 +370,40 @@ func TestBuildCommonLaunchArgsCloidSettingsOmitted(t *testing.T) {
 	}
 }
 
+// 계약에 launch_argument가 정의된 dashboard.* 필드는 launch 경로에서도 전달되어야 한다.
+// AI Config Server 프로필의 dashboard.enabled(RC_USE_DASHBOARD)가 누락되면 대시보드 노드가
+// 기동하지 않으므로 포트만 설정한 프로필이 조용히 무시된다.
+func TestBuildCommonLaunchArgsForwardsDashboardContractFields(t *testing.T) {
+	cases := map[string]string{
+		"dashboard.enabled": "true",
+		"dashboard.host":    "0.0.0.0",
+		"dashboard.port":    "9190",
+	}
+	for canonical, value := range cases {
+		field, ok := contract.RuntimeFields[canonical]
+		if !ok {
+			t.Fatalf("계약에 %s 필드가 없음", canonical)
+		}
+		if field.LaunchArgument == "" {
+			t.Fatalf("%s launch 인자 미정의", canonical)
+		}
+		lctx := baseCtx(map[string]string{field.Env: value})
+		joined := strings.Join(BuildCommonLaunchArgs(lctx), " ")
+		want := fmt.Sprintf("%s:=%s", field.LaunchArgument, value)
+		if !strings.Contains(joined, want) {
+			t.Errorf("%s(%s)가 launch 인수로 전달되지 않음: %s", canonical, field.Env, joined)
+		}
+	}
+
+	// 미설정 시 launch 파일 기본값(false / 127.0.0.1 / 9090)을 덮어쓰지 않도록 인수를 만들지 않는다.
+	joined := strings.Join(BuildCommonLaunchArgs(baseCtx(map[string]string{})), " ")
+	for _, notWant := range []string{"use_dashboard:=", "dashboard_host:=", "dashboard_port:="} {
+		if strings.Contains(joined, notWant) {
+			t.Errorf("미설정 시 대시보드 인수가 없어야 함: %s\n실제: %s", notWant, joined)
+		}
+	}
+}
+
 // 계약에 launch_argument가 정의된 CLOiD 개체 필드는 모두 전달되어야 한다.
 // 새 CLOiD 필드가 계약에 추가될 때 launch 경로 누락을 이 테스트가 잡는다.
 func TestBuildCommonLaunchArgsForwardsEveryCloidContractField(t *testing.T) {

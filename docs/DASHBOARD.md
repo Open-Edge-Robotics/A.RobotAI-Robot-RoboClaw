@@ -56,6 +56,19 @@ RC_HTTP_READONLY_TOKEN=<읽기 토큰>
 RC_HTTP_CONTROL_TOKEN=<제어 토큰>
 ```
 
+설정 서버(AI Config Server) 프로필로 실행하는 경우에는 `.env` 대신 프로필 값을 사용합니다. 대시보드를
+켜려면 프로필에서 `dashboard.enabled`(`RC_USE_DASHBOARD`)를 `true`로 두고 `dashboard.host`,
+`dashboard.port`를 함께 지정한 뒤 활성화합니다. `rclaw launch`는 이 값을 `use_dashboard`,
+`dashboard_host`, `dashboard_port` launch 인자로 변환합니다.
+
+```bash
+./rclaw launch former kon47          # 프로필 활성 설정으로 기동
+./rclaw launch former kon47 --dry-run  # 적용될 launch 명령만 확인
+```
+
+`dashboard.host`/`dashboard.port`만 지정하고 `dashboard.enabled`를 켜지 않으면 노드가 기동하지
+않으므로 9190 같은 포트에 아무 응답이 없습니다.
+
 `ros2 launch`로 직접 실행할 때는 다음 한 줄이면 됩니다.
 
 ```bash
@@ -121,7 +134,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 
 | 파라미터(launch 인자)      | 기본값                          | 설명                                          |
 | -------------------------- | ------------------------------- | --------------------------------------------- |
-| `use_dashboard`            | `false`                         | 노드 실행 여부                                |
+| `use_dashboard`            | `false`                         | 노드 실행 여부 (`RC_USE_DASHBOARD`, 계약 `dashboard.enabled`) |
 | `dashboard_host`          | `127.0.0.1`                     | 바인드 주소                                   |
 | `dashboard_port`          | `9090`                          | HTTP 포트                                    |
 | `http_readonly_token`      | `""`                            | `/api/status` 읽기 권한 토큰                  |

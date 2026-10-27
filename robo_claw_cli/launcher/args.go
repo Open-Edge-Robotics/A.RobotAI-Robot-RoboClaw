@@ -84,6 +84,23 @@ func BuildCommonLaunchArgs(lctx *LaunchContext) []string {
 	}
 	args = append(args, fmt.Sprintf("http_port:=%s", lctx.ActualPort))
 
+	// Dashboard 웹 노드 설정 — 계약(dashboard.*)을 단일 출처로 삼는다.
+	// 프로필에서 dashboard.enabled(RC_USE_DASHBOARD)를 켜지 않으면 대시보드 노드가 기동하지
+	// 않으므로, launch 경로에서도 host/port와 함께 반드시 전달한다.
+	for _, canonical := range []string{
+		"dashboard.enabled",
+		"dashboard.host",
+		"dashboard.port",
+	} {
+		field, ok := contract.RuntimeFields[canonical]
+		if !ok || field.LaunchArgument == "" {
+			continue
+		}
+		if v := strings.TrimSpace(env[field.Env]); v != "" {
+			args = append(args, fmt.Sprintf("%s:=%s", field.LaunchArgument, v))
+		}
+	}
+
 	if v := env["RC_OLLAMA_BASE_URL"]; v != "" {
 		args = append(args, fmt.Sprintf("llm_base_url:=%s", v))
 	}

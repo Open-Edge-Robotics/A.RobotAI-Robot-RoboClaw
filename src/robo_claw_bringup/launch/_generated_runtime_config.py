@@ -268,6 +268,13 @@ RUNTIME_CONFIG_FIELDS = {
         "scope": "runtime",
         "secret": False,
     },
+    "dashboard.enabled": {
+        "env": "RC_USE_DASHBOARD",
+        "launch_argument": "use_dashboard",
+        "parameter": "use_dashboard",
+        "scope": "runtime",
+        "secret": False,
+    },
     "dashboard.host": {
         "env": "RC_DASHBOARD_HOST",
         "launch_argument": "dashboard_host",
@@ -579,6 +586,7 @@ ENV_TO_LAUNCH_ARGUMENT = {
     "RC_HTTP_HOST": "http_host",
     "RC_HTTP_ALLOWED_CIDRS_JSON": "http_allowed_cidrs_json",
     "RC_HTTP_RATE_LIMIT_PER_MINUTE": "http_rate_limit_per_minute",
+    "RC_USE_DASHBOARD": "use_dashboard",
     "RC_DASHBOARD_HOST": "dashboard_host",
     "RC_DASHBOARD_PORT": "dashboard_port",
     "ENABLE_DISCORD": "enable_discord",

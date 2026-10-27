@@ -353,6 +353,14 @@
           "x-secret": false,
           "minimum": 0
         },
+        "use_dashboard": {
+          "type": "boolean",
+          "description": "Enable the dashboard web node. When false the node is not launched even if dashboard.host and dashboard.port are set.",
+          "default": false,
+          "x-canonical-name": "dashboard.enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
         "dashboard_host": {
           "type": "string",
           "description": "Dashboard web node bind host.",

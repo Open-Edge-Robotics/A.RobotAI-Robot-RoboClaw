@@ -571,6 +571,21 @@
           "config_server"
         ]
     },
+    "dashboard.enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_USE_DASHBOARD",
+      "api_json": "use_dashboard",
+      "launch_argument": "use_dashboard",
+      "ros_parameter": "use_dashboard",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "dashboard.host": {
       "type": "string",
       "scope": "runtime",

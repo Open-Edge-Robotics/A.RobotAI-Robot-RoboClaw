@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.10.0",
+  "contract_version": "2.11.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -839,6 +839,28 @@
       "launch_argument": "http_rate_limit_per_minute",
       "ros_parameter": "http_rate_limit_per_minute",
       "value_type": "int",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "dashboard.enabled",
+      "type": "boolean",
+      "scope": "runtime",
+      "default": false,
+      "secret": false,
+      "description": "Enable the dashboard web node. When false the node is not launched even if dashboard.host and dashboard.port are set.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_USE_DASHBOARD",
+      "api_json": "use_dashboard",
+      "launch_argument": "use_dashboard",
+      "ros_parameter": "use_dashboard",
+      "value_type": "bool",
       "modes": [
         "local",
         "docker",

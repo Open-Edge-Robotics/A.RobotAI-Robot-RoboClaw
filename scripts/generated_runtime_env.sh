@@ -39,6 +39,7 @@ rcf_generated_launch_argument() {
     RC_HTTP_HOST) printf '%s' 'http_host' ;;
     RC_HTTP_ALLOWED_CIDRS_JSON) printf '%s' 'http_allowed_cidrs_json' ;;
     RC_HTTP_RATE_LIMIT_PER_MINUTE) printf '%s' 'http_rate_limit_per_minute' ;;
+    RC_USE_DASHBOARD) printf '%s' 'use_dashboard' ;;
     RC_DASHBOARD_HOST) printf '%s' 'dashboard_host' ;;
     RC_DASHBOARD_PORT) printf '%s' 'dashboard_port' ;;
     ENABLE_DISCORD) printf '%s' 'enable_discord' ;;

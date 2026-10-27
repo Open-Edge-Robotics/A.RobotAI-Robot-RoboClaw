@@ -3,6 +3,18 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-27 — 설정 서버 프로필로 대시보드를 켤 수 있게 합니다
+
+- 공통 계약(`rcf-config-contract`) v2.11.0의 `dashboard.enabled`(`RC_USE_DASHBOARD`)를 반영합니다.
+- `rclaw launch`(프로필 경로)가 `dashboard.enabled`/`dashboard.host`/`dashboard.port`를
+  `use_dashboard`/`dashboard_host`/`dashboard_port` launch 인자로 전달합니다. 이전에는 launch
+  경로에 대시보드 매핑이 없어 `.env`에 `RC_DASHBOARD_HOST`/`RC_DASHBOARD_PORT`가 있어도
+  값이 전달되지 않았습니다.
+- 증상(former0047): 프로필에 `dashboard_host=0.0.0.0`, `dashboard_port=9190`이 있었지만
+  대시보드 노드가 기동하지 않아 `http://192.168.50.165:9190/` 이 응답하지 않았습니다.
+  계약에 노드 실행 스위치가 없어 프로필에서 켤 방법도 없었습니다.
+- `docs/DASHBOARD.md` 에 설정 서버 프로필에서 대시보드를 켜는 절차를 추가했습니다.
+
 ## 2026-10-27 — 도구 호출 id를 문자열로 보장합니다
 
 - Azure 브릿지가 응답의 `tool_calls[].id` 를 버리지 않고 보존합니다.

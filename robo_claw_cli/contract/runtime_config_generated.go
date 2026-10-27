@@ -395,6 +395,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "http_rate_limit_per_minute",
 		Secret:         false,
 	},
+	"dashboard.enabled": {
+		Canonical:      "dashboard.enabled",
+		Type:           "boolean",
+		Scope:          "runtime",
+		Env:            "RC_USE_DASHBOARD",
+		APIJSON:        "use_dashboard",
+		LaunchArgument: "use_dashboard",
+		ROSParameter:   "use_dashboard",
+		Secret:         false,
+	},
 	"dashboard.host": {
 		Canonical:      "dashboard.host",
 		Type:           "string",

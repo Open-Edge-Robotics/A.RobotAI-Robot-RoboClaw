@@ -44,6 +44,7 @@ Schema version: `2.0`
 | `http.host` | `RC_HTTP_HOST` | `http_host` | `string` | `127.0.0.1` | `runtime` | `false` | local, docker, simulation, config_server |
 | `http.allowed_cidrs` | `RC_HTTP_ALLOWED_CIDRS_JSON` | `http_allowed_cidrs_json` | `array` | `[]` | `runtime` | `false` | local, docker, simulation, config_server |
 | `http.rate_limit_per_minute` | `RC_HTTP_RATE_LIMIT_PER_MINUTE` | `http_rate_limit_per_minute` | `integer` | `60` | `runtime` | `false` | local, docker, simulation, config_server |
+| `dashboard.enabled` | `RC_USE_DASHBOARD` | `use_dashboard` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `dashboard.host` | `RC_DASHBOARD_HOST` | `dashboard_host` | `string` | `127.0.0.1` | `runtime` | `false` | local, docker, simulation, config_server |
 | `dashboard.port` | `RC_DASHBOARD_PORT` | `dashboard_port` | `integer` | `9090` | `runtime` | `false` | local, docker, simulation, config_server |
 | `channels.discord_enabled` | `ENABLE_DISCORD` | `enable_discord` | `boolean` | `False` | `runtime` | `false` | local, docker, config_server |
@@ -237,6 +238,10 @@ Allowed client CIDR array for HTTP channel.
 ### `http.rate_limit_per_minute`
 
 HTTP request rate limit per minute.
+
+### `dashboard.enabled`
+
+Enable the dashboard web node. When false the node is not launched even if dashboard.host and dashboard.port are set.
 
 ### `dashboard.host`
 
