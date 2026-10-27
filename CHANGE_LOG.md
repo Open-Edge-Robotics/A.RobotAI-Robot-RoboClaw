@@ -3,6 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-27 — 대안 인자 스키마를 LLM 도구 스펙에서 제거합니다
+
+- 스킬 `input_schema` 의 최상위 `oneOf`/`anyOf`/`allOf`/`enum`/`const`/`not` 을
+  도구 스펙(`parameters`)에서 제거합니다. OpenAI 호환 서버가 최상위 조합 키를
+  400(`invalid_function_parameters`)으로 거부하기 때문입니다.
+- 대안 조건은 스킬 원본 스키마에 남아 런타임 입력 검증이 계속 강제합니다.
+- 실측(cloid 2호기): `face_direction` 스키마의 `oneOf` 로 계획 수립 요청이
+  `Invalid schema for function 'face_direction'` 로 실패하고 사용자에게
+  `해석 오류` 로 전달되었습니다. 같은 형태의 `navigate`·`rag`·`arm`·`head` 등
+  스킬도 동일하게 실패 대상이었습니다.
+
 ## 2026-10-23 — 대화를 반영하여 RAG 검색어를 재작성합니다
 
 - 검색 쿼리 재작성에 최근 대화와 현재 명령을 함께 전달하고 현재 명령의 중복을 방지합니다.

@@ -27,6 +27,20 @@ logger = logging.getLogger(__name__)
 # 포함되어 있어(34/89 스킬) per-property 설명이 중복되기 때문이다.
 DEFAULT_INCLUDE_PROPERTY_DESCRIPTION = False
 
+# OpenAI 호환 API(vLLM, Ollama proxy, Azure 등)는 tool ``parameters`` 의 최상위가
+# ``{"type": "object"}`` 이고 ``oneOf``/``anyOf``/``allOf``/``enum``/``const``/``not``
+# 을 갖지 않아야 한다. 위반하면 요청 자체가 400으로 거부된다.
+#
+# 실측(cloid 2호기, 2026-10-27): 스킬 input_schema 가 "어떤 인자가 필수인가"를
+# ``oneOf: [{"required": [...]}, ...]`` 로 표현한 face_direction 등에서
+# ``Invalid schema for function 'face_direction': schema must have type 'object'
+# and not have 'oneOf'/'anyOf'/'allOf'/'enum'/'const'/'not' at the top level.``
+# 가 발생해 계획 수립이 전부 실패했다(해석 오류로 사용자에게 전달됨).
+#
+# 대안 조건은 런타임 검증(``BaseSkill.validate_input_schema``)이 원본 schema 로
+# 계속 강제하므로, 전송 schema 에서는 이 키만 제거한다.
+_UNSUPPORTED_TOP_LEVEL_KEYS = ("oneOf", "anyOf", "allOf", "enum", "const", "not")
+
 
 def _clean_parameters(
     schema: Any,
@@ -37,9 +51,13 @@ def _clean_parameters(
 
     - ``title`` 은 툴 스키마에서 불필요한 잡음이라 제거한다.
     - per-property ``description`` 은 기본적으로 제거한다(위 실측 근거).
-    - ``required`` / ``default`` / ``enum`` / ``items`` / ``oneOf`` /
+    - ``required`` / ``default`` / ``enum`` / ``items`` /
       ``additionalProperties`` / ``minimum`` / ``maximum`` 은 그대로 둔다.
       런타임 스키마 검증과 서버 렌더링이 이 정보에 의존한다.
+    - 반면 최상위 ``oneOf``/``anyOf``/``allOf``/``enum``/``const``/``not`` 은
+      제거한다. OpenAI 호환 서버가 이 조합을 400으로 거부하기 때문이다
+      (근거는 ``_UNSUPPORTED_TOP_LEVEL_KEYS`` 주석). 대안 조건은 스킬 원본
+      schema 에 남아 런타임 검증에서 강제된다.
     """
     if not isinstance(schema, dict):
         return {"type": "object", "properties": {}}
@@ -51,6 +69,15 @@ def _clean_parameters(
 
     parameters.pop("title", None)
     parameters.setdefault("type", "object")
+
+    dropped = [key for key in _UNSUPPORTED_TOP_LEVEL_KEYS if key in parameters]
+    for key in dropped:
+        parameters.pop(key, None)
+    if dropped:
+        logger.debug(
+            "tool schema: dropped unsupported top-level %s from parameters",
+            ", ".join(dropped),
+        )
 
     properties = parameters.get("properties")
     if isinstance(properties, dict) and not include_property_description:

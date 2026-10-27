@@ -97,6 +97,78 @@ def test_build_tool_specs_does_not_mutate_source_schema():
     assert skill["input_schema"]["title"] == "NavigateTo"
 
 
+def _alternative_skill():
+    """서로 다른 필수 인자 조합을 ``oneOf``로 표현하는 스킬(face_direction 형태)."""
+    return {
+        "name": "face_direction",
+        "description": "방향 맞추기",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "yaw_deg": {"type": "number"},
+                "direction": {"type": "string", "enum": ["north", "south"]},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+            },
+            "oneOf": [
+                {"required": ["yaw_deg"]},
+                {"required": ["direction"]},
+                {"required": ["x", "y"]},
+            ],
+            "additionalProperties": False,
+        },
+    }
+
+
+def test_build_tool_specs_drops_top_level_one_of():
+    """OpenAI 호환 서버는 tool parameters 최상위 oneOf를 400으로 거부한다.
+
+    실측(cloid 2호기, 2026-10-27):
+    ``Invalid schema for function 'face_direction': schema must have type
+    'object' and not have 'oneOf'/'anyOf'/'allOf'/'enum'/'const'/'not' at the
+    top level.``
+    """
+    params = build_tool_specs([_alternative_skill()])[0]["function"]["parameters"]
+
+    assert params["type"] == "object"
+    assert "oneOf" not in params
+    assert params["properties"]["direction"]["enum"] == ["north", "south"]
+    assert params["additionalProperties"] is False
+
+
+def test_build_tool_specs_drops_other_top_level_combinators():
+    skill = {
+        "name": "move_relative",
+        "description": "상대 이동",
+        "input_schema": {
+            "type": "object",
+            "properties": {"distance_m": {"type": "number"}},
+            "anyOf": [{"required": ["distance_m"]}],
+            "allOf": [{"required": ["distance_m"]}],
+            "not": {"type": "null"},
+        },
+    }
+
+    params = build_tool_specs([skill])[0]["function"]["parameters"]
+
+    for key in ("anyOf", "allOf", "not"):
+        assert key not in params
+    assert params["properties"]["distance_m"] == {"type": "number"}
+
+
+def test_build_tool_specs_keeps_source_alternatives_for_runtime_validation():
+    """전송 스키마에서만 대안 조건을 뺀다. 런타임 검증은 원본을 쓴다."""
+    skill = _alternative_skill()
+
+    build_tool_specs([skill])
+
+    assert skill["input_schema"]["oneOf"] == [
+        {"required": ["yaw_deg"]},
+        {"required": ["direction"]},
+        {"required": ["x", "y"]},
+    ]
+
+
 def test_build_tool_specs_handles_missing_input_schema():
     specs = build_tool_specs([{"name": "say", "description": "말하기"}])
 
