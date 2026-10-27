@@ -76,6 +76,8 @@ python3 scripts/cleanup_run_report.py "$RC_CLEANUP_RUN_LOG_PATH" \
 `python3 build_report.py`로 수행합니다.
 
 - [results/2026-10-26/EXPERIMENT_REPORT.md](results/2026-10-26/EXPERIMENT_REPORT.md)
+- [results/2026-10-27-cycle4/REPORT_2026-10-27.md](results/2026-10-27-cycle4/REPORT_2026-10-27.md)
+  — 4장소 순환(`cycle4`) 1주기 단위 측정, 27실행 24성공(88.9%), 실패는 모두 주행 타임아웃
 
 ## 주의 사항
 
