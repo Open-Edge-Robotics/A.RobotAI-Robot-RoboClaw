@@ -324,9 +324,7 @@ def test_place_request_without_safe_spot_denies():
 
 
 def test_place_request_from_a_contested_requester_uses_arbitration():
-    decision = decide_yield(
-        _place_ctx(), _place_req(requester_at_target=True)
-    )
+    decision = decide_yield(_place_ctx(), _place_req(requester_at_target=True))
 
     assert decision.decision == BUSY
     assert decision.reason == "requester_lower_priority"
@@ -343,3 +341,67 @@ def test_coordinate_request_still_skips_place_resolution():
 
     assert decision.decision == ACCEPTED
     assert calls == [], "좌표 요청에서는 장소 해석을 호출하지 않아야 합니다"
+
+
+# --- 대피 후보지 조회 경로 ---------------------------------------------------
+
+
+def test_map_is_fetched_through_a_registered_skill_helper(monkeypatch):
+    """메시지 대기 헬퍼는 노드가 아니라 스킬에 있으므로 스킬 인스턴스를 빌려 쓴다."""
+    from robo_claw_agent.skills import yield_slot_service as ys
+
+    fake_map = object()
+    calls: list[tuple] = []
+
+    class _Skill:
+        def wait_for_message(self, msg_type, topic, **kwargs):
+            calls.append((topic, kwargs.get("use_transient_local")))
+            return fake_map
+
+    monkeypatch.setattr(ys, "_yield_candidates", ys._yield_candidates)  # 원본 유지(참조만)
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.autonomous_skill.place_discovery.find_reachable_places",
+        lambda map_msg, pose, **kwargs: [(1.0, 2.0, 1.0)] if map_msg is fake_map else [],
+    )
+
+    node = SimpleNamespace(
+        _skills=SimpleNamespace(
+            list_skills=lambda include_internal=True: [{"name": "navigate_to"}],
+            get_skill=lambda name: _Skill(),
+        )
+    )
+
+    candidates = ys._yield_candidates(node, Pose2D(0.0, 0.0, 0.0))
+
+    assert candidates == [(1.0, 2.0, 1.0)]
+    assert calls and calls[0][1] is True
+
+
+def test_map_lookup_prefers_a_node_level_helper():
+    from robo_claw_agent.skills import yield_slot_service as ys
+
+    used: list[str] = []
+
+    class _Node:
+        @staticmethod
+        def wait_for_message(msg_type, topic, **kwargs):
+            used.append("node")
+            return "MAP"
+
+        _skills = SimpleNamespace(
+            list_skills=lambda include_internal=True: [{"name": "navigate_to"}],
+            get_skill=lambda name: SimpleNamespace(
+                wait_for_message=lambda *a, **k: used.append("skill")
+            ),
+        )
+
+    assert ys._wait_for_map(_Node()) == "MAP"
+    assert used == ["node"]
+
+
+def test_candidates_are_empty_when_no_message_helper_exists():
+    from robo_claw_agent.skills import yield_slot_service as ys
+
+    node = SimpleNamespace()  # 헬퍼도 스킬도 없음
+
+    assert ys._yield_candidates(node, Pose2D(0.0, 0.0, 0.0)) == []

@@ -35,7 +35,9 @@ YIELD_MOVE_TIMEOUT_SEC = 25.0
 # 조작 중인 로봇을 판정하는 리소스 이름. 이 중 하나라도 점유 중이면 조작 중이다.
 MANIPULATION_RESOURCES = frozenset({"cloid_motion", "manipulation", "gripper"})
 # 비켜줄 후보지 탐색 개수 상한 (지도 전역 스캔 비용 제한).
-YIELD_CANDIDATE_LIMIT = 5
+# find_reachable_places 는 "개방도 상위"만 돌려주므로, 상한이 작으면 가까운
+# 후보가 잘려나가 max_move_distance_m 필터에 전부 걸릴 수 있다.
+YIELD_CANDIDATE_LIMIT = 20
 # 요청 목표에서 벗어나야 하는 최소 거리(m)와 후보지 개방도 하한(m).
 YIELD_CLEAR_RADIUS_M = 1.5
 YIELD_MIN_OPENNESS_M = 0.45
@@ -255,20 +257,54 @@ def _battery_percent(node: Any) -> float | None:
     return None
 
 
+def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
+    """``/map``(OccupancyGrid) 한 장을 가져온다.
+
+    메시지 대기 헬퍼는 노드가 아니라 ``BaseSkill`` 메서드(``wait_for_message``)에
+    있다. 등록된 스킬 인스턴스를 빌려 호출하고, 없으면 노드에 같은 이름의 헬퍼가
+    있는지 본다. 둘 다 없으면 추측하지 않고 None 을 돌려준다(fail-closed).
+    """
+    try:
+        from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
+    except Exception:  # noqa: BLE001
+        return None
+
+    helper = getattr(node, "wait_for_message", None)
+    if callable(helper):
+        try:
+            return helper(OccupancyGrid, "/map", timeout_sec=timeout_sec, use_transient_local=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Yield] /map 조회 실패(node helper): %s", exc)
+            return None
+
+    skills = getattr(node, "_skills", None)
+    if skills is None or not hasattr(skills, "get_skill"):
+        return None
+    try:
+        names = [item.get("name") for item in skills.list_skills(include_internal=True)]
+    except Exception:  # noqa: BLE001
+        return None
+    for name in names:
+        if not name:
+            continue
+        skill = skills.get_skill(name)
+        if skill is None or not hasattr(skill, "wait_for_message"):
+            continue
+        try:
+            return skill.wait_for_message(
+                OccupancyGrid, "/map", timeout_sec=timeout_sec, use_transient_local=True
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Yield] /map 조회 실패(skill helper): %s", exc)
+            return None
+    return None
+
+
 def _yield_candidates(node: Any, pose: Pose2D | None) -> list[tuple[float, float, float]]:
     """비켜줄 후보지 — 전역 맵에서 도달 가능하고 개방된 지점을 뽑는다."""
     if pose is None:
         return []
-    map_msg = None
-    subscribe = getattr(node, "_wait_for_message", None)
-    try:
-        from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
-
-        if subscribe is not None:
-            map_msg = subscribe(OccupancyGrid, "/map", timeout_sec=2.0, use_transient_local=True)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("[Yield] /map 조회 실패: %s", exc)
-        map_msg = None
+    map_msg = _wait_for_map(node)
     if map_msg is None:
         return []
     try:
