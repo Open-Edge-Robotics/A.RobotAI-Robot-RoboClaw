@@ -8,6 +8,7 @@ from typing import Any
 # memory_manager.semantic 에 있다. 기존 이름 그대로 재노출한다(호출부/테스트 호환).
 from robo_claw_agent.memory_manager.semantic import (  # noqa: F401
     _FWD_SKIP_TYPES,
+    _LOCATION_NAME_KEYS,
     _NAME_AFTER_LOC,
     _NAME_BEFORE_LOC,
     _NON_NAME_WORDS,
@@ -16,6 +17,7 @@ from robo_claw_agent.memory_manager.semantic import (  # noqa: F401
     _entry_all_names,
     _entry_place_names,
     _entry_xy,
+    _is_self_location_name,
     _location_name_from_metadata,
     _location_name_from_text,
     _normalize_location_name,
@@ -127,7 +129,19 @@ def _normalize_location_metadata(text: str, metadata: dict[str, Any]) -> dict[st
     """
     md = dict(metadata) if isinstance(metadata, dict) else {}
 
-    name = _location_name_from_metadata(md) or _location_name_from_text(text)
+    # metadata 의 이름키는 _location_name_from_metadata 가 걸러내므로, 지시어 이름을
+    # 지우려면 원본 키를 직접 본다.
+    explicit_name = next(
+        (str(md.get(key, "")).strip() for key in _LOCATION_NAME_KEYS if md.get(key)),
+        "",
+    )
+    name = explicit_name or _location_name_from_text(text)
+    # "현재 위치"/"여기" 같은 위치 지시어는 장소명이 아니다. 지식 텍스트는 그대로
+    # 저장하되 위치 사실로 승격하지 않아 시맨틱 맵에 장소로 등록되지 않게 한다.
+    if name and _is_self_location_name(name):
+        name = ""
+        for key in _LOCATION_NAME_KEYS:
+            md.pop(key, None)
 
     xy: tuple[float, float] | None = None
     if "x" in md and "y" in md:
@@ -354,6 +368,8 @@ class RAGAddSkill(BaseSkill):
             or _location_name_from_text(text)
             or str(metadata.get("location_type") or metadata.get("category") or "").strip()
         )
+        if loc_name and _is_self_location_name(loc_name):
+            loc_name = ""
         if loc_name and ("x" not in metadata or "y" not in metadata):
             try:
                 pose = self.get_map_pose()

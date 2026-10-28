@@ -17,6 +17,90 @@ def _normalize_location_name(name: str) -> str:
     return re.sub(r"\s+", "", str(name or "")).lower()
 
 
+# 장소명 뒤에 붙는 로봇 라벨 괄호. "안방 (Former)", "주방 (Cloid 2호)" 처럼 어느 로봇
+# 맵에서 기록한 장소인지 표시하려고 붙인 괄호는 물리적 장소 이름의 일부가 아니다.
+_ROBOT_LABEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _\-]{0,23}")
+
+# 로봇 자신의 위치를 가리키는 표현. 좌표는 의미가 있지만 장소 이름이 아니므로
+# 순회 목록·장소 등록에서 제외한다(비교는 공백 제거 + 소문자 기준).
+_SELF_LOCATION_TOKENS = (
+    "현재",
+    "현위치",
+    "지금",
+    "여기",
+    "여긴",
+    "이곳",
+    "저기",
+    "그곳",
+    "거기",
+    "이쪽",
+    "저쪽",
+    "마지막",
+    "직전",
+    "방금",
+    "로봇",
+    "내위치",
+    "내",
+    "나",
+    "너",
+    "저",
+    "제",
+    "우리",
+    "자신",
+    "위치",
+    "좌표",
+    "장소",
+    "자리",
+    "지점",
+    "포즈",
+    "current",
+    "now",
+    "here",
+    "self",
+    "robot",
+    "last",
+    "pose",
+    "position",
+    "location",
+)
+
+
+def _is_self_location_name(name: str) -> bool:
+    """장소 이름이 아니라 로봇 자신의 위치를 가리키는 표현인지 판정한다.
+
+    "현재 위치", "여기", "마지막 위치", "current pose" 처럼 위치 지시어만으로 이루어진
+    이름은 기억된 장소가 아니다. 그런 이름을 장소로 등록하면 순회 목록에 방처럼 섬이고,
+    동료 로봇은 같은 이름을 자기 맵에서 찾지 못한다. 지시어에 실제 장소명이 붙어
+    있으면("거실 소파") 장소로 본다.
+    """
+    normalized = _normalize_location_name(name)
+    if not normalized:
+        return True
+    residue = normalized
+    for token in sorted(_SELF_LOCATION_TOKENS, key=len, reverse=True):
+        residue = residue.replace(token, "")
+    return not residue
+
+
+def _canonical_place_name(name: str) -> str:
+    """장소명에서 뒤에 붙은 로봇 라벨 괄호를 떼어낸 표준 이름을 만든다.
+
+    "안방 (Former)" → "안방". 괄호 안이 ASCII 로봇 라벨 형태가 아니면(예:
+    "회의실 (2층)") 이름을 그대로 둔다. 표준 이름이 비면 원래 이름을 돌려준다.
+    """
+    text = str(name or "").strip()
+    if not text.endswith(")"):
+        return text
+    open_index = text.rfind("(")
+    if open_index <= 0:
+        return text
+    base = text[:open_index].strip()
+    label = text[open_index + 1 : -1].strip()
+    if not base or not _ROBOT_LABEL_RE.fullmatch(label):
+        return text
+    return base
+
+
 # ── 장소명 추출 (위치 도메인 공용) ────────────────────────────────
 # 이 헬퍼들은 원래 skills/system_skill/rag.py 에 있었으나, planner 의 결정론적 위치
 # 라우팅도 동일 판정이 필요하다. planner 가 skills 패키지를 import 하면 (a) 의존 방향이
@@ -87,7 +171,7 @@ def _location_name_from_metadata(metadata: dict[str, Any]) -> str:
         return ""
     for key in _LOCATION_NAME_KEYS:
         value = str(metadata.get(key, "")).strip()
-        if value:
+        if value and not _is_self_location_name(value):
             return value
     return ""
 
@@ -308,7 +392,11 @@ class SemanticMixin:
 
         좌표(x, y)는 map 프레임 기준이어야 한다. 호출부는 좌표 출처를 명확히 하기 위해
         metadata에 frame_id(예: "map")를 넣는 것을 권장한다(navigate_to가 동일 기준을 가정).
+        로봇 자신의 위치를 가리키는 이름("현재 위치" 등)은 장소가 아니므로 등록하지 않는다.
         """
+        if _is_self_location_name(name):
+            logger.info("Semantic map registration skipped (not a place name): %r", name)
+            return
         aliases = aliases or []
         entry = {
             "name": name,

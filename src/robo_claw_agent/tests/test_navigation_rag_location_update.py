@@ -5,11 +5,7 @@ from types import SimpleNamespace
 from robo_claw_agent.memory_manager import MemoryManager
 
 _RAG_MODULE_PATH = (
-    Path(__file__).parents[1]
-    / "robo_claw_agent"
-    / "skills"
-    / "system_skill"
-    / "rag.py"
+    Path(__file__).parents[1] / "robo_claw_agent" / "skills" / "system_skill" / "rag.py"
 )
 _RAG_SPEC = importlib.util.spec_from_file_location("test_system_skill_rag", _RAG_MODULE_PATH)
 assert _RAG_SPEC and _RAG_SPEC.loader
@@ -45,3 +41,27 @@ def test_rag_add_location_updates_semantic_map(tmp_path):
     assert result["success"] is True
     assert result["semantic_updated"] is True
     assert memory.get_object_location("창고")["position"] == {"x": -1.0, "y": -4.0}
+
+
+def test_rag_add_does_not_register_self_location_as_place(tmp_path):
+    """'현재 위치'를 기억해 달라는 저장은 지식으로만 남고 장소로 등록되지 않는다."""
+    memory = MemoryManager(
+        storage_path=str(tmp_path / "mem.json"),
+        embedder=DummyEmbedder(),
+        rag_score_threshold=0.1,
+    )
+    memory.add_object_location("안방", 2.0, 3.0)
+    skill = RAGAddSkill()
+    skill.node = SimpleNamespace(_memory=memory)
+
+    result = skill.execute(
+        {
+            "text": "현재 위치: x=0.5, y=0.5",
+            "metadata": {"location_name": "현재 위치", "x": 0.5, "y": 0.5},
+        }
+    )
+
+    assert result["success"] is True
+    assert result["semantic_updated"] is False
+    assert memory.get_object_location("현재 위치") is None
+    assert memory.get_object_location("안방")["position"] == {"x": 2.0, "y": 3.0}
