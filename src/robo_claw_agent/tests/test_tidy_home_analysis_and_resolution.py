@@ -175,3 +175,149 @@ def test_tidy_home_executes_demo_motion_locally_when_capable(monkeypatch):
     assert status == "demo_motion_executed"
     assert len(executed_motions) == 1
     assert executed_motions[0]["motion_id"] in [22, 60]
+
+
+def test_tidy_home_home_scope_collects_only_semantic_map_places():
+    """집 범위 정리는 시맨틱 맵 장소만 순회하고 RAG의 중복 후보를 섮지 않는다."""
+    from types import SimpleNamespace
+
+    semantic_places = [
+        _place("주방", 1.5, 2.0, kind="place"),
+        _place("거실", -2.0, 3.0, kind="place"),
+    ]
+    rag_entries = [
+        {
+            "text": f"이동 성공 좌표: x={1.5 + index * 0.01:.2f}, y=2.00 (주방)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "source": "navigate_to",
+            },
+        }
+        for index in range(20)
+    ]
+    memory = SimpleNamespace(
+        get_all_objects=lambda: list(semantic_places),
+        get_object_location=lambda _name: None,
+        _vector_store=SimpleNamespace(list_entries=lambda: rag_entries),
+    )
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=memory, _skills=None)
+
+    places, error = skill._collect_places("home", "")
+
+    assert error is None
+    assert [place["name"] for place in places] == ["주방", "거실"]
+    assert skill._places_truncated is False
+
+
+def test_tidy_home_home_scope_reports_no_places_when_semantic_map_is_empty():
+    """RAG에만 장소가 있으면 집 범위 순회 대상으로 쓰지 않고 미기억 상태로 끝난다."""
+    from types import SimpleNamespace
+
+    rag_entries = [
+        {
+            "text": "이동 성공 좌표: x=1.5, y=2.0 (주방)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "source": "navigate_to",
+            },
+        }
+    ]
+    memory = SimpleNamespace(
+        get_all_objects=lambda: [],
+        get_object_location=lambda _name: None,
+        _vector_store=SimpleNamespace(list_entries=lambda: rag_entries),
+    )
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=memory, _skills=None)
+
+    places, error = skill._collect_places("home", "")
+
+    assert places == []
+    assert error == "no_remembered_places"
+
+
+def _home_memory(place_count):
+    from types import SimpleNamespace
+
+    semantic_places = [
+        _place(f"장소{index}", float(index), float(index * 2), kind="place")
+        for index in range(place_count)
+    ]
+    return SimpleNamespace(
+        get_all_objects=lambda: list(semantic_places),
+        get_object_location=lambda _name: None,
+        _vector_store=SimpleNamespace(list_entries=lambda: []),
+    )
+
+
+def test_tidy_home_home_scope_collects_every_remembered_place_without_cap():
+    """기억된 장소가 20곳을 넘어도 집 범위 순회 목록은 전부 포함해야 한다."""
+    from types import SimpleNamespace
+
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=_home_memory(25), _skills=None)
+
+    places, error = skill._collect_places("home", "", max_places=0)
+
+    assert error is None
+    assert len(places) == 25
+    assert skill._places_truncated is False
+
+
+def test_tidy_home_home_scope_honours_explicit_max_places():
+    from types import SimpleNamespace
+
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=_home_memory(5), _skills=None)
+    skill._place_limit = 3
+
+    places, error = skill._collect_places("home", "", max_places=3)
+
+    assert error is None
+    assert len(places) == 3
+    assert skill._places_truncated is True
+
+
+def test_tidy_home_rejects_invalid_max_places():
+    result = TidyHomeSkill().execute({"scope": "home", "max_places": -1})
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "invalid_max_places"
+
+
+def test_tidy_home_home_sweep_ends_after_last_remembered_place():
+    """집 범위 정리는 마지막 장소 확인 뒤 모든 장소를 마쳤다고 알리고 종료해야 한다."""
+    from types import SimpleNamespace
+
+    from robo_claw_agent.skills.autonomous_skill.globals import (
+        _AUTONOMOUS_ACTIVE,
+        is_autonomous_active,
+    )
+
+    messages = []
+    visited = []
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=None, _skills=None, _agent_id="test")
+    skill.send_user_message = messages.append
+    skill._visit_place = lambda name: visited.append(name) or (True, "arrived")
+    skill._analyze_current_scene = lambda _name: {
+        "success": True,
+        "partial": False,
+        "orientation_restored": True,
+        "analysis": "정리 대상이 보이지 않습니다.",
+        "detected_objects": [],
+    }
+    _AUTONOMOUS_ACTIVE.set()
+
+    skill._run_cleanup(
+        "home", [_place("주방", 1.5, 2.0), _place("거실", -2.0, 3.0)], run_id=""
+    )
+
+    assert visited == ["주방", "거실"]
+    assert is_autonomous_active() is False
+    assert any("[1/2] '주방'" in message for message in messages)
+    assert any("[2/2] '거실'" in message for message in messages)
+    assert any("모두 확인하고 정리 작업을 마쳤습니다" in message for message in messages)

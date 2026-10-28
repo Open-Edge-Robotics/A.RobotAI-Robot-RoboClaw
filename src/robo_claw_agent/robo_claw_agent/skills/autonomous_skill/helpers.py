@@ -94,6 +94,49 @@ def _split_semantic_places(
     return semantic_places, map_generated_places
 
 
+def _remembered_place_candidates(
+    memory: Any, *, include_map_generated: bool = True
+) -> list[dict[str, Any]]:
+    """순회할 장소는 시맨틱 맵에 저장된 장소로 제한해 모은다.
+
+    RAG 벡터스토어에는 같은 장소가 주행 기록·수동 노트·위치 지식으로 여러 레코드 남아
+    있어, 전체를 순회 후보로 쓰면 물리적으로 같은 장소가 이름만 달리해 20곳 넘게
+    중복 순회된다. 순회 대상은 좌표가 있는 시맨틱 맵 장소로 제한하고, 이름(공백·대소문자
+    무시)과 좌표(1mm) 기준으로 중복을 제거한다. RAG의 장소 지식은 이름→좌표 해석
+    (`_resolve_target_coordinates`)에만 사용한다.
+    """
+    if memory is None or not hasattr(memory, "get_all_objects"):
+        return []
+
+    semantic_places, map_generated_places = _split_semantic_places(memory.get_all_objects())
+    places = list(semantic_places)
+    if include_map_generated:
+        places.extend(map_generated_places)
+
+    from robo_claw_agent.memory_manager.semantic import _normalize_location_name
+
+    selected: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    seen_positions: set[tuple[float, float]] = set()
+    for place in places:
+        name = str(place.get("name", "")).strip()
+        if not name:
+            continue
+        position = place.get("position") or {}
+        try:
+            coordinate = (round(float(position["x"]), 3), round(float(position["y"]), 3))
+        except (KeyError, TypeError, ValueError):
+            continue
+        normalized_name = _normalize_location_name(name)
+        if normalized_name in seen_names or coordinate in seen_positions:
+            continue
+        seen_names.add(normalized_name)
+        seen_positions.add(coordinate)
+        selected.append(place)
+
+    return selected
+
+
 def _extract_rag_location_candidates(memory: Any, limit: int = 5) -> list[dict[str, Any]]:
     entries = []
     try:

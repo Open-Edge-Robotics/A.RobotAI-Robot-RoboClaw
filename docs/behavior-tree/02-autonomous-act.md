@@ -79,7 +79,11 @@ SEQ AutonomousActRoot          "안전이 먼저, 작업은 죽지 않게, 사�
 └─ ④ SleepBetweenCycles        cycle_interval_sec 대기 (stop 시 즉시 깨어남)
 ```
 
-- **①/②만 세션을 끝낼 수 있습니다.** 즉 "중단 명령" 또는 "저배터리(check_only=False 설정 시)"에서만 루프가 죽습니다. 기본 모드(`check_only_battery=True`)에서는 시험용 로봇 환경을 고려해 배터리 신호가 없거나 부족해도 경고만 기록하고 세션을 유지합니다.
+- **①/②만 세션을 끝낼 수 있습니다.** 즉 "중단 명령", "저배터리(check_only=False 설정 시)", "순찰 한 바퀴 완료" 중 하나에서만 루프가 죽습니다. 기본 모드(`check_only_battery=True`)에서는 시험용 로봇 환경을 고려해 배터리 신호가 없거나 부족해도 경고만 기록하고 세션을 유지합니다.
+- **순찰 한 바퀴를 돌면 자동 종료합니다.** `PatrolNextPlaceNode`가 시도한 장소를 `patrol_attempted_places`에
+  기록하고, `_patrol_sweep_complete`가 시맨틱 맵의 모든 장소를 한 번씩 시도했는지 확인합니다.
+  도달하지 못한 장소도 시도로 치므로 끝나지 않는 순찰은 생기지 않고, 기억된 장소가 없으면 제자리
+  4방향 관찰을 한 번 수행한 사이클 뒤 종료합니다. 반복 순찰이 필요하면 `patrol`(`rounds=0`)을 사용합니다.
 - **③은 절대 세션을 끝내지 않습니다.** 카메라 타임아웃·LLM 파싱 오류 같은 일시적 실패가
   자율 행동 전체를 멈추면 안 되므로 `Fallback[작업, 항상성공]`으로 방어합니다.
 
@@ -93,6 +97,9 @@ while _AUTONOMOUS_ACTIVE.is_set():
     status = root.tick()               # 1사이클 = root 1틱
     if status == NodeStatus.FAILURE:   # ① 중단 or ② 저배터리
         break
+    if _patrol_sweep_complete(memory, blackboard["patrol_attempted_places"]):
+        blackboard["patrol_sweep_complete"] = True
+        break                          # 기억된 장소를 한 번씩 순회해 한 바퀴 완료
 _AUTONOMOUS_ACTIVE.clear()
 ```
 

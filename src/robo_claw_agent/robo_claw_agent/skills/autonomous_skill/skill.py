@@ -25,7 +25,7 @@ from .conditions import CheckAutonomousActive, CheckBatterySufficient
 from .core import BTNode, FallbackNode, NodeStatus, ParallelNode, SequenceNode
 from .globals import _AUTONOMOUS_ACTIVE, claim_autonomous, is_autonomous_active, release_autonomous
 from .navigation_nodes import ApproachObjectNode, ExploreNode, NavigateNode
-from .patrol_nodes import InterestingSceneGate, PatrolNextPlaceNode
+from .patrol_nodes import InterestingSceneGate, PatrolNextPlaceNode, _patrol_sweep_complete
 from .perception_nodes import MonitorObjectNode
 
 logger = logging.getLogger(__name__)
@@ -328,10 +328,11 @@ class AutonomousActSkill(BaseSkill):
     terminal_behavior = "background"
     description = (
         "로봇이 스스로 상황을 판단하고 자율적으로 행동합니다. "
-        "mode='patrol'(기본): 지속적인 자율 순찰 요청에 사용합니다. '집안 정리해줘'와 같은 한 번의 정리 요청은 "
+        "mode='patrol'(기본): 한 번의 자율 순찰 요청에 사용합니다. 기억된 시맨틱 맵 장소를 "
+        "한 번씩 순회하면 자동으로 종료합니다. '집안 정리해줘'와 같은 한 번의 정리 요청은 "
         "tidy_home을 사용하세요. 순찰 중 명확한 폐기물이나 수건·쿠션·빨래 후보를 발견하면 유형별 승인 장소와 "
         "조작 능력을 확인하고, 조건이 맞을 때만 처리하거나 실제 조작 동료에게 단발 위임할 수 있습니다. "
-        "기억된 시맨틱 맵/RAG 장소를 순찰하고 장소가 없으면 제자리에서 주변을 관찰합니다. 자율 행동 중 프론티어 "
+        "시맨틱 맵에 기억된 장소가 없으면 제자리에서 주변을 한 번 관찰한 뒤 종료합니다. 자율 행동 중 프론티어 "
         "탐험은 하지 않습니다. 조작 능력이 있으면 직접 정리하고, 조작 능력이 없으면 연결과 매니퓰레이션 "
         "능력이 확인된 동료 한 대에게 해당 작업만 요청해 결과를 확인합니다. "
         "mode='goal': 목표(goal 파라미터)를 받아 LLM이 다단계 실행 계획을 수립하고 순차 실행하며, "
@@ -345,7 +346,7 @@ class AutonomousActSkill(BaseSkill):
         "cycle_interval_sec(float, 기본 3.0), "
         "max_cycles(int, 기본 0=무제한). "
         "min_coverage_pct, exploration_radius, has_map은 호환성을 위해 수용하지만 사용하지 않습니다. "
-        "탐험은 별도 explore 스킬을 명시적으로 요청하세요. "
+        "탐험은 별도 explore 스킬을, 정해진 지점을 반복 순찰하려면 patrol 스킬(rounds=0)을 사용하세요. "
         "중단: stop_autonomous 스킬을 사용하세요."
     )
     input_schema = {
@@ -445,6 +446,11 @@ class AutonomousActSkill(BaseSkill):
             "check_only_battery": check_only_bat,
         }
 
+    def _patrol_sweep_finished(self, blackboard: dict[str, Any]) -> bool:
+        """순찰 한 바퀴(기억된 모든 장소 1회 시도)가 끝났는지 확인한다."""
+        memory = getattr(self.node, "_memory", None) if self.node is not None else None
+        return _patrol_sweep_complete(memory, blackboard.get("patrol_attempted_places", set()))
+
     def _build_patrol_loop(
         self,
         min_battery: float,
@@ -462,6 +468,8 @@ class AutonomousActSkill(BaseSkill):
                 "task_history": [],
                 "patrol_has_destination": False,
                 "stationary_observation_only": True,
+                "patrol_attempted_places": set(),
+                "patrol_sweep_complete": False,
             }
 
             check_active = CheckAutonomousActive()
@@ -565,7 +573,7 @@ class AutonomousActSkill(BaseSkill):
 
             logger.info("[AutonomousAct] BT loop started")
             self.send_user_message(
-                "자율 행동을 시작합니다. 기억된 장소를 순찰하고, 장소가 없으면 제자리에서 주변을 관찰합니다."
+                "자율 순찰을 시작합니다. 기억된 장소를 한 바퀴 순회하면 자동으로 종료합니다."
             )
 
             while is_autonomous_active():
@@ -583,13 +591,28 @@ class AutonomousActSkill(BaseSkill):
                     if status == NodeStatus.FAILURE:
                         logger.info("[AutonomousAct] BT root FAILURE — stopping")
                         break
+                    if self._patrol_sweep_finished(blackboard):
+                        blackboard["patrol_sweep_complete"] = True
+                        logger.info("[AutonomousAct] Patrol sweep complete — stopping")
+                        break
                 except Exception as exc:
                     logger.exception("[AutonomousAct] BT tick exception: %s", exc)
                     time.sleep(2.0)
 
+            attempted_count = len(blackboard.get("patrol_attempted_places") or ())
+            if blackboard.get("patrol_sweep_complete"):
+                if attempted_count:
+                    self.send_user_message(
+                        f"기억된 장소 {attempted_count}곳을 한 바퀴 순회해 자율 순찰을 종료했습니다."
+                    )
+                else:
+                    self.send_user_message(
+                        "기억된 순찰 장소가 없어 제자리 관찰을 마치고 자율 순찰을 종료했습니다."
+                    )
+            else:
+                self.send_user_message("자율 행동을 종료했습니다.")
             release_autonomous()
             logger.info("[AutonomousAct] BT loop ended")
-            self.send_user_message("자율 행동을 종료했습니다.")
 
         def _run_bt_loop() -> None:
             try:
