@@ -27,6 +27,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ListPeers.srv"
   "srv/ExecuteManipulator.srv"
   "srv/PeerMessage.srv"
+  "srv/YieldSlot.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
