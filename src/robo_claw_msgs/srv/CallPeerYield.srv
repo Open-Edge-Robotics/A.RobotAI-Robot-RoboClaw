@@ -1,9 +1,17 @@
-# gRPC 피어(다른 서브넷의 RoboClaw)에게 구조화된 자리 양보를 요청하기 위한 서비스
-# (메신저 클라이언트 노드가 서버 역할 — ROS 서비스로 받아 gRPC로 중계한다)
+# gRPC 피어(다른 서브넷·다른 DDS 도메인의 RoboClaw)에게 구조화된 자리 양보를
+# 요청하기 위한 서비스 (메신저 클라이언트 노드가 서버 역할 — ROS 서비스로 받아
+# gRPC로 중계한다)
+#
+# 목표는 좌표 또는 장소 이름 중 하나로 지정한다. 맵을 공유하지 않는 로봇은
+# target_place 를 써야 한다.
 
 string peer_name        # target_peers_json에 등록된 동료 이름
-float64 target_x        # 요청자가 도달하려는 map 좌표 x
-float64 target_y        # 요청자가 도달하려는 map 좌표 y
+bool has_target_coords  # target_x/target_y 가 유효한지
+float64 target_x        # 요청자가 도달하려는 map 좌표 x (맵 공유 시에만)
+float64 target_y        # 요청자가 도달하려는 map 좌표 y (맵 공유 시에만)
+string target_place     # 도달하려는 장소 이름. 상대가 자기 맵에서 해석한다
+bool has_requester_at_target  # requester_at_target 값이 유효한지
+bool requester_at_target # 요청자가 자기 맵 기준으로 그 목표 반경 안에 있는지
 float64 requester_x     # 요청자의 현재 map 좌표 x (모르면 nan)
 float64 requester_y     # 요청자의 현재 map 좌표 y (모르면 nan)
 float64 radius_m        # 점유 판정 반경 (0이면 상대 노드 기본값)

@@ -139,7 +139,7 @@ def _skill_with_fake_peer(outcomes_per_call: list[list[PeerYieldOutcome]]):
     def _requester_pose():
         return None
 
-    def _query_peers(peer_names, target, radius, requester_pose):
+    def _query_peers(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
         calls.append(1.0)
         return pending.pop(0) if pending else []
 
@@ -249,7 +249,9 @@ def _skill_with_grpc_peers(outcomes, *, connected_peers=("Former0047",)):
     def _grpc_peer_names():
         return sorted(connected_peers)
 
-    def _call_peer_via_grpc(peer_name, target, radius, requester_pose):
+    def _call_peer_via_grpc(
+        peer_name, target, radius, requester_pose, place="", requester_at_target=None
+    ):
         grpc_calls.append(peer_name)
         return outcomes.get(peer_name)
 
@@ -313,3 +315,71 @@ def test_no_connected_peers_fails_closed():
 
     assert result["success"] is False
     assert "동료" in result["message"]
+
+
+# --- 장소 이름 기반 요청 (맵 미공유) -----------------------------------------
+
+
+def test_place_request_is_expanded_into_local_occupancy_judgment(monkeypatch):
+    """요청자는 자기 맵에서 장소를 해석해 '내가 거기 있나'만 판정해 보낸다."""
+    captured: dict = {}
+    skill = RequestYieldSlotSkill()
+    skill.set_node(SimpleNamespace(_agent_id="Former0047", get_service_names_and_types=lambda: []))
+
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.yield_slot_service.resolve_place_in_local_map",
+        lambda node, place: None,
+    )
+
+    def _query(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
+        captured.update(
+            target=target, place=place, requester_at_target=requester_at_target
+        )
+        return [PeerYieldOutcome("Cloid2", NOT_NEEDED, "not_blocking")]
+
+    skill._target_peers = lambda requested: ["Cloid2"]  # type: ignore[method-assign]
+    skill._requester_pose = lambda: None  # type: ignore[method-assign]
+    skill._query_peers = _query  # type: ignore[method-assign]
+
+    skill.execute({"target_place": "안방"})
+
+    assert captured["place"] == "안방"
+    assert captured["target"] is None
+    # 자기 맵에서 장소를 해석하지 못하면 동시 점유 판정을 보내지 않는다(None).
+    assert captured["requester_at_target"] is None
+
+
+def test_place_request_sends_requester_at_target_when_resolvable(monkeypatch):
+    from robo_claw_agent.domain.yield_slot import Pose2D
+
+    captured: dict = {}
+    skill = RequestYieldSlotSkill()
+    skill.set_node(SimpleNamespace(_agent_id="Former0047", get_service_names_and_types=lambda: []))
+
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.yield_slot_service.resolve_place_in_local_map",
+        lambda node, place: Pose2D(2.0, 3.0, 0.0),
+    )
+
+    def _query(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
+        captured.update(requester_at_target=requester_at_target)
+        return [PeerYieldOutcome("Cloid2", NOT_NEEDED, "not_blocking")]
+
+    skill._target_peers = lambda requested: ["Cloid2"]  # type: ignore[method-assign]
+    skill._requester_pose = lambda: Pose2D(2.05, 3.0, 0.0)  # type: ignore[method-assign]
+    skill._query_peers = _query  # type: ignore[method-assign]
+
+    skill.execute({"target_place": "안방"})
+
+    assert captured["requester_at_target"] is True
+
+
+def test_place_request_without_coords_passes_validation():
+    skill, calls = _skill_with_fake_peer([])
+    skill._target_peers = lambda requested: ["Former0047"]  # type: ignore[method-assign]
+
+    result = skill.execute({"target_place": "안방"})
+
+    assert result["success"] is False
+    assert result["reason"] == "no_peer_available"
+    assert calls != [], "장소 요청도 협상을 시도해야 합니다"

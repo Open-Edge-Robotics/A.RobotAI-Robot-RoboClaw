@@ -256,3 +256,90 @@ def test_idle_queue_without_background_loop_is_not_busy(monkeypatch):
     ctx = build_server_context(node, agent_id="Former0047", allow_yield=True)
 
     assert ctx.busy_provider() is False
+
+
+# --- 장소 이름 기반 판정 (맵 미공유) -----------------------------------------
+
+
+def _place_ctx(**kwargs):
+    resolver = kwargs.pop("resolver", lambda place: Pose2D(2.0, 3.0, 0.0))
+    base = _ctx(**kwargs)
+    return YieldServerContext(
+        agent_id=base.agent_id,
+        pose_provider=base.pose_provider,
+        busy_provider=base.busy_provider,
+        manipulation_provider=base.manipulation_provider,
+        battery_provider=base.battery_provider,
+        candidates_provider=base.candidates_provider,
+        allow_yield=base.allow_yield,
+        place_resolver=resolver,
+    )
+
+
+def _place_req(*, place="안방", requester_at_target=False):
+    return YieldRequest(
+        requester_id="Stretch3",
+        target_place=place,
+        requester_at_target=requester_at_target,
+    )
+
+
+def test_place_is_resolved_in_the_receiver_map_then_judged():
+    decision = decide_yield(_place_ctx(), _place_req())
+
+    assert decision.decision == ACCEPTED
+    assert decision.yield_spot is not None
+
+
+def test_unknown_place_is_denied_without_guessing():
+    decision = decide_yield(_place_ctx(resolver=lambda place: None), _place_req())
+
+    assert decision.decision == DENIED
+    assert decision.reason == "unknown_place"
+    assert decision.yield_spot is None
+
+
+def test_place_resolver_failure_is_denied():
+    def _boom(place):
+        raise RuntimeError("semantic map unavailable")
+
+    decision = decide_yield(_place_ctx(resolver=_boom), _place_req())
+
+    assert decision.decision == DENIED
+    assert decision.reason == "unknown_place"
+
+
+def test_missing_resolver_denies_place_request():
+    decision = decide_yield(_ctx(), _place_req())
+
+    assert decision.decision == DENIED
+    assert decision.reason == "unknown_place"
+
+
+def test_place_request_without_safe_spot_denies():
+    decision = decide_yield(_place_ctx(candidates=[]), _place_req())
+
+    assert decision.decision == DENIED
+    assert decision.reason == "no_safe_spot"
+
+
+def test_place_request_from_a_contested_requester_uses_arbitration():
+    decision = decide_yield(
+        _place_ctx(), _place_req(requester_at_target=True)
+    )
+
+    assert decision.decision == BUSY
+    assert decision.reason == "requester_lower_priority"
+
+
+def test_coordinate_request_still_skips_place_resolution():
+    calls: list[str] = []
+
+    def _resolver(place):
+        calls.append(place)
+        return Pose2D(0.0, 0.0, 0.0)
+
+    decision = decide_yield(_place_ctx(resolver=_resolver), _req())
+
+    assert decision.decision == ACCEPTED
+    assert calls == [], "좌표 요청에서는 장소 해석을 호출하지 않아야 합니다"

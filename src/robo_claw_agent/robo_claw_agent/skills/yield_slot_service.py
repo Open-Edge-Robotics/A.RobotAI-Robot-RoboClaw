@@ -54,19 +54,31 @@ class YieldServerContext:
     battery_provider: Callable[[], float | None]
     candidates_provider: Callable[[], Iterable[Sequence[float]]]
     allow_yield: bool = True
+    # 장소 이름을 **수신측 자기 맵 좌표**로 해석한다. 맵을 공유하지 않는 로봇
+    # 사이의 협상은 이 해석기에 의존한다. 해석 실패는 None.
+    place_resolver: Callable[[str], Pose2D | None] | None = None
 
 
 def decide_yield(context: YieldServerContext, request: YieldRequest) -> YieldDecision:
     """요청을 판정한다. 이동은 수행하지 않는다.
 
-    판정 순서: 파라미터 검증 → 점유/거부 사유 판정 → 실행 가능 게이트 →
-    비켜줄 자리 선정. 후보지 탐색은 실제로 수락 가능할 때만 수행한다.
+    판정 순서: 파라미터 검증 → (장소면 자기 맵에서 좌표 해석) → 점유/거부 사유
+    판정 → 실행 가능 게이트 → 비켜줄 자리 선정. 후보지 탐색은 실제로 수락 가능할
+    때만 수행한다.
+
+    장소 이름을 해석하지 못하면 추측하지 않고 ``unknown_place`` 로 거부한다.
     """
     if validate_yield_request(request):
         return YieldDecision(DENIED, "invalid_request")
 
     if not context.allow_yield:
         return YieldDecision(DENIED, "yield_disabled")
+
+    if request.target is None:
+        resolved = _resolve_place_target(context, request)
+        if resolved is None:
+            return YieldDecision(DENIED, "unknown_place")
+        request = request.with_target(resolved)
 
     pose = context.pose_provider()
     state = YieldReceiverState(
@@ -96,9 +108,22 @@ def decide_yield(context: YieldServerContext, request: YieldRequest) -> YieldDec
         return YieldDecision(
             DENIED, "no_safe_spot", distance_m=decision.distance_m, yield_spot=None
         )
-    return YieldDecision(
-        ACCEPTED, decision.reason, distance_m=decision.distance_m, yield_spot=spot
-    )
+    return YieldDecision(ACCEPTED, decision.reason, distance_m=decision.distance_m, yield_spot=spot)
+
+
+def _resolve_place_target(context: YieldServerContext, request: YieldRequest) -> Pose2D | None:
+    """요청의 장소 이름을 수신측 자기 맵 좌표로 해석한다."""
+    place = request.place_name()
+    if not place or context.place_resolver is None:
+        return None
+    try:
+        resolved = context.place_resolver(place)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[Yield] 장소 해석 실패(%s): %s", place, exc)
+        return None
+    if resolved is None or not resolved.is_finite():
+        return None
+    return resolved
 
 
 def decision_message(decision: YieldDecision, *, requester_id: str, moved: bool) -> str:
@@ -263,6 +288,33 @@ def _yield_candidates(node: Any, pose: Pose2D | None) -> list[tuple[float, float
         return []
 
 
+def resolve_place_in_local_map(node: Any, place: str) -> Pose2D | None:
+    """장소 이름을 이 로봇의 시멘틱 맵 좌표로 해석한다.
+
+    맵을 공유하지 않는 로봇끼리의 양보 협상은 이 해석 결과로만 성립한다.
+    """
+    memory = getattr(node, "_memory", None)
+    if memory is None or not str(place or "").strip():
+        return None
+    try:
+        from robo_claw_agent.skills.navigation_skill.core import _resolve_target_coordinates
+
+        info = _resolve_target_coordinates(memory, str(place).strip())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[Yield] 장소 해석 실패(%s): %s", place, exc)
+        return None
+    if not isinstance(info, dict):
+        return None
+    position = info.get("position")
+    if not isinstance(position, dict):
+        return None
+    try:
+        pose = Pose2D(float(position["x"]), float(position["y"]), 0.0)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return pose if pose.is_finite() else None
+
+
 def build_server_context(node: Any, *, agent_id: str, allow_yield: bool) -> YieldServerContext:
     """노드에서 판정용 컨텍스트를 만든다."""
     return YieldServerContext(
@@ -271,10 +323,9 @@ def build_server_context(node: Any, *, agent_id: str, allow_yield: bool) -> Yiel
         busy_provider=lambda: _agent_busy(node),
         manipulation_provider=lambda: _manipulation_active(node),
         battery_provider=lambda: _battery_percent(node),
-        candidates_provider=lambda: _yield_candidates(
-            node, _current_map_pose(node)
-        ),
+        candidates_provider=lambda: _yield_candidates(node, _current_map_pose(node)),
         allow_yield=allow_yield,
+        place_resolver=lambda place: resolve_place_in_local_map(node, place),
     )
 
 

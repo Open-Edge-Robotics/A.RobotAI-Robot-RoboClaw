@@ -150,19 +150,21 @@ class RequestYieldSlotSkill(BaseSkill):
         "`navigate_to`가 목표 지점에 도달하지 못했고 그 자리를 동료 로봇이 점유하고 "
         "의심될 때, 동료에게 자리를 비켜줄 것을 요청합니다. 요청을 받은 동료는 자기 "
         "로컬 정책으로 판정하고, 수락하면 안전한 다른 지점으로 실제 이동한 뒤 응답합니다. "
-        "파라미터: target_x, target_y(필수, 도달하려는 map 좌표), peer_name(선택, 특정 "
-        "동료만 지정), radius_m(선택, 점유 판정 반경), max_attempts(선택, 기본 2)"
+        "파라미터: target_place(도달하려는 장소 이름) 또는 target_x/target_y(map 좌표) 중 "
+        "하나, peer_name(선택, 특정 동료만 지정), radius_m(선택, 점유 판정 반경), "
+        "max_attempts(선택, 기본 2). 두 로봇이 같은 맵을 쓰지 않으면 target_place를 쓰세요."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "target_x": {"type": "number"},
             "target_y": {"type": "number"},
+            "target_place": {"type": "string"},
             "peer_name": {"type": "string"},
             "radius_m": {"type": "number", "minimum": 0.1, "maximum": 2.0},
             "max_attempts": {"type": "integer", "minimum": 1, "maximum": 3},
         },
-        "required": ["target_x", "target_y"],
+        "oneOf": [{"required": ["target_place"]}, {"required": ["target_x", "target_y"]}],
         "additionalProperties": False,
     }
 
@@ -172,12 +174,15 @@ class RequestYieldSlotSkill(BaseSkill):
         if err := self.require_node():
             return err
 
-        try:
-            target = Pose2D(float(params["target_x"]), float(params["target_y"]), 0.0)
-        except (KeyError, TypeError, ValueError):
-            return self.fail_result("target_x, target_y가 필요합니다.")
-        if not target.is_finite():
-            return self.fail_result("목표 좌표가 유효하지 않습니다.")
+        place = str(params.get("target_place") or "").strip()
+        target: Pose2D | None = None
+        if not place:
+            try:
+                target = Pose2D(float(params["target_x"]), float(params["target_y"]), 0.0)
+            except (KeyError, TypeError, ValueError):
+                return self.fail_result("target_place 또는 target_x/target_y가 필요합니다.")
+            if not target.is_finite():
+                return self.fail_result("목표 좌표가 유효하지 않습니다.")
 
         radius = self._parse_radius(params.get("radius_m"))
         if radius is None:
@@ -188,12 +193,16 @@ class RequestYieldSlotSkill(BaseSkill):
 
         peer_names = self._target_peers(params.get("peer_name"))
         if not peer_names:
-            return self.fail_result("양보를 요청할 동료가 없습니다.")
+            return self.fail_result("양보를 요청할 동료를 찾을 수 없습니다.")
 
         requester_pose = self._requester_pose()
-        outcomes: list[PeerYieldOutcome] = []
+        # 자기 맵에서 그 장소 반경 안에 있는지 스스로 판정한다. 좌표를 로봇
+        # 사이에 넘기지 않으므로 맵을 공유하지 않아도 동시 점유 판정이 된다.
+        requester_at_target = self._requester_at_target(place, target, radius)
         for attempt in range(attempts):
-            outcomes = self._query_peers(peer_names, target, radius, requester_pose)
+            outcomes = self._query_peers(
+                peer_names, target, radius, requester_pose, place, requester_at_target
+            )
             summary = summarize_outcomes(outcomes)
             if summary["success"] or summary["reason"] != "peers_busy":
                 return self._result_from_summary(summary)
@@ -296,6 +305,28 @@ class RequestYieldSlotSkill(BaseSkill):
         except Exception:  # noqa: BLE001
             return None
 
+    def _requester_at_target(self, place: str, target: Pose2D | None, radius: float) -> bool | None:
+        """요청자가 자기 맵 기준으로 목표 반경 안에 있는지. 판정 불가면 None."""
+        if not place:
+            if target is None:
+                return None
+            pose = self._requester_pose()
+            if pose is None:
+                return None
+            return math.dist((pose.x, pose.y), (target.x, target.y)) <= radius
+        try:
+            from robo_claw_agent.skills.yield_slot_service import resolve_place_in_local_map
+
+            local_place = resolve_place_in_local_map(self.node, place)
+        except Exception:  # noqa: BLE001
+            return None
+        if local_place is None or target is not None:
+            return None
+        pose = self._requester_pose()
+        if pose is None:
+            return None
+        return math.dist((pose.x, pose.y), (local_place.x, local_place.y)) <= radius
+
     def _sleep(self, wait_sec: float) -> bool:
         """재시도 대기. 양보 요청 스킬은 태스크 큐 워커에서 돌므로 짧게만 기다린다."""
         import time
@@ -306,9 +337,11 @@ class RequestYieldSlotSkill(BaseSkill):
     def _query_peers(
         self,
         peer_names: Sequence[str],
-        target: Pose2D,
+        target: Pose2D | None,
         radius: float,
         requester_pose: Pose2D | None,
+        place: str = "",
+        requester_at_target: bool | None = None,
     ) -> list[PeerYieldOutcome]:
         services = self._resolve_services()
         outcomes: list[PeerYieldOutcome] = []
@@ -316,12 +349,22 @@ class RequestYieldSlotSkill(BaseSkill):
             service_name = services.get(peer_name)
             if service_name is not None:
                 outcomes.append(
-                    self._call_peer(service_name, peer_name, target, radius, requester_pose)
+                    self._call_peer(
+                        service_name,
+                        peer_name,
+                        target,
+                        radius,
+                        requester_pose,
+                        place,
+                        requester_at_target,
+                    )
                 )
                 continue
             # 같은 ROS 도메인이 아니면 서비스가 발견되지 않는다. 이때는 gRPC로
             # 구조화 요청을 중계한다(메신저 클라이언트 노드가 서버 역할).
-            outcome = self._call_peer_via_grpc(peer_name, target, radius, requester_pose)
+            outcome = self._call_peer_via_grpc(
+                peer_name, target, radius, requester_pose, place, requester_at_target
+            )
             if outcome is not None:
                 outcomes.append(outcome)
                 continue
@@ -338,9 +381,11 @@ class RequestYieldSlotSkill(BaseSkill):
     def _call_peer_via_grpc(
         self,
         peer_name: str,
-        target: Pose2D,
+        target: Pose2D | None,
         radius: float,
         requester_pose: Pose2D | None,
+        place: str = "",
+        requester_at_target: bool | None = None,
     ) -> PeerYieldOutcome | None:
         """gRPC 피어 중계로 양보를 요청한다. 클라이언트가 없으면 None."""
         client = getattr(self.node, "_call_peer_yield_client", None)
@@ -352,8 +397,14 @@ class RequestYieldSlotSkill(BaseSkill):
 
         request = CallPeerYield.Request()
         request.peer_name = peer_name
-        request.target_x = target.x
-        request.target_y = target.y
+        request.target_place = place
+        request.has_target_coords = target is not None
+        if target is not None:
+            request.target_x = target.x
+            request.target_y = target.y
+        if requester_at_target is not None:
+            request.has_requester_at_target = True
+            request.requester_at_target = bool(requester_at_target)
         request.radius_m = radius
         request.timeout_sec = YIELD_GRPC_TIMEOUT_SEC
         if requester_pose is not None:
@@ -397,9 +448,11 @@ class RequestYieldSlotSkill(BaseSkill):
         self,
         service_name: str,
         peer_name: str,
-        target: Pose2D,
+        target: Pose2D | None,
         radius: float,
         requester_pose: Pose2D | None,
+        place: str = "",
+        requester_at_target: bool | None = None,
     ) -> PeerYieldOutcome:
         from rclpy.callback_groups import ReentrantCallbackGroup  # type: ignore[import]
 
@@ -412,8 +465,14 @@ class RequestYieldSlotSkill(BaseSkill):
         try:
             request = YieldSlot.Request()
             request.requester_id = str(getattr(self.node, "_agent_id", ""))
-            request.target_x = target.x
-            request.target_y = target.y
+            request.target_place = place
+            request.has_target_coords = target is not None
+            if target is not None:
+                request.target_x = target.x
+                request.target_y = target.y
+            if requester_at_target is not None:
+                request.has_requester_at_target = True
+                request.requester_at_target = bool(requester_at_target)
             request.radius_m = radius
             request.timeout_sec = YIELD_CALL_TIMEOUT_SEC
             if requester_pose is not None:
