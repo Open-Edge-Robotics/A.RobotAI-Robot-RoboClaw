@@ -22,6 +22,7 @@ from robo_claw_msgs.srv import (
     PeerMessage,
     QueryState,
     SendMessage,
+    YieldSlot,
 )
 
 from ..llm_bridge import create_llm_bridge
@@ -302,6 +303,14 @@ def setup_ros_interfaces(node) -> None:
         PeerMessage,
         "~/peer_message",
         node._handle_peer_message,
+        callback_group=cb_group,
+    )
+
+    # 자리 양보 협상 — 동료가 내가 점유한 지점을 비켜줄 것을 요청하는 서비스
+    node._yield_slot_srv = node.create_service(
+        YieldSlot,
+        "~/yield_slot",
+        node._handle_yield_slot,
         callback_group=cb_group,
     )
 

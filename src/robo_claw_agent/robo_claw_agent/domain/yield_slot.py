@@ -115,7 +115,29 @@ class YieldDecision:
         return payload
 
 
+def apply_execution_gate(
+    decision: YieldDecision, *, agent_busy: bool, retry_after_sec: float = _PRIORITY_RETRY_SEC
+) -> YieldDecision:
+    """수락했더라도 지금 양보 이동을 시작할 수 없으면 ``busy`` 로 낙춱인다.
+
+    양보 이동은 ``base_control`` 을 잡는다. 다른 작업이 실행 중이거나 대기 중이면
+    태스크 큐가 실행 중 태스크를 선점할 수 없으므로 이동을 시작할 수 없다.
+    그런 경우 수락을 보내면 요청자는 곧 이동할 것이라고 믿고 재시도하다 실패한다.
+    실행할 수 없으면 목적지를 약속하지 않고 재시도만 안내한다.
+    """
+    if not decision.accepted or not agent_busy:
+        return decision
+    return YieldDecision(
+        BUSY,
+        "agent_busy",
+        distance_m=decision.distance_m,
+        retry_after_sec=retry_after_sec,
+        yield_spot=None,
+    )
+
+
 def _finite_float(value: Any) -> float | None:
+    """숫자로 해석 가능하고 유한한 값만 float 로 반환한다."""
     """숫자로 해석 가능하고 유한한 값만 float 로 반환한다."""
     if isinstance(value, bool):
         return None

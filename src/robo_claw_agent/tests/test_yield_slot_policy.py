@@ -361,3 +361,42 @@ def test_plan_yield_rejects_invalid_request_before_negotiation():
 
     assert decision.decision == DENIED
     assert decision.reason == "invalid_request"
+
+
+# --- 실행 가능 게이트 --------------------------------------------------------
+
+
+def test_execution_gate_downgrades_accepted_when_agent_busy():
+    from robo_claw_agent.domain.yield_slot import apply_execution_gate
+
+    decision = apply_execution_gate(
+        plan_yield(_request(), _state(), _candidates()), agent_busy=True
+    )
+
+    assert decision.decision == BUSY
+    assert decision.reason == "agent_busy"
+    assert decision.retry_after_sec > 0.0
+    # 수락했다가 실행하지 못하는 상황이므로 목적지를 약속하지 않는다.
+    assert decision.yield_spot is None
+
+
+def test_execution_gate_keeps_accepted_when_agent_is_idle():
+    from robo_claw_agent.domain.yield_slot import apply_execution_gate
+
+    decision = apply_execution_gate(
+        plan_yield(_request(), _state(), _candidates()), agent_busy=False
+    )
+
+    assert decision.decision == ACCEPTED
+    assert decision.yield_spot is not None
+
+
+def test_execution_gate_does_not_touch_non_accepted_decisions():
+    from robo_claw_agent.domain.yield_slot import apply_execution_gate
+
+    not_needed = evaluate_yield_request(_request(), _state(pose=Pose2D(9.0, 9.0, 0.0)))
+
+    gated = apply_execution_gate(not_needed, agent_busy=True)
+
+    assert gated.decision == NOT_NEEDED
+    assert gated.reason == "not_blocking"

@@ -337,3 +337,47 @@ class TestQueueBypassPolicy:
         """정지 스킬은 물리 상태를 바꾸므로 '읽기 전용'과는 구분되어야 한다."""
         assert _mod.is_readonly_skill("emergency_stop") is False
         assert _mod.is_readonly_skill("stop") is False
+
+
+class TestTaskQueueIdle:
+    """is_idle — 동료의 자리 양보 요청이 '지금 시작 가능한가'를 판정할 때 쓴다."""
+
+    def test_idle_queue_reports_idle(self):
+        tq = TaskQueue(max_size=4)
+        tq.start()
+        try:
+            assert tq.is_idle() is True
+        finally:
+            tq.stop()
+
+    def test_running_task_reports_not_idle(self):
+        tq = TaskQueue(max_size=4)
+        tq.start()
+        started = threading.Event()
+        blocked = threading.Event()
+        release = threading.Event()
+
+        def _fn():
+            started.set()
+            blocked.wait(timeout=5.0)
+            release.set()
+
+        try:
+            tq.submit(_make_task("long", _fn))
+            assert started.wait(timeout=5.0)
+            assert tq.is_idle() is False
+        finally:
+            release.wait(timeout=5.0)
+            tq.stop()
+
+    def test_only_queued_task_reports_not_idle(self):
+        """아직 시작하지 않은 대기 태스크도 '지금 시작 불가'로 본다."""
+        tq = TaskQueue(max_size=4)
+        release = threading.Event()
+
+        try:
+            # 워커를 시작하지 않으면 첫 태스크는 큐에만 남는다.
+            tq.submit(_make_task("pending", lambda: release.set()))
+            assert tq.is_idle() is False
+        finally:
+            release.set()

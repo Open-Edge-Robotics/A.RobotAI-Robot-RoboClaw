@@ -81,6 +81,8 @@ class AgentNode(Node, ExecutionMixin):
             )
 
         self._agent_id = p.agent_id
+        # 동료의 자리 양보 요청을 수락할지 여부 (yield_slot_enabled 파라미터)
+        self._yield_slot_enabled = p.yield_slot_enabled
         self._state = AgentState.IDLE
         self._current_skill = ""
         # 센서 토픽 — 자가진단(_check_sensors_cached)이 하드코딩 대신 이 값을 사용
@@ -481,6 +483,70 @@ class AgentNode(Node, ExecutionMixin):
             response.success = False
             response.error_message = f"협동 메시지 처리 오류: {exc}"
         return response
+
+    def _handle_yield_slot(self, request, response):
+        """자리 양보 협상 — 동료가 내가 점유한 지점을 비켜줄 것을 요청했다.
+
+        판정은 로컬 정책으로만 수행하고 LLM 판단을 거치지 않는다. 수락하면 선정된
+        자리로 실제 이동한 뒤 응답한다(``accepted`` = 실제로 비켜셨다).
+        """
+        from robo_claw_agent.domain.yield_slot import (
+            DEFAULT_RADIUS_M,
+            DEFAULT_TIMEOUT_SEC,
+            DENIED,
+            Pose2D,
+            YieldDecision,
+            YieldRequest,
+        )
+        from robo_claw_agent.skills.yield_slot_service import (
+            build_server_context,
+            decide_yield,
+            decision_message,
+            execute_yield_move,
+            fill_yield_response,
+        )
+
+        radius = request.radius_m if request.radius_m > 0.0 else DEFAULT_RADIUS_M
+        timeout_sec = request.timeout_sec if request.timeout_sec > 0.0 else DEFAULT_TIMEOUT_SEC
+        requester_pose = Pose2D(request.requester_x, request.requester_y, 0.0)
+        yield_request = YieldRequest(
+            requester_id=request.requester_id,
+            target=Pose2D(request.target_x, request.target_y, 0.0),
+            radius_m=radius,
+            timeout_sec=timeout_sec,
+            requester_pose=requester_pose if requester_pose.is_finite() else None,
+        )
+
+        try:
+            context = build_server_context(
+                self,
+                agent_id=self._agent_id,
+                allow_yield=bool(getattr(self, "_yield_slot_enabled", True)),
+            )
+            decision = decide_yield(context, yield_request)
+            moved = False
+            if decision.accepted and decision.yield_spot is not None:
+                moved = execute_yield_move(self, decision.yield_spot)
+                if not moved:
+                    decision = YieldDecision(
+                        DENIED, "move_failed", distance_m=decision.distance_m
+                    )
+            message = decision_message(
+                decision, requester_id=yield_request.requester_id, moved=moved
+            )
+            self.get_logger().info(
+                f"YieldSlot request from {yield_request.requester_id}: "
+                f"{decision.decision}/{decision.reason} — {message}"
+            )
+            return fill_yield_response(response, decision, message=message)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(f"YieldSlot handling error: {exc}")
+            response.success = False
+            response.decision = DENIED
+            response.reason = "internal_error"
+            response.distance_m = -1.0
+            response.message = f"양보 요청 처리 오류: {exc}"
+            return response
 
     def _ensure_autonomous_cooperate_for_peer_message(self, message: str) -> None:
         """협동 메시지를 처음 받는 로봇도 목표를 이어받아 자동 참여시킨다."""
