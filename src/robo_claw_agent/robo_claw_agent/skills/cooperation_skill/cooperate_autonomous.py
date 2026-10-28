@@ -391,17 +391,12 @@ class AutonomousCooperateSkill(BaseSkill):
             return []
 
         places: list[dict[str, Any]] = []
-        seen: set[tuple[str, float, float]] = set()
         try:
             from robo_claw_agent.skills.autonomous_skill.helpers import (
-                _extract_rag_location_candidates,
-                _split_semantic_places,
+                _remembered_place_candidates,
             )
 
-            all_objects = list(memory.get_all_objects()) if hasattr(memory, "get_all_objects") else []
-            semantic_places, _ = _split_semantic_places(all_objects)
-            candidates = semantic_places + _extract_rag_location_candidates(memory, limit=limit * 2)
-            for item in candidates:
+            for item in _remembered_place_candidates(memory, include_map_generated=False):
                 position = item.get("position", {}) if isinstance(item, dict) else {}
                 try:
                     x = float(position["x"])
@@ -409,10 +404,6 @@ class AutonomousCooperateSkill(BaseSkill):
                 except (KeyError, TypeError, ValueError):
                     continue
                 name = str(item.get("name") or "").strip()
-                key = (name, round(x, 3), round(y, 3))
-                if key in seen:
-                    continue
-                seen.add(key)
                 places.append({"name": name or f"시멘틱장소{len(places) + 1}", "x": x, "y": y})
                 if len(places) >= limit:
                     break

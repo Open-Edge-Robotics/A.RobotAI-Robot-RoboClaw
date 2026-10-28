@@ -197,7 +197,7 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 ### `tidy_home`의 단발 작업 위임
 
-`tidy_home`은 특정 방 또는 집 전체 범위의 정리 작업을 한 번 수행합니다. 특정 방은 기억된 좌표로 먼저 이동하고, 집 범위는 기억된 장소만 한 차례 방문합니다. 지속 순찰은 `autonomous_act`의 책임이며, 두 작업은 같은 시점에 중복 실행하지 않습니다.
+`tidy_home`은 특정 방 또는 집 전체 범위의 정리 작업을 한 번 수행합니다. 특정 방은 기억된 좌표로 먼저 이동하고, 집 범위는 기억된 장소만 한 차례 방문합니다. 순찰은 `autonomous_act`의 책임이며(기억된 장소를 한 번씩 순회하면 자동 종료), 두 작업은 같은 시점에 중복 실행하지 않습니다.
 
 정리 후보를 관찰하면 다음 정책을 적용합니다.
 
@@ -210,7 +210,7 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 이 동작은 한 대상에 대한 단발 요청이며 `autonomous_cooperate`처럼 지속적으로 대화하거나 여러 로봇이 작업을 조율하는 루프를 시작하지 않습니다. 같은 ROS 네트워크 동료는 현재 ROS 그래프에서 발견되어야 하고 `GRPC_TARGET_PEERS_JSON`의 `capabilities`에 `manipulation` 또는 `cleanup_demo`를 정확히 등록해야 합니다. gRPC 동료는 `ListPeers`의 현재 연결 상태를 확인하며, 일반 공개 스킬의 capability가 설정되지 않으면 사용 가능 스킬 목록(JSON 배열 또는 쉼표/불릿 구분 텍스트)을 조회·해석합니다(RAG/LLM 응답 지연을 수용하기 위해 타임아웃 25초 적용, 조회 결과는 300초간 캐싱). CLOi 계열 로봇(이름에 `cloi`가 포함되거나 `execute_cloid_motion` 스킬 보유)은 MoveIt 팔 조작이 불가능한 휴머노이드이므로 `manipulation` 피어로 분류되지 않고 `cleanup_demo` 피어로 자동 분류됩니다. CLOi 1호는 경로 플래그가 기본 `true`이고 검토된 기본 allowlist `[22, 60]`을 사용하지만, allowlist가 비어 있으면 스킬을 등록하지 않습니다. 다른 CLOi 개체도 `RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON`으로 검토된 allowlist를 지정하면 동일하게 로컬 시연을 수행합니다.
 
-`autonomous_act` patrol 루프의 `ProcessPeerMessages` BT 노드는 별도로 동료가 보낸 메시지를 수집해 `LLMDecideAction` 프롬프트에 "동료와의 최근 대화"로 주입합니다. 따라서 지속 순찰 중 동료의 도움 요청에도 대응할 수 있습니다. `tidy_home`의 위임은 정리 대상 한 건에 대한 단발 요청이며 지속 대화나 협업 루프를 시작하지 않습니다.
+`autonomous_act` patrol 루프의 `ProcessPeerMessages` BT 노드는 별도로 동료가 보낸 메시지를 수집해 `LLMDecideAction` 프롬프트에 "동료와의 최근 대화"로 주입합니다. 따라서 순찰 중 동료의 도움 요청에도 대응할 수 있습니다(`autonomous_act`는 기억된 장소를 한 번씩 순회하면 종료하므로, 반복 순찰에는 `patrol(rounds=0)`을 사용합니다). `tidy_home`의 위임은 정리 대상 한 건에 대한 단발 요청이며 지속 대화나 협업 루프를 시작하지 않습니다.
 
 ### 내부 구조
 

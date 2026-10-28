@@ -1,6 +1,6 @@
 """자율 행동의 기억 기반 순찰 계층.
 
-시맨틱 맵과 RAG에 저장된 좌표만 순찰하고, 이동 실패 목적지는 일정 시간 제외한다.
+시맨틱 맵에 저장된 장소만 순찰하고, 이동 실패 목적지는 일정 시간 제외한다.
 기억된 목적지가 없으면 이동하지 않고 제자리 관찰 경로로 전환한다. LLM 판단은 새 특이사항에만 허용한다.
 """
 
@@ -11,9 +11,8 @@ from typing import Any
 from robo_claw_agent.skill_manager import BaseSkill
 
 from .actions import (
-    _extract_rag_location_candidates,
     _last_seen_epoch,
-    _split_semantic_places,
+    _remembered_place_candidates,
 )
 from .core import BTNode, NodeStatus
 
@@ -50,11 +49,31 @@ _INTERESTING_TEXT_KEYWORDS = (
 
 
 def _gather_place_candidates(memory: Any) -> list[dict[str, Any]]:
-    """기억된 시맨틱/RAG 장소와 과거 저장된 맵 지점을 모은다."""
-    all_objs = memory.get_all_objects() if hasattr(memory, "get_all_objects") else []
-    semantic_places, map_generated_places = _split_semantic_places(all_objs)
-    rag_places = _extract_rag_location_candidates(memory, limit=20)
-    return semantic_places + map_generated_places + rag_places
+    """순회 후보는 시맨틱 맵에 저장된 장소와 과거 저장된 맵 지점으로 제한한다.
+
+    RAG 후보를 섞으면 같은 장소가 레코드마다 이름을 달리해 중복 순회되므로, RAG는
+    이름→좌표 해석에만 쓰고 순회 목록에는 넣지 않는다.
+    """
+    return _remembered_place_candidates(memory, include_map_generated=True)
+
+
+def _patrol_sweep_complete(memory: Any, attempted_places: Any) -> bool:
+    """기억된 모든 장소를 한 번씩 시도했는지 판정한다(순찰 한 바퀴 종료 조건).
+
+    이동 실패한 장소도 시도한 것으로 보고 한 바퀴에서 제외해, 도달할 수 없는 장소
+    때문에 순찰이 끝나지 않는 상태를 막는다. 기억된 장소가 없으면 순찰할 대상이
+    없으므로 제자리 관찰을 마친 시점에서 완료로 본다.
+    """
+    candidates = _remembered_place_candidates(memory) if memory is not None else []
+    known = {str(place.get("name", "")).strip() for place in candidates}
+    known.discard("")
+    if not known:
+        return True
+    if isinstance(attempted_places, (set, frozenset, list, tuple)):
+        attempted = {str(name).strip() for name in attempted_places}
+    else:
+        attempted = set()
+    return known.issubset(attempted)
 
 
 class PatrolNextPlaceNode(BTNode):
@@ -116,6 +135,10 @@ class PatrolNextPlaceNode(BTNode):
 
         self._blackboard["patrol_last_place"] = name
         self._blackboard["patrol_last_success"] = success
+        # 순찰 한 바퀴 종료 판정용 — 성공·실패 모두 "시도한 장소"로 기록한다.
+        attempted = self._blackboard.setdefault("patrol_attempted_places", set())
+        if isinstance(attempted, set):
+            attempted.add(name)
         if success:
             blocked_until.pop(name, None)
             logger.info("[BT] PatrolNextPlaceNode: arrived at '%s'", name)

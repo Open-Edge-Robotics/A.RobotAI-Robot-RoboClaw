@@ -132,6 +132,42 @@ def test_ensure_places_registered_uses_rag_without_map():
     assert status == NodeStatus.SUCCESS
     assert blackboard["place_source_priority"] == "rag"
     memory.add_object_location.assert_called_once()
+
+
+def test_ensure_places_registered_skips_rag_place_near_known_place():
+    """RAG 좌표가 시맨틱 맵의 같은 장소와 허용 오차 안이면 중복 등록하지 않는다."""
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": "주방", "position": {"x": 1.5, "y": 2.0}, "metadata": {"kind": "place"}},
+    ]
+    memory._vector_store.list_entries.return_value = [
+        {
+            "text": "이동 성공 좌표: x=1.57, y=2.04 (부엌)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "place_name": "부엌",
+                "x": 1.57,
+                "y": 2.04,
+            },
+        }
+    ]
+    node_mock = MagicMock()
+    node_mock._memory = memory
+    skill = MagicMock()
+    skill.node = node_mock
+
+    node = EnsurePlacesRegistered(skill)
+    blackboard = {"has_map": True, "places_registered": False}
+    node._blackboard = blackboard
+
+    status = node.tick()
+
+    assert status == NodeStatus.SUCCESS
+    assert blackboard["place_source_priority"] == "semantic_map"
+    memory.add_object_location.assert_not_called()
+
+
 def test_ensure_places_registered_does_not_generate_waypoints_from_map(mock_node):
     mock_node._memory.get_all_objects.return_value = []
     mock_node._memory._vector_store.list_entries.return_value = []
@@ -367,13 +403,29 @@ def test_extract_rag_location_candidates_parses_name_and_coords_from_text():
     assert "거실" in names
     living_room = next(c for c in candidates if c["name"] == "거실")
     assert living_room["position"] == {"x": -2.3, "y": 4.1}
-def test_patrol_gather_place_candidates_includes_rag():
-    """순찰 지점 수집(_gather_place_candidates)에 시맨틱 맵뿐만 아니라 RAG 후보도 포함되어야 한다."""
+def test_patrol_gather_place_candidates_uses_semantic_map_only():
+    """순찰 후보는 시맨틱 맵 장소로 제한하고 RAG 전용 장소는 제외해야 한다.
+
+    RAG는 같은 장소를 여러 레코드로 갖고 있어 전체를 순회하면 중복 순회가 생긴다.
+    """
     from robo_claw_agent.skills.autonomous_skill.patrol_nodes import _gather_place_candidates
 
     memory = MagicMock()
-    memory.get_all_objects.return_value = []
+    memory.get_all_objects.return_value = [
+        {"name": "주방", "position": {"x": 1.5, "y": 2.0}, "metadata": {"kind": "place"}},
+        {"name": "거실", "position": {"x": -2.0, "y": 3.0}, "metadata": {"kind": "place"}},
+    ]
     memory._vector_store.list_entries.return_value = [
+        {
+            "text": "이동 성공 좌표: x=1.5, y=2.0 (주방)",
+            "metadata": {
+                "type": "navigated_coordinate",
+                "kind": "place",
+                "x": 1.5,
+                "y": 2.0,
+                "source": "navigate_to",
+            },
+        },
         {
             "text": "이동 성공 좌표: x=3.0, y=1.0 (충전소)",
             "metadata": {
@@ -383,10 +435,123 @@ def test_patrol_gather_place_candidates_includes_rag():
                 "y": 1.0,
                 "source": "navigate_to",
             },
-        }
+        },
     ]
 
     candidates = _gather_place_candidates(memory)
 
-    names = [c["name"] for c in candidates]
-    assert "충전소" in names
+    assert [c["name"] for c in candidates] == ["주방", "거실"]
+
+
+def test_remembered_place_candidates_dedupes_name_variants_and_duplicate_positions():
+    """같은 장소가 이름 변형·동일 좌표로 중복 저장되어도 한 번만 순회해야 한다."""
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
+    )
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": "주방", "position": {"x": 1.5, "y": 2.0}, "metadata": {"kind": "place"}},
+        {"name": "주 방", "position": {"x": 4.0, "y": -1.0}, "metadata": {"kind": "place"}},
+        {"name": "주방별관", "position": {"x": 1.5, "y": 2.0}, "metadata": {"kind": "place"}},
+        {"name": "거실", "position": {"x": -2.0, "y": 3.0}, "metadata": {"kind": "place"}},
+        {"name": "cup", "position": {"x": 0.5, "y": 0.5}, "metadata": {"kind": "object"}},
+    ]
+
+    candidates = _remembered_place_candidates(memory)
+
+    assert [c["name"] for c in candidates] == ["주방", "거실"]
+
+
+def test_remembered_place_candidates_skips_memory_without_objects_api():
+    from types import SimpleNamespace
+
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
+    )
+
+    assert _remembered_place_candidates(None) == []
+    assert _remembered_place_candidates(SimpleNamespace()) == []
+
+
+def _patrol_memory(names):
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": name, "position": {"x": float(index), "y": 0.0}, "metadata": {"kind": "place"}}
+        for index, name in enumerate(names)
+    ]
+    return memory
+
+
+def test_patrol_sweep_complete_requires_every_remembered_place():
+    """순찰 한 바퀴는 기억된 모든 장소를 한 번씩 시도했을 때만 완료다."""
+    from robo_claw_agent.skills.autonomous_skill.patrol_nodes import _patrol_sweep_complete
+
+    memory = _patrol_memory(["주방", "거실"])
+
+    assert _patrol_sweep_complete(memory, set()) is False
+    assert _patrol_sweep_complete(memory, {"주방"}) is False
+    assert _patrol_sweep_complete(memory, {"주방", "거실"}) is True
+    # 도달 실패도 시도로 기록되면 한 바퀴 완료로 본다(무한 재시도 방지).
+    assert _patrol_sweep_complete(memory, ["거실", "주방"]) is True
+
+
+def test_patrol_sweep_complete_without_remembered_places():
+    """기억된 장소가 없으면 제자리 관찰 뒤 순찰을 끝낸다."""
+    from robo_claw_agent.skills.autonomous_skill.patrol_nodes import _patrol_sweep_complete
+
+    memory = _patrol_memory([])
+
+    assert _patrol_sweep_complete(memory, set()) is True
+    assert _patrol_sweep_complete(None, set()) is True
+
+
+def test_patrol_next_place_records_attempt_on_failure(monkeypatch):
+    """이동이 실패해도 시도한 장소로 기록해 한 바퀴 판정이 끝날 수 있게 한다."""
+    from robo_claw_agent.skills.autonomous_skill.patrol_nodes import PatrolNextPlaceNode
+    from robo_claw_agent.skills.navigation_skill import patrol as patrol_module
+
+    monkeypatch.setattr(patrol_module, "visit_place", lambda _node, _name: (False, "blocked"))
+
+    skill = MagicMock()
+    skill.node = MagicMock()
+    skill.node._memory = _patrol_memory(["주방"])
+    node = PatrolNextPlaceNode(skill)
+    blackboard = {}
+    node._blackboard = blackboard
+
+    assert node.tick() == NodeStatus.SUCCESS
+    assert blackboard["patrol_attempted_places"] == {"주방"}
+
+
+def test_patrol_next_place_records_attempt_on_success(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill.patrol_nodes import PatrolNextPlaceNode
+    from robo_claw_agent.skills.navigation_skill import patrol as patrol_module
+
+    monkeypatch.setattr(patrol_module, "visit_place", lambda _node, _name: (True, "arrived"))
+
+    skill = MagicMock()
+    skill.node = MagicMock()
+    skill.node._memory = _patrol_memory(["주방"])
+    node = PatrolNextPlaceNode(skill)
+    blackboard = {}
+    node._blackboard = blackboard
+
+    assert node.tick() == NodeStatus.SUCCESS
+    assert blackboard["patrol_attempted_places"] == {"주방"}
+
+
+def test_autonomous_act_patrol_sweep_finished_uses_semantic_places():
+    """autonomous_act 순찰은 모든 시맨틱 맵 장소를 시도하면 종료 조건을 만족한다."""
+    from types import SimpleNamespace
+
+    from robo_claw_agent.skills.autonomous_skill.skill import AutonomousActSkill
+
+    skill = AutonomousActSkill()
+    skill.node = SimpleNamespace(_memory=_patrol_memory(["주방", "거실"]))
+
+    assert skill._patrol_sweep_finished({"patrol_attempted_places": set()}) is False
+    assert skill._patrol_sweep_finished({"patrol_attempted_places": {"주방"}}) is False
+    assert (
+        skill._patrol_sweep_finished({"patrol_attempted_places": {"주방", "거실"}}) is True
+    )

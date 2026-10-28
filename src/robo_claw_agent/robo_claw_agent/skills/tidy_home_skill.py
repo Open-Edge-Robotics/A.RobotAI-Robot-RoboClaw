@@ -30,8 +30,17 @@ from .cleanup_policy import (
 from .cleanup_run_metrics import new_run_id, record_cleanup_run
 
 logger = logging.getLogger(__name__)
-_MAX_HOME_PLACES = 20
 _MAX_CLEANUP_ACTIONS_PER_PLACE = 4
+# 순회 결과를 "확인 완료"로 볼 수 없는 상태(도달·관찰·방향 복귀·취소).
+_INCOMPLETE_PLACE_STATES = frozenset(
+    {
+        "unreachable",
+        "observation_failed",
+        "orientation_unrestored",
+        "partial_observation",
+        "cancelled",
+    }
+)
 _CLEANUP_DEMO_HANDOFF_LATERAL_M = 0.30
 _CLEANUP_OBSERVATION_PROMPT = (
     "이 장소에서 실제로 정리할 필요가 있는 대상으로 명확히 보이는 폐기물, 수건, 쿠션/방석, "
@@ -72,17 +81,29 @@ class TidyHomeSkill(BaseSkill):
                 "description": "room은 target_location 한 곳, home은 기억된 장소를 한 차례씩 순회합니다.",
             },
             "target_location": {"type": "string", "maxLength": 80},
+            "max_places": {
+                "type": "integer",
+                "default": 0,
+                "minimum": 0,
+                "description": (
+                    "0이면 시맨틱 맵에 저장된 모든 장소를 한 번씩 확인합니다. "
+                    "값을 주면 그 수만큼만 확인합니다."
+                ),
+            },
         },
         "additionalProperties": False,
     }
     description = (
         "한 번의 정리 작업을 수행하고 종료합니다. 지정 방은 기억된 시맨틱 맵/RAG 좌표로 먼저 이동한 뒤 "
-        "제자리에서 4방향을 관찰합니다. 집 전체는 기억된 장소만 한 차례씩 방문하며 탐험하지 않습니다. "
+        "제자리에서 4방향을 관찰합니다. 집 전체는 시맨틱 맵에 저장된 장소만 한 차례씩 방문하며 탐험하지 않고, "
+        "마지막 장소의 확인이 끝나면 자동으로 종료합니다. "
         "명확한 폐기물뿐 아니라 수건, 쿠션/방석, "
         "명확한 빨래/세탁물도 정리 후보로 구분합니다. 생활용품은 유형별로 명시 승인된 비추정 3D 보관 pose가 있을 "
         "때만 집기/배치하며, 옷·개인 소지품·위험물이나 목적지가 모호한 항목은 이동하지 않습니다. 처리 능력이 "
         "부족하면 실제 조작 능력이 확인된 동료 한 대에게 단발 위임할 수 있습니다. CLOiD의 cleanup_demo는 고정된 "
         "시연 모션이며 생활용품을 옮기지 않습니다. 시연 요청은 물체 정리 완료로 보고하지 않습니다. "
+        "파라미터: scope(str, 'home'|'room', 기본 'home'), target_location(str, scope='room' 시 필수), "
+        "max_places(int, 기본 0=기억된 모든 장소). "
         "중단: stop_autonomous를 사용하세요."
     )
 
@@ -90,6 +111,7 @@ class TidyHomeSkill(BaseSkill):
         super().__init__()
         self._previous_indicator_motion_id: int | None = None
         self._places_truncated = False
+        self._place_limit = 0
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         scope = str(params.get("scope", "home")).strip().lower()
@@ -108,6 +130,16 @@ class TidyHomeSkill(BaseSkill):
                 "집 전체 범위에서는 target_location을 지정하지 마세요.",
                 failure_reason="unexpected_target_location",
             )
+        try:
+            max_places = int(params.get("max_places", 0))
+        except (TypeError, ValueError):
+            return self.fail_result(
+                "max_places는 0 이상의 정수여야 합니다.", failure_reason="invalid_max_places"
+            )
+        if max_places < 0:
+            return self.fail_result(
+                "max_places는 0 이상의 정수여야 합니다.", failure_reason="invalid_max_places"
+            )
         if (error := self.require_node()) is not None:
             return error
 
@@ -121,7 +153,8 @@ class TidyHomeSkill(BaseSkill):
             return self._start_butler_cleanup()
 
         self._places_truncated = False
-        places, error = self._collect_places(scope, target_location)
+        self._place_limit = max_places
+        places, error = self._collect_places(scope, target_location, max_places=max_places)
         if error:
             message = {
                 "no_remembered_places": "기억된 정리 장소가 없어 이동을 시작하지 않았습니다.",
@@ -160,35 +193,35 @@ class TidyHomeSkill(BaseSkill):
             )
         start_message = f"{len(places)}개 기억 장소를 대상으로 한 번의 정리 작업을 시작했습니다."
         if self._places_truncated:
-            start_message += f" 안전상 최대 {_MAX_HOME_PLACES}곳만 이번 실행에서 확인합니다."
+            start_message += (
+                f" max_places={self._place_limit} 설정에 따라 이번 실행에서는 {len(places)}곳만 확인합니다."
+            )
         return self.success_result(
             start_message,
             status="started",
             scope=scope,
             places=[place["name"] for place in places],
+            max_places=self._place_limit,
             run_id=run_id,
         )
 
     def _collect_places(
-        self, scope: str, target_location: str
+        self, scope: str, target_location: str, max_places: int = 0
     ) -> tuple[list[dict[str, Any]], str | None]:
         memory = getattr(self.node, "_memory", None)
         if memory is None:
             return [], "no_memory"
         try:
-            from .autonomous_skill.helpers import (
-                _extract_rag_location_candidates,
-                _split_semantic_places,
-            )
+            from .autonomous_skill.helpers import _remembered_place_candidates
 
-            semantic, _map_generated = _split_semantic_places(memory.get_all_objects())
-            rag = _extract_rag_location_candidates(memory, limit=100)
-            candidates = semantic + rag
+            candidates = _remembered_place_candidates(memory, include_map_generated=False)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[TidyHome] Could not load remembered places: %s", exc)
             return [], "no_remembered_places"
 
         places, error = _resolve_cleanup_places(scope, target_location, candidates)
+        # 집 전체 순회는 시맨틱 맵 장소로 제한한다. 방 하나를 지정한 경우에만 아래
+        # 폴백에서 RAG 지식까지 포함해 이름→좌표를 해석한다.
         if error and scope == "room" and target_location:
             try:
                 if hasattr(memory, "get_object_location"):
@@ -220,14 +253,17 @@ class TidyHomeSkill(BaseSkill):
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[TidyHome] Fallback to _resolve_target_coordinates failed: %s", exc)
 
-        self._places_truncated = scope == "home" and len(places) > _MAX_HOME_PLACES
+        # 집 범위 기본값은 상한 없이 기억된 모든 장소를 한 번씩 확인하는 것이다.
+        # 호출자가 max_places를 양수로 지정했을 때만 그 수로 제한한다.
+        limit = max(0, int(max_places))
+        self._places_truncated = scope == "home" and limit > 0 and len(places) > limit
         if self._places_truncated:
             logger.warning(
-                "[TidyHome] Capping home sweep from %d to %d remembered places",
+                "[TidyHome] Limiting home sweep from %d to %d remembered places (max_places)",
                 len(places),
-                _MAX_HOME_PLACES,
+                limit,
             )
-            places = places[:_MAX_HOME_PLACES]
+            places = places[:limit]
         return places, error
 
     def _start_butler_cleanup(self) -> dict[str, Any]:
@@ -296,15 +332,22 @@ class TidyHomeSkill(BaseSkill):
         started = time.monotonic()
         try:
             start_message = (
-                f"정리 작업을 시작합니다. 기억된 장소 {len(places)}곳을 한 차례 확인합니다."
+                f"정리 작업을 시작합니다. 기억된 장소 {len(places)}곳을 한 차례 확인하면 종료합니다."
             )
             if self._places_truncated:
-                start_message += f" 안전상 최대 {_MAX_HOME_PLACES}곳만 확인합니다."
+                start_message += (
+                    f" max_places={self._place_limit} 설정에 따라 {len(places)}곳까지만 확인합니다."
+                )
             self.send_user_message(start_message)
             for index, place in enumerate(places, start=1):
                 if not is_autonomous_active():
                     results.append({"place": place["name"], "status": "cancelled"})
                     break
+
+                # 진행 상황을 알려 사용자가 남은 장소 수와 종료 시점을 알 수 있게 한다.
+                self.send_user_message(
+                    f"[{index}/{len(places)}] '{place['name']}' 장소를 확인합니다."
+                )
 
                 place_name = str(place["name"])
                 nav_started = time.monotonic()
@@ -773,14 +816,7 @@ class TidyHomeSkill(BaseSkill):
                 f"{result['place']}: {result['status']}" for result in results
             )
         if not found_cleanup_target:
-            incomplete_states = {
-                "unreachable",
-                "observation_failed",
-                "orientation_unrestored",
-                "partial_observation",
-                "cancelled",
-            }
-            if any(result["status"] in incomplete_states for result in results):
+            if any(result["status"] in _INCOMPLETE_PLACE_STATES for result in results):
                 ending = "일부 장소를 확인하지 못해 정리 대상 유무와 작업 완료 여부를 확정할 수 없습니다."
             elif counts.get("needs_clarification"):
                 ending = "모호하거나 위험할 수 있는 항목은 안전을 위해 이동하지 않았습니다. 사용자 확인이 필요합니다."
@@ -801,5 +837,11 @@ class TidyHomeSkill(BaseSkill):
                 "미관찰 영역에 정리 대상이 없는지는 확인되지 않았습니다."
             )
         if self._places_truncated:
-            ending += f" 기억 장소가 {_MAX_HOME_PLACES}곳을 초과해 나머지는 이번 실행에서 확인하지 않았습니다."
+            ending += (
+                f" max_places={self._place_limit} 설정에 따라 나머지 기억 장소는 이번 실행에서 확인하지 않았습니다."
+            )
+        elif results and not any(
+            result["status"] in _INCOMPLETE_PLACE_STATES for result in results
+        ):
+            ending += f" 기억된 장소 {len(results)}곳을 모두 확인하고 정리 작업을 마쳤습니다."
         self.send_user_message(f"정리 작업이 종료됐습니다(scope={scope}). {summary}. {ending}")

@@ -3,6 +3,61 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-28 — 자율 순찰(autonomous_act)도 기억된 장소를 한 바퀴 돌면 자동 종료합니다
+
+- `autonomous_act(mode='patrol')`은 `stop_autonomous` 전까지 무한 루프였습니다. 이제 시맨틱 맵에
+  저장된 장소를 한 번씩 시도하면 스스로 종료합니다. 이동에 실패한 장소도 "시도"로 기록해 도달 불가
+  장소 때문에 순찰이 끝나지 않는 상태를 막고, 기억된 장소가 없으면 제자리 4방향 관찰을 한 번
+  수행한 사이클 뒤 종료합니다.
+- `patrol_nodes._patrol_sweep_complete(memory, attempted)`가 한 바퀴 판정을 담당하고,
+  `PatrolNextPlaceNode`가 `patrol_attempted_places`에 시도한 장소를 기록합니다.
+  `_build_patrol_loop`의 while 루프는 매 사이클 tick 뒤에 이 조건을 확인해 종료하며, 종료 메시지에
+  순회한 장소 수를 알립니다.
+- 반복 순찰이 필요한 경우는 기존 `patrol` 스킬(`rounds=0`)을 사용합니다. 스킬 설명·시스템 프롬프트·
+  former/stretch3 가이드·`docs/SKILLS.md`·`docs/behavior-tree/02-autonomous-act.md`·
+  `docs/PEER_COLLABORATION.md`와 생성 카탈로그를 갱신했습니다.
+- 검증: `task unit-test` 1704건 통과(신규 5건 — 한 바퀴 판정, 기억된 장소 없음, 실패/성공 시도 기록,
+  스킬 종료 조건), `task lint` 통과. 실기 로봇에서의 순찰 종료 시점은 **미검증**입니다.
+
+## 2026-10-28 — 집안 정리(tidy_home)는 기억된 모든 장소를 한 번씩 돌고 종료합니다
+
+- `tidy_home(scope='home')`는 원래도 장소를 한 번씩 순회한 뒤 마지막 장소에서 종료했지만,
+  순회 목록이 안전 상한 `_MAX_HOME_PLACES=20`에서 잘려 21번째 이후 장소는 확인하지 못했습니다.
+  이제 기본값은 상한 없이 "시맨틱 맵에 저장된 모든 장소"이며, 실행당 확인 장소 수를
+  제한해야 할 때는 `max_places`(int, 기본 0=전체)를 지정합니다.
+- 장소마다 `[i/N] '<장소>' 장소를 확인합니다.` 진행 메시지를 보내 남은 장소와 종료 시점을
+  알 수 있게 했고, 모든 장소를 확인하면 `기억된 장소 N곳을 모두 확인하고 정리 작업을 마쳤습니다.`로
+  끝납니다. 도달 불가·관찰 실패·방향 복귀 실패로 확인하지 못한 장소가 있으면 기존처럼
+  "정리 대상 유무를 확정할 수 없다"고 보고합니다.
+- 순회 종료 여부를 판정하는 상태 집합을 `_INCOMPLETE_PLACE_STATES`로 모아 종료 메시지와
+  요약이 같은 기준을 쓰도록 정리했습니다. 스킬 설명·파라미터 스키마(`max_places`)와
+  생성 카탈로그(`validation/system1/skill_catalog.json`)를 갱신했습니다.
+- 검증: `task unit-test` 1699건 통과(신규 4건 — 상한 없는 전 장소 순회, `max_places` 제한,
+  음수 거부, 마지막 장소 뒤 종료·전체 확인 메시지), `uv run ruff check src/`,
+  `scripts/validate_skill_catalog.py --strict-docs`, `scripts/check_prompt_tone.py` 통과.
+  실기 로봇에서의 순회 종료 시점은 **미검증**입니다.
+
+## 2026-10-28 — 정리·순찰 장소 순회를 시맨틱 맵 장소로 제한합니다
+
+- "집안 정리해줘"(`tidy_home`)의 집 범위 순회가 RAG 벡터스토어 전체(`limit=100`)를 후보로
+  쓰던 탓에, 같은 장소가 주행 기록·수동 노트마다 이름을 달리해 최대 20곳까지 중복 순회되던
+  문제를 고쳤습니다. 순회 대상은 시맨틱 맵(`memory.semantic.json`)에 저장된 장소로 제한하고,
+  이름(공백·대소문자 무시)과 좌표(1mm) 기준으로 중복을 제거합니다.
+- `skills/autonomous_skill/helpers.py`에 `_remembered_place_candidates`를 추가해
+  `tidy_home`(집 범위), `autonomous_act` 순찰(`patrol_nodes._gather_place_candidates`),
+  자율협동 정리 순회(`cooperate_autonomous._semantic_sweep_places`)가 같은 규칙을 쓰도록
+  통일했습니다. `autonomous_act`의 `EnsurePlacesRegistered`는 RAG 좌표를 시맨틱 맵에 승격할 때
+  기존 장소와 0.15m 이내면 등록하지 않도록 허용 오차를 두어, 같은 장소가 이름만 달리해
+  시맨틱 맵에 다시 쌓이지 않게 했습니다. RAG의 장소 지식은 방 하나를 지정한
+  `tidy_home(scope='room')`과 `navigate_to`·`get_location`의 이름→좌표 해석에만 사용합니다.
+- 시맨틱 맵에 장소가 없으면 순회를 시작하지 않고 미기억 상태로 끝납니다(집 범위는
+  `no_remembered_places`). 스킬 설명·시스템 프롬프트·stretch3 정리 가이드를 새 규칙에 맞추고
+  생성 카탈로그(`validation/system1/skill_catalog.json`)를 재생성했습니다.
+- 검증: `task unit-test` 1695건 통과(신규 6건 — 순찰 시맨틱 맵 전용, RAG 전용 장소 제외,
+  이름·좌표 중복 제거, 메모리 API 부재, 빈 시맨틱 맵, RAG 근접 좌표 미등록),
+  `uv run ruff check src/`, `scripts/validate_skill_catalog.py --strict-docs` 105/105,
+  `scripts/check_prompt_tone.py` 통과. 실기 로봇에서의 순회 결과는 **미검증**입니다.
+
 ## 2026-10-28 — 대시보드에 RoboClaw 로그 패널을 추가합니다
 
 - 대시보드에 "로그" 카드를 추가했습니다. `/rosout`(`log_topic`, 기본값)을 구독해 에이전트를 포함한

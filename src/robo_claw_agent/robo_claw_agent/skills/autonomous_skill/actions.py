@@ -36,6 +36,7 @@ from .helpers import (
     _is_map_generated_place,
     _is_object_kind,
     _last_seen_epoch,
+    _remembered_place_candidates,
     _self_capabilities,
     _split_semantic_places,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "_format_recency",
     "_format_place",
     "_split_semantic_places",
+    "_remembered_place_candidates",
     "_extract_rag_location_candidates",
     "_discover_peer_agents",
     "_self_capabilities",

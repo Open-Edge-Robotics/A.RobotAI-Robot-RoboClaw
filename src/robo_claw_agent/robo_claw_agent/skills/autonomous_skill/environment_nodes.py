@@ -17,6 +17,21 @@ from .helpers import (
 logger = logging.getLogger(__name__)
 
 _PEER_STATUS_REFRESH_INTERVAL_SEC = 60.0
+# RAG 좌표가 시맨틱 맵의 같은 장소를 살짝 다른 좌표로 다시 등록하지 않도록 하는 허용 오차.
+_RAG_PLACE_DUPLICATE_TOLERANCE_M = 0.15
+
+
+def _is_known_coordinate(
+    coordinate: tuple[float, float],
+    known_coordinates: set[tuple[float, float]],
+    tolerance: float = _RAG_PLACE_DUPLICATE_TOLERANCE_M,
+) -> bool:
+    """이미 기억된 장소와 같은 지점인지 좌표 허용 오차로 판정한다."""
+    x, y = coordinate
+    return any(
+        abs(x - known_x) <= tolerance and abs(y - known_y) <= tolerance
+        for known_x, known_y in known_coordinates
+    )
 
 
 class RefreshPeerStatusCache(BTNode):
@@ -241,7 +256,9 @@ class EnsurePlacesRegistered(BTNode):
             name = str(candidate.get("name", "")).strip()
             pos = candidate["position"]
             coordinate = (round(float(pos["x"]), 3), round(float(pos["y"]), 3))
-            if name.casefold() in known_names or coordinate in known_coordinates:
+            if name.casefold() in known_names or _is_known_coordinate(
+                coordinate, known_coordinates
+            ):
                 continue
             new_rag_candidates.append(candidate)
             known_names.add(name.casefold())
