@@ -231,7 +231,7 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 ### 요청자 흐름
 
-1. `navigate_to`가 목표에 도달하지 못하면 `request_yield_slot`에 `target_x`, `target_y`를 넘깁니다.
+1. `navigate_to`가 목표에 도달하지 못하면 `request_yield_slot`에 `target_place`(장소 이름)를 넘깁니다.
 2. 같은 ROS 도메인의 `*/yield_slot` 서비스를 찾아 동료별로 요청합니다(`peer_name`을 주면 그 동료만).
 3. 응답이 `accepted`면 동료가 이미 비켜선 상태이므로 `navigate_to`를 다시 시도합니다.
 4. `busy`면 `retry_after_sec`만큼 기다렸다가 `max_attempts`(기본 2회)까지 재요청합니다.
@@ -253,10 +253,10 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 | 10 | 요청자 목표에서 1.5m 이상, 개방도 0.45m 이상, 현재 위치에서 4m 이내인 후보지 없음 | `denied` / `no_safe_spot` |
 | 11 | 위 조건을 모두 통과 | `accepted` + 실제 이동 후 응답 |
 
-### 맵을 공유하지 않는 로봇 사이의 협상 (`target_place`)
+### 장소 이름으로 협상 (`target_place`)
 
-로봇마다 SLAM 원점이 다른 환경에서는 좌표를 넘겨도 비교할 수 없습니다. 이때는
-좌표 대신 **장소 이름**으로 협상합니다.
+로봇마다 같은 맵을 쓰더라도 좌표가 다른 경우가 많으므로 **좌표를 넘기지
+않습니다.** 목표는 항상 **장소 이름**으로 지정합니다.
 
 1. 요청자가 `target_place: "안방"`을 보냅니다(좌표 없음).
 2. 수신자가 **자기 시멘틱 맵**에서 "안방"의 좌표를 해석합니다.
@@ -286,7 +286,7 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 ### 파라미터
 
-- 요청자: `target_place`(장소 이름) **또는** `target_x`/`target_y`(map 좌표) 중 하나, `peer_name`(선택), `radius_m`(선택, 0.1~2.0), `max_attempts`(선택, 1~3)
+- 요청자: `target_place`(장소 이름, 필수), `peer_name`(선택), `radius_m`(선택, 0.1~2.0), `max_attempts`(선택, 1~3)
 - 수신측 노드 파라미터: `yield_slot_enabled`(기본 `true`) — `false`면 모든 양보 요청을 거부합니다.
 - `navigate_to` 노드 파라미터: `yield_precheck_mode`
 
@@ -300,13 +300,9 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 좌표가 다를 수 있어 좌표를 넘기지 않는 것이 원칙입니다.
 
 ```bash
-# 장소 이름으로 양보 요청 (맵을 공유하지 않는 로봇)
+# 장소 이름으로 양보 요청 — 좌표는 로봇 사이에 넘기지 않는다
 ros2 service call /Former0047/robo_claw_agent_node/yield_slot robo_claw_msgs/srv/YieldSlot \
-  "{requester_id: Former0047, target_place: '안방', has_requester_at_target: true, requester_at_target: false, radius_m: 0.8, timeout_sec: 5.0}"
-
-# 좌표로 양보 요청 (같은 맵을 공유하는 로봇)
-ros2 service call /Former0047/robo_claw_agent_node/yield_slot robo_claw_msgs/srv/YieldSlot \
-  "{requester_id: Stretch3, has_target_coords: true, target_x: 2.4, target_y: -1.1, requester_x: 4.0, requester_y: -1.0, radius_m: 0.8, timeout_sec: 5.0}"
+  "{requester_id: cloid02, target_place: '안방', has_requester_at_target: true, requester_at_target: false, radius_m: 0.8, timeout_sec: 5.0}"
 ```
 
 ### 내부 구조

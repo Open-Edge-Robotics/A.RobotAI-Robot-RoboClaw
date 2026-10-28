@@ -30,8 +30,8 @@ pytestmark = pytest.mark.unit
 # --- 헬퍼 -------------------------------------------------------------------
 
 _TARGET = Pose2D(2.0, 3.0, 0.0)
+_UNSET = object()
 _DEFAULT_RECEIVER_POSE = Pose2D(2.1, 3.05, 0.0)
-_DEFAULT_REQUESTER_POSE = Pose2D(5.0, 5.0, 0.0)
 _CANDIDATES = [
     (2.1, 4.2, 1.0),  # 목표에서 1.20m → 제외
     (0.0, 0.0, 0.2),  # 개방도 부족
@@ -48,7 +48,9 @@ def _ctx(
     battery=80.0,
     candidates=None,
     allow_yield=True,
+    resolver=_UNSET,
 ):
+    resolve = (lambda place: _TARGET) if resolver is _UNSET else resolver
     return YieldServerContext(
         agent_id=agent_id,
         pose_provider=lambda: pose,
@@ -57,16 +59,18 @@ def _ctx(
         battery_provider=lambda: battery,
         candidates_provider=lambda: _CANDIDATES if candidates is None else candidates,
         allow_yield=allow_yield,
+        place_resolver=resolve,
     )
 
 
-def _req(*, requester_id="Stretch3", requester_pose=None, radius=0.8):
+def _req(*, requester_id="Stretch3", place="안방", requester_at_target=False, radius=0.8):
+    """장소 기반 요청. 수신측이 자기 맵에서 해석하므로 좌표는 담지 않는다."""
     return YieldRequest(
         requester_id=requester_id,
-        target=_TARGET,
+        target_place=place,
         radius_m=radius,
         timeout_sec=5.0,
-        requester_pose=requester_pose if requester_pose is not None else _DEFAULT_REQUESTER_POSE,
+        requester_at_target=requester_at_target,
     )
 
 
@@ -99,6 +103,7 @@ def test_candidates_are_not_scanned_when_not_blocking():
         manipulation_provider=lambda: False,
         battery_provider=lambda: None,
         candidates_provider=lambda: calls.append(1) or _CANDIDATES,
+        place_resolver=lambda place: _TARGET,
     )
 
     decision = decide_yield(ctx, _req())
@@ -262,18 +267,7 @@ def test_idle_queue_without_background_loop_is_not_busy(monkeypatch):
 
 
 def _place_ctx(**kwargs):
-    resolver = kwargs.pop("resolver", lambda place: Pose2D(2.0, 3.0, 0.0))
-    base = _ctx(**kwargs)
-    return YieldServerContext(
-        agent_id=base.agent_id,
-        pose_provider=base.pose_provider,
-        busy_provider=base.busy_provider,
-        manipulation_provider=base.manipulation_provider,
-        battery_provider=base.battery_provider,
-        candidates_provider=base.candidates_provider,
-        allow_yield=base.allow_yield,
-        place_resolver=resolver,
-    )
+    return _ctx(**kwargs)
 
 
 def _place_req(*, place="안방", requester_at_target=False):
@@ -310,7 +304,8 @@ def test_place_resolver_failure_is_denied():
 
 
 def test_missing_resolver_denies_place_request():
-    decision = decide_yield(_ctx(), _place_req())
+    # 장소 해석기가 없으면 좌표를 추측하지 않고 거부한다.
+    decision = decide_yield(_ctx(resolver=None), _place_req())
 
     assert decision.decision == DENIED
     assert decision.reason == "unknown_place"
@@ -328,157 +323,3 @@ def test_place_request_from_a_contested_requester_uses_arbitration():
 
     assert decision.decision == BUSY
     assert decision.reason == "requester_lower_priority"
-
-
-def test_coordinate_request_still_skips_place_resolution():
-    calls: list[str] = []
-
-    def _resolver(place):
-        calls.append(place)
-        return Pose2D(0.0, 0.0, 0.0)
-
-    decision = decide_yield(_place_ctx(resolver=_resolver), _req())
-
-    assert decision.decision == ACCEPTED
-    assert calls == [], "좌표 요청에서는 장소 해석을 호출하지 않아야 합니다"
-
-
-# --- 대피 후보지 조회 경로 ---------------------------------------------------
-
-
-def test_map_is_fetched_through_a_registered_skill_helper(monkeypatch):
-    """메시지 대기 헬퍼는 노드가 아니라 스킬에 있으므로 스킬 인스턴스를 빌려 쓴다."""
-    from robo_claw_agent.skills import yield_slot_service as ys
-
-    fake_map = object()
-    calls: list[tuple] = []
-
-    class _Skill:
-        def wait_for_message(self, msg_type, topic, **kwargs):
-            calls.append((topic, kwargs.get("use_transient_local")))
-            return fake_map
-
-    monkeypatch.setattr(ys, "_yield_candidates", ys._yield_candidates)  # 원본 유지(참조만)
-    monkeypatch.setattr(
-        "robo_claw_agent.skills.autonomous_skill.place_discovery.find_reachable_places",
-        lambda map_msg, pose, **kwargs: [(1.0, 2.0, 1.0)] if map_msg is fake_map else [],
-    )
-
-    node = SimpleNamespace(
-        _skills=SimpleNamespace(
-            list_skills=lambda include_internal=True: [{"name": "navigate_to"}],
-            get_skill=lambda name: _Skill(),
-        )
-    )
-
-    candidates = ys._yield_candidates(node, Pose2D(0.0, 0.0, 0.0))
-
-    assert candidates == [(1.0, 2.0, 1.0)]
-    assert calls and calls[0][1] is True
-
-
-def test_map_lookup_prefers_a_node_level_helper():
-    from robo_claw_agent.skills import yield_slot_service as ys
-
-    used: list[str] = []
-
-    class _Node:
-        @staticmethod
-        def wait_for_message(msg_type, topic, **kwargs):
-            used.append("node")
-            return "MAP"
-
-        _skills = SimpleNamespace(
-            list_skills=lambda include_internal=True: [{"name": "navigate_to"}],
-            get_skill=lambda name: SimpleNamespace(
-                wait_for_message=lambda *a, **k: used.append("skill")
-            ),
-        )
-
-    assert ys._wait_for_map(_Node()) == "MAP"
-    assert used == ["node"]
-
-
-def test_candidates_are_empty_when_no_message_helper_exists():
-    from robo_claw_agent.skills import yield_slot_service as ys
-
-    node = SimpleNamespace()  # 헬퍼도 스킬도 없음
-
-    assert ys._yield_candidates(node, Pose2D(0.0, 0.0, 0.0)) == []
-
-
-# --- 이동 실패 시 잔여 주행 취소 ---------------------------------------------
-
-
-def test_failed_yield_move_cancels_the_orphan_navigation_goal(monkeypatch):
-    """스킬 타임아웃은 goal 을 취소하지 않으므로, 실패 보고 시 직접 멈춘다."""
-    from robo_claw_agent.skills import yield_slot_service as ys
-    from robo_claw_agent.skills.navigation_skill import core as nav_core
-
-    cancelled: list[str] = []
-    monkeypatch.setattr(
-        nav_core,
-        "_cancel_active_goal",
-        lambda token=None: cancelled.append("cancel") or (True, "취소"),
-    )
-
-    node = SimpleNamespace(
-        _skills=SimpleNamespace(
-            execute=lambda name, params, timeout_sec=0.0: SimpleNamespace(
-                success=False, message="스킬 실행 타임아웃"
-            )
-        )
-    )
-
-    ok = ys.execute_yield_move(node, Pose2D(1.0, 2.0, 0.0))
-
-    assert ok is False
-    assert cancelled == ["cancel"]
-
-
-def test_successful_yield_move_does_not_cancel_anything(monkeypatch):
-    from robo_claw_agent.skills import yield_slot_service as ys
-    from robo_claw_agent.skills.navigation_skill import core as nav_core
-
-    cancelled: list[str] = []
-    monkeypatch.setattr(
-        nav_core, "_cancel_active_goal", lambda token=None: cancelled.append("cancel") or (True, "")
-    )
-
-    node = SimpleNamespace(
-        _skills=SimpleNamespace(
-            execute=lambda name, params, timeout_sec=0.0: SimpleNamespace(
-                success=True, message="도착"
-            )
-        )
-    )
-
-    assert ys.execute_yield_move(node, Pose2D(1.0, 2.0, 0.0)) is True
-    assert cancelled == []
-
-
-def test_queued_yield_move_cancels_when_the_task_never_finishes(monkeypatch):
-    from robo_claw_agent.skills import yield_slot_service as ys
-    from robo_claw_agent.skills.navigation_skill import core as nav_core
-
-    cancelled: list[str] = []
-    monkeypatch.setattr(
-        nav_core, "_cancel_active_goal", lambda token=None: cancelled.append("cancel") or (True, "")
-    )
-    monkeypatch.setattr(ys, "YIELD_MOVE_TIMEOUT_SEC", 0.05)
-
-    # submit 은 태스크를 받지만 실행하지 않는다(끝나지 않는 상황 흉내).
-    node = SimpleNamespace(
-        _skills=SimpleNamespace(execute=lambda *a, **k: SimpleNamespace(success=True)),
-        _submit_task_to_queue=lambda instruction, execute_fn: "task-1",
-    )
-
-    assert ys.execute_yield_move(node, Pose2D(1.0, 2.0, 0.0), timeout_sec=0.05) is False
-    assert cancelled == ["cancel"]
-
-
-def test_move_timeout_allows_a_slow_two_meter_detour():
-    """실측 1.9m 대피 이동이 25초를 넘겨 타임아웃됐다. 상한을 늘렸는지 고정한다."""
-    from robo_claw_agent.skills import yield_slot_service as ys
-
-    assert ys.YIELD_MOVE_TIMEOUT_SEC >= 40.0

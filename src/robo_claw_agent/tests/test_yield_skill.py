@@ -139,9 +139,7 @@ def _skill_with_fake_peer(outcomes_per_call: list[list[PeerYieldOutcome]]):
     def _requester_pose():
         return None
 
-    def _query_peers(
-        peer_names, target, radius, requester_pose, place="", requester_at_target=None
-    ):
+    def _query_peers(peer_names, place, radius, requester_at_target=None):
         calls.append(1.0)
         return pending.pop(0) if pending else []
 
@@ -164,7 +162,7 @@ def test_skill_retries_busy_peers_then_succeeds():
         ]
     )
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "max_attempts": 2})
+    result = skill.execute({"target_place": "안방", "max_attempts": 2})
 
     assert result["success"] is True
     assert result["yielded_peers"] == ["Former0047"]
@@ -179,7 +177,7 @@ def test_skill_stops_after_max_attempts():
         ]
     )
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "max_attempts": 2})
+    result = skill.execute({"target_place": "안방", "max_attempts": 2})
 
     assert result["success"] is False
     assert result["reason"] == "peers_busy"
@@ -192,7 +190,7 @@ def test_skill_does_not_wait_when_retry_hint_exceeds_the_cap():
         [[PeerYieldOutcome("Former0047", BUSY, "agent_busy", retry_after_sec=60.0)]]
     )
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "max_attempts": 3})
+    result = skill.execute({"target_place": "안방", "max_attempts": 3})
 
     assert result["success"] is False
     assert calls == [1.0], "상한을 넘는 재시도 대기는 하지 않아야 합니다"
@@ -202,11 +200,11 @@ def test_skill_does_not_wait_when_retry_hint_exceeds_the_cap():
 @pytest.mark.parametrize(
     "params",
     [
-        {"target_y": 3.0},
-        {"target_x": "abc", "target_y": 3.0},
-        {"target_x": float("nan"), "target_y": 3.0},
-        {"target_x": 1.0, "target_y": 2.0, "radius_m": 0.05},
-        {"target_x": 1.0, "target_y": 2.0, "max_attempts": 9},
+        {},
+        {"target_place": "  "},
+        {"target_place": "안방", "radius_m": 0.05},
+        {"target_place": "안방", "radius_m": 9.0},
+        {"target_place": "안방", "max_attempts": 9},
     ],
 )
 def test_skill_rejects_invalid_parameters(params):
@@ -222,7 +220,7 @@ def test_skill_fails_closed_when_no_peer_service_exists():
     skill = RequestYieldSlotSkill()
     skill.set_node(SimpleNamespace(_agent_id="Stretch3", get_service_names_and_types=lambda: []))
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0})
+    result = skill.execute({"target_place": "안방"})
 
     assert result["success"] is False
     assert "동료" in result["message"]
@@ -246,14 +244,11 @@ def _skill_with_grpc_peers(outcomes, *, connected_peers=("Former0047",)):
             return []
 
     skill.set_node(_Node())
-    skill._requester_pose = lambda: None  # type: ignore[method-assign]
 
     def _grpc_peer_names():
         return sorted(connected_peers)
 
-    def _call_peer_via_grpc(
-        peer_name, target, radius, requester_pose, place="", requester_at_target=None
-    ):
+    def _call_peer_via_grpc(peer_name, place, radius, requester_at_target=None):
         grpc_calls.append(peer_name)
         return outcomes.get(peer_name)
 
@@ -271,7 +266,7 @@ def test_grpc_fallback_is_used_when_no_local_service_exists():
         }
     )
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0})
+    result = skill.execute({"target_place": "안방"})
 
     assert result["success"] is True
     assert result["yielded_peers"] == ["Former0047"]
@@ -283,7 +278,7 @@ def test_grpc_fallback_reports_busy_peer():
         {"Former0047": PeerYieldOutcome("Former0047", BUSY, "agent_busy", retry_after_sec=3.0)}
     )
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "max_attempts": 1})
+    result = skill.execute({"target_place": "안방", "max_attempts": 1})
 
     assert result["success"] is False
     assert result["reason"] == "peers_busy"
@@ -294,7 +289,7 @@ def test_explicit_peer_name_skips_discovery():
         {"Target": PeerYieldOutcome("Target", NOT_NEEDED, "not_blocking")}
     )
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "peer_name": "Target"})
+    result = skill.execute({"target_place": "안방", "peer_name": "Target"})
 
     assert grpc_calls == ["Target"]
     assert result["reason"] == "no_peer_blocking"
@@ -313,7 +308,7 @@ def test_no_connected_peers_fails_closed():
     skill.set_node(_Node())
     skill._grpc_peer_names = lambda: []  # type: ignore[method-assign]
 
-    result = skill.execute({"target_x": 2.0, "target_y": 3.0})
+    result = skill.execute({"target_place": "안방"})
 
     assert result["success"] is False
     assert "동료" in result["message"]
@@ -333,18 +328,16 @@ def test_place_request_is_expanded_into_local_occupancy_judgment(monkeypatch):
         lambda node, place: None,
     )
 
-    def _query(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
-        captured.update(target=target, place=place, requester_at_target=requester_at_target)
+    def _query(peer_names, place, radius, requester_at_target=None):
+        captured.update(place=place, requester_at_target=requester_at_target)
         return [PeerYieldOutcome("Cloid2", NOT_NEEDED, "not_blocking")]
 
     skill._target_peers = lambda requested: ["Cloid2"]  # type: ignore[method-assign]
-    skill._requester_pose = lambda: None  # type: ignore[method-assign]
     skill._query_peers = _query  # type: ignore[method-assign]
 
     skill.execute({"target_place": "안방"})
 
     assert captured["place"] == "안방"
-    assert captured["target"] is None
     # 자기 맵에서 장소를 해석하지 못하면 동시 점유 판정을 보내지 않는다(None).
     assert captured["requester_at_target"] is None
 
@@ -361,7 +354,7 @@ def test_place_request_sends_requester_at_target_when_resolvable(monkeypatch):
         lambda node, place: Pose2D(2.0, 3.0, 0.0),
     )
 
-    def _query(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
+    def _query(peer_names, place, radius, requester_at_target=None):
         captured.update(requester_at_target=requester_at_target)
         return [PeerYieldOutcome("Cloid2", NOT_NEEDED, "not_blocking")]
 
@@ -415,14 +408,7 @@ def test_local_call_does_not_forward_transport_timeout_as_negotiation_budget(mon
             destroy_client=lambda c: None,
         )
     )
-    skill._call_peer(
-        "/Former0047/robo_claw_agent_node/yield_slot",
-        "Former0047",
-        None,
-        0.8,
-        None,
-        place="안방",
-    )
+    skill._call_peer("/Former0047/robo_claw_agent_node/yield_slot", "Former0047", "안방", 0.8, None)
 
     assert captured["timeout_sec"] == 0.0
     assert captured["call_timeout"] > 10.0
@@ -448,6 +434,6 @@ def test_grpc_call_does_not_forward_transport_timeout_as_negotiation_budget(monk
     skill = RequestYieldSlotSkill()
     skill.set_node(SimpleNamespace(_agent_id="Stretch3", _call_peer_yield_client=object()))
 
-    skill._call_peer_via_grpc("Former0047", None, 0.8, None, place="안방")
+    skill._call_peer_via_grpc("Former0047", "안방", 0.8, None)
 
     assert captured["timeout_sec"] == 0.0

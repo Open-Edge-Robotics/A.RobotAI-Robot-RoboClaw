@@ -494,7 +494,6 @@ class AgentNode(Node, ExecutionMixin):
             DEFAULT_RADIUS_M,
             DEFAULT_TIMEOUT_SEC,
             DENIED,
-            Pose2D,
             YieldDecision,
             YieldRequest,
         )
@@ -508,21 +507,15 @@ class AgentNode(Node, ExecutionMixin):
 
         radius = request.radius_m if request.radius_m > 0.0 else DEFAULT_RADIUS_M
         timeout_sec = request.timeout_sec if request.timeout_sec > 0.0 else DEFAULT_TIMEOUT_SEC
-        requester_pose = Pose2D(request.requester_x, request.requester_y, 0.0)
-        target = None
-        if bool(getattr(request, "has_target_coords", False)):
-            candidate = Pose2D(request.target_x, request.target_y, 0.0)
-            target = candidate if candidate.is_finite() else None
         requester_at_target = None
         if bool(getattr(request, "has_requester_at_target", False)):
             requester_at_target = bool(request.requester_at_target)
+        # 좌표는 넘어오지 않는다. 수신측이 장소 이름을 자기 맵에서 해석한다.
         yield_request = YieldRequest(
             requester_id=request.requester_id,
-            target=target,
+            target_place=str(getattr(request, "target_place", "") or ""),
             radius_m=radius,
             timeout_sec=timeout_sec,
-            requester_pose=requester_pose if requester_pose.is_finite() else None,
-            target_place=str(getattr(request, "target_place", "") or ""),
             requester_at_target=requester_at_target,
         )
 

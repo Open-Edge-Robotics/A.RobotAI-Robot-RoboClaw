@@ -57,34 +57,21 @@ def _finite_or_nan(value: Any) -> float | None:
 def encode_request(
     *,
     requester_id: str,
-    target_x: float,
-    target_y: float,
-    requester_x: float,
-    requester_y: float,
+    target_place: str,
     radius_m: float = 0.0,
     timeout_sec: float = 0.0,
-    target_place: str = "",
-    has_target_coords: bool = True,
     requester_at_target: bool | None = None,
 ) -> str | None:
     """요청 페이로드를 만든다. 값이 유효하지 않으면 None.
 
-    ``has_target_coords=False`` 면 장소 이름(``target_place``)만으로 요청한다.
-    두 로봇이 같은 맵을 쓰지 않을 때 쓰는 방식이다.
+    목표는 장소 이름만 담는다. 로봇마다 같은 맵이라도 좌표가 다를 수 있어
+    좌표를 로봇 사이에 넘기지 않는다.
     """
-    if not str(requester_id or "").strip():
-        return None
+    requester = str(requester_id or "").strip()
     place = str(target_place or "").strip()
-    target = (_finite(target_x), _finite(target_y)) if has_target_coords else (0.0, 0.0)
-    requester = (_finite_or_nan(requester_x), _finite_or_nan(requester_y))
-    if has_target_coords and (target[0] is None or target[1] is None):
-        return None
-    if not has_target_coords and not place:
+    if not requester or not place:
         return None
     if len(place) > MAX_PLACE_LENGTH:
-        return None
-    # 요청자 위치는 모를 수 있다(nan). 다만 숫자여야 한다.
-    if requester[0] is None or requester[1] is None:
         return None
     radius = _finite(radius_m)
     timeout = _finite(timeout_sec)
@@ -92,14 +79,10 @@ def encode_request(
         return None
     if timeout is None or timeout < 0.0 or timeout > MAX_TIMEOUT_SEC:
         return None
-    payload = {
-        "requester_id": str(requester_id).strip(),
-        "has_target_coords": bool(has_target_coords),
-        "target_x": target[0],
-        "target_y": target[1],
+
+    payload: dict[str, Any] = {
+        "requester_id": requester,
         "target_place": place,
-        "requester_x": requester[0],
-        "requester_y": requester[1],
         "radius_m": radius,
         "timeout_sec": timeout,
     }
@@ -122,27 +105,10 @@ def decode_request(content: str) -> dict[str, Any] | None:
         return None
 
     requester_id = str(data.get("requester_id") or "").strip()
-    if not requester_id:
-        return None
-
-    has_target_coords = bool(data.get("has_target_coords", True))
     target_place = str(data.get("target_place") or "").strip()
-    if len(target_place) > MAX_PLACE_LENGTH:
+    if not requester_id or not target_place:
         return None
-    if has_target_coords:
-        target_x = _finite(data.get("target_x"))
-        target_y = _finite(data.get("target_y"))
-        if target_x is None or target_y is None:
-            return None
-    else:
-        target_x = target_y = 0.0
-        if not target_place:
-            return None
-
-    # 요청자 위치는 nan 을 허용한다(위치 미상). 숫자가 아니면 거부한다.
-    requester_x = _finite_or_nan(data.get("requester_x"))
-    requester_y = _finite_or_nan(data.get("requester_y"))
-    if requester_x is None or requester_y is None:
+    if len(target_place) > MAX_PLACE_LENGTH:
         return None
 
     radius = _finite(data.get("radius_m"))
@@ -156,12 +122,7 @@ def decode_request(content: str) -> dict[str, Any] | None:
 
     payload: dict[str, Any] = {
         "requester_id": requester_id,
-        "has_target_coords": has_target_coords,
-        "target_x": target_x,
-        "target_y": target_y,
         "target_place": target_place,
-        "requester_x": requester_x,
-        "requester_y": requester_y,
         "radius_m": radius,
         "timeout_sec": timeout,
     }
