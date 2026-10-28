@@ -66,6 +66,8 @@ NAVIGATION_FAILURE_MARKERS = (
     "타임아웃",
     "timeout",
 )
+# 실행 레코드의 장소 status 만으로도 판정할 수 있는 주행 실패 표지.
+NAVIGATION_FAILURE_STATUSES = frozenset({"unreachable", "navigation_failed", "visit_failed"})
 # 집계에서 빼는 예외 범주(환경·주행 문제).
 EXCEPTION_CATEGORIES = frozenset({"network", "navigation"})
 CATEGORY_LABELS = {
@@ -251,6 +253,25 @@ def classify_failures(runs: list[dict], delegates_by_run: dict[str, list[dict]])
         place = place_of_run(run)
         records = delegates_by_run.get(run_id, [])
         if not records:
+            statuses = {
+                str(result.get("status", "")).strip()
+                for result in run.get("results") or []
+                if str(result.get("status", "")).strip()
+            }
+            if statuses & NAVIGATION_FAILURE_STATUSES:
+                # 위임까지 가지 못하고 주행 단계에서 끝난 회차(예: 신발장 unreachable).
+                failures.append(
+                    {
+                        "run_id": run_id,
+                        "place": place,
+                        "category": "navigation",
+                        "reason": (
+                            f"주행 단계 실패(status={'/'.join(sorted(statuses & NAVIGATION_FAILURE_STATUSES))}, "
+                            "delegate 레코드 없음)"
+                        ),
+                    }
+                )
+                continue
             failures.append(
                 {
                     "run_id": run_id,

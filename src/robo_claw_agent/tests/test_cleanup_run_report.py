@@ -388,3 +388,25 @@ def test_exclude_exceptions_flag_renders_effective_count_and_exception_log(tmp_p
     assert "원래 반복 2회 중 예외 1회 제외 → 유효 반복 1회" in adjusted
     assert "[네비게이션 타임아웃] 거실 `nav`" in adjusted
     assert "실패로 집계한 회차: 0건" in adjusted
+
+
+def test_run_status_unreachable_is_navigation_exception(tmp_path):
+    """위임 레코드가 없어도 장소 status 가 unreachable 이면 주행 예외로 뺀다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("ok", "cloid2"),
+            _delegate("ok", True, "정리 시연 모션 실행을 요청했습니다."),
+            _run("ok", "delegated_demo", True),
+            _run("nav", "unreachable", False, place="신발장"),
+        ],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["exception_count"] == 1
+    assert summary["exceptions"][0]["category"] == "navigation"
+    assert summary["effective_repeat_count"] == 1
+    assert summary["effective_success_rate"] == pytest.approx(100.0)
+    assert summary["counted_failure_count"] == 0
