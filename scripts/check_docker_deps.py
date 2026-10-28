@@ -35,6 +35,10 @@ except ModuleNotFoundError:  # Python 3.10
 LOCK_PINNED: dict[str, str] = {
     "qdrant-client": "Qdrant 1.19.x 서버 호환성과 개발·배포 환경의 query API 일치를 유지합니다",
     "mcp": "1.x/2.x에서 list_tools 시그니처와 응답 필드명이 달라짐",
+    "sqlmodel": (
+        "0.0.48부터 SQLAlchemy<2.2를 허용해 2.1이 설치되면 greenlet이 함께 설치되지 않고 "
+        "sqlalchemy.ext.asyncio import가 실패한다"
+    ),
 }
 
 # pyproject.toml에도 있지만 이미지에서 다른 버전을 고정하는 빌드 도구.
@@ -51,6 +55,10 @@ DOCKER_ONLY: dict[str, str] = {
     "python-dotenv": ".env 로딩 런타임",
     "lark": "파서 런타임",
     "lxml": "XML 처리 런타임",
+    "sqlalchemy": (
+        "SQLAlchemy asyncio 런타임: 2.1부터 greenlet이 [asyncio] extra로만 설치되므로 "
+        "이미지에서 직접 extra를 지정한다"
+    ),
 }
 
 _PIP_INSTALL_RE = re.compile(r"^\s*RUN\s+pip3?\s+install\b")

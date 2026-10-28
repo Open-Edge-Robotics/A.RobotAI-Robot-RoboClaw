@@ -84,6 +84,9 @@ WORKDIR /ros2_ws
 # 주의: 이미지의 pip 해석 결과가 개발 환경(uv.lock)과 어긋나면 런타임 API가 바뀔 수 있다.
 #        `mcp`처럼 API에 민감한 패키지는 lock 버전으로 정확히 고정한다
 #        (`python3 scripts/check_docker_deps.py`로 검증).
+#        `sqlmodel`도 고정한다. 0.0.48은 SQLAlchemy<2.2를 허용하는데, SQLAlchemy 2.1은
+#        greenlet을 `[asyncio]` extra로만 설치해 `sqlalchemy.ext.asyncio` import가
+#        ImportError로 죽는다(robo_claw_grpc 기동 실패). 그래서 extra를 직접 지정한다.
 COPY pyproject.toml ./
 RUN pip3 install \
     "cmake>=3.24,<4" \
@@ -108,7 +111,8 @@ RUN pip3 install \
     "lxml>=6.0.2" \
     "mcp==1.27.0" \
     "qdrant-client==1.19.1" \
-    "sqlmodel>=0.0.21" \
+    "sqlmodel==0.0.38" \
+    "sqlalchemy[asyncio]==2.0.49" \
     "aiosqlite>=0.19.0" \
     "psutil>=5.9.0"
 

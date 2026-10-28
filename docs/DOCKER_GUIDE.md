@@ -138,7 +138,10 @@ task docker-buildx-check   # 출력에 linux/arm64 가 보이면 OK
 이미지의 파이썬 패키지는 `Dockerfile`의 `pip3 install` 목록으로 설치되며, 개발 환경(`uv.lock`)과는 별도로 해석됩니다. 버전 범위가 어긋나면 개발 환경과 배포 이미지의 런타임 API가 달라질 수 있으므로 다음 규칙을 유지합니다.
 
 - `Dockerfile`과 `pyproject.toml`에 모두 있는 패키지는 버전 범위를 동일하게 유지합니다.
-- API에 민감한 패키지(예: `mcp`)는 `Dockerfile`에서 `uv.lock`과 같은 버전으로 정확히 고정(`==<version>`)합니다.
+- API에 민감한 패키지(예: `mcp`, `sqlmodel`)는 `Dockerfile`에서 `uv.lock`과 같은 버전으로 정확히 고정(`==<version>`)합니다.
+- `SQLAlchemy` asyncio 런타임은 `sqlalchemy[asyncio]==<version>`으로 설치합니다. SQLAlchemy 2.1부터
+  `greenlet`이 `[asyncio]` extra로만 설치되므로, extra 없이 해석되면 `sqlalchemy.ext.asyncio` import가
+  `ImportError`로 죽어 `robo_claw_grpc` 노드가 기동 직후 종료됩니다.
 - 이미지 전용 패키지는 사유와 함께 `scripts/check_docker_deps.py`의 `DOCKER_ONLY`에 등록합니다.
 
 검증은 다음 명령으로 수행하며 `task lint`에 포함되어 있습니다.

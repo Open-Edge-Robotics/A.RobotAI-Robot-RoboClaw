@@ -192,6 +192,15 @@ def test_repository_dependencies_are_consistent():
     assert checker.check(REPO_ROOT) == []
 
 
+def test_repository_pins_sqlmodel_and_greenlet_asyncio_extra():
+    """회귀 방지: SQLAlchemy 2.1이 설치되면 greenlet이 빠져 robo_claw_grpc가 죽는다."""
+    locked = checker.locked_versions(REPO_ROOT / "uv.lock")
+    dockerfile = checker.dockerfile_requirements(REPO_ROOT / "Dockerfile")
+
+    assert dockerfile["sqlmodel"] == f"=={locked['sqlmodel']}"
+    assert dockerfile["sqlalchemy"] == f"[asyncio]=={locked['sqlalchemy']}"
+
+
 def test_repository_pins_mcp_to_locked_version():
     """회귀 방지: 이미지가 uv.lock과 다른 mcp 버전을 설치하면 안 된다."""
     locked = checker.locked_versions(REPO_ROOT / "uv.lock")

@@ -3,6 +3,20 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-28 — 이미지 빌드에서 greenlet이 빠져 robo_claw_grpc가 기동 직후 종료되던 문제
+
+- cloid 2호기 이미지에서 `robo_claw_grpc`가 `ImportError: The SQLAlchemy asyncio module requires
+  that the Python 'greenlet' library is installed`로 죽었습니다. `Dockerfile`이 `sqlmodel>=0.0.21`(
+  범위만 지정)으로 설치하면서 sqlmodel 0.0.48 → SQLAlchemy 2.1.3이 해석됐고, SQLAlchemy 2.1은
+  `greenlet`을 `[asyncio]` extra로만 설치합니다. 개발 환경(`uv.lock`: sqlmodel 0.0.38, SQLAlchemy
+  2.0.49)은 `greenlet`이 함께 설치되어 재현되지 않았습니다.
+- `Dockerfile`은 `sqlmodel==0.0.38`과 `sqlalchemy[asyncio]==2.0.49`로 고정하고, `pyproject.toml`은
+  `sqlmodel>=0.0.38,<0.0.48`로 상한을 두었습니다. `scripts/check_docker_deps.py`의
+  `LOCK_PINNED`/`DOCKER_ONLY`에 사유와 함께 등록하고 회귀 테스트(`test_docker_dependency_pins.py`)를
+  추가했으며, `docs/DOCKER_GUIDE.md`에 SQLAlchemy asyncio 규칙을 명시했습니다.
+- 검증: `task deps-check` 통과, `test_docker_dependency_pins.py` 17건 통과. 이미지 재빌드 후 실기
+  기동은 **미검증**입니다.
+
 ## 2026-10-28 — 자율 순찰(autonomous_act)도 기억된 장소를 한 바퀴 돌면 자동 종료합니다
 
 - `autonomous_act(mode='patrol')`은 `stop_autonomous` 전까지 무한 루프였습니다. 이제 시맨틱 맵에

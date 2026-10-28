@@ -2184,7 +2184,7 @@ requires-dist = [
     { name = "qdrant-client", specifier = ">=1.19.1,<1.20" },
     { name = "setuptools" },
     { name = "slack-sdk", specifier = ">=3.21.0" },
-    { name = "sqlmodel", specifier = ">=0.0.21" },
+    { name = "sqlmodel", specifier = ">=0.0.38,<0.0.48" },
 ]
 
 [package.metadata.requires-dev]
