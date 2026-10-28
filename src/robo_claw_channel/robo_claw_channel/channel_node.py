@@ -320,15 +320,10 @@ class ChannelNode(Node):
 
         request = YieldSlot.Request()
         request.requester_id = request_data["requester_id"] or str(sender_id or "")
-        request.has_target_coords = request_data["has_target_coords"]
-        request.target_x = request_data["target_x"]
-        request.target_y = request_data["target_y"]
         request.target_place = request_data["target_place"]
         if "requester_at_target" in request_data:
             request.has_requester_at_target = True
             request.requester_at_target = bool(request_data["requester_at_target"])
-        request.requester_x = request_data["requester_x"]
-        request.requester_y = request_data["requester_y"]
         request.radius_m = request_data["radius_m"]
         request.timeout_sec = request_data["timeout_sec"]
 

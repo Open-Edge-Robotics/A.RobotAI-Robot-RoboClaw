@@ -67,27 +67,24 @@ class Pose2D:
 class YieldRequest:
     """자리를 요청하는 로봇이 보낸 협상 요청.
 
-    목표는 두 방식 중 하나로 지정한다.
+    목표는 **장소 이름**으로만 지정한다. 로봇마다 같은 맵을 쓰더라도 좌표가
+    다를 수 있으므로 좌표를 로봇 사이에 넘기지 않는다. 수신자가 자기 시멘틱
+    맵에서 자기 좌표로 해석한다(``with_target``).
 
-    - ``target``: map 좌표. 두 로봇이 **같은 맵 프레임**을 공유할 때만 유효하다.
-    - ``target_place``: 장소 이름(예: "안방"). 수신측이 자기 시멘틱 맵에서
-      자기 좌표로 해석하므로 **맵을 공유하지 않아도 된다**. 로봇마다 SLAM
-      원점이 다른 환경은 이 방식을 써야 한다.
+    ``target`` 은 그 해석 결과를 담는 **내부 값**이다. 외부 요청에는 없다.
 
-    ``requester_at_target`` 은 요청자가 **자기 맵 기준으로** 그 목표 반경 안에
-    있는지 스스로 판정한 결과다. 좌표를 로봇 사이에 넘기지 않고 동시 점유를
+    ``requester_at_target`` 은 요청자가 **자기 맵 기준으로** 그 장소 반경 안에
+    있는지 스스로 판정한 결과다. 이것도 좌표를 넘기지 않고 동시 점유를
     판정하기 위한 값이다. ``None`` 이면 판정하지 않은 것으로 본다.
-
-    ``requester_pose`` 는 같은 프레임을 공유할 때만 쓰는 대체 수단이다.
     """
 
     requester_id: str
-    target: Pose2D | None = None
+    target_place: str = ""
     radius_m: float = DEFAULT_RADIUS_M
     timeout_sec: float = DEFAULT_TIMEOUT_SEC
-    requester_pose: Pose2D | None = None
-    target_place: str = ""
     requester_at_target: bool | None = None
+    # 장소 이름을 수신측 맵에서 해석한 결과(내부용).
+    target: Pose2D | None = None
 
     def place_name(self) -> str:
         return str(self.target_place or "").strip()
@@ -175,12 +172,10 @@ def validate_yield_request(
     """요청 파라미터를 검증한다. 통과하면 빈 문자열, 아니면 사유 메시지."""
     if not str(request.requester_id or "").strip():
         return "requester_id가 필요합니다."
-    if not request.has_target():
-        return "목표 좌표(target) 또는 장소 이름(target_place)이 필요합니다."
+    if not request.place_name():
+        return "장소 이름(target_place)이 필요합니다."
     if request.target is not None and not request.target.is_finite():
-        return "요청자 목표 좌표가 유효하지 않습니다."
-    if request.requester_pose is not None and not request.requester_pose.is_finite():
-        return "요청자 현재 위치가 유효하지 않습니다."
+        return "해석된 장소 좌표가 유효하지 않습니다."
     radius = _finite_float(request.radius_m)
     if radius is None or radius <= 0.0 or radius > MAX_RADIUS_M:
         return f"radius_m은 0보다 크고 {MAX_RADIUS_M} 이하여야 합니다."
@@ -238,15 +233,14 @@ def evaluate_yield_request(request: YieldRequest, state: YieldReceiverState) -> 
     if battery is not None and battery < MIN_BATTERY_PERCENT_FOR_YIELD:
         return YieldDecision(DENIED, "battery_critical", distance_m=distance)
 
-    # 동시 점유 판정. 요청자가 자기 맵에서 판정한 불리언을 보냈으면 그것을 믿는다
-    # (좌표를 로봇 사이에 넘기지 않으므로 맵 공유가 필요 없다).
-    requester_pose = request.requester_pose
-    if request.requester_at_target is not None:
-        contested = bool(request.requester_at_target)
-    elif requester_pose is None or not requester_pose.is_finite():
-        contested = True
-    else:
-        contested = math.dist((requester_pose.x, requester_pose.y), (target_x, target_y)) <= radius
+    # 동시 점유 판정은 요청자가 자기 맵에서 판정한 불리언만 쓴다. 좌표를 로봇
+    # 사이에 넘기지 않으므로 맵 공유가 필요 없고, 판정하지 않았으면 보수적으로
+    # 동시 점유로 본다.
+    contested = (
+        bool(request.requester_at_target)
+        if request.requester_at_target is not None
+        else True
+    )
 
     if contested:
         if arbitration_outcome(request.requester_id, state.agent_id) == RECEIVER_WINS:

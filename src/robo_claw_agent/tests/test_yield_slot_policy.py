@@ -30,22 +30,27 @@ pytestmark = pytest.mark.unit
 # --- 헬퍼 -------------------------------------------------------------------
 
 
+_TARGET = Pose2D(2.0, 3.0, 0.0)
+
+
 def _request(
     *,
     requester_id: str = "Stretch3",
-    target: Pose2D | None = None,
+    place: str = "안방",
     radius_m: float = 0.8,
     timeout_sec: float = 5.0,
-    requester_pose: Pose2D | None = None,
+    requester_at_target: bool | None = False,
+    resolved: Pose2D | None = _TARGET,
 ) -> YieldRequest:
-    return YieldRequest(
+    """장소 기반 요청. ``resolved`` 는 수신측이 자기 맵에서 해석한 좌표를 흉내낸다."""
+    request = YieldRequest(
         requester_id=requester_id,
-        target=target or Pose2D(2.0, 3.0, 0.0),
+        target_place=place,
         radius_m=radius_m,
         timeout_sec=timeout_sec,
-        # 기본 요청자는 아직 목표에 도착하지 않은 상태(단독 점유 상황).
-        requester_pose=requester_pose if requester_pose is not None else Pose2D(5.0, 5.0, 0.0),
+        requester_at_target=requester_at_target,
     )
+    return request.with_target(resolved) if resolved is not None else request
 
 
 def _state(
@@ -89,8 +94,8 @@ def test_invalid_numeric_parameters_are_rejected(override):
     assert message, f"{override} 는 거부되어야 합니다"
 
 
-def test_non_finite_target_is_rejected():
-    request = _request(target=Pose2D(float("nan"), 1.0, 0.0))
+def test_non_finite_resolved_target_is_rejected():
+    request = _request(resolved=Pose2D(float("nan"), 1.0, 0.0))
 
     assert validate_yield_request(request)
 
@@ -191,19 +196,11 @@ def test_simultaneous_requests_yield_exactly_one_robot():
     former = _state(agent_id="Former0047", pose=Pose2D(2.0, 3.05, 0.0))
 
     stretch_sees_former = evaluate_yield_request(
-        _request(
-            requester_id="Stretch3",
-            target=target,
-            requester_pose=Pose2D(2.05, 3.0, 0.0),
-        ),
+        _request(requester_id="Stretch3", requester_at_target=True, resolved=target),
         former,
     )
     former_sees_stretch = evaluate_yield_request(
-        _request(
-            requester_id="Former0047",
-            target=target,
-            requester_pose=Pose2D(2.0, 3.05, 0.0),
-        ),
+        _request(requester_id="Former0047", requester_at_target=True, resolved=target),
         stretch,
     )
 
@@ -217,9 +214,8 @@ def test_simultaneous_requests_yield_exactly_one_robot():
 def test_lower_priority_requester_gets_busy_not_accepted():
     # 두 로봇 모두 같은 반경 안(동시 점유)이고 requester_id > receiver_id 이므로
     # 수신측이 자기 자리를 지킨다.
-    contested = Pose2D(2.0, 3.1, 0.0)
     decision = evaluate_yield_request(
-        _request(requester_id="Zeta", requester_pose=contested),
+        _request(requester_id="Zeta", requester_at_target=True),
         _state(agent_id="Former0047"),
     )
 
@@ -232,7 +228,7 @@ def test_occupant_yields_even_with_lexicographic_priority():
     # 수신측 id 가 사전순으로 앞서도(중재상 우선이어도) 요청자가 아직 도착하지
     # 않았다면 자리를 점유한 쪽이 비켜준다.
     decision = evaluate_yield_request(
-        _request(requester_id="Zeta", requester_pose=Pose2D(6.0, 6.0, 0.0)),
+        _request(requester_id="Zeta", requester_at_target=False),
         _state(agent_id="Former0047"),
     )
 
@@ -240,9 +236,8 @@ def test_occupant_yields_even_with_lexicographic_priority():
 
 
 def test_self_request_never_yields():
-    contested = Pose2D(2.0, 3.05, 0.0)
     decision = evaluate_yield_request(
-        _request(requester_id="Former0047", requester_pose=contested), _state()
+        _request(requester_id="Former0047", requester_at_target=True), _state()
     )
 
     assert decision.decision == BUSY
@@ -468,21 +463,6 @@ def test_requester_at_target_true_is_treated_as_contested():
 def test_requester_at_target_false_means_occupant_yields():
     request = _place_request(requester_id="Zeta", requester_at_target=False).with_target(
         Pose2D(2.0, 3.0, 0.0)
-    )
-
-    decision = evaluate_yield_request(request, _state(agent_id="Former0047"))
-
-    assert decision.decision == ACCEPTED
-
-
-def test_requester_at_target_overrides_foreign_pose():
-    """다른 로봇의 좌표(다른 맵)를 넘겨도 요청자의 로컬 판정이 우선한다."""
-    request = YieldRequest(
-        requester_id="Zeta",
-        target=Pose2D(2.0, 3.0, 0.0),
-        # 다른 맵의 좌표라 목표와 겹쳐 보이지만, 요청자는 "나는 그 자리에 없다"고 판정했다.
-        requester_pose=Pose2D(2.0, 3.05, 0.0),
-        requester_at_target=False,
     )
 
     decision = evaluate_yield_request(request, _state(agent_id="Former0047"))

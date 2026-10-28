@@ -6,9 +6,7 @@ from typing import Any
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
 
-from robo_claw_agent.domain.peer_occupancy import describe_occupants
 from robo_claw_agent.skill_manager import BaseSkill
-from robo_claw_agent.skills.peer_pose_sharing import node_blocking_peers
 
 from .core import (
     _cancel_active_goal,
@@ -193,34 +191,17 @@ class NavigateToSkill(BaseSkill):
                         spin_msg,
                     )
 
-        # 동료가 목표 지점을 점유하고 있으면 이동 전에 자리를 요청한다.
-        # 이 선제 교섭은 이동을 막지 않는다 — 거절되면 기존처럼 Nav2가 시도하고,
-        # 실패 원인은 결과에 blocked_by_peers 로 남는다.
-        occupants = self._blocking_peers(x, y)
-        if occupants:
-            logger.info(
-                "Goal %s is occupied by peers: %s",
-                dest_str,
-                [s.agent_id for s in occupants],
-            )
-            self.send_user_message(
-                f"🙋 {dest_str}지점에 동료({', '.join(s.agent_id for s in occupants)})가 있어 "
-                "자리를 요청합니다."
-            )
-        if self._should_precheck_yield(occupants, target_name):
-            if not occupants:
-                self.send_user_message(
-                    f"🙋 {dest_str}지점 자리를 동료에게 먼저 확인합니다."
-                )
-            self._request_peer_yield(x, y, place=target_name)
-            occupants = self._blocking_peers(x, y)
+        # 동료에게 자리를 먼저 확인한다. 좌표 비교는 쓰지 않는다 — 로봇마다 같은
+        # 맵이라도 좌표가 다를 수 있으므로, 기억된 장소 이름으로만 협상한다.
+        # 이 교섭은 이동을 막지 않는다(거절되면 기존처럼 Nav2가 시도한다).
+        if self._should_precheck_yield(target_name):
+            self.send_user_message(f"🙋 {dest_str}지점 자리를 동료에게 먼저 확인합니다.")
+            self._request_peer_yield(place=target_name)
 
         accepted, message, goal_handle = _send_navigation_goal(self.node, x, y, frame, yaw=yaw)
         if not accepted:
             logger.error("Failed to send navigation goal: %s", message)
-            return self.fail_result(
-                message, blocked_by_peers=[s.agent_id for s in occupants]
-            )
+            return self.fail_result(message)
 
         self.send_user_message(f"📍 {dest_str}지점으로 이동을 시작합니다.")
 
@@ -300,34 +281,15 @@ class NavigateToSkill(BaseSkill):
         fail_kwargs: dict[str, Any] = {"x": x, "y": y}
         if early_abort_diagnosed:
             fail_kwargs["failure_reason"] = "progress_checker_timeout"
-        if occupants:
-            # 이동 실패의 원인을 동료 점유로 귀속한다. planner 가 request_yield_slot
-            # 호출 여부를 판단할 수 있는 근거가 된다.
-            fail_kwargs["blocked_by_peers"] = [s.agent_id for s in occupants]
-            fail_kwargs["blocked_by_peers_detail"] = describe_occupants(
-                occupants, target_x=x, target_y=y
-            )
         return self.fail_result(f"{dest_str}지점으로 이동 실패: {result_message}", **fail_kwargs)
 
-    # --- 동료 점유 진단 -------------------------------------------------------
-
-    def _blocking_peers(self, x: float, y: float) -> list[Any]:
-        """목표 지점을 점유한 동료 목록. 자세 공유가 꺼져 있으면 빈 목록."""
-        if self.node is None:
-            return []
-        try:
-            return node_blocking_peers(self.node, target_x=x, target_y=y)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Peer occupancy lookup failed (ignored): %s", exc)
-            return []
+    # --- 동료 자리 협상 -------------------------------------------------------
 
     def _yield_precheck_mode(self) -> str:
-        """``local``: 로컬 자세 정보로 점유를 확인했을 때만 요청.
+        """``ask``: 장소 이름이 있으면 동료에게 자리를 먼저 확인한다.
 
-        ``ask``: 로컬 정보가 없어도(맵·도메인 미공유) 동료에게 직접 물어본다.
-        ``off``: 선제 요청을 하지 않는다.
-
-        구버전 ``yield_precheck_enabled``(bool)도 계속 인식한다.
+        ``off``: 선제 요청을 하지 않는다. 좌표 비교를 쓰지 않으므로 로컬 자세로
+        점유를 추정하는 모드는 두지 않는다.
         """
         if self.node is None:
             return "off"
@@ -339,48 +301,35 @@ class NavigateToSkill(BaseSkill):
                     .string_value
                     or ""
                 ).strip()
-                if mode in {"local", "ask", "off"}:
+                if mode in {"ask", "off"}:
                     return mode
-            if self.node.has_parameter("yield_precheck_enabled"):
-                enabled = bool(
-                    self.node.get_parameter("yield_precheck_enabled")
-                    .get_parameter_value()
-                    .bool_value
-                )
-                return "local" if enabled else "off"
         except Exception:  # noqa: BLE001
             return "off"
-        return "local"
+        return "ask"
 
-    def _should_precheck_yield(self, occupants: list[Any], place_name: str) -> bool:
+    def _should_precheck_yield(self, place_name: str) -> bool:
         """선제 자리 요청을 지금 보낼지 판단한다.
 
-        ``ask`` 모드는 동료에게 직접 묻는 방식이라 로컬 자세 정보가 필요 없다.
-        다만 두 로봇이 같은 맵을 공유하지 않으면 좌표 비교가 무의미하므로
-        **장소 이름이 있을 때만** 요청한다(엉뚱한 양보 요청 방지).
+        장소 이름이 없으면 동료에게 물을 기준이 없으므로 요청하지 않는다
+        (좌표를 넘기지 않는다는 원칙과 같은 이유).
         """
-        mode = self._yield_precheck_mode()
-        if mode == "off":
+        if self._yield_precheck_mode() == "off":
             return False
-        if occupants:
-            return True
-        if mode == "ask":
-            return bool(str(place_name or "").strip())
-        return False
+        return bool(str(place_name or "").strip())
 
-    def _request_peer_yield(self, x: float, y: float, *, place: str = "") -> None:
-        """점유 동료에게 자리를 요청한다. 실패해도 이동은 계속 시도한다."""
+    def _request_peer_yield(self, *, place: str) -> None:
+        """동료에게 자리를 요청한다. 실패해도 이동은 계속 시도한다."""
         if self._yield_precheck_mode() == "off":
             return
         skills = getattr(self.node, "_skills", None)
         if skills is None or not skills.has_skill("request_yield_slot"):
             return
         try:
-            params: dict[str, Any] = {"target_x": x, "target_y": y}
-            if str(place or "").strip():
-                # 맵을 공유하지 않는 로봇은 장소 이름으로 협상해야 한다.
-                params = {"target_place": str(place).strip()}
-            result = skills.execute("request_yield_slot", params, timeout_sec=70.0)
+            result = skills.execute(
+                "request_yield_slot",
+                {"target_place": str(place).strip()},
+                timeout_sec=70.0,
+            )
             logger.info(
                 "[navigate_to] yield precheck result: success=%s message=%s",
                 getattr(result, "success", False),

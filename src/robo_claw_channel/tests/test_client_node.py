@@ -6,6 +6,7 @@ import pytest
 
 pytestmark = pytest.mark.ros2
 
+import json
 import queue
 import threading
 from unittest.mock import MagicMock, patch
@@ -198,10 +199,9 @@ class TestMessengerClientNodeUnit:
     def _make_call_peer_yield_request(self, **overrides):
         request = MagicMock()
         request.peer_name = overrides.get("peer_name", "Former0047")
-        request.target_x = overrides.get("target_x", 2.0)
-        request.target_y = overrides.get("target_y", 3.0)
-        request.requester_x = overrides.get("requester_x", 5.0)
-        request.requester_y = overrides.get("requester_y", 5.0)
+        request.target_place = overrides.get("target_place", "안방")
+        request.has_requester_at_target = overrides.get("has_requester_at_target", True)
+        request.requester_at_target = overrides.get("requester_at_target", False)
         request.radius_m = overrides.get("radius_m", 0.8)
         request.timeout_sec = overrides.get("timeout_sec", 60.0)
         return request
@@ -217,12 +217,12 @@ class TestMessengerClientNodeUnit:
         assert res.decision == "denied"
         assert res.reason == "peer_not_connected"
 
-    def test_call_peer_yield_rejects_invalid_target(self):
+    def test_call_peer_yield_rejects_missing_place(self):
         self.node._sender_id = "Stretch3"
         self.node._peer_stubs = {"Former0047": MagicMock()}
 
         res = self.node._handle_call_peer_yield(
-            self._make_call_peer_yield_request(target_x=float("nan")), MagicMock()
+            self._make_call_peer_yield_request(target_place="   "), MagicMock()
         )
 
         assert res.success is False
@@ -256,7 +256,9 @@ class TestMessengerClientNodeUnit:
         assert res.yield_spot_y == 3.0
         sent = stub.SendCommand.call_args.args[0]
         assert sent.metadata["type"] == YIELD_MESSAGE_TYPE
-        assert "target_x" in sent.content
+        payload = json.loads(sent.content)
+        assert payload["target_place"] == "안방"
+        assert not any(key in payload for key in ("target_x", "requester_x"))
 
     def test_call_peer_yield_does_not_forward_transport_timeout(self):
         """gRPC 전송 상한(수십 초)을 협상 예산으로 넘기면 상대가 invalid_request 로 거부한다."""

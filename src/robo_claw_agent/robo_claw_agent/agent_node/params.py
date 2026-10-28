@@ -113,13 +113,11 @@ class AgentParams:
     # 동료 로봇의 자리 양보 요청을 수락할지 여부. False 면 YieldSlot 요청에
     # 항상 거부로 응답해 다른 작업을 계속한다.
     yield_slot_enabled: bool = True
-    # 이동 전에 목표 지점 점유 동료에게 자리를 먼저 요청할지 여부. 이동을 막지
-    # 않으므로 거절되어도 기존처럼 Nav2 가 시도한다.
-    # local: 로컬 자세 공유로 점유를 확인했을 때만 요청
-    # ask: 로컬 정보가 없어도(맵·도메인 미공유) 장소 이름으로 동료에게 직접 묻는다
+    # 이동 전에 동료에게 자리를 먼저 확인할지 여부. 좌표 비교는 쓰지 않으므로
+    # 기억된 장소 이름으로만 묻는다. 이동을 막지 않는다(거절되어도 Nav2 가 시도).
+    # ask: 장소 이름이 있으면 동료에게 먼저 묻는다
     # off: 선제 요청 안 함
-    yield_precheck_mode: str = "local"
-    yield_precheck_enabled: bool = True
+    yield_precheck_mode: str = "ask"
 
 
 def declare_agent_parameters(node) -> None:
@@ -240,8 +238,7 @@ def declare_agent_parameters(node) -> None:
     # 복합 명령 자동 분해(Task Decomposition)
     # 자리 양보 협상
     node.declare_parameter("yield_slot_enabled", True)
-    node.declare_parameter("yield_precheck_mode", "local")
-    node.declare_parameter("yield_precheck_enabled", True)
+    node.declare_parameter("yield_precheck_mode", "ask")
     node.declare_parameter("enable_task_decomposition", True)
     node.declare_parameter("task_decomposition_max_steps", 6)
     node.declare_parameter("task_step_max_retries", 1)
@@ -337,7 +334,6 @@ def read_agent_parameters(node) -> AgentParams:
         task_queue_max_size=_i(node, "task_queue_max_size"),
         enable_task_decomposition=_b(node, "enable_task_decomposition"),
         yield_slot_enabled=_b(node, "yield_slot_enabled"),
-        yield_precheck_enabled=_b(node, "yield_precheck_enabled"),
         yield_precheck_mode=_s(node, "yield_precheck_mode"),
         task_decomposition_max_steps=_i(node, "task_decomposition_max_steps"),
         task_step_max_retries=_i(node, "task_step_max_retries"),

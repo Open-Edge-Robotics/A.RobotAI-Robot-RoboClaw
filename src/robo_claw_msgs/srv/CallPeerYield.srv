@@ -2,28 +2,22 @@
 # 요청하기 위한 서비스 (메신저 클라이언트 노드가 서버 역할 — ROS 서비스로 받아
 # gRPC로 중계한다)
 #
-# 목표는 좌표 또는 장소 이름 중 하나로 지정한다. 맵을 공유하지 않는 로봇은
-# target_place 를 써야 한다.
+# 목표는 장소 이름으로만 지정한다. 좌표를 로봇 사이에 넘기지 않는다.
 
-string peer_name        # target_peers_json에 등록된 동료 이름
-bool has_target_coords  # target_x/target_y 가 유효한지
-float64 target_x        # 요청자가 도달하려는 map 좌표 x (맵 공유 시에만)
-float64 target_y        # 요청자가 도달하려는 map 좌표 y (맵 공유 시에만)
-string target_place     # 도달하려는 장소 이름. 상대가 자기 맵에서 해석한다
+string peer_name         # target_peers_json에 등록된 동료 이름
+string target_place      # 도달하려는 장소 이름. 상대가 자기 맵에서 해석한다
 bool has_requester_at_target  # requester_at_target 값이 유효한지
-bool requester_at_target # 요청자가 자기 맵 기준으로 그 목표 반경 안에 있는지
-float64 requester_x     # 요청자의 현재 map 좌표 x (모르면 nan)
-float64 requester_y     # 요청자의 현재 map 좌표 y (모르면 nan)
-float64 radius_m        # 점유 판정 반경 (0이면 상대 노드 기본값)
-float64 timeout_sec     # 응답 대기 상한 (0이면 노드 기본값)
+bool requester_at_target # 요청자가 자기 맵 기준으로 그 장소 반경 안에 있는지
+float64 radius_m         # 점유 판정 반경 (0이면 상대 노드 기본값)
+float64 timeout_sec      # 응답 대기 상한 (0이면 노드 기본값)
 ---
-bool success            # 요청이 전달·처리되었는지 (판정 결과와 무관)
-string decision         # not_needed | accepted | busy | denied
-string reason           # 판정 사유 코드
-float64 distance_m      # 상대 로봇과 목표 지점 거리 (모르면 -1)
-float64 retry_after_sec # decision=busy 일 때 재시도까지 대기 시간
-bool has_yield_spot     # 상대가 비켜줄 좌표가 유효한지
+bool success             # 요청이 전달·처리되었는지 (판정 결과와 무관)
+string decision          # not_needed | accepted | busy | denied
+string reason            # 판정 사유 코드
+float64 distance_m       # 상대 로봇과 해석된 장소 사이 거리 (모르면 -1)
+float64 retry_after_sec  # decision=busy 일 때 재시도까지 대기 시간
+bool has_yield_spot      # 상대가 비켜줄 좌표가 유효한지
 float64 yield_spot_x
 float64 yield_spot_y
-string message          # 사람이 읽을 수 있는 요약
-string error_message    # 전달 실패 시 오류 내용
+string message           # 사람이 읽을 수 있는 요약
+string error_message     # 전달 실패 시 오류 내용
