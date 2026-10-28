@@ -581,7 +581,9 @@ class MessengerClientNode(Node):
             requester_x=request.requester_x,
             requester_y=request.requester_y,
             radius_m=request.radius_m,
-            timeout_sec=request.timeout_sec,
+            # timeout_sec 는 이 노드의 gRPC 전송 상한이고, 협상 예산이 아니다.
+            # 상대 도메인은 협상 예산을 10초로 제한하므로 0(상대 기본값)을 보낸다.
+            timeout_sec=0.0,
             target_place=getattr(request, "target_place", ""),
             has_target_coords=bool(getattr(request, "has_target_coords", True)),
             requester_at_target=(

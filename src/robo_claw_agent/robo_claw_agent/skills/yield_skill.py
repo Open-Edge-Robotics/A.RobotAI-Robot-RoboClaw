@@ -406,7 +406,9 @@ class RequestYieldSlotSkill(BaseSkill):
             request.has_requester_at_target = True
             request.requester_at_target = bool(requester_at_target)
         request.radius_m = radius
-        request.timeout_sec = YIELD_GRPC_TIMEOUT_SEC
+        # timeout_sec 는 '협상 예산'이지 전송 타임아웃이 아니다. 전송 상한은
+        # call_timeout_sec 로만 쓰고, 상대에게는 기본값(0)을 쓰게 둔다.
+        request.timeout_sec = 0.0
         if requester_pose is not None:
             request.requester_x = requester_pose.x
             request.requester_y = requester_pose.y
@@ -474,7 +476,9 @@ class RequestYieldSlotSkill(BaseSkill):
                 request.has_requester_at_target = True
                 request.requester_at_target = bool(requester_at_target)
             request.radius_m = radius
-            request.timeout_sec = YIELD_CALL_TIMEOUT_SEC
+            # 협상 예산은 상대 기본값을 쓴다. 전송 상한(YIELD_CALL_TIMEOUT_SEC)을
+            # 그대로 넘기면 도메인 상한(10초)을 넘겨 invalid_request 가 된다.
+            request.timeout_sec = 0.0
             if requester_pose is not None:
                 request.requester_x = requester_pose.x
                 request.requester_y = requester_pose.y

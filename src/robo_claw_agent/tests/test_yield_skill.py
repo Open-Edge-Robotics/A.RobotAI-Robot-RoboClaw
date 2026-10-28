@@ -139,7 +139,9 @@ def _skill_with_fake_peer(outcomes_per_call: list[list[PeerYieldOutcome]]):
     def _requester_pose():
         return None
 
-    def _query_peers(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
+    def _query_peers(
+        peer_names, target, radius, requester_pose, place="", requester_at_target=None
+    ):
         calls.append(1.0)
         return pending.pop(0) if pending else []
 
@@ -332,9 +334,7 @@ def test_place_request_is_expanded_into_local_occupancy_judgment(monkeypatch):
     )
 
     def _query(peer_names, target, radius, requester_pose, place="", requester_at_target=None):
-        captured.update(
-            target=target, place=place, requester_at_target=requester_at_target
-        )
+        captured.update(target=target, place=place, requester_at_target=requester_at_target)
         return [PeerYieldOutcome("Cloid2", NOT_NEEDED, "not_blocking")]
 
     skill._target_peers = lambda requested: ["Cloid2"]  # type: ignore[method-assign]
@@ -383,3 +383,71 @@ def test_place_request_without_coords_passes_validation():
     assert result["success"] is False
     assert result["reason"] == "no_peer_available"
     assert calls != [], "장소 요청도 협상을 시도해야 합니다"
+
+
+# --- 전송 타임아웃 vs 협상 예산 -------------------------------------------------
+
+
+def test_local_call_does_not_forward_transport_timeout_as_negotiation_budget(monkeypatch):
+    """전송 타임아웃(수십 초)을 협상 예산으로 넘기면 도메인 상한(10초)에 걸린다."""
+    from robo_claw_agent import ros_future
+
+    captured: dict = {}
+
+    def _fake_call(client, request, **kwargs):
+        captured["timeout_sec"] = request.timeout_sec
+        captured["call_timeout"] = kwargs.get("call_timeout_sec")
+        return True, SimpleNamespace(
+            decision="denied",
+            reason="unknown_place",
+            retry_after_sec=0.0,
+            has_yield_spot=False,
+            message="",
+        )
+
+    monkeypatch.setattr(ros_future, "call_service", _fake_call)
+
+    skill = RequestYieldSlotSkill()
+    skill.set_node(
+        SimpleNamespace(
+            _agent_id="Stretch3",
+            create_client=lambda *a, **k: object(),
+            destroy_client=lambda c: None,
+        )
+    )
+    skill._call_peer(
+        "/Former0047/robo_claw_agent_node/yield_slot",
+        "Former0047",
+        None,
+        0.8,
+        None,
+        place="안방",
+    )
+
+    assert captured["timeout_sec"] == 0.0
+    assert captured["call_timeout"] > 10.0
+
+
+def test_grpc_call_does_not_forward_transport_timeout_as_negotiation_budget(monkeypatch):
+    from robo_claw_agent import ros_future
+
+    captured: dict = {}
+
+    def _fake_call(client, request, **kwargs):
+        captured["timeout_sec"] = request.timeout_sec
+        return True, SimpleNamespace(
+            decision="denied",
+            reason="unknown_place",
+            retry_after_sec=0.0,
+            has_yield_spot=False,
+            message="",
+        )
+
+    monkeypatch.setattr(ros_future, "call_service", _fake_call)
+
+    skill = RequestYieldSlotSkill()
+    skill.set_node(SimpleNamespace(_agent_id="Stretch3", _call_peer_yield_client=object()))
+
+    skill._call_peer_via_grpc("Former0047", None, 0.8, None, place="안방")
+
+    assert captured["timeout_sec"] == 0.0

@@ -258,6 +258,29 @@ class TestMessengerClientNodeUnit:
         assert sent.metadata["type"] == YIELD_MESSAGE_TYPE
         assert "target_x" in sent.content
 
+    def test_call_peer_yield_does_not_forward_transport_timeout(self):
+        """gRPC 전송 상한(수십 초)을 협상 예산으로 넘기면 상대가 invalid_request 로 거부한다."""
+        import json as _json
+
+        from robo_claw_channel.yield_protocol import encode_response
+
+        stub = MagicMock()
+        stub.SendCommand.return_value = pb2.CommandResponse(
+            success=True,
+            message="ok",
+            result_json=encode_response(decision="not_needed", reason="not_blocking"),
+        )
+        self.node._sender_id = "cloid02"
+        self.node._peer_stubs = {"Former0047": stub}
+        self.node._peers = []
+
+        self.node._handle_call_peer_yield(
+            self._make_call_peer_yield_request(timeout_sec=60.0), MagicMock()
+        )
+
+        sent = stub.SendCommand.call_args.args[0]
+        assert _json.loads(sent.content)["timeout_sec"] == 0.0
+
     def test_call_peer_yield_rejects_unparseable_response(self):
         stub = MagicMock()
         stub.SendCommand.return_value = pb2.CommandResponse(
