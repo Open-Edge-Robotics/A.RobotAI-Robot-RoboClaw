@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 
 YIELD_SLOT_SERVICE_TYPE = "robo_claw_msgs/srv/YieldSlot"
 YIELD_SLOT_SERVICE_SUFFIX = "/yield_slot"
-# 서비스 호출 상한(초). 수신측이 실제 이동까지 마치고 응답하므로 넉넉히 잡는다.
-YIELD_CALL_TIMEOUT_SEC = 30.0
+# 서비스 호출 상한(초). 수신측이 실제 이동(최대 40초)까지 마치고 응답하므로 넉넉히 잡는다.
+YIELD_CALL_TIMEOUT_SEC = 60.0
 # 재시도 안내를 받았을 때 기다릴 최대 시간(초). 이보다 길면 포기하고 보고한다.
 MAX_RETRY_WAIT_SEC = 10.0
 # gRPC 중계 요청 대기 상한(초). 수신측이 실제 이동까지 마치고 응답한다.

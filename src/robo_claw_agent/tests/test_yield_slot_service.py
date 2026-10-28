@@ -405,3 +405,80 @@ def test_candidates_are_empty_when_no_message_helper_exists():
     node = SimpleNamespace()  # 헬퍼도 스킬도 없음
 
     assert ys._yield_candidates(node, Pose2D(0.0, 0.0, 0.0)) == []
+
+
+# --- 이동 실패 시 잔여 주행 취소 ---------------------------------------------
+
+
+def test_failed_yield_move_cancels_the_orphan_navigation_goal(monkeypatch):
+    """스킬 타임아웃은 goal 을 취소하지 않으므로, 실패 보고 시 직접 멈춘다."""
+    from robo_claw_agent.skills import yield_slot_service as ys
+    from robo_claw_agent.skills.navigation_skill import core as nav_core
+
+    cancelled: list[str] = []
+    monkeypatch.setattr(
+        nav_core,
+        "_cancel_active_goal",
+        lambda token=None: cancelled.append("cancel") or (True, "취소"),
+    )
+
+    node = SimpleNamespace(
+        _skills=SimpleNamespace(
+            execute=lambda name, params, timeout_sec=0.0: SimpleNamespace(
+                success=False, message="스킬 실행 타임아웃"
+            )
+        )
+    )
+
+    ok = ys.execute_yield_move(node, Pose2D(1.0, 2.0, 0.0))
+
+    assert ok is False
+    assert cancelled == ["cancel"]
+
+
+def test_successful_yield_move_does_not_cancel_anything(monkeypatch):
+    from robo_claw_agent.skills import yield_slot_service as ys
+    from robo_claw_agent.skills.navigation_skill import core as nav_core
+
+    cancelled: list[str] = []
+    monkeypatch.setattr(
+        nav_core, "_cancel_active_goal", lambda token=None: cancelled.append("cancel") or (True, "")
+    )
+
+    node = SimpleNamespace(
+        _skills=SimpleNamespace(
+            execute=lambda name, params, timeout_sec=0.0: SimpleNamespace(
+                success=True, message="도착"
+            )
+        )
+    )
+
+    assert ys.execute_yield_move(node, Pose2D(1.0, 2.0, 0.0)) is True
+    assert cancelled == []
+
+
+def test_queued_yield_move_cancels_when_the_task_never_finishes(monkeypatch):
+    from robo_claw_agent.skills import yield_slot_service as ys
+    from robo_claw_agent.skills.navigation_skill import core as nav_core
+
+    cancelled: list[str] = []
+    monkeypatch.setattr(
+        nav_core, "_cancel_active_goal", lambda token=None: cancelled.append("cancel") or (True, "")
+    )
+    monkeypatch.setattr(ys, "YIELD_MOVE_TIMEOUT_SEC", 0.05)
+
+    # submit 은 태스크를 받지만 실행하지 않는다(끝나지 않는 상황 흉내).
+    node = SimpleNamespace(
+        _skills=SimpleNamespace(execute=lambda *a, **k: SimpleNamespace(success=True)),
+        _submit_task_to_queue=lambda instruction, execute_fn: "task-1",
+    )
+
+    assert ys.execute_yield_move(node, Pose2D(1.0, 2.0, 0.0), timeout_sec=0.05) is False
+    assert cancelled == ["cancel"]
+
+
+def test_move_timeout_allows_a_slow_two_meter_detour():
+    """실측 1.9m 대피 이동이 25초를 넘겨 타임아웃됐다. 상한을 늘렸는지 고정한다."""
+    from robo_claw_agent.skills import yield_slot_service as ys
+
+    assert ys.YIELD_MOVE_TIMEOUT_SEC >= 40.0

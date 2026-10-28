@@ -31,7 +31,8 @@ from robo_claw_agent.domain.yield_slot import (
 logger = logging.getLogger(__name__)
 
 # 양보 이동에 허용하는 최대 시간(초). 서비스 응답 상한보다 짧아야 한다.
-YIELD_MOVE_TIMEOUT_SEC = 25.0
+# 실측: 1.9m 대피 이동이 25초를 넘겨 스킬 타임아웃이 났다(재계획·회전 포함).
+YIELD_MOVE_TIMEOUT_SEC = 40.0
 # 조작 중인 로봇을 판정하는 리소스 이름. 이 중 하나라도 점유 중이면 조작 중이다.
 MANIPULATION_RESOURCES = frozenset({"cloid_motion", "manipulation", "gripper"})
 # 비켜줄 후보지 탐색 개수 상한 (지도 전역 스캔 비용 제한).
@@ -365,10 +366,33 @@ def build_server_context(node: Any, *, agent_id: str, allow_yield: bool) -> Yiel
     )
 
 
+def _cancel_orphan_navigation() -> None:
+    """양보 이동 실패 뒤 남아 있는 Nav2 goal 을 취소한다.
+
+    ``SkillManager`` 의 스킬 타임아웃은 응답만 끊고 **실행 중인 goal 을 취소하지
+    않는다**. 그래서 실패를 보고한 뒤에도 로봇이 계속 이동하는 상태가 생긴다
+    (실측: move_failed 응답 후 1.87m 추가 이동). 요청자는 실패로 알고 다른 계획을
+    세우므로, 실패를 보고할 때는 반드시 남은 주행을 멈춘다.
+    """
+    try:
+        from robo_claw_agent.skills.navigation_skill.core import _cancel_active_goal
+
+        ok, message = _cancel_active_goal()
+        if ok:
+            logger.info("[Yield] 남아 있던 주행 목표를 취소했습니다: %s", message)
+        else:
+            logger.debug("[Yield] 취소할 주행 목표가 없습니다: %s", message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[Yield] 양보 이동 취소 실패: %s", exc)
+
+
 def execute_yield_move(
     node: Any, spot: Pose2D, *, timeout_sec: float = YIELD_MOVE_TIMEOUT_SEC
 ) -> bool:
-    """선정된 자리로 실제 이동한다. 태스크 큐를 통해 실행해 다른 작업과 겹치지 않게 한다."""
+    """선정된 자리로 실제 이동한다. 태스크 큐를 통해 실행해 다른 작업과 겹치지 않게 한다.
+
+    실패(타임아웃 포함)하면 남은 주행 목표를 취소한 뒤 False 를 돌려준다.
+    """
     skills = getattr(node, "_skills", None)
     if skills is None:
         return False
@@ -377,7 +401,10 @@ def execute_yield_move(
     submit = getattr(node, "_submit_task_to_queue", None)
     if submit is None:
         result = skills.execute("navigate_to", params, timeout_sec=timeout_sec)
-        return bool(getattr(result, "success", False))
+        success = bool(getattr(result, "success", False))
+        if not success:
+            _cancel_orphan_navigation()
+        return success
 
     done = threading.Event()
     outcome: dict[str, bool] = {}
@@ -395,5 +422,8 @@ def execute_yield_move(
     task_id = submit(instruction="[yield] 자리 양보 이동", execute_fn=_run)
     if task_id is None:
         return False
-    done.wait(timeout=timeout_sec + 10.0)
-    return bool(outcome.get("success", False))
+    finished = done.wait(timeout=timeout_sec + 10.0)
+    if not finished or not outcome.get("success", False):
+        _cancel_orphan_navigation()
+        return False
+    return True
