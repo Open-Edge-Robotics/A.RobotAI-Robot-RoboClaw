@@ -23,6 +23,8 @@ def test_tidy_home_summary_does_not_claim_unobserved_area_was_clear():
 
     assert "정리 대상 유무" in messages[0]
     assert "확정할 수 없습니다" in messages[0]
+
+
 def test_tidy_home_withholds_actions_when_start_orientation_is_not_restored():
     from robo_claw_agent.skills.autonomous_skill.globals import _AUTONOMOUS_ACTIVE
 
@@ -46,6 +48,8 @@ def test_tidy_home_withholds_actions_when_start_orientation_is_not_restored():
     assert cleanup_calls == []
     assert "안방: orientation_unrestored" in messages[-1]
     assert any("후속 정리 동작은 실행하지 않았습니다" in message for message in messages)
+
+
 def test_tidy_home_marks_no_candidate_as_partial_when_some_views_failed():
     from robo_claw_agent.skills.autonomous_skill.globals import _AUTONOMOUS_ACTIVE
 
@@ -68,11 +72,15 @@ def test_tidy_home_marks_no_candidate_as_partial_when_some_views_failed():
     assert "안방: partial_observation" in summary
     assert "미관찰" in summary
     assert "정리 대상 유무" in summary
+
+
 def test_tidy_home_skill_requires_a_target_for_room_scope():
     result = TidyHomeSkill().execute({"scope": "room"})
 
     assert result["success"] is False
     assert result["failure_reason"] == "target_location_required"
+
+
 def test_tidy_home_resolves_room_via_target_coordinates():
     from types import SimpleNamespace
 
@@ -92,6 +100,8 @@ def test_tidy_home_resolves_room_via_target_coordinates():
     assert len(places) == 1
     assert places[0]["name"] == "주방"
     assert places[0]["position"] == {"x": 2.5, "y": -1.5}
+
+
 def test_tidy_home_resolves_room_via_rag_navigated_coordinate():
     from types import SimpleNamespace
 
@@ -123,6 +133,8 @@ def test_tidy_home_resolves_room_via_rag_navigated_coordinate():
     assert places[0]["name"] == "주방"
     assert places[0]["position"]["x"] == 1.5
     assert places[0]["position"]["y"] == 2.0
+
+
 def test_tidy_home_executes_demo_motion_locally_when_capable(monkeypatch):
     """시연 가능한 로컬 로봇(1호)은 정리 대상 확인 시 no_action으로 끝나지 않고 demo_motion_executed를 반환한다."""
     from types import SimpleNamespace
@@ -312,12 +324,35 @@ def test_tidy_home_home_sweep_ends_after_last_remembered_place():
     }
     _AUTONOMOUS_ACTIVE.set()
 
-    skill._run_cleanup(
-        "home", [_place("주방", 1.5, 2.0), _place("거실", -2.0, 3.0)], run_id=""
-    )
+    skill._run_cleanup("home", [_place("주방", 1.5, 2.0), _place("거실", -2.0, 3.0)], run_id="")
 
     assert visited == ["주방", "거실"]
     assert is_autonomous_active() is False
     assert any("[1/2] '주방'" in message for message in messages)
     assert any("[2/2] '거실'" in message for message in messages)
     assert any("모두 확인하고 정리 작업을 마쳤습니다" in message for message in messages)
+
+
+def test_tidy_home_home_scope_collapses_near_duplicate_locations_into_one_visit():
+    """집 범위 정리는 같은 지점을 이름만 달리해 기억한 장소를 한 번만 확인한다."""
+    from types import SimpleNamespace
+
+    semantic_places = [
+        _place("안방", 1.0, 1.0, kind="place"),
+        _place("안방 (Former)", 2.4, 1.6, kind="place"),
+        _place("주방", 3.0, 4.0, kind="place"),
+        _place("주방 식탁", 3.2, 4.2, kind="place"),
+        _place("거실", -2.0, 3.0, kind="place"),
+    ]
+    memory = SimpleNamespace(
+        get_all_objects=lambda: list(semantic_places),
+        get_object_location=lambda _name: None,
+        _vector_store=SimpleNamespace(list_entries=lambda: []),
+    )
+    skill = TidyHomeSkill()
+    skill.node = SimpleNamespace(_memory=memory, _skills=None)
+
+    places, error = skill._collect_places("home", "")
+
+    assert error is None
+    assert [place["name"] for place in places] == ["안방", "주방", "거실"]

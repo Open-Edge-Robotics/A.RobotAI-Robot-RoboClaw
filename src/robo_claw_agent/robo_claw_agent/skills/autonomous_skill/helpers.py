@@ -1,11 +1,17 @@
 import json
 import logging
+import math
 import os
 import re
 import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# 장소마다 4방향 관찰로 주변을 확인하므로, 이 거리 안에 있는 기억 장소는 같은 지점을
+# 두 번 확인하는 것으로 본다. 로봇 도착 판정 오차(Nav2 0.25m)보다 넉넉하고, 방과 방
+# 사이 거리보다는 좁게 잡는다.
+_PLACE_MERGE_RADIUS_M = 0.75
 
 
 def _is_alias_object(obj: dict[str, Any]) -> bool:
@@ -95,15 +101,27 @@ def _split_semantic_places(
 
 
 def _remembered_place_candidates(
-    memory: Any, *, include_map_generated: bool = True
+    memory: Any,
+    *,
+    include_map_generated: bool = True,
+    merge_radius_m: float = _PLACE_MERGE_RADIUS_M,
 ) -> list[dict[str, Any]]:
     """순회할 장소는 시맨틱 맵에 저장된 장소로 제한해 모은다.
 
     RAG 벡터스토어에는 같은 장소가 주행 기록·수동 노트·위치 지식으로 여러 레코드 남아
     있어, 전체를 순회 후보로 쓰면 물리적으로 같은 장소가 이름만 달리해 20곳 넘게
-    중복 순회된다. 순회 대상은 좌표가 있는 시맨틱 맵 장소로 제한하고, 이름(공백·대소문자
-    무시)과 좌표(1mm) 기준으로 중복을 제거한다. RAG의 장소 지식은 이름→좌표 해석
-    (`_resolve_target_coordinates`)에만 사용한다.
+    중복 순회된다. 순회 대상은 좌표가 있는 시맨틱 맵 장소로 제한하고, 다음을 중복으로
+    보고 한 곳만 남긴다.
+
+    - 이름(공백·대소문자 무시)이 같거나 좌표가 1mm 이내
+    - 서로 ``merge_radius_m`` 이내에 있는 좌표(같은 지점을 두 번 관찰하는 경우)
+    - 뒤에 로봇 라벨이 붙은 이름(``"안방 (Former)"``)과 그 표준 이름(``"안방"``).
+      라벨이 붙은 이름은 어느 로봇 맵에서 기록했는지만 표시한 것이고, 동료 로봇은 그
+      이름을 자기 맵에서 해석하지 못한다. 표준 이름이 있으면 그쪽을 남긴다.
+    - 로봇 자신의 위치를 가리키는 이름(``"현재 위치"``, ``"여기"``, ``"마지막 위치"``).
+      이는 장소가 아니므로 순회 목록에서 아예 제외한다.
+
+    RAG의 장소 지식은 이름→좌표 해석(``_resolve_target_coordinates``)에만 사용한다.
     """
     if memory is None or not hasattr(memory, "get_all_objects"):
         return []
@@ -113,26 +131,58 @@ def _remembered_place_candidates(
     if include_map_generated:
         places.extend(map_generated_places)
 
-    from robo_claw_agent.memory_manager.semantic import _normalize_location_name
+    from robo_claw_agent.memory_manager.semantic import (
+        _canonical_place_name,
+        _is_self_location_name,
+        _normalize_location_name,
+    )
 
-    selected: list[dict[str, Any]] = []
-    seen_names: set[str] = set()
-    seen_positions: set[tuple[float, float]] = set()
+    entries: list[tuple[dict[str, Any], tuple[float, float], str, str]] = []
     for place in places:
         name = str(place.get("name", "")).strip()
-        if not name:
+        if not name or _is_self_location_name(name):
             continue
         position = place.get("position") or {}
         try:
             coordinate = (round(float(position["x"]), 3), round(float(position["y"]), 3))
         except (KeyError, TypeError, ValueError):
             continue
-        normalized_name = _normalize_location_name(name)
-        if normalized_name in seen_names or coordinate in seen_positions:
-            continue
+        entries.append(
+            (
+                place,
+                coordinate,
+                _normalize_location_name(name),
+                _normalize_location_name(_canonical_place_name(name)),
+            )
+        )
+
+    selected: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    seen_positions: set[tuple[float, float]] = set()
+    visited_positions: list[tuple[float, float]] = []
+    radius = max(0.0, float(merge_radius_m))
+
+    def _try_select(entry: tuple[dict[str, Any], tuple[float, float], str, str]) -> None:
+        place, coordinate, normalized_name, canonical_name = entry
+        # 라벨이 붙은 이름은 표준 이름 자리를 차지한다. 표준 이름이 이미 선택됐으면 중복이다.
+        key_name = canonical_name or normalized_name
+        if key_name in seen_names or normalized_name in seen_names or coordinate in seen_positions:
+            return
+        if any(math.dist(coordinate, other) <= radius for other in visited_positions):
+            return
+        seen_names.add(key_name)
         seen_names.add(normalized_name)
         seen_positions.add(coordinate)
+        visited_positions.append(coordinate)
         selected.append(place)
+
+    # 표준 이름을 먼저 채택해 순서를 보존한다. 라벨이 붙은 이름은 표준 이름이 없을 때만 남는다.
+    for entry in entries:
+        if entry[2] == entry[3]:
+            _try_select(entry)
+    for entry in entries:
+        if entry[2] != entry[3]:
+            _try_select(entry)
 
     return selected
 

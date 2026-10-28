@@ -98,3 +98,36 @@ def test_resolve_target_coordinates_falls_back_to_navigated_coordinate_if_no_loc
     assert result is not None
     assert result["position"]["x"] == pytest.approx(5.15)
     assert result["position"]["y"] == pytest.approx(-1.18)
+
+
+def test_resolve_target_coordinates_falls_back_to_base_name_for_robot_suffixed_place():
+    """'안방 (Former)' 처럼 로봇 라벨이 붙은 이름은 자기 맵의 표준 이름으로 해석한다.
+
+    동료 로봇은 다른 로봇이 붙인 라벨 이름을 자기 맵에서 모르므로, 그대로 두면 양보
+    요청이 unknown_place 로 거부된다. 표준 이름이 해석될 때만 좌표를 쓴다.
+    """
+    memory = FakeMemory(entries=[])
+    memory._objects["안방"] = {
+        "name": "안방",
+        "position": {"x": 1.25, "y": -3.5},
+        "metadata": {"frame_id": "map"},
+    }
+
+    result = _resolve_target_coordinates(memory, "안방 (Former)")
+
+    assert result is not None
+    assert result["name"] == "안방"
+    assert result["position"]["x"] == pytest.approx(1.25)
+    assert result["position"]["y"] == pytest.approx(-3.5)
+
+
+def test_resolve_target_coordinates_does_not_strip_non_robot_parenthetical():
+    """괄호 안이 로봇 라벨 형태가 아니면(층·구역 등) 이름을 줄여 해석하지 않는다."""
+    memory = FakeMemory(entries=[])
+    memory._objects["회의실"] = {
+        "name": "회의실",
+        "position": {"x": 4.0, "y": 1.0},
+        "metadata": {"frame_id": "map"},
+    }
+
+    assert _resolve_target_coordinates(memory, "회의실 (2층)") is None

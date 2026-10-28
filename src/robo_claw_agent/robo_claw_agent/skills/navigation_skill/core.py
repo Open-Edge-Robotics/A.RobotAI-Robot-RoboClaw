@@ -14,6 +14,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from robo_claw_agent.memory_manager.semantic import (
     _FWD_SKIP_TYPES,
     _best_location_for_targets,
+    _canonical_place_name,
     _normalize_location_name,
 )
 from robo_claw_agent.ros_future import wait_for_future as _wait_for_future_common
@@ -552,6 +553,19 @@ def _resolve_target_coordinates(memory: Any, target_name: str) -> dict[str, Any]
             logger.warning(
                 "Error occurred while looking up target coordinates via RAG full scan: %s", e
             )
+
+    # 5. 뒤에 붙은 로봇 라벨 괄호를 떼고 마지막으로 재시도한다.
+    #    "안방 (Former)"처럼 어느 로봇 맵에서 기록했는지만 덧붙인 이름은 다른 로봇의
+    #    시맨틱 맵에 그대로 존재하지 않아, 양보 요청이 unknown_place 로 거부된다.
+    #    표준 이름이 자기 맵에서 해석될 때만 쓰고, 아니면 추측하지 않고 None 을 돌려준다.
+    canonical = _canonical_place_name(normalized)
+    if canonical and _normalize_location_name(canonical) != _normalize_location_name(normalized):
+        logger.info(
+            "[target] '%s' not resolved — retrying with canonical place name '%s'",
+            normalized,
+            canonical,
+        )
+        return _resolve_target_coordinates(memory, canonical)
 
     return None
 

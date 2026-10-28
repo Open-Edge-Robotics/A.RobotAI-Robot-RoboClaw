@@ -81,7 +81,7 @@
 | Map | `find_reachable_places` | Public | action | 공통 | 도달 가능한 개방 공간 후보 계산 |
 | Map | `get_map_visual` | Public | action | 공통 | 현재 지도 시각화 및 전송 |
 | Autonomous | `autonomous_act` | Public | action | 공통 | 기억된 장소 한 바퀴 순찰 후 자동 종료·제자리 관찰(프론티어 탐험 미수행) |
-| Autonomous | `tidy_home` | Public | action | 공통 | 각 장소 4방향 관찰 후 폐기물·수건·쿠션·명확한 빨래 후보 확인, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연 |
+| Autonomous | `tidy_home` | Public | action | 공통 | 각 장소 4방향 관찰 후 폐기물·수건·쿠션·명확한 빨래 후보 확인, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연. 집 범위 순회 목록은 같은 위치(0.75m 이내)·로봇 라벨 중복 장소를 한 번만 포함하고 `현재 위치`·`여기` 같은 위치 지시어는 제외 |
 | Autonomous | `condition_reactive` | Public | action | 공통 | 조건 감지 시 foreground 중단 및 후속 체인 실행 |
 | Autonomous | `explore` | Public | action | 공통 | 미탐사 영역 자율 탐험 |
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |

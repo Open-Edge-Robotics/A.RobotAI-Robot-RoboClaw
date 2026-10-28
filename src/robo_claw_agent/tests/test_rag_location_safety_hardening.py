@@ -124,3 +124,41 @@ def test_extract_rag_location_candidates_filters_observations_and_ghost_waypoint
     assert candidates[0]["position"]["x"] == pytest.approx(2.61)
     # 'RAG위치1' 같은 유령 목적지가 없어야 함
     assert not any("RAG위치" in c["name"] for c in candidates)
+
+
+def test_normalize_location_metadata_does_not_promote_self_location_to_place():
+    """'현재 위치' 같은 위치 지시어는 장소명으로 승격되지 않아야 한다.
+
+    승격되면 시맨틱 맵에 장소로 등록되어 순회 목록에 '방'처럼 섞이고, 동료 로봇은 그
+    이름을 자기 맵에서 찾지 못한다.
+    """
+    meta1 = _normalize_location_metadata(
+        "현재 위치: x=1.0, y=2.0", {"location_name": "현재 위치", "x": 1.0, "y": 2.0}
+    )
+    assert "location_name" not in meta1
+    assert meta1.get("type") != "location"
+
+    meta2 = _normalize_location_metadata("여기 위치 x=0.5 y=0.5", {})
+    assert "location_name" not in meta2
+
+    # 실제 장소명은 그대로 승격된다.
+    meta3 = _normalize_location_metadata("안방 위치: x=3.0, y=1.0", {})
+    assert meta3.get("location_name") == "안방"
+    assert meta3.get("type") == "location"
+
+
+def test_is_self_location_name_distinguishes_places_from_deictic_names():
+    from robo_claw_agent.memory_manager.semantic import _is_self_location_name
+
+    for name in (
+        "현재 위치",
+        "현재위치",
+        "여기",
+        "이곳",
+        "마지막 위치",
+        "로봇 위치",
+        "current pose",
+    ):
+        assert _is_self_location_name(name) is True, name
+    for name in ("안방", "거실 소파", "충전대", "신발장", "이동가능지점2", "회의실 (2층)"):
+        assert _is_self_location_name(name) is False, name

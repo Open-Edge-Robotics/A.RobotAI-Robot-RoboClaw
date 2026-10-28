@@ -36,6 +36,8 @@ def test_initialize_map_status_param():
     status = node_false.tick()
     assert status == NodeStatus.SUCCESS
     assert blackboard["has_map"] is False
+
+
 def test_initialize_map_status_auto_no_map():
     skill = MagicMock()
     skill.wait_for_message.return_value = None  # /map 수신 실패 모사
@@ -48,6 +50,8 @@ def test_initialize_map_status_auto_no_map():
     assert status == NodeStatus.SUCCESS
     assert blackboard["has_map"] is False
     skill.wait_for_message.assert_called_once()
+
+
 def test_check_has_map():
     node = CheckHasMap()
 
@@ -60,6 +64,8 @@ def test_check_has_map():
     blackboard = {"has_map": False}
     node._blackboard = blackboard
     assert node.tick() == NodeStatus.FAILURE
+
+
 def test_ensure_places_registered_skips_when_no_map():
     skill = MagicMock()
     node = EnsurePlacesRegistered(skill)
@@ -69,6 +75,8 @@ def test_ensure_places_registered_skips_when_no_map():
     status = node.tick()
     assert status == NodeStatus.SUCCESS
     assert blackboard["places_registered"] is False
+
+
 def test_ensure_places_registered_skips_when_already_exists(mock_node):
     skill = MagicMock()
     skill.node = mock_node
@@ -82,6 +90,8 @@ def test_ensure_places_registered_skips_when_already_exists(mock_node):
     assert blackboard["places_registered"] is True
     assert blackboard["place_source_priority"] == "semantic_map"
     mock_node._memory.get_all_objects.assert_called_once()
+
+
 def test_ensure_places_registered_uses_rag_before_map():
     memory = MagicMock()
     memory.get_all_objects.return_value = []
@@ -108,6 +118,8 @@ def test_ensure_places_registered_uses_rag_before_map():
     assert blackboard["place_source_priority"] == "rag"
     memory.add_object_location.assert_called_once()
     skill.wait_for_message.assert_not_called()
+
+
 def test_ensure_places_registered_uses_rag_without_map():
     memory = MagicMock()
     memory.get_all_objects.return_value = []
@@ -184,6 +196,8 @@ def test_ensure_places_registered_does_not_generate_waypoints_from_map(mock_node
     assert blackboard["places_registered"] is False
     assert blackboard.get("place_source_priority") == ""
     skill.wait_for_message.assert_not_called()
+
+
 def test_llm_decide_action_injects_history_and_places(mock_node):
     skill = MagicMock()
     skill.node = mock_node
@@ -246,6 +260,8 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
     assert (
         "butler" not in system_prompt
     )  # 자기 자신은 프롬프트의 타 에이전트 목록에서 제외되어야 함
+
+
 def test_llm_decide_action_excludes_explore_and_motion_without_destination(mock_node):
     mock_node._skills.list_skills.return_value = [
         {"name": "explore", "description": "탐험"},
@@ -276,6 +292,8 @@ def test_llm_decide_action_excludes_explore_and_motion_without_destination(mock_
     assert "navigate_to" not in skill_section
     assert "say" in skill_section
     assert node._blackboard["decided_skill"] == "none"
+
+
 def test_execute_decided_action_records_history(mock_node):
     skill = MagicMock()
     skill.node = mock_node
@@ -300,6 +318,8 @@ def test_execute_decided_action_records_history(mock_node):
     assert history[0]["cycle"] == 1
     assert history[0]["decided_skill"] == "navigate"
     assert history[0]["success"] is True
+
+
 def test_split_semantic_places_excludes_vlm_detected_objects():
     """analyze_scene(kind='object')가 등록한 소형 물체는 이동 후보에서 제외되어야 한다."""
     objects = [
@@ -333,6 +353,8 @@ def test_split_semantic_places_excludes_vlm_detected_objects():
     assert "가상장애물" not in semantic_names
     assert all(o["name"] not in {"cup", "가상장애물"} for o in map_generated_places)
     assert [o["name"] for o in map_generated_places] == ["이동가능지점1"]
+
+
 def test_extract_rag_location_candidates_excludes_blocked_coordinates():
     """실패 좌표와 가상 장애물은 RAG 순찰 목적지 후보에서 제외해야 한다."""
     memory = MagicMock()
@@ -375,6 +397,8 @@ def test_extract_rag_location_candidates_excludes_blocked_coordinates():
     assert "성공지점" in names
     assert "실패지점" not in names
     assert "장애물" not in names
+
+
 def test_extract_rag_location_candidates_parses_name_and_coords_from_text():
     """메타데이터에 이름이나 x,y가 없어도 RAG 텍스트에서 장소명과 좌표를 복원해야 한다."""
     memory = MagicMock()
@@ -403,6 +427,8 @@ def test_extract_rag_location_candidates_parses_name_and_coords_from_text():
     assert "거실" in names
     living_room = next(c for c in candidates if c["name"] == "거실")
     assert living_room["position"] == {"x": -2.3, "y": 4.1}
+
+
 def test_patrol_gather_place_candidates_uses_semantic_map_only():
     """순찰 후보는 시맨틱 맵 장소로 제한하고 RAG 전용 장소는 제외해야 한다.
 
@@ -456,6 +482,84 @@ def test_remembered_place_candidates_dedupes_name_variants_and_duplicate_positio
         {"name": "주방별관", "position": {"x": 1.5, "y": 2.0}, "metadata": {"kind": "place"}},
         {"name": "거실", "position": {"x": -2.0, "y": 3.0}, "metadata": {"kind": "place"}},
         {"name": "cup", "position": {"x": 0.5, "y": 0.5}, "metadata": {"kind": "object"}},
+    ]
+
+    candidates = _remembered_place_candidates(memory)
+
+    assert [c["name"] for c in candidates] == ["주방", "거실"]
+
+
+def test_remembered_place_candidates_merges_places_within_one_observation_radius():
+    """같은 지점을 스칠 정도로 가까운 좌표는 4방향 관찰로 한 번에 확인되므로 한 곳만 남긴다."""
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
+    )
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": "주방", "position": {"x": 1.5, "y": 2.0}, "metadata": {"kind": "place"}},
+        {"name": "주방 식탁", "position": {"x": 1.9, "y": 2.3}, "metadata": {"kind": "place"}},
+        {"name": "거실", "position": {"x": -2.0, "y": 3.0}, "metadata": {"kind": "place"}},
+    ]
+
+    candidates = _remembered_place_candidates(memory)
+
+    assert [c["name"] for c in candidates] == ["주방", "거실"]
+
+
+def test_remembered_place_candidates_treats_robot_suffixed_name_as_same_place():
+    """'안방 (Former)' 은 어느 로봇 맵에서 기록했는지만 덧붙인 이름이다. 표준 이름과
+    좌표가 달라도 같은 장소로 보고, 동료가 아는 표준 이름만 순회 목록에 남긴다."""
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
+    )
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": "안방", "position": {"x": 1.0, "y": 1.0}, "metadata": {"kind": "place"}},
+        {
+            "name": "안방 (Former)",
+            "position": {"x": 2.4, "y": 1.6},
+            "metadata": {"kind": "place"},
+        },
+        {"name": "거실", "position": {"x": -2.0, "y": 3.0}, "metadata": {"kind": "place"}},
+    ]
+
+    candidates = _remembered_place_candidates(memory)
+
+    assert [c["name"] for c in candidates] == ["안방", "거실"]
+
+
+def test_remembered_place_candidates_keeps_suffixed_name_when_base_is_missing():
+    """표준 이름이 없으면 라벨이 붙은 장소라도 순회 대상으로 남겨야 한다."""
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
+    )
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {
+            "name": "안방 (Former)",
+            "position": {"x": 1.0, "y": 1.0},
+            "metadata": {"kind": "place"},
+        },
+    ]
+
+    candidates = _remembered_place_candidates(memory)
+
+    assert [c["name"] for c in candidates] == ["안방 (Former)"]
+
+
+def test_remembered_place_candidates_keeps_rooms_one_metre_apart():
+    """1m 떨어진 서로 다른 방은 중복이 아니므로 둘 다 순회해야 한다."""
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
+    )
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": "주방", "position": {"x": 0.0, "y": 0.0}, "metadata": {"kind": "place"}},
+        {"name": "거실", "position": {"x": 1.0, "y": 0.0}, "metadata": {"kind": "place"}},
     ]
 
     candidates = _remembered_place_candidates(memory)
@@ -552,6 +656,23 @@ def test_autonomous_act_patrol_sweep_finished_uses_semantic_places():
 
     assert skill._patrol_sweep_finished({"patrol_attempted_places": set()}) is False
     assert skill._patrol_sweep_finished({"patrol_attempted_places": {"주방"}}) is False
-    assert (
-        skill._patrol_sweep_finished({"patrol_attempted_places": {"주방", "거실"}}) is True
+    assert skill._patrol_sweep_finished({"patrol_attempted_places": {"주방", "거실"}}) is True
+
+
+def test_remembered_place_candidates_excludes_self_location_names():
+    """'현재 위치'·'여기'·'마지막 위치'는 장소가 아니므로 순회 목록에서 제외한다."""
+    from robo_claw_agent.skills.autonomous_skill.helpers import (
+        _remembered_place_candidates,
     )
+
+    memory = MagicMock()
+    memory.get_all_objects.return_value = [
+        {"name": "현재 위치", "position": {"x": 0.0, "y": 0.0}, "metadata": {"kind": "place"}},
+        {"name": "여기", "position": {"x": 0.4, "y": 0.2}, "metadata": {"kind": "place"}},
+        {"name": "마지막 위치", "position": {"x": 0.1, "y": 0.1}, "metadata": {"kind": "place"}},
+        {"name": "안방", "position": {"x": 3.0, "y": 3.0}, "metadata": {"kind": "place"}},
+    ]
+
+    candidates = _remembered_place_candidates(memory)
+
+    assert [c["name"] for c in candidates] == ["안방"]
