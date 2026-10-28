@@ -7,6 +7,7 @@ RoboClaw 에이전트는 두 가지 방식으로 다른 RoboClaw 인스턴스와
 | ROS 액션 직접 호출      | `delegate_task`                                                                  | 같은 ROS 네트워크(도메인) 안의 다른 에이전트 노드 | `{agent_id}/execute_task` 액션 서버를 직접 호출. 네트워크가 분리되어 있으면 사용 불가                           |
 | gRPC 피어 통신          | `call_peer_robot`, `broadcast_to_peers`, `list_peer_robots`, `query_peer_status` | `GRPC_TARGET_PEERS_JSON`에 등록된 원격 로봇       | 같은 ROS 네트워크가 아니어도(별도 서브넷/폐쇄망) 동작. `robo_claw_channel`의 gRPC 메신저 서버/클라이언트를 경유 |
 | **자율협동 (LLM 대화)** | `autonomous_cooperate`, `stop_autonomous_cooperate`                              | `GRPC_TARGET_PEERS_JSON`에 등록된 동료 로봇       | 동료와 지속적으로 자연어 메시지를 주고받으며 도움 요청/지시/판단. 백그라운드 루프로 동작                        |
+| **자리 양보 (결정론)**  | `request_yield_slot` (+ `~/yield_slot` 서비스)                                   | 같은 ROS 네트워크(도메인)의 동료 에이전트 노드    | 목표 지점을 점유한 동료에게 양보를 요청. LLM 판단을 거치지 않고 로컬 정책으로 즉시 판정                        |
 
 ## 1. 설정 (`.env`)
 
@@ -219,6 +220,62 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 - 자율협동 루프: `cooperation_skill/cooperate_autonomous.py` (`AutonomousCooperateSkill`)
 - BT 통합: `cooperation_skill/bt_nodes.py` (`ProcessPeerMessages`)
 - 서비스 정의: `robo_claw_msgs/srv/PeerMessage.srv`
+
+## 2-2. 자리 양보 협상 (`request_yield_slot`)
+
+좁은 공간에서 두 로봇이 같은 지점을 목표로 하면 뒤에 온 로봇이 목표에 도달하지
+못합니다. `request_yield_slot`은 목표 지점을 점유한 동료에게 자리를 비켜줄 것을
+요청하고, 요청을 받은 동료는 로컬 정책으로 판정한 뒤 안전한 다른 지점으로 실제
+이동합니다.
+
+### 요청자 흐름
+
+1. `navigate_to`가 목표에 도달하지 못하면 `request_yield_slot`에 `target_x`, `target_y`를 넘깁니다.
+2. 같은 ROS 도메인의 `*/yield_slot` 서비스를 찾아 동료별로 요청합니다(`peer_name`을 주면 그 동료만).
+3. 응답이 `accepted`면 동료가 이미 비켜선 상태이므로 `navigate_to`를 다시 시도합니다.
+4. `busy`면 `retry_after_sec`만큼 기다렸다가 `max_attempts`(기본 2회)까지 재요청합니다.
+5. `not_needed`면 동료가 그 자리를 점유하지 않았다는 뜻이므로 원인을 다른 곳에서 찾아야 합니다.
+
+### 수신측 판정 순서
+
+| 순서 | 조건 | 응답 |
+| --- | --- | --- |
+| 1 | 요청 파라미터가 유효하지 않음 | `denied` / `invalid_request` |
+| 2 | `yield_slot_enabled=false` | `denied` / `yield_disabled` |
+| 3 | 현재 위치를 알 수 없음(TF 실패) | `denied` / `pose_unknown` |
+| 4 | 요청 지점에서 `radius_m` 밖 | `not_needed` / `not_blocking` |
+| 5 | 조작/파지 중(`cloid_motion`, `manipulation`, `gripper` 점유) | `busy` / `manipulation_in_progress` |
+| 6 | 배터리 10% 미만 | `denied` / `battery_critical` |
+| 7 | 양쪽 모두 반경 안 + 로봇 id 사전순에서 상대 우선 | `busy` / `requester_lower_priority` |
+| 8 | 태스크 큐 사용 중 또는 자율/자율협동 루프 실행 중 | `busy` / `agent_busy` |
+| 9 | 요청자 목표에서 1.5m 이상, 개방도 0.45m 이상, 현재 위치에서 4m 이내인 후보지 없음 | `denied` / `no_safe_spot` |
+| 10 | 위 조건을 모두 통과 | `accepted` + 실제 이동 후 응답 |
+
+### 설계 원칙
+
+- **점유한 쪽이 양보합니다.** 두 로봇이 동시에 같은 반경 안에 있을 때만 로봇 id 사전순으로 tie-break 합니다. 비교가 반대칭이므로 양쪽이 각자 판정해도 정확히 한 대만 양보하고 교착·진동이 없습니다.
+- **fail-closed.** 위치를 모르거나, 안전한 후보지가 없거나, 지금 이동을 시작할 수 없으면 양보하지 않고 거부를 반환합니다.
+- **LLM을 거치지 않습니다.** 수신측 판정은 `domain/yield_slot.py`의 순수 규칙과 로컬 상태만 사용합니다. 네트워크 지연은 서비스 호출 1회로 제한됩니다.
+- **조작 중에는 절대 양보하지 않습니다.** 물체를 들고 이동하면 낙하 위험이 있습니다.
+- `accepted`는 "비켜주기로 약속"이 아니라 **실제로 비켜선 상태**를 뜻합니다. 수신측은 선정된 자리로 이동을 마친 뒤 응답합니다(이동 상한 25초).
+
+### 파라미터
+
+- 요청자: `target_x`, `target_y`(필수), `peer_name`(선택), `radius_m`(선택, 0.1~2.0), `max_attempts`(선택, 1~3)
+- 수신측 노드 파라미터: `yield_slot_enabled`(기본 `true`) — `false`면 모든 양보 요청을 거부합니다.
+
+```bash
+# 특정 동료에게 목표 지점 양보 요청
+ros2 service call /Former0047/robo_claw_agent_node/yield_slot robo_claw_msgs/srv/YieldSlot \
+  "{requester_id: Stretch3, target_x: 2.4, target_y: -1.1, requester_x: 4.0, requester_y: -1.0, radius_m: 0.8, timeout_sec: 5.0}"
+```
+
+### 내부 구조
+
+- 판정 규칙(순수): `src/robo_claw_agent/robo_claw_agent/domain/yield_slot.py`
+- 수신측 처리: `src/robo_claw_agent/robo_claw_agent/skills/yield_slot_service.py`
+- 요청자 스킬: `src/robo_claw_agent/robo_claw_agent/skills/yield_skill.py`
+- 서비스 정의: `robo_claw_msgs/srv/YieldSlot.srv`, 노드 서비스 이름 `~/yield_slot`
 
 ## 3. 내부 구조
 
