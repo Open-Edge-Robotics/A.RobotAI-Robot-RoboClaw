@@ -14,7 +14,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from robo_claw_msgs.action import ExecuteTask
-from robo_claw_msgs.msg import AgentStatus, PeerPose
+from robo_claw_msgs.msg import AgentStatus
 from robo_claw_msgs.srv import (
     CallPeerRobot,
     CallPeerYield,
@@ -361,10 +361,6 @@ def setup_ros_interfaces(node) -> None:
         callback_group=cb_group,
     )
 
-    # 동료 자세 공유 — 같은 ROS 도메인의 로봇끼리 자기 자세를 주고받아
-    # 이동 전에 목표 지점 점유를 판정한다.
-    setup_peer_pose_sharing(node, cb_group)
-
     node.create_timer(1.0, node._publish_status)
 
     # 스킬 자가 학습: 주기적 교훈 추출 타이머 (interval>0 일 때만)
@@ -382,74 +378,6 @@ def setup_ros_interfaces(node) -> None:
             "Enabled periodic skill self-learning lesson extraction "
             f"(interval: {node._skill_learning_reflect_interval_sec}s)"
         )
-
-
-def setup_peer_pose_sharing(node, cb_group) -> None:
-    """동료 자세 공유 토픽을 열고 주기 발행을 시작한다.
-
-    같은 ROS 도메인의 모든 에이전트가 ``/peer_poses`` 를 공유하므로 로봇마다
-    자기 자세를 발행하고, 모두 서로 구독한다. TRANSIENT_LOCAL 로 마지막 자세를
-    유지해 늦게 뜬 로봇도 즉시 동료 위치를 알 수 있다.
-
-    자세 공유가 실패해도 나머지 기능은 그대로 동작해야 하므로 예외를 삼킨다.
-    """
-    from rclpy.qos import DurabilityPolicy, HistoryPolicy
-
-    from ..skills.peer_pose_sharing import (
-        PEER_POSE_PUBLISH_INTERVAL_SEC,
-        PEER_POSE_TOPIC,
-        PeerPoseRegistry,
-        handle_peer_pose_message,
-        publish_own_pose,
-    )
-
-    node._peer_pose_registry = PeerPoseRegistry()
-    try:
-        pose_qos = QoSProfile(
-            depth=5,
-            history=HistoryPolicy.KEEP_LAST,
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-        )
-        node._peer_pose_pub = node.create_publisher(
-            PeerPose, PEER_POSE_TOPIC, pose_qos, callback_group=cb_group
-        )
-        node._peer_pose_sub = node.create_subscription(
-            PeerPose,
-            PEER_POSE_TOPIC,
-            lambda msg: handle_peer_pose_message(node._peer_pose_registry, msg),
-            pose_qos,
-            callback_group=cb_group,
-        )
-    except Exception as exc:  # noqa: BLE001
-        node.get_logger().warning(f"Peer pose sharing disabled: {exc}")
-        node._peer_pose_pub = None
-        node._peer_pose_sub = None
-        return
-
-    def _yieldable() -> bool:
-        """지금 자리를 비켜줄 수 있는 상태인지 (조작·파지 중이면 불가)."""
-        from ..skills.yield_slot_service import _manipulation_active
-
-        return not _manipulation_active(node)
-
-    def _pose() -> object | None:
-        from ..skills.yield_slot_service import _current_map_pose
-
-        return _current_map_pose(node)
-
-    node.create_timer(
-        PEER_POSE_PUBLISH_INTERVAL_SEC,
-        lambda: publish_own_pose(
-            node,
-            node._peer_pose_pub,
-            node._peer_pose_registry,
-            pose_provider=_pose,
-            yieldable_provider=_yieldable,
-        ),
-        callback_group=cb_group,
-    )
-    node.get_logger().info(f"Enabled peer pose sharing on {PEER_POSE_TOPIC}")
 
 
 def setup_last_pose_tracking(node) -> None:

@@ -199,18 +199,8 @@ def test_navigate_to_respects_configured_arrival_tolerance(monkeypatch):
 # --- 동료 점유 진단·선제 자리 요청 -------------------------------------------
 
 
-def _node_with_peers(occupants=(), *, precheck=True, has_yield_skill=True, mode=None):
-    """동료 자세 레지스트리와 스킬 매니저를 가진 더미 노드."""
-    import time
-
-    from robo_claw_agent.domain.peer_occupancy import PeerPoseSample
-    from robo_claw_agent.skills.peer_pose_sharing import PeerPoseRegistry
-
-    registry = PeerPoseRegistry()
-    now = time.monotonic()
-    for agent_id, x, y in occupants:
-        registry.update(PeerPoseSample(agent_id, x, y, 0.0, now))
-
+def _node_with_peers(*, has_yield_skill=True, mode=None):
+    """자리 협상용 더미 노드. 좌표 기반 자세 레지스트리는 쓰지 않는다."""
     calls: list[tuple[str, dict]] = []
 
     class _Skills:
@@ -223,111 +213,21 @@ def _node_with_peers(occupants=(), *, precheck=True, has_yield_skill=True, mode=
 
     class _Node:
         _agent_id = "Stretch3"
-        _peer_pose_registry = registry
         _skills = _Skills()
         _memory = object()
 
-        # 클래스 본문 스코프는 중첩 람다의 클로저가 아니므로, 함수 인자(mode,
-        # precheck)를 직접 참조한다.
+        # 클래스 본문 스코프는 중첩 람다의 클로저가 아니므로 함수 인자(mode)를 쓴다.
         def has_parameter(self, name):
-            if name == "yield_precheck_mode":
-                return mode is not None
-            return name == "yield_precheck_enabled"
+            return name == "yield_precheck_mode" and mode is not None
 
         def get_parameter(self, name):
-            if name == "yield_precheck_mode":
-                return type(
-                    "P",
-                    (),
-                    {
-                        "get_parameter_value": lambda self: type(
-                            "V", (), {"string_value": mode}
-                        )()
-                    },
-                )()
             return type(
                 "P",
                 (),
-                {"get_parameter_value": lambda self: type("V", (), {"bool_value": precheck})()},
+                {"get_parameter_value": lambda self: type("V", (), {"string_value": mode})()},
             )()
 
     return _Node(), calls
-
-
-def test_navigate_failure_reports_peer_occupancy_as_cause(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], precheck=False)
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (False, "내비게이션 실패(status=6/ABORTED)"))
-
-    result = skill.execute({"x": 5.0, "y": 5.0})
-
-    assert result["success"] is False
-    assert result["blocked_by_peers"] == ["Former0047"]
-    assert "Former0047" in result["blocked_by_peers_detail"]
-    assert calls == []
-
-
-def test_large_goal_offset_still_reports_peer_cause(monkeypatch):
-    """목표 오프셋이 커서 도착 오차 구제가 적용되지 않아도 원인은 남는다."""
-    skill = NavigateToSkill()
-    skill.node, _ = _node_with_peers([("Former0047", 5.2, 5.0)], precheck=False)
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (False, "내비게이션 실패(status=6/ABORTED)"))
-
-    result = skill.execute({"x": 5.0, "y": 5.0})
-
-    assert result["blocked_by_peers"] == ["Former0047"]
-
-
-def test_precheck_requests_yield_before_sending_the_goal(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], precheck=True)
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    result = skill.execute({"x": 5.0, "y": 5.0})
-
-    assert result["success"] is True
-    assert calls == [("request_yield_slot", {"target_x": 5.0, "target_y": 5.0})]
-
-
-def test_precheck_is_skipped_when_disabled(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], precheck=False)
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    assert skill.execute({"x": 5.0, "y": 5.0})["success"] is True
-    assert calls == []
-
-
-def test_precheck_is_skipped_when_goal_is_free(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([], precheck=True)
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    assert skill.execute({"x": 5.0, "y": 5.0})["success"] is True
-    assert calls == []
-
-
-def test_precheck_requires_the_skill_to_be_registered(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers(
-        [("Former0047", 5.0, 5.0)], precheck=True, has_yield_skill=False
-    )
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    assert skill.execute({"x": 5.0, "y": 5.0})["success"] is True
-    assert calls == []
 
 
 def _patch_place_resolution(monkeypatch):
@@ -337,66 +237,66 @@ def _patch_place_resolution(monkeypatch):
     )
 
 
-def test_ask_mode_requests_yield_by_place_name_without_local_pose_data(monkeypatch):
-    """맵·도메인을 공유하지 않아도 장소 이름으로 동료에게 직접 물어본다."""
+def test_precheck_asks_by_place_name_before_sending_the_goal(monkeypatch):
+    """좌표 비교 없이 장소 이름으로 동료에게 먼저 묻는다(기본 모드)."""
     skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([], precheck=True, mode="ask")
+    skill.node, calls = _node_with_peers(mode="ask")
     skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
 
     _patch_navigate_deps(monkeypatch, (True, "success"))
     _patch_place_resolution(monkeypatch)
 
-    skill.execute({"target_name": "안방", "x": 2.0, "y": 3.0})
+    result = skill.execute({"target_name": "안방", "x": 2.0, "y": 3.0})
 
+    assert result["success"] is True
     assert calls == [("request_yield_slot", {"target_place": "안방"})]
 
 
-def test_ask_mode_skips_coordinate_only_targets(monkeypatch):
-    """좌표만 있고 장소 이름이 없으면 맵 불일치 위험이 있어 묻지 않는다."""
+def test_precheck_is_skipped_when_mode_is_off(monkeypatch):
     skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([], precheck=True, mode="ask")
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    skill.execute({"x": 2.0, "y": 3.0})
-
-    assert calls == []
-
-
-def test_off_mode_never_requests_yield(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], precheck=True, mode="off")
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    assert skill.execute({"x": 5.0, "y": 5.0})["success"] is True
-    assert calls == []
-
-
-def test_local_mode_uses_coordinates_when_occupancy_is_known(monkeypatch):
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], mode="local")
-    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
-
-    _patch_navigate_deps(monkeypatch, (True, "success"))
-
-    skill.execute({"x": 5.0, "y": 5.0})
-
-    assert calls == [("request_yield_slot", {"target_x": 5.0, "target_y": 5.0})]
-
-
-def test_local_mode_prefers_place_name_when_available(monkeypatch):
-    # 해석된 장소 좌표(2.0, 3.0)에 동료가 서 있는 상황.
-    skill = NavigateToSkill()
-    skill.node, calls = _node_with_peers([("Former0047", 2.0, 3.0)], mode="local")
+    skill.node, calls = _node_with_peers(mode="off")
     skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
 
     _patch_navigate_deps(monkeypatch, (True, "success"))
     _patch_place_resolution(monkeypatch)
 
-    skill.execute({"target_name": "안방", "x": 5.0, "y": 5.0})
+    assert skill.execute({"target_name": "안방", "x": 2.0, "y": 3.0})["success"] is True
+    assert calls == []
 
-    # 맵을 공유하지 않을 수 있으므로 좌표 대신 장소 이름으로 협상한다.
-    assert calls == [("request_yield_slot", {"target_place": "안방"})]
+
+def test_precheck_is_skipped_without_a_place_name(monkeypatch):
+    """좌표만 있으면 동료에게 넘길 기준이 없다 — 좌표를 넘기지 않는 원칙."""
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers(mode="ask")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+
+    assert skill.execute({"x": 2.0, "y": 3.0})["success"] is True
+    assert calls == []
+
+
+def test_precheck_requires_the_skill_to_be_registered(monkeypatch):
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers(has_yield_skill=False, mode="ask")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+    _patch_place_resolution(monkeypatch)
+
+    assert skill.execute({"target_name": "안방", "x": 2.0, "y": 3.0})["success"] is True
+    assert calls == []
+
+
+def test_navigation_failure_does_not_claim_peer_occupancy(monkeypatch):
+    """좌표 비교를 쓰지 않으므로 실패 원인을 동료 점유로 귀속하지 않는다."""
+    skill = NavigateToSkill()
+    skill.node, _ = _node_with_peers(mode="off")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (False, "내비게이션 실패(status=6/ABORTED)"))
+
+    result = skill.execute({"x": 5.0, "y": 5.0})
+
+    assert result["success"] is False
+    assert "blocked_by_peers" not in result

@@ -9,7 +9,6 @@ RoboClaw 에이전트는 두 가지 방식으로 다른 RoboClaw 인스턴스와
 | **자율협동 (LLM 대화)** | `autonomous_cooperate`, `stop_autonomous_cooperate`                              | `GRPC_TARGET_PEERS_JSON`에 등록된 동료 로봇       | 동료와 지속적으로 자연어 메시지를 주고받으며 도움 요청/지시/판단. 백그라운드 루프로 동작                        |
 | **자리 양보 (결정론)**  | `request_yield_slot` (+ `~/yield_slot` 서비스)                                   | 같은 ROS 네트워크(도메인)의 동료 에이전트 노드    | 목표 지점을 점유한 동료에게 양보를 요청. LLM 판단을 거치지 않고 로컬 정책으로 즉시 판정                        |
 | **자리 양보 (gRPC)**    | `request_yield_slot` → `call_peer_yield`                                         | `GRPC_TARGET_PEERS_JSON`에 등록된 원격 로봇       | ROS 서비스가 발견되지 않을 때 JSON 구조화 요청을 중계. 수신측이 로컬 `YieldSlot`으로 판정                     |
-| **자세 공유**           | `/peer_poses` 토픽                                                               | 같은 ROS 네트워크(도메인)의 모든 동료             | 1Hz 자세 공유. 이동 전에 목표 지점 점유를 판정해 실패 원인을 귀속                                        |
 
 ## 1. 설정 (`.env`)
 
@@ -246,7 +245,7 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 | 2 | `yield_slot_enabled=false` | `denied` / `yield_disabled` |
 | 3 | 장소 이름을 이 로봇의 시멘틱 맵에서 해석하지 못함 | `denied` / `unknown_place` |
 | 4 | 현재 위치를 알 수 없음(TF 실패) | `denied` / `pose_unknown` |
-| 5 | 해석된 요청 지점에서 `radius_m` 밖 | `not_needed` / `not_blocking` |
+| 5 | 수신자가 해석한 그 장소에서 `radius_m` 밖 | `not_needed` / `not_blocking` |
 | 6 | 조작/파지 중(`cloid_motion`, `manipulation`, `gripper` 점유) | `busy` / `manipulation_in_progress` |
 | 7 | 배터리 10% 미만 | `denied` / `battery_critical` |
 | 8 | 양쪽 모두 반경 안 + 로봇 id 사전순에서 상대 우선 | `busy` / `requester_lower_priority` |
@@ -291,15 +290,14 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 - 수신측 노드 파라미터: `yield_slot_enabled`(기본 `true`) — `false`면 모든 양보 요청을 거부합니다.
 - `navigate_to` 노드 파라미터: `yield_precheck_mode`
 
-| 모드 | 동작 | 전제 |
-| --- | --- | --- |
-| `local`(기본) | `/peer_poses`로 점유를 확인했을 때만 자리를 요청 | 같은 ROS 도메인 + 같은 맵 |
-| `ask` | 로컬 정보가 없어도 **장소 이름이 있으면** 동료에게 직접 묻는다 | 장소 이름을 양쪽이 공유 |
-| `off` | 선제 요청을 하지 않는다 | — |
+| 모드 | 동작 |
+| --- | --- |
+| `ask`(기본) | **장소 이름이 있으면** 동료에게 이동 전에 직접 묻는다 |
+| `off` | 선제 요청을 하지 않는다 |
 
-`ask` 모드에서 좌표만 있고 장소 이름이 없으면 요청하지 않습니다. 맵을 공유하지
-않는 로봇끼리 좌표로 물으면 엉뚱한 양보 요청이 나가기 때문입니다. 구버전
-`yield_precheck_enabled`(bool)도 계속 인식합니다(`false` → `off`).
+좌표 비교를 쓰지 않으므로 로컬 자세로 점유를 추정하는 모드는 두지 않습니다.
+좌표만 있고 장소 이름이 없으면 요청하지 않습니다 — 로봇마다 같은 맵이라도
+좌표가 다를 수 있어 좌표를 넘기지 않는 것이 원칙입니다.
 
 ```bash
 # 장소 이름으로 양보 요청 (맵을 공유하지 않는 로봇)
@@ -318,49 +316,7 @@ ros2 service call /Former0047/robo_claw_agent_node/yield_slot robo_claw_msgs/srv
 - 요청자 스킬: `src/robo_claw_agent/robo_claw_agent/skills/yield_skill.py`
 - 서비스 정의: `robo_claw_msgs/srv/YieldSlot.srv`, 노드 서비스 이름 `~/yield_slot`
 
-## 2-3. 동료 자세 공유와 점유 판정 (`/peer_poses`)
-
-같은 ROS 도메인의 로봇들이 자기 자세를 1Hz로 공유합니다. 이 정보로 이동을
-시도하기 **전에** 목표 지점이 동료에게 막혀 있는지 알 수 있어, Nav2 실패를
-기다렸다가 원인을 추측하지 않습니다.
-
-| 항목 | 값 |
-| --- | --- |
-| 토픽 | `/peer_poses` (`robo_claw_msgs/msg/PeerPose`) |
-| 주기 | 1Hz |
-| QoS | RELIABLE + TRANSIENT_LOCAL (depth 5) — 늦게 뜬 로봇도 마지막 자세를 받음 |
-| 필드 | `agent_id`, `x`, `y`, `yaw`, `frame_id`, `current_skill`, `yieldable` |
-
-점유 판정은 fail-closed입니다. 다음 자세는 점유로 보지 않습니다.
-
-- 5초보다 오래된 자세
-- `frame_id`가 `map`이 아닌 자세
-- 좌표가 유한하지 않은 자세(nan/inf)
-- 시계 오차로 미래 시각이 된 자세
-
-경계 거리(정확히 반경)는 점유로 봅니다. 자리 양보 판정과 같은 기준입니다.
-
-### `navigate_to` 연동
-
-1. 목표 좌표에 동료가 있으면 `blocked_by_peers` / `blocked_by_peers_detail`을 결과에
-   남깁니다. 이동 실패의 원인을 동료 점유로 귀속해, planner가 `request_yield_slot`
-   호출 여부를 판단할 근거가 됩니다.
-2. `yield_precheck_enabled`(기본 `true`)면 목표 점유 동료에게 **이동 전에**
-   `request_yield_slot`을 호출합니다. 교섭이 거절되어도 이동은 그대로 시도하므로
-   기존 주행 경로를 막지 않습니다. 선제 교섭을 끄려면 이 파라미터를 `false`로 둡니다.
-
-```bash
-# 자세 공유만 확인 (다른 로봇의 자세가 보이는지)
-ros2 topic echo /peer_poses --once
-```
-
-### 내부 구조
-
-- 점유 판정(순수): `src/robo_claw_agent/robo_claw_agent/domain/peer_occupancy.py`
-- 레지스트리·발행/수신: `src/robo_claw_agent/robo_claw_agent/skills/peer_pose_sharing.py`
-- 메시지 정의: `robo_claw_msgs/msg/PeerPose.msg`
-
-## 2-4. 서브넷이 분리된 로봇의 자리 양보 (gRPC 중계)
+## 2-3. 서브넷이 분리된 로봇의 자리 양보 (gRPC 중계)
 
 `GRPC_TARGET_PEERS_JSON`으로 연결된 로봇은 같은 ROS 도메인이 아니므로
 `*/yield_slot` 서비스가 발견되지 않습니다. 이때 `request_yield_slot`은 메신저

@@ -20,7 +20,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AgentStatus.msg"
   "msg/SkillResult.msg"
   "msg/PeerInfo.msg"
-  "msg/PeerPose.msg"
   "srv/ExecuteSkill.srv"
   "srv/QueryState.srv"
   "srv/SendMessage.srv"
