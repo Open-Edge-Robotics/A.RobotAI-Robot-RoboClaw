@@ -324,6 +324,15 @@ python3 scripts/cleanup_run_report.py /tmp/cleanup-cycle4-by-place/cleanup_runs_
   --expect-peer "Cloid 2호" --markdown
 ```
 
+네트워크 단절·네비게이션 타임아웃으로 끝난 회차는 `--exclude-exceptions` 로 반복 횟수에서
+빼고 예외로 기록합니다. 커뮤니케이션 실패는 예외가 아니라 실패로 집계됩니다
+([docs/CLEANUP_RUN_METRICS.md](CLEANUP_RUN_METRICS.md) 4.1).
+
+```bash
+python3 scripts/cleanup_run_report.py "$RUNLOG" --expect-peer "Cloid 2호" \
+  --markdown --exclude-exceptions
+```
+
 ### 9.6 해석 주의
 
 - `navigate`는 "직전 장소 → 다음 장소" 이동 시간입니다. 주기마다 시작 위치가 달라지므로 장소별
@@ -335,6 +344,9 @@ python3 scripts/cleanup_run_report.py /tmp/cleanup-cycle4-by-place/cleanup_runs_
 
 - **전체 성공률**은 태스크 실행 성공(`cleanup_run.success`) 비율입니다. 조건이 기대한 실패
   (기능 제약)를 올바르게 처리한 비율은 리포트의 `기대 동작 준수`로 따로 봅니다.
+- **네트워크 단절·네비게이션 타임아웃 회차는 횟수에서 제외합니다.** 로봇 사이 커뮤니케이션이
+  아니라 환경·주행 문제이므로, `--exclude-exceptions` 로 빼고 예외 내역을 함께 남깁니다.
+  커뮤니케이션 실패는 예외가 아니라 실패로 집계합니다.
 - **위임 성공률**은 `cleanup_delegate.success` 비율입니다. 위임 시도가 없으면 `n/a`입니다.
 - **시연 성공의 정의**는 "시연 모션 실행 요청까지"입니다. 모션 완료와 물체 이동은 확인되지
   않습니다.

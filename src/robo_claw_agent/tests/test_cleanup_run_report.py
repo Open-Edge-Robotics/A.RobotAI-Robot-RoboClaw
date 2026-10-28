@@ -28,11 +28,13 @@ def _write(path, records):
     return str(path)
 
 
-def _run(run_id, status, success, phase_ms=None, elapsed_ms=1000.0):
+def _run(run_id, status, success, phase_ms=None, elapsed_ms=1000.0, place="안방"):
     return {
         "event": "cleanup_run",
         "run_id": run_id,
-        "results": [{"place": "안방", "status": status, "partial_observation": False}],
+        "target_location": place,
+        "places": [place],
+        "results": [{"place": place, "status": status, "partial_observation": False}],
         "outcomes": {status: 1},
         "success": success,
         "phase_ms": phase_ms or {"navigate": 1000.0},
@@ -257,3 +259,132 @@ def test_render_place_table_lists_each_place():
     assert "| 장소 | 반복 횟수 |" in table
     assert "| 안방 | 1 | 100.0% |" in table
     assert "| 신발장 | 1 | 0.0% |" in table
+
+
+def _delegate(run_id, success, message="", duration_ms=1000.0):
+    return {
+        "event": "cleanup_delegate",
+        "run_id": run_id,
+        "peer": "cloid2",
+        "success": success,
+        "message": message,
+        "duration_ms": duration_ms,
+    }
+
+
+def test_navigation_timeout_is_excluded_from_repeat_count(tmp_path):
+    """동료가 요청을 받고 주행 타임아웃으로 실패한 회차는 횟수에서 빼고 예외로 남긴다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("ok", "cloid2"),
+            _delegate("ok", True, "정리 시연 모션 실행을 요청했습니다."),
+            _run("ok", "delegated_demo", True),
+            _handoff("nav", "cloid2"),
+            _delegate(
+                "nav",
+                False,
+                "실패: '거실'에 도착하지 못해 정리 시연을 중단했습니다. "
+                "visit_place → 거실 결과를 받지 못했습니다 (타임아웃).",
+            ),
+            _run("nav", "execution_failed", False),
+        ],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["repeat_count"] == 2
+    assert summary["success_rate"] == pytest.approx(50.0)
+    assert summary["exception_count"] == 1
+    assert summary["effective_repeat_count"] == 1
+    assert summary["effective_success_rate"] == pytest.approx(100.0)
+    assert summary["effective_delegation_success_rate"] == pytest.approx(100.0)
+    assert summary["exceptions"][0]["run_id"] == "nav"
+    assert summary["exceptions"][0]["category"] == "navigation"
+    assert summary["counted_failure_count"] == 0
+
+
+def test_network_outage_is_excluded_from_repeat_count(tmp_path):
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("r1", "cloid2"),
+            _delegate("r1", False, "실패: 동료 연결 실패 (No route to host)"),
+            _run("r1", "execution_failed", False),
+        ],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["exceptions"][0]["category"] == "network"
+    assert summary["effective_repeat_count"] == 0
+    assert summary["counted_failure_count"] == 0
+
+
+def test_communication_failure_stays_in_denominator(tmp_path):
+    """전달 자체가 실패한 회차(gRPC 연결 오류)는 예외가 아니라 실패로 집계한다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("r1", "cloid2"),
+            _delegate("r1", False, "실패: gRPC connection error. Stream removed (Socket closed)"),
+            _run("r1", "execution_failed", False),
+        ],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["exception_count"] == 0
+    assert summary["effective_repeat_count"] == 1
+    assert summary["effective_success_rate"] == pytest.approx(0.0)
+    assert summary["counted_failure_count"] == 1
+    assert summary["failures"][0]["category"] == "communication"
+
+
+def test_failure_without_delegate_record_is_not_an_exception(tmp_path):
+    """위임 요청이 나가기 전에 끝난 회차는 통신 실패도 환경 예외도 아니라 실패로 센다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [_handoff("r1", "cloid2"), _run("r1", "execution_failed", False)],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["exception_count"] == 0
+    assert summary["effective_success_rate"] == pytest.approx(0.0)
+    assert summary["failures"][0]["category"] == "other"
+
+
+def test_exclude_exceptions_flag_renders_effective_count_and_exception_log(tmp_path, capsys):
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("ok", "cloid2"),
+            _delegate("ok", True, "정리 시연 모션 실행을 요청했습니다."),
+            _run("ok", "delegated_demo", True),
+            _handoff("nav", "cloid2"),
+            _delegate(
+                "nav",
+                False,
+                "실패: '거실'에 도착하지 못해 정리 시연을 중단했습니다. visit_place 타임아웃.",
+            ),
+            _run("nav", "execution_failed", False, place="거실"),
+        ],
+    )
+
+    assert script.main([path, "--expect-peer", "cloid2", "--markdown"]) == 0
+    plain = capsys.readouterr().out
+    assert "| 정상 협업 | 2 | 50.0% |" in plain
+    assert "예외 기록" not in plain
+
+    assert script.main([path, "--expect-peer", "cloid2", "--markdown", "--exclude-exceptions"]) == 0
+    adjusted = capsys.readouterr().out
+    assert "| 정상 협업 | 1 | 100.0% | 100.0% | 100.0% |" in adjusted
+    assert "원래 반복 2회 중 예외 1회 제외 → 유효 반복 1회" in adjusted
+    assert "[네비게이션 타임아웃] 거실 `nav`" in adjusted
+    assert "실패로 집계한 회차: 0건" in adjusted

@@ -35,6 +35,46 @@ ENV_RUN_LOG_PATH = "RC_CLEANUP_RUN_LOG_PATH"
 DELEGATED_STATUSES = frozenset({"delegated", "delegated_demo"})
 PHASE_ORDER = ("navigate", "observe", "discovery", "delegate", "handle")
 
+# 실패 원인 분류 표지. 네트워크 단절·네비게이션 타임아웃은 로봇 사이 협업이 아니라
+# 환경/주행 문제이므로 집계 횟수에서 제외하고 예외로 기록한다. 커뮤니케이션 실패
+# (전달·응답 자체가 실패)는 실패로 계산한다.
+NETWORK_FAILURE_MARKERS = (
+    "no route to host",
+    "network is unreachable",
+    "unreachable",
+    "네트워크 단절",
+    "네트워크 이탈",
+    "통신 두절",
+)
+COMMUNICATION_FAILURE_MARKERS = (
+    "grpc",
+    "connection",
+    "connect",
+    "unavailable",
+    "socket",
+    "timeout after",
+    "인증",
+    "연결",
+    "응답 없음",
+    "응답을 받지 못",
+)
+NAVIGATION_FAILURE_MARKERS = (
+    "visit_place",
+    "도착하지 못",
+    "도달하지 못",
+    "주행",
+    "타임아웃",
+    "timeout",
+)
+# 집계에서 빼는 예외 범주(환경·주행 문제).
+EXCEPTION_CATEGORIES = frozenset({"network", "navigation"})
+CATEGORY_LABELS = {
+    "network": "네트워크 단절",
+    "navigation": "네비게이션 타임아웃",
+    "communication": "커뮤니케이션 실패",
+    "other": "그 외 실패",
+}
+
 
 def load_records(path: str) -> list[dict]:
     records: list[dict] = []
@@ -79,6 +119,18 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
     for record in delegates:
         run_id = str(record.get("run_id", ""))
         delegate_ms_by_run[run_id] += float(record.get("duration_ms", 0.0))
+
+    delegates_by_run: dict[str, list[dict]] = defaultdict(list)
+    for record in delegates:
+        delegates_by_run[str(record.get("run_id", ""))].append(record)
+
+    failures = classify_failures(runs, delegates_by_run)
+    exceptions = [item for item in failures if item["category"] in EXCEPTION_CATEGORIES]
+    counted_failures = [item for item in failures if item["category"] not in EXCEPTION_CATEGORIES]
+    exception_run_ids = {item["run_id"] for item in exceptions}
+    effective_delegates = [
+        record for record in delegates if str(record.get("run_id", "")) not in exception_run_ids
+    ]
 
     phase_totals: dict[str, list[float]] = defaultdict(list)
     elapsed: list[float] = []
@@ -127,6 +179,34 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
         "allocation_accuracy": None,
     }
 
+    # 예외 처리 지표: 네트워크 단절·네비게이션 타임아웃 회차는 반복 횟수에서 빼고
+    # 따로 기록한다. 커뮤니케이션 실패는 그대로 실패로 센다.
+    summary["failures"] = failures
+    summary["exceptions"] = exceptions
+    summary["exception_count"] = len(exceptions)
+    summary["exception_counts_by_category"] = {
+        label: sum(1 for item in exceptions if item["category"] == category)
+        for category, label in CATEGORY_LABELS.items()
+        if any(item["category"] == category for item in exceptions)
+    }
+    summary["counted_failure_count"] = len(counted_failures)
+    summary["effective_repeat_count"] = len(runs) - len(exceptions)
+    summary["effective_success_rate"] = _rate(
+        sum(
+            1
+            for run in runs
+            if run.get("success") is True and str(run.get("run_id", "")) not in exception_run_ids
+        ),
+        len(runs) - len(exceptions),
+    )
+    if delegation_success_rate is None:
+        summary["effective_delegation_success_rate"] = None
+    else:
+        summary["effective_delegation_success_rate"] = _rate(
+            sum(record.get("success") is True for record in effective_delegates),
+            len(effective_delegates),
+        )
+
     outcomes: dict[str, int] = {}
     for run in runs:
         for status, count in (run.get("outcomes") or {}).items():
@@ -144,13 +224,79 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
     return summary
 
 
+def classify_failure_message(message: str) -> str:
+    """실패 메시지의 원인 범주를 고른다.
+
+    네트워크 단절·네비게이션 타임아웃은 협업 실패가 아니라 환경/주행 문제이므로
+    집계에서 빼는 대상(``EXCEPTION_CATEGORIES``)이고, 전달·응답 자체가 실패한
+    커뮤니케이션 실패는 실패로 센다.
+    """
+    text = str(message or "").casefold()
+    if any(marker in text for marker in NETWORK_FAILURE_MARKERS):
+        return "network"
+    if any(marker in text for marker in COMMUNICATION_FAILURE_MARKERS):
+        return "communication"
+    if any(marker in text for marker in NAVIGATION_FAILURE_MARKERS):
+        return "navigation"
+    return "other"
+
+
+def classify_failures(runs: list[dict], delegates_by_run: dict[str, list[dict]]) -> list[dict]:
+    """실패한 실행을 원인 범주별로 나눈다(재계산 가능한 감사 내역)."""
+    failures: list[dict] = []
+    for run in runs:
+        if run.get("success") is True:
+            continue
+        run_id = str(run.get("run_id", ""))
+        place = place_of_run(run)
+        records = delegates_by_run.get(run_id, [])
+        if not records:
+            failures.append(
+                {
+                    "run_id": run_id,
+                    "place": place,
+                    "category": "other",
+                    "reason": "위임 요청 이전 단계에서 종료(delegate 레코드 없음)",
+                }
+            )
+            continue
+        failed = [record for record in records if record.get("success") is not True]
+        if not failed:
+            failures.append(
+                {
+                    "run_id": run_id,
+                    "place": place,
+                    "category": "other",
+                    "reason": "위임은 성공, 이후 단계에서 실패",
+                }
+            )
+            continue
+        message = str(failed[0].get("message", "")).strip()
+        failures.append(
+            {
+                "run_id": run_id,
+                "place": place,
+                "category": classify_failure_message(message),
+                "reason": message or "메시지 없음",
+            }
+        )
+    return failures
+
+
 def place_of_run(run: dict) -> str:
     """실행 1회가 향한 장소명을 고른다(단일 방 요청은 target_location)."""
     place = str(run.get("target_location") or "").strip()
     if place:
         return place
     places = [str(item) for item in run.get("places") or [] if str(item).strip()]
-    return ",".join(places) if places else "unknown"
+    if places:
+        return ",".join(places)
+    result_places = [
+        str(item.get("place", "")).strip()
+        for item in run.get("results") or []
+        if str(item.get("place", "")).strip()
+    ]
+    return ",".join(dict.fromkeys(result_places)) if result_places else "unknown"
 
 
 def split_by_place(records: list[dict], directory: str) -> dict[str, str]:
@@ -185,17 +331,28 @@ def split_by_place(records: list[dict], directory: str) -> dict[str, str]:
     return written
 
 
-def render_place_table(rows: list[tuple[str, dict]]) -> str:
+def render_place_table(rows: list[tuple[str, dict]], exclude_exceptions: bool = False) -> str:
     """장소별 집계를 표 2 열 구성으로 출력한다."""
     lines = [
         "| 장소 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 재계획 성공률 |",
         "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for place, summary in rows:
+        repeat_count = (
+            summary["effective_repeat_count"] if exclude_exceptions else summary["repeat_count"]
+        )
+        success_rate = (
+            summary["effective_success_rate"] if exclude_exceptions else summary["success_rate"]
+        )
+        delegation_rate = (
+            summary["effective_delegation_success_rate"]
+            if exclude_exceptions
+            else summary["delegation_success_rate"]
+        )
         lines.append(
-            f"| {place} | {summary['repeat_count']} | {_fmt_rate(summary['success_rate'])} "
+            f"| {place} | {repeat_count} | {_fmt_rate(success_rate)} "
             f"| {_fmt_rate(summary['allocation_accuracy'])} "
-            f"| {_fmt_rate(summary['delegation_success_rate'])} "
+            f"| {_fmt_rate(delegation_rate)} "
             f"| {_fmt_ms(summary['mean_elapsed_ms'])} | 해당 없음 |"
         )
     return "\n".join(lines)
@@ -209,14 +366,25 @@ def _fmt_ms(value: float) -> str:
     return f"{value / 1000.0:.1f}s"
 
 
-def render_markdown(summary: dict) -> str:
+def render_markdown(summary: dict, exclude_exceptions: bool = False) -> str:
+    repeat_count = (
+        summary["effective_repeat_count"] if exclude_exceptions else summary["repeat_count"]
+    )
+    success_rate = (
+        summary["effective_success_rate"] if exclude_exceptions else summary["success_rate"]
+    )
+    delegation_rate = (
+        summary["effective_delegation_success_rate"]
+        if exclude_exceptions
+        else summary["delegation_success_rate"]
+    )
     lines = [
         "| 실험 조건 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 재계획 성공률 |",
         "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
         (
-            f"| 정상 협업 | {summary['repeat_count']} | {_fmt_rate(summary['success_rate'])} "
+            f"| 정상 협업 | {repeat_count} | {_fmt_rate(success_rate)} "
             f"| {_fmt_rate(summary['allocation_accuracy'])} "
-            f"| {_fmt_rate(summary['delegation_success_rate'])} "
+            f"| {_fmt_rate(delegation_rate)} "
             f"| {_fmt_ms(summary['mean_elapsed_ms'])} | 해당 없음 |"
         ),
     ]
@@ -231,6 +399,24 @@ def render_markdown(summary: dict) -> str:
             + ", ".join(f"{name}={count}" for name, count in summary["outcomes"].items()),
         ]
     lines.append(f"위임 준비 {summary['handoff_prepared']}건 / 차단 {summary['handoff_blocked']}건")
+    if exclude_exceptions:
+        exceptions = summary.get("exceptions") or []
+        lines += [
+            "",
+            f"원래 반복 {summary['repeat_count']}회 중 예외 {summary['exception_count']}회 제외"
+            f" → 유효 반복 {summary['effective_repeat_count']}회"
+            f" (전체 기준 성공률 {_fmt_rate(summary['success_rate'])})",
+        ]
+        if exceptions:
+            lines.append("예외 기록(집계 횟수에서 제외):")
+            for item in exceptions:
+                label = CATEGORY_LABELS.get(item["category"], item["category"])
+                lines.append(f"- [{label}] {item['place']} `{item['run_id']}` — {item['reason']}")
+        counted = [item for item in summary.get("failures") or [] if item not in exceptions]
+        lines.append(f"실패로 집계한 회차: {len(counted)}건")
+        for item in counted:
+            label = CATEGORY_LABELS.get(item["category"], item["category"])
+            lines.append(f"- [{label}] {item['place']} `{item['run_id']}` — {item['reason']}")
     return "\n".join(lines)
 
 
@@ -249,6 +435,14 @@ def main(argv: list[str] | None = None) -> int:
         help="지정하면 장소별 JSONL(cleanup_runs_<장소>.jsonl)을 쓰고 장소별 표를 출력한다",
     )
     parser.add_argument("--markdown", action="store_true", help="표 2 형식 마크다운으로 출력")
+    parser.add_argument(
+        "--exclude-exceptions",
+        action="store_true",
+        help=(
+            "네트워크 단절·네비게이션 타임아웃으로 실패한 회차를 반복 횟수에서 제외하고"
+            " 예외로 따로 출력한다(커뮤니케이션 실패는 그대로 실패로 집계)"
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="집계 결과를 JSON으로 출력")
     args = parser.parse_args(argv)
 
@@ -274,7 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             (place, summarize(load_records(path), expect_peer=args.expect_peer))
             for place, path in written.items()
         ]
-        print(render_place_table(place_rows))
+        print(render_place_table(place_rows, exclude_exceptions=args.exclude_exceptions))
         for place, path in written.items():
             print(f"- {place}: {path}")
         if args.json:
@@ -283,9 +477,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     elif args.markdown:
-        print(render_markdown(summary))
+        print(render_markdown(summary, exclude_exceptions=args.exclude_exceptions))
     else:
-        print(render_markdown(summary).replace("|", " "))
+        print(
+            render_markdown(summary, exclude_exceptions=args.exclude_exceptions).replace("|", " ")
+        )
     return 0
 
 
