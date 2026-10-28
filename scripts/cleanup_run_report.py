@@ -136,14 +136,23 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
 
     phase_totals: dict[str, list[float]] = defaultdict(list)
     elapsed: list[float] = []
+    effective_phase_totals: dict[str, list[float]] = defaultdict(list)
+    effective_elapsed: list[float] = []
     for run_id, run in runs_by_id.items():
+        excluded = run_id in exception_run_ids
         for name, value in (run.get("phase_ms") or {}).items():
             if str(name) == "delegate" and run_id in delegate_ms_by_run:
                 continue
             phase_totals[str(name)].append(float(value))
+            if not excluded:
+                effective_phase_totals[str(name)].append(float(value))
         if run_id in delegate_ms_by_run:
             phase_totals["delegate"].append(delegate_ms_by_run[run_id])
+            if not excluded:
+                effective_phase_totals["delegate"].append(delegate_ms_by_run[run_id])
         elapsed.append(float(run.get("elapsed_ms", 0.0)))
+        if not excluded:
+            effective_elapsed.append(float(run.get("elapsed_ms", 0.0)))
 
     if delegates:
         delegation_success_rate = _rate(
@@ -179,6 +188,21 @@ def summarize(records: list[dict], expect_peer: str = "") -> dict:
         },
         "outcomes": {},
         "allocation_accuracy": None,
+    }
+
+    # 예외 회차를 빼고 계산한 시간 평균(표를 예외 제외 기준으로 낼 때 쓴다).
+    summary["effective_mean_elapsed_ms"] = (
+        (sum(effective_elapsed) / len(effective_elapsed)) if effective_elapsed else 0.0
+    )
+    summary["effective_mean_phase_ms"] = {
+        name: (sum(values) / len(values))
+        for name, values in sorted(
+            effective_phase_totals.items(),
+            key=lambda item: (
+                PHASE_ORDER.index(item[0]) if item[0] in PHASE_ORDER else len(PHASE_ORDER),
+                item[0],
+            ),
+        )
     }
 
     # 예외 처리 지표: 네트워크 단절·네비게이션 타임아웃 회차는 반복 횟수에서 빼고
@@ -263,6 +287,7 @@ def classify_failures(runs: list[dict], delegates_by_run: dict[str, list[dict]])
                 failures.append(
                     {
                         "run_id": run_id,
+                        "iso": str(run.get("iso", "")),
                         "place": place,
                         "category": "navigation",
                         "reason": (
@@ -275,6 +300,7 @@ def classify_failures(runs: list[dict], delegates_by_run: dict[str, list[dict]])
             failures.append(
                 {
                     "run_id": run_id,
+                    "iso": str(run.get("iso", "")),
                     "place": place,
                     "category": "other",
                     "reason": "위임 요청 이전 단계에서 종료(delegate 레코드 없음)",
@@ -286,6 +312,7 @@ def classify_failures(runs: list[dict], delegates_by_run: dict[str, list[dict]])
             failures.append(
                 {
                     "run_id": run_id,
+                    "iso": str(run.get("iso", "")),
                     "place": place,
                     "category": "other",
                     "reason": "위임은 성공, 이후 단계에서 실패",
@@ -296,6 +323,7 @@ def classify_failures(runs: list[dict], delegates_by_run: dict[str, list[dict]])
         failures.append(
             {
                 "run_id": run_id,
+                "iso": str(run.get("iso", "")),
                 "place": place,
                 "category": classify_failure_message(message),
                 "reason": message or "메시지 없음",
@@ -352,6 +380,95 @@ def split_by_place(records: list[dict], directory: str) -> dict[str, str]:
     return written
 
 
+def group_records_by_place(records: list[dict]) -> dict[str, list[dict]]:
+    """run log 레코드를 장소별로 묶는다(장소별 표를 만들기 위한 입력)."""
+    place_by_run: dict[str, str] = {}
+    for record in records:
+        if record.get("event") == "cleanup_run":
+            place_by_run.setdefault(str(record.get("run_id", "")), place_of_run(record))
+
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        run_id = str(record.get("run_id", ""))
+        place = place_by_run.get(run_id)
+        if place is None:
+            place = str(record.get("place") or "").strip() or "unknown"
+        buckets[place].append(record)
+    return dict(buckets)
+
+
+def render_place_report(records: list[dict], expect_peer: str = "", title: str = "") -> str:
+    """장소마다 표 2 형식 표를 하나씩 만들고, 표 아래에 그 장소의 예외를 적는다."""
+    buckets = group_records_by_place(records)
+    order = ["안방", "거실", "주방", "부엌", "신발장"]
+    places = sorted(
+        buckets,
+        key=lambda name: (
+            order.index(name) if name in order else len(order),
+            name,
+        ),
+    )
+
+    lines: list[str] = []
+    if title:
+        lines += [f"# {title}", ""]
+    lines += [
+        "장소마다 표 2 형식 지표를 따로 계산했습니다. 네트워크 단절·네비게이션 타임아웃 회차는 반복 횟수와",
+        "평균 시간에서 제외하고, 표 아래에 예외로 적었습니다. 괄호 안은 예외를 포함한 원래 수치입니다.",
+        "",
+    ]
+    for index, place in enumerate(places, start=1):
+        summary = summarize(buckets[place], expect_peer=expect_peer)
+        label = f"4장소 순환 협업 · {place}"
+        lines += [
+            f"## {index}. {place}",
+            "",
+            "| 실험 조건 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 재계획 성공률 |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+            (
+                f"| {label} | {summary['effective_repeat_count']} "
+                f"| {_fmt_rate(summary['effective_success_rate'])} "
+                f"| {_fmt_rate(summary['allocation_accuracy'])} "
+                f"| {_fmt_rate(summary['effective_delegation_success_rate'])} "
+                f"| {_fmt_ms(summary['effective_mean_elapsed_ms'])} | n/a |"
+            ),
+            "",
+            (
+                f"예외 포함 원래 집계: {summary['repeat_count']}회 "
+                f"{_fmt_rate(summary['success_rate'])} · 예외 {summary['exception_count']}건"
+            ),
+        ]
+        phase_means = summary["effective_mean_phase_ms"]
+        if phase_means:
+            lines.append(
+                "구간 평균: "
+                + " / ".join(f"{name} {_fmt_ms(value)}" for name, value in phase_means.items())
+            )
+        lines.append("")
+        exceptions = summary["exceptions"]
+        if exceptions:
+            lines.append("예외 기록(집계 제외):")
+            for item in exceptions:
+                label_text = CATEGORY_LABELS.get(item["category"], item["category"])
+                when = item.get("iso", "")[:19].replace("T", " ")
+                lines.append(f"- {when} [{label_text}] `{item['run_id']}` — {item['reason']}")
+        else:
+            lines.append("예외 기록: 없음")
+        counted = [
+            item for item in summary["failures"] if item["category"] not in EXCEPTION_CATEGORIES
+        ]
+        if counted:
+            lines.append("실패로 집계한 회차:")
+            for item in counted:
+                label_text = CATEGORY_LABELS.get(item["category"], item["category"])
+                when = item.get("iso", "")[:19].replace("T", " ")
+                lines.append(f"- {when} [{label_text}] `{item['run_id']}` — {item['reason']}")
+        else:
+            lines.append("실패로 집계한 회차: 없음")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def render_place_table(rows: list[tuple[str, dict]], exclude_exceptions: bool = False) -> str:
     """장소별 집계를 표 2 열 구성으로 출력한다."""
     lines = [
@@ -370,11 +487,16 @@ def render_place_table(rows: list[tuple[str, dict]], exclude_exceptions: bool = 
             if exclude_exceptions
             else summary["delegation_success_rate"]
         )
+        mean_elapsed = (
+            summary["effective_mean_elapsed_ms"]
+            if exclude_exceptions
+            else summary["mean_elapsed_ms"]
+        )
         lines.append(
             f"| {place} | {repeat_count} | {_fmt_rate(success_rate)} "
             f"| {_fmt_rate(summary['allocation_accuracy'])} "
             f"| {_fmt_rate(delegation_rate)} "
-            f"| {_fmt_ms(summary['mean_elapsed_ms'])} | 해당 없음 |"
+            f"| {_fmt_ms(mean_elapsed)} | 해당 없음 |"
         )
     return "\n".join(lines)
 
@@ -391,6 +513,12 @@ def render_markdown(summary: dict, exclude_exceptions: bool = False) -> str:
     repeat_count = (
         summary["effective_repeat_count"] if exclude_exceptions else summary["repeat_count"]
     )
+    mean_elapsed = (
+        summary["effective_mean_elapsed_ms"] if exclude_exceptions else summary["mean_elapsed_ms"]
+    )
+    phase_means = (
+        summary["effective_mean_phase_ms"] if exclude_exceptions else summary["mean_phase_ms"]
+    )
     success_rate = (
         summary["effective_success_rate"] if exclude_exceptions else summary["success_rate"]
     )
@@ -406,12 +534,12 @@ def render_markdown(summary: dict, exclude_exceptions: bool = False) -> str:
             f"| 정상 협업 | {repeat_count} | {_fmt_rate(success_rate)} "
             f"| {_fmt_rate(summary['allocation_accuracy'])} "
             f"| {_fmt_rate(delegation_rate)} "
-            f"| {_fmt_ms(summary['mean_elapsed_ms'])} | 해당 없음 |"
+            f"| {_fmt_ms(mean_elapsed)} | 해당 없음 |"
         ),
     ]
-    if summary["mean_phase_ms"]:
+    if phase_means:
         lines += ["", "구간별 평균:", ""]
-        for name, value in summary["mean_phase_ms"].items():
+        for name, value in phase_means.items():
             lines.append(f"- {name}: {_fmt_ms(value)}")
     if summary["outcomes"]:
         lines += [
@@ -457,6 +585,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--markdown", action="store_true", help="표 2 형식 마크다운으로 출력")
     parser.add_argument(
+        "--per-place-report",
+        action="store_true",
+        help="장소마다 표 2 형식 표를 만들고 표 아래에 예외 내역을 붙여 출력한다",
+    )
+    parser.add_argument(
         "--exclude-exceptions",
         action="store_true",
         help=(
@@ -494,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"- {place}: {path}")
         if args.json:
             print(json.dumps(dict(place_rows), ensure_ascii=False, indent=2))
+        return 0
+    if args.per_place_report:
+        print(render_place_report(records, expect_peer=args.expect_peer))
         return 0
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))

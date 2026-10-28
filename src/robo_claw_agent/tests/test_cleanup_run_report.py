@@ -410,3 +410,44 @@ def test_run_status_unreachable_is_navigation_exception(tmp_path):
     assert summary["effective_repeat_count"] == 1
     assert summary["effective_success_rate"] == pytest.approx(100.0)
     assert summary["counted_failure_count"] == 0
+
+
+def test_excluded_run_is_left_out_of_effective_time_means(tmp_path):
+    """예외로 뺀 회차의 소요 시간은 유효 평균 시간에 들어가지 않는다."""
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _run("ok", "delegated_demo", True, {"navigate": 1000.0}, 10000.0),
+            _run("nav", "unreachable", False, {"navigate": 120000.0}, 120000.0, place="신발장"),
+        ],
+    )
+
+    summary = script.summarize(script.load_records(path))
+
+    assert summary["mean_elapsed_ms"] == pytest.approx(65000.0)
+    assert summary["effective_mean_elapsed_ms"] == pytest.approx(10000.0)
+    assert summary["effective_mean_phase_ms"]["navigate"] == pytest.approx(1000.0)
+
+
+def test_per_place_report_lists_table_and_exception_below(tmp_path, capsys):
+    script = _load_script()
+    path = _write(
+        tmp_path / "runs.jsonl",
+        [
+            _handoff("ok", "cloid2"),
+            _delegate("ok", True, "정리 시연 모션 실행을 요청했습니다."),
+            _run("ok", "delegated_demo", True, elapsed_ms=10000.0),
+            _run("nav", "unreachable", False, elapsed_ms=120000.0, place="신발장"),
+        ],
+    )
+
+    assert script.main([path, "--expect-peer", "cloid2", "--per-place-report"]) == 0
+    out = capsys.readouterr().out
+
+    assert "## 1. 안방" in out
+    assert "## 2. 신발장" in out
+    assert "| 4장소 순환 협업 · 안방 | 1 | 100.0% |" in out
+    assert "| 4장소 순환 협업 · 신발장 | 0 |" in out
+    assert "예외 포함 원래 집계: 1회 0.0% · 예외 1건" in out
+    assert "[네비게이션 타임아웃] `nav`" in out
