@@ -491,6 +491,7 @@ def _launch_setup(context, *args, **kwargs):
         "robo_claw_agent.skills.map_skill",
         "robo_claw_agent.skills.hri_skill",
         "robo_claw_agent.skills.cooperate_skill",
+        "robo_claw_agent.skills.yield_skill",
         "robo_claw_agent.skills.cooperation_skill",
         "robo_claw_agent.skills.file_skill",
         "robo_claw_agent.skills.explore_skill",

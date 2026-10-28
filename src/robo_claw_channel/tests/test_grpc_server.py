@@ -545,3 +545,102 @@ def test_send_command_includes_intermediate_assistant_messages():
     assert response.success is True
     assert response.message == "상태를 확인합니다.\n\n확인 완료"
     servicer._dedup_db.close()
+
+
+class TestYieldSlotRouting:
+    """자리 양보(yield_slot) 메시지가 전용 콜백으로 라우팅되는지 검증한다."""
+
+    def test_send_command_routes_yield_to_dedicated_callback(self):
+        from robo_claw_channel.yield_protocol import YIELD_MESSAGE_TYPE, encode_response
+
+        received = []
+
+        def on_message_cb(text: str) -> str:
+            raise AssertionError(f"일반 작업 경로로 라우팅됨: {text}")
+
+        def on_peer_message_cb(sender_id: str, text: str):
+            raise AssertionError("LLM 협동 경로로 라우팅됨")
+
+        def on_yield_request_cb(sender_id: str, content: str):
+            received.append((sender_id, content))
+            payload = encode_response(decision="accepted", reason="yield_prepared")
+            return True, "비켜섰습니다.", payload
+
+        servicer = MessengerServicer(
+            on_message_cb,
+            on_peer_message_cb,
+            on_yield_request_cb=on_yield_request_cb,
+        )
+        try:
+            response = servicer.SendCommand(
+                pb2.ChatMessage(
+                    sender_id="Stretch3",
+                    content='{"requester_id":"Stretch3","target_x":2.0,"target_y":3.0,'
+                    '"requester_x":5.0,"requester_y":5.0}',
+                    timestamp=0,
+                    metadata={
+                        "type": YIELD_MESSAGE_TYPE,
+                        "expires_at": str(time.time() + 30),
+                    },
+                ),
+                _make_context(5),
+            )
+        finally:
+            servicer._dedup_db.close()
+
+        assert len(received) == 1
+        assert received[0][0] == "Stretch3"
+        assert response.success is True
+        assert '"decision":"accepted"' in response.result_json
+
+    def test_yield_message_without_callback_is_not_sent_to_llm(self):
+        """전용 콜백이 없을 때 yield 메시지가 자연어 경로로 새면 안 된다."""
+        from robo_claw_channel.yield_protocol import YIELD_MESSAGE_TYPE
+
+        def on_message_cb(text: str) -> str:
+            raise AssertionError(f"일반 작업 경로로 라우팅됨: {text}")
+
+        servicer = MessengerServicer(on_message_cb)
+        try:
+            response = servicer.SendCommand(
+                pb2.ChatMessage(
+                    sender_id="Stretch3",
+                    content="{}",
+                    timestamp=0,
+                    metadata={
+                        "type": YIELD_MESSAGE_TYPE,
+                        "expires_at": str(time.time() + 30),
+                    },
+                ),
+                _make_context(5),
+            )
+        finally:
+            servicer._dedup_db.close()
+
+        assert response.success is False
+
+    def test_expired_yield_message_is_rejected(self):
+        from robo_claw_channel.yield_protocol import YIELD_MESSAGE_TYPE
+
+        servicer = MessengerServicer(
+            lambda text: text,
+            on_yield_request_cb=lambda sender, content: (True, "ok", ""),
+        )
+        try:
+            response = servicer.SendCommand(
+                pb2.ChatMessage(
+                    sender_id="Stretch3",
+                    content="{}",
+                    timestamp=0,
+                    metadata={
+                        "type": YIELD_MESSAGE_TYPE,
+                        "expires_at": str(time.time() - 1.0),
+                    },
+                ),
+                _make_context(5),
+            )
+        finally:
+            servicer._dedup_db.close()
+
+        assert response.success is False
+        assert "만료" in response.message

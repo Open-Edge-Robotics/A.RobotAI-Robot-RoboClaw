@@ -1,0 +1,21 @@
+# gRPC 피어(다른 서브넷의 RoboClaw)에게 구조화된 자리 양보를 요청하기 위한 서비스
+# (메신저 클라이언트 노드가 서버 역할 — ROS 서비스로 받아 gRPC로 중계한다)
+
+string peer_name        # target_peers_json에 등록된 동료 이름
+float64 target_x        # 요청자가 도달하려는 map 좌표 x
+float64 target_y        # 요청자가 도달하려는 map 좌표 y
+float64 requester_x     # 요청자의 현재 map 좌표 x (모르면 nan)
+float64 requester_y     # 요청자의 현재 map 좌표 y (모르면 nan)
+float64 radius_m        # 점유 판정 반경 (0이면 상대 노드 기본값)
+float64 timeout_sec     # 응답 대기 상한 (0이면 노드 기본값)
+---
+bool success            # 요청이 전달·처리되었는지 (판정 결과와 무관)
+string decision         # not_needed | accepted | busy | denied
+string reason           # 판정 사유 코드
+float64 distance_m      # 상대 로봇과 목표 지점 거리 (모르면 -1)
+float64 retry_after_sec # decision=busy 일 때 재시도까지 대기 시간
+bool has_yield_spot     # 상대가 비켜줄 좌표가 유효한지
+float64 yield_spot_x
+float64 yield_spot_y
+string message          # 사람이 읽을 수 있는 요약
+string error_message    # 전달 실패 시 오류 내용

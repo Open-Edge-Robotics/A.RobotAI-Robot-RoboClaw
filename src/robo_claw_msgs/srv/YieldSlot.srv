@@ -1,0 +1,20 @@
+# 자리 양보 협상 요청 — 동료 로봇이 내가 도달하려는 지점을 점유했을 때
+# 비켜줄 것을 요청하기 위한 서비스. 수신측이 자기 로컬 정책으로 판정한다.
+
+string requester_id      # 요청하는 로봇의 agent_id (중재 tie-break 키)
+float64 target_x         # 요청자가 도달하려는 map 좌표 x
+float64 target_y         # 요청자가 도달하려는 map 좌표 y
+float64 requester_x      # 요청자의 현재 map 좌표 x (동시 점유 판정용)
+float64 requester_y      # 요청자의 현재 map 좌표 y
+float64 radius_m         # 이 반경 안에 있으면 점유로 본다 (0이면 노드 기본값)
+float64 timeout_sec      # 재시도 안내에 쓸 협상 상한 (0이면 노드 기본값)
+---
+bool success             # 요청이 형식적으로 처리되었는지 (판정 결과와 무관)
+string decision          # not_needed | accepted | busy | denied
+string reason            # 판정 사유 코드
+float64 distance_m       # 수신측과 요청자 목표 지점 거리 (모르면 -1)
+float64 retry_after_sec  # decision=busy 일 때 재시도까지 대기 시간
+bool has_yield_spot      # 수신측이 비켜줄 좌표가 유효한지
+float64 yield_spot_x     # 수신측이 비켜줄 map 좌표 x
+float64 yield_spot_y     # 수신측이 비켜줄 map 좌표 y
+string message           # 사람이 읽을 수 있는 요약

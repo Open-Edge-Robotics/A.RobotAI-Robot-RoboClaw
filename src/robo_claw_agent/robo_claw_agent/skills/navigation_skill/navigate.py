@@ -6,7 +6,9 @@ from typing import Any
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
 
+from robo_claw_agent.domain.peer_occupancy import describe_occupants
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills.peer_pose_sharing import node_blocking_peers
 
 from .core import (
     _cancel_active_goal,
@@ -120,7 +122,6 @@ class NavigateToSkill(BaseSkill):
             return self.fail_result(gate_err)
 
         dest_str = f"{(target_name + ' ') if target_name else ''}({x:.2f}, {y:.2f})"
-
         arrival_tolerance_m = _get_arrival_tolerance_m(self.node)
         current_pose = self.get_map_pose()
         frame_matches = _pose_matches_frame(current_pose, frame)
@@ -192,10 +193,29 @@ class NavigateToSkill(BaseSkill):
                         spin_msg,
                     )
 
+        # 동료가 목표 지점을 점유하고 있으면 이동 전에 자리를 요청한다.
+        # 이 선제 교섭은 이동을 막지 않는다 — 거절되면 기존처럼 Nav2가 시도하고,
+        # 실패 원인은 결과에 blocked_by_peers 로 남는다.
+        occupants = self._blocking_peers(x, y)
+        if occupants:
+            logger.info(
+                "Goal %s is occupied by peers: %s",
+                dest_str,
+                [s.agent_id for s in occupants],
+            )
+            self.send_user_message(
+                f"🙋 {dest_str}지점에 동료({', '.join(s.agent_id for s in occupants)})가 있어 "
+                "자리를 요청합니다."
+            )
+            self._request_peer_yield(x, y)
+            occupants = self._blocking_peers(x, y)
+
         accepted, message, goal_handle = _send_navigation_goal(self.node, x, y, frame, yaw=yaw)
         if not accepted:
             logger.error("Failed to send navigation goal: %s", message)
-            return self.fail_result(message)
+            return self.fail_result(
+                message, blocked_by_peers=[s.agent_id for s in occupants]
+            )
 
         self.send_user_message(f"📍 {dest_str}지점으로 이동을 시작합니다.")
 
@@ -275,7 +295,61 @@ class NavigateToSkill(BaseSkill):
         fail_kwargs: dict[str, Any] = {"x": x, "y": y}
         if early_abort_diagnosed:
             fail_kwargs["failure_reason"] = "progress_checker_timeout"
+        if occupants:
+            # 이동 실패의 원인을 동료 점유로 귀속한다. planner 가 request_yield_slot
+            # 호출 여부를 판단할 수 있는 근거가 된다.
+            fail_kwargs["blocked_by_peers"] = [s.agent_id for s in occupants]
+            fail_kwargs["blocked_by_peers_detail"] = describe_occupants(
+                occupants, target_x=x, target_y=y
+            )
         return self.fail_result(f"{dest_str}지점으로 이동 실패: {result_message}", **fail_kwargs)
+
+    # --- 동료 점유 진단 -------------------------------------------------------
+
+    def _blocking_peers(self, x: float, y: float) -> list[Any]:
+        """목표 지점을 점유한 동료 목록. 자세 공유가 꺼져 있으면 빈 목록."""
+        if self.node is None:
+            return []
+        try:
+            return node_blocking_peers(self.node, target_x=x, target_y=y)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Peer occupancy lookup failed (ignored): %s", exc)
+            return []
+
+    def _yield_precheck_enabled(self) -> bool:
+        if self.node is None:
+            return False
+        try:
+            if not self.node.has_parameter("yield_precheck_enabled"):
+                return False
+            return bool(
+                self.node.get_parameter("yield_precheck_enabled")
+                .get_parameter_value()
+                .bool_value
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _request_peer_yield(self, x: float, y: float) -> None:
+        """점유 동료에게 자리를 요청한다. 실패해도 이동은 계속 시도한다."""
+        if not self._yield_precheck_enabled():
+            return
+        skills = getattr(self.node, "_skills", None)
+        if skills is None or not skills.has_skill("request_yield_slot"):
+            return
+        try:
+            result = skills.execute(
+                "request_yield_slot",
+                {"target_x": x, "target_y": y},
+                timeout_sec=70.0,
+            )
+            logger.info(
+                "[navigate_to] yield precheck result: success=%s message=%s",
+                getattr(result, "success", False),
+                getattr(result, "message", ""),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[navigate_to] yield precheck failed: %s", exc)
 
 
 class FollowWaypointsSkill(BaseSkill):

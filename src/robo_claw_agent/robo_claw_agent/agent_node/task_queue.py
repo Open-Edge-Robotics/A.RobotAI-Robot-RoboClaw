@@ -234,6 +234,15 @@ class TaskQueue:
                     return True
         return False
 
+    def is_idle(self) -> bool:
+        """실행 중이거나 대기 중인 태스크가 없는지.
+
+        동료의 자리 양보 요청처럼 "지금 바로 시작할 수 있는가"를 먼저 알아야
+        하는 요청의 수락 판정에 사용한다.
+        """
+        with self._lock:
+            return self._current_task is None and self._queue.empty()
+
     def _run_worker(self) -> None:
         """워커 스레드 메인 루프 — 큐에서 하나씩 꺼내 실행한다."""
         logger.info("TaskQueue worker loop started")

@@ -1260,6 +1260,26 @@
       "source": "src/robo_claw_agent/robo_claw_agent/skills/system_skill/learning.py"
     },
     {
+      "name": "request_yield_slot",
+      "category": "other",
+      "module": "yield_skill",
+      "risk_level": "action",
+      "internal": false,
+      "required": [
+        "target_x",
+        "target_y"
+      ],
+      "properties": [
+        "target_x",
+        "target_y",
+        "peer_name",
+        "radius_m",
+        "max_attempts"
+      ],
+      "description": "`navigate_to`가 목표 지점에 도달하지 못했고 그 자리를 동료 로봇이 점유하고 의심될 때, 동료에게 자리를 비켜줄 것을 요청합니다. 요청을 받은 동료는 자기 로컬 정책으로 판정하고, 수락하면 안전한 다른 지점으로 실제 이동한 뒤 응답합니다. 파라미터: target_x, target_y(필수, 도달하려는 map 좌표), peer_name(선택, 특정 동료만 지정), radius_m(선택, 점유 판정 반경), max_attempts(선택, 기본 2)",
+      "source": "src/robo_claw_agent/robo_claw_agent/skills/yield_skill.py"
+    },
+    {
       "name": "reset_emergency_stop",
       "category": "safety",
       "module": "system_skill",

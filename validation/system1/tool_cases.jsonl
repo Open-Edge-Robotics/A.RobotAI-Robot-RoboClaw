@@ -82,6 +82,8 @@
 {"id": "know-reflect_skills-01", "instruction": "지금까지 스킬 실행 경험에서 교훈 정리해", "skill": "reflect_skills"}
 {"id": "coop-list_peer_robots-01", "instruction": "연결된 동료 로봇 누구 있어?", "skill": "list_peer_robots"}
 {"id": "coop-query_peer_status-01", "instruction": "butler 로봇 지금 상태 물어봐", "skill": "query_peer_status", "params": {"peer_name": "butler"}}
+{"id": "coop-request_yield_slot-01", "instruction": "안방 앞에 서 있는 동료한테 비켜달라고 요청해", "skill": "request_yield_slot", "params": {"target_x": 2.4, "target_y": -1.1}}
+{"id": "coop-request_yield_slot-02", "instruction": "자리 좀 비켜달라고 butler 로봇에 요청해", "skill": "request_yield_slot", "params": {"target_x": 1.2, "target_y": 3.4, "peer_name": "butler"}}
 {"id": "coop-query_peer_capabilities-01", "instruction": "butler 로봇이 할 수 있는 기능 목록 받아와", "skill": "query_peer_capabilities", "params": {"peer_name": "butler"}}
 {"id": "coop-call_peer_robot-01", "instruction": "butler 로봇한테 거실 청소하라고 전해", "skill": "call_peer_robot", "params": {"peer_name": "butler", "instruction": "거실 청소"}}
 {"id": "coop-broadcast_to_peers-01", "instruction": "모든 동료 로봇에게 점심시간이라고 알려", "skill": "broadcast_to_peers", "params": {"message": "점심시간"}}

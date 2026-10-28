@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AgentStatus.msg"
   "msg/SkillResult.msg"
   "msg/PeerInfo.msg"
+  "msg/PeerPose.msg"
   "srv/ExecuteSkill.srv"
   "srv/QueryState.srv"
   "srv/SendMessage.srv"
@@ -27,6 +28,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ListPeers.srv"
   "srv/ExecuteManipulator.srv"
   "srv/PeerMessage.srv"
+  "srv/YieldSlot.srv"
+  "srv/CallPeerYield.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )

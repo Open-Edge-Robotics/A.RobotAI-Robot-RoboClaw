@@ -102,6 +102,7 @@
 | Collaboration | `list_peer_robots` | Public | read | 공통 | 연결된 동료 로봇 목록 조회 |
 | Collaboration | `query_peer_capabilities` | Public | read | 공통 | 동료 로봇 능력 목록 조회 |
 | Collaboration | `query_peer_status` | Public | read | 공통 | 동료 로봇 상태 조회 |
+| Collaboration | `request_yield_slot` | Public | action | 공통 | 동료에게 목표 지점 자리 양보 요청(수락 시 동료가 실제로 비켜섬) |
 | Collaboration | `stop_autonomous_cooperate` | Public | action | 공통 | 자율 협동 백그라운드 루프 중단 |
 | System/RAG | `emergency_stop` | Public | dangerous | 공통 | 모든 동작 중단 및 비상정지 래치 |
 | System/RAG | `get_datetime` | Public | read | 공통 | 현재 날짜·시간 조회 |

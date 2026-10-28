@@ -110,6 +110,13 @@ class AgentParams:
     # 비례해 여유를 늘리되 이 값을 넘지 않는다(오작동 시 무한정 대기 방지).
     task_decomposition_wait_margin_cap_sec: float = 1800.0
 
+    # 동료 로봇의 자리 양보 요청을 수락할지 여부. False 면 YieldSlot 요청에
+    # 항상 거부로 응답해 다른 작업을 계속한다.
+    yield_slot_enabled: bool = True
+    # 이동 전에 목표 지점 점유 동료에게 자리를 먼저 요청할지 여부. 이동을 막지
+    # 않으므로 거절되어도 기존처럼 Nav2 가 시도한다.
+    yield_precheck_enabled: bool = True
+
 
 def declare_agent_parameters(node) -> None:
     """AgentNode 의 모든 ROS2 파라미터를 선언한다."""
@@ -227,6 +234,9 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("task_queue_max_size", 8)
 
     # 복합 명령 자동 분해(Task Decomposition)
+    # 자리 양보 협상
+    node.declare_parameter("yield_slot_enabled", True)
+    node.declare_parameter("yield_precheck_enabled", True)
     node.declare_parameter("enable_task_decomposition", True)
     node.declare_parameter("task_decomposition_max_steps", 6)
     node.declare_parameter("task_step_max_retries", 1)
@@ -321,6 +331,8 @@ def read_agent_parameters(node) -> AgentParams:
         strict_config=_b(node, "strict_config"),
         task_queue_max_size=_i(node, "task_queue_max_size"),
         enable_task_decomposition=_b(node, "enable_task_decomposition"),
+        yield_slot_enabled=_b(node, "yield_slot_enabled"),
+        yield_precheck_enabled=_b(node, "yield_precheck_enabled"),
         task_decomposition_max_steps=_i(node, "task_decomposition_max_steps"),
         task_step_max_retries=_i(node, "task_step_max_retries"),
         task_decomposition_wait_margin_cap_sec=_d(node, "task_decomposition_wait_margin_cap_sec"),
