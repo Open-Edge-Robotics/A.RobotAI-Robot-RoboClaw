@@ -11,7 +11,7 @@ from typing import Any
 
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
-from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.msg import Log, ParameterType
 from rcl_interfaces.srv import GetParameters, ListParameters
 from rclpy.action.client import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -31,6 +31,13 @@ from ..domain.localization import (
     parse_map_topics,
     unavailable_map,
     unavailable_pose,
+)
+from ..domain.logs import (
+    DEFAULT_CAPACITY,
+    LogBuffer,
+    build_log_payload,
+    normalize_entry,
+    unavailable_logs,
 )
 from ..domain.telemetry import build_battery_telemetry
 from .param_defaults import default_param_paths, load_contract_defaults, load_param_defaults
@@ -79,6 +86,8 @@ class RosBackend:
         param_default_files: str = "agent.yaml",
         contract_file: str = "",
         declared_defaults: dict[str, Any] | None = None,
+        log_topic: str = "/rosout",
+        log_buffer_size: int = DEFAULT_CAPACITY,
     ) -> None:
         self._node = node
         self._timeout = request_timeout_sec
@@ -172,6 +181,30 @@ class RosBackend:
             callback_group=self._cb,
         )
 
+        # 로그 패널: `/rosout` 은 모든 ROS 노드(에이전트 포함)의 로그가 모이는 토픽이다.
+        # 최근 줄만 고정 크기로 보관해 HTTP 응답 크기를 제한하고, 파일 저장은 별도로 내려준다.
+        # 구독 QoS 는 RELIABLE/VOLATILE 로 두면 rosout 발행자의 durable 설정과 무관하게 붙는다.
+        self._log_topic = str(log_topic or "").strip()
+        self._log_buffer = LogBuffer(log_buffer_size)
+        if self._log_topic:
+            try:
+                node.create_subscription(
+                    Log,
+                    self._log_topic,
+                    self._on_log,
+                    QoSProfile(
+                        depth=200,
+                        reliability=ReliabilityPolicy.RELIABLE,
+                        durability=DurabilityPolicy.VOLATILE,
+                    ),
+                    callback_group=self._cb,
+                )
+            except Exception:  # noqa: BLE001 - 잘못된 토픽명으로 대시보드가 뜨지 않으면 안 된다
+                self._node.get_logger().warning(
+                    f"[Dashboard] 로그 토픽 구독 실패: {self._log_topic}"
+                )
+                self._log_topic = ""
+
     # ---- subscription 콜백 -------------------------------------------------
     def _on_agent_status(self, msg: AgentStatus) -> None:
         self._latest_agent_status = {
@@ -187,6 +220,24 @@ class RosBackend:
             voltage=_coerce_float(msg.voltage),
             is_charging=charging,
         )
+
+    def _on_log(self, msg: Log) -> None:
+        """`/rosout` 한 줄을 링 버퍼에 넣는다(로그 처리 중 예외로 노드를 멈추지 않는다)."""
+        try:
+            stamp = float(msg.stamp.sec) + float(msg.stamp.nanosec) / 1e9
+            entry = normalize_entry(
+                # ROS 시계가 아직 0 이면(시뮬/부팅 직후) 수신 시각을 대신 쓴다.
+                stamp_sec=stamp if stamp > 0 else time.time(),
+                level=msg.level,
+                node=msg.name,
+                message=msg.msg,
+                file=msg.file,
+                function=msg.function,
+                line=msg.line,
+            )
+        except (AttributeError, TypeError, ValueError):
+            return
+        self._log_buffer.append(entry)
 
     def _on_map(self, msg: OccupancyGrid, topic: str = "") -> None:
         try:
@@ -267,6 +318,25 @@ class RosBackend:
         if not _wait_future(future, self._timeout):
             return None
         return future.result()
+
+    def logs(
+        self,
+        *,
+        min_level: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """보관 중인 `/rosout` 로그를 필터링해 반환한다."""
+        if not self._log_topic:
+            return unavailable_logs("로그 구독이 비활성화되었습니다(log_topic 비어 있음)")
+        return build_log_payload(
+            self._log_buffer.snapshot(),
+            capacity=self._log_buffer.capacity,
+            topic=self._log_topic,
+            min_level=min_level,
+            query=query,
+            limit=limit,
+        )
 
     def describe_config(self) -> dict[str, Any] | None:
         """대시보드/에이전트 노드의 실행 파라미터를 수집한다(마스킹은 도메인 계층)."""
@@ -376,6 +446,11 @@ class RosBackend:
     def map_topics(self) -> list[str]:
         """구독 중인 지도 토픽 목록(기동 로그/진단용)."""
         return list(self._map_topics)
+
+    @property
+    def log_capacity(self) -> int:
+        """로그 링 버퍼 크기(기동 로그/진단용)."""
+        return self._log_buffer.capacity
 
     def _select_map(self) -> dict[str, Any]:
         """구독 중인 지도 중 가장 최근에 도착한 스냅샷을 고른다(동시 도착은 우선순위 순)."""

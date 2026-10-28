@@ -80,6 +80,9 @@ class DashboardNode(Node):
         self._declare("base_frame", "base_link")
         self._declare("initialpose_topic", "/initialpose")
         self._declare("config_query_timeout_sec", 2.0)
+        # 로그 패널: /rosout 구독 버퍼(최근 N 줄)와 발행 토픽.
+        self._declare("log_topic", "/rosout")
+        self._declare("log_buffer_size", 500)
         self._declare("param_default_files", "agent.yaml")
         self._declare("contract_file", "")
         self._declare("static_root", "")
@@ -100,6 +103,8 @@ class DashboardNode(Node):
         base_frame = str(self.get_parameter("base_frame").value or "base_link")
         initialpose_topic = str(self.get_parameter("initialpose_topic").value or "/initialpose")
         config_timeout = _as_float(self.get_parameter("config_query_timeout_sec").value, 2.0)
+        log_topic = str(self.get_parameter("log_topic").value or "/rosout")
+        log_buffer_size = _as_int(self.get_parameter("log_buffer_size").value, 500)
         peers_service = str(
             self.get_parameter("peers_service").value
             or "/robo_claw_messenger_client_node/list_peers"
@@ -142,6 +147,8 @@ class DashboardNode(Node):
             param_default_files=param_default_files,
             contract_file=contract_file,
             declared_defaults=self._declared_defaults,
+            log_topic=log_topic,
+            log_buffer_size=log_buffer_size,
         )
         self._service = DashboardService(backend)
         handler = make_handler(self._service, static_root, security)
@@ -152,6 +159,9 @@ class DashboardNode(Node):
         self.get_logger().info(f"[Dashboard] listening on http://{host}:{port} (web={static_root})")
         self.get_logger().info(
             f"[Dashboard] map topics={backend.map_topics} frames={map_frame}->{base_frame}"
+        )
+        self.get_logger().info(
+            f"[Dashboard] log topic={log_topic or '(disabled)'} buffer={backend.log_capacity}"
         )
         if cidr_error:
             self.get_logger().error(f"[Dashboard] {cidr_error}")

@@ -151,6 +151,41 @@
     </section>
 
     <section class="card mt-3">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <h2 class="h6 mb-0 text-primary-emphasis">
+          로그 <small class="text-body-secondary fw-normal">(/rosout 최근 로그)</small>
+        </h2>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <select id="log-level" class="form-select form-select-sm rc-log-level-select" aria-label="최소 로그 레벨">
+            <option value="">전체</option>
+            <option value="debug">debug 이상</option>
+            <option value="info" selected>info 이상</option>
+            <option value="warn">warn 이상</option>
+            <option value="error">error 이상</option>
+          </select>
+          <input id="log-search" class="form-control form-control-sm rc-log-search" type="search" placeholder="메시지/노드 검색">
+          <div class="form-check form-check-inline m-0">
+            <input id="log-follow" class="form-check-input" type="checkbox" checked>
+            <label class="form-check-label small" for="log-follow">자동 갱신</label>
+          </div>
+          <button id="log-refresh" class="btn btn-outline-secondary btn-sm" type="button">새로 고침</button>
+          <button id="log-download" class="btn btn-outline-primary btn-sm" type="button">파일로 저장</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 small text-body-secondary mb-2 flex-wrap">
+          <span id="log-summary">–</span>
+          <span id="log-result" aria-live="polite"></span>
+        </div>
+        <div id="log-view" class="rc-log-view" role="log" aria-label="RoboClaw 로그"></div>
+        <p class="small text-body-secondary mb-0 mt-2">
+          로그는 대시보드가 켜진 뒤 수신한 <code>/rosout</code> 줄만 보관합니다. "파일로 저장"은 현재 필터
+          조건의 로그를 <code>robo_claw_log_&lt;시각&gt;.log</code> 파일로 내려받습니다.
+        </p>
+      </div>
+    </section>
+
+    <section class="card mt-3">
       <div class="card-header py-2"><h2 class="h6 mb-0 text-primary-emphasis">에이전트에게 메시지</h2></div>
       <div class="card-body">
         <form id="chat-form">
@@ -165,6 +200,7 @@
   </main>
 
   <script src="/assets/map_geometry.js"></script>
+  <script src="/assets/logs.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

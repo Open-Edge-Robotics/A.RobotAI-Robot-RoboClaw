@@ -27,6 +27,12 @@ class FakeService:
     def set_initial_pose(self, payload):
         return {"success": True, "message": "ok"}
 
+    def logs_snapshot(self, **kwargs):
+        return {"available": True, "entries": []}
+
+    def logs_export(self, **kwargs):
+        return "text/plain; charset=utf-8", ""
+
 
 def _policy(**kw):
     return DashboardHttpSecurityPolicy(
@@ -235,6 +241,72 @@ class TestLocalizationEndpointsAuth:
         resp = handle_request(
             "GET",
             "/api/map",
+            client_ip="127.0.0.1",
+            headers={},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=_policy(),
+        )
+        assert resp.status == 200
+
+
+class TestLogsEndpointAuth:
+    def test_logs_with_query_needs_readonly_token(self, web_root):
+        """쿼리 문자열이 붙어도 권한 검사가 우회되지 않아야 한다."""
+        security = _policy(readonly="r-secret")
+        denied = handle_request(
+            "GET",
+            "/api/logs?level=error&limit=50",
+            client_ip="127.0.0.1",
+            headers={},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "GET",
+            "/api/logs?level=error&limit=50",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer r-secret"},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 200
+
+    def test_logs_export_needs_readonly_token(self, web_root):
+        security = _policy(readonly="r-secret")
+        denied = handle_request(
+            "GET",
+            "/api/logs/export?format=txt",
+            client_ip="127.0.0.1",
+            headers={},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "GET",
+            "/api/logs/export?format=txt",
+            client_ip="127.0.0.1",
+            headers={"X-RoboClaw-Token": "r-secret"},
+            body=None,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 200
+
+    def test_logs_open_when_no_tokens(self, web_root):
+        resp = handle_request(
+            "GET",
+            "/api/logs",
             client_ip="127.0.0.1",
             headers={},
             body=None,

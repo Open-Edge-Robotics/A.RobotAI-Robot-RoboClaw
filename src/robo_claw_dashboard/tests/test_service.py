@@ -20,8 +20,11 @@ class FakeBackend:
         self._pose = kw.get("pose", {"available": False})
         self._initial_pose_result = kw.get("initial_pose_result", {"success": True})
         self._config = kw.get("config", None)
+        self._logs = kw.get("logs", None)
+        self._logs_raise = kw.get("logs_raise", None)
         self.send_calls: list[str] = []
         self.initial_pose_calls: list[dict] = []
+        self.log_calls: list[dict] = []
 
     def query_state(self) -> str | None:
         return self._query
@@ -64,6 +67,12 @@ class FakeBackend:
         result = dict(self._initial_pose_result)
         result.pop("_raise", None)
         return result
+
+    def logs(self, *, min_level=None, query=None, limit=None) -> dict:
+        self.log_calls.append({"level": min_level, "query": query, "limit": limit})
+        if self._logs_raise is not None:
+            raise self._logs_raise
+        return dict(self._logs or {"available": True, "entries": []})
 
 
 class TestStatus:
@@ -271,3 +280,69 @@ class TestConfigPanel:
 
         panel = DashboardService(BoomBackend()).config_snapshot()
         assert panel["available"] is False
+
+
+class TestLogPanel:
+    def test_snapshot_forwards_filters_to_backend(self):
+        backend = FakeBackend(
+            logs={
+                "available": True,
+                "entries": [{"message": "patrol failed", "level": "error"}],
+            }
+        )
+        payload = DashboardService(backend).logs_snapshot(level="warn", query="patrol", limit=20)
+        assert payload["entries"][0]["message"] == "patrol failed"
+        assert backend.log_calls == [{"level": "warn", "query": "patrol", "limit": 20}]
+
+    def test_backend_without_log_buffer_reports_unavailable(self):
+        import types
+
+        payload = DashboardService(types.SimpleNamespace()).logs_snapshot()
+        assert payload["available"] is False
+        assert payload["entries"] == []
+
+    def test_backend_error_does_not_break_response(self):
+        backend = FakeBackend(logs_raise=RuntimeError("rosout 구독 없음"))
+        payload = DashboardService(backend).logs_snapshot()
+        assert payload["available"] is False
+        assert payload["entries"] == []
+
+    def test_export_text_uses_backend_entries(self):
+        entry = {
+            "time": "2023-11-14T22:13:20.125Z",
+            "stamp_sec": 1700000000.125,
+            "level": "warn",
+            "node": "/robo_claw_agent_node",
+            "message": "patrol failed",
+            "file": "",
+            "function": "",
+            "line": 0,
+            "seq": 1,
+        }
+        backend = FakeBackend(logs={"available": True, "entries": [entry]})
+        content_type, text = DashboardService(backend).logs_export(level="warn", fmt="txt")
+        assert content_type.startswith("text/plain")
+        assert "WARN" in text and "patrol failed" in text
+
+    def test_export_jsonl_is_machine_readable(self):
+        import json
+
+        entry = {
+            "time": "2023-11-14T22:13:20.125Z",
+            "stamp_sec": 1700000000.125,
+            "level": "error",
+            "node": "/nav2",
+            "message": "patrol failed",
+            "file": "",
+            "function": "",
+            "line": 0,
+            "seq": 3,
+        }
+        backend = FakeBackend(logs={"available": True, "entries": [entry]})
+        content_type, text = DashboardService(backend).logs_export(fmt="jsonl")
+        assert content_type.startswith("application/x-ndjson")
+        assert json.loads(text.strip())["message"] == "patrol failed"
+
+    def test_unknown_format_falls_back_to_text(self):
+        content_type, _ = DashboardService(FakeBackend()).logs_export(fmt="html")
+        assert content_type.startswith("text/plain")

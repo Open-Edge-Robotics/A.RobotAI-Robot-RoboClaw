@@ -5,6 +5,8 @@
   const STATUS_INTERVAL_MS = 3000;
   const STATUS_MAX_BACKOFF_MS = 15000;
   const CONFIG_RETRY_MS = 8000;
+  const LOG_INTERVAL_MS = 3000;
+  const LOG_LIMIT = 200;
   const READONLY_KEY = "rc.dash.readonly";
   const CONTROL_KEY = "rc.dash.control";
   const HEADER_TOKEN = "X-RoboClaw-Token";
@@ -647,6 +649,15 @@
     });
   }
 
+  function setupLogPanel() {
+    if (!window.RcLogs) return;
+    window.RcLogs.mount({
+      getToken: () => loadTokens().readonly,
+      intervalMs: LOG_INTERVAL_MS,
+      limit: LOG_LIMIT,
+    });
+  }
+
   function schedulePolling(token) {
     state.pollTimer = setTimeout(async () => {
       const nextDelay = await refreshStatus(token);
@@ -670,6 +681,7 @@
     setupConfigPanel();
     setupChat();
     setupMapInteraction();
+    setupLogPanel();
     startPolling();
     loadConfig().then(() => {
       // 에이전트 노드가 늦게 뜨는 경우를 한 번만 더 시도한다.

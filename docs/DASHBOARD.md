@@ -8,10 +8,10 @@
 
 | 구성 요소                   | 파일                                       | 책임                                              |
 | --------------------------- | ------------------------------------------ | ------------------------------------------------- |
-| 도메인(순수 규칙)           | `domain/`                                  | 상태 매핑, 스냅샷 취합, 배터리 정규화, 지도/위치 정규화, 초기 위치 검증, 경로 검증 |
+| 도메인(순수 규칙)           | `domain/`                                  | 상태 매핑, 스냅샷 취합, 배터리 정규화, 지도/위치 정규화, 초기 위치 검증, 경로 검증, 로그 버퍼/필터 |
 | 유스케이스                  | `application/`                             | `DashboardService`, HTTP 라우팅                   |
 | 어댑터                      | `adapters/`                                | ROS 클라이언트, HTTP 핸들러, 보안 정책             |
-| 노드/브라우저 프론트        | `dashboard_node.py`, `web/`               | 파라미터 배선, 지도 캔버스/위치 표시, 실행 설정 패널, 정적 HTML/JS/CSS |
+| 노드/브라우저 프론트        | `dashboard_node.py`, `web/`               | 파라미터 배선, 지도 캔버스/위치 표시, 실행 설정·로그 패널, 정적 HTML/JS/CSS |
 
 ## 실행 방법
 
@@ -129,6 +129,8 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/status` | `GET`  | auth 활성 시 readonly 이상 | 취합된 상태 스냅샷 (JSON, 지도 메타·현재 위치 포함) |
 | `/api/map`    | `GET`  | auth 활성 시 readonly 이상 | 최신 OccupancyGrid 셀 데이터(base64)          |
 | `/api/config` | `GET`  | auth 활성 시 readonly 이상 | 실행 중인 노드 파라미터(시크릿 마스킹)         |
+| `/api/logs`   | `GET`  | auth 활성 시 readonly 이상 | 최근 `/rosout` 로그(레벨·검색어·줄 수 조건)    |
+| `/api/logs/export` | `GET` | auth 활성 시 readonly 이상 | 로그를 `.log`(text) 또는 `.jsonl` 본문으로 반환 |
 | `/api/chat`   | `POST` | control                 | 자연어 메시지를 에이전트에 전달 (`ExecuteTask`) |
 | `/api/initial_pose` | `POST` | control           | AMCL 초기 위치 설정 (`/initialpose` 발행)     |
 
@@ -159,6 +161,8 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `config_query_timeout_sec` | `2.0`  | 실행 설정 조회 타임아웃(초)                        |
 | `param_default_files`      | `agent.yaml` | 기본값 판정에 쓸 파라미터 YAML(쉼표 구분)     |
 | `contract_file`            | `""`   | 계약 기본값 JSON 경로(비우면 자동 탐색)             |
+| `log_topic`               | `/rosout` | 로그 패널이 구독하는 로그 토픽(빈 값이면 구독 안 함) |
+| `log_buffer_size`         | `500`  | 보관할 최근 로그 줄 수(50~20000으로 보정)          |
 
 보안 정책은 `robo_claw_channel`의 `HttpSecurityPolicy`를 확장한 대시보드 전용 클래스를 사용합니다. 토큰이 모두 비어 있으면 인증 미활성(공개)이며, 기본 바인드가 `127.0.0.1`이므로 외부 노출 시 반드시 `dashboard_host=0.0.0.0`와 CIDR/토큰을 함께 설정합니다. 외부 바인드 상태에서 CIDR 이 루프백 전용이거나 토큰이 비어 있으면 기동 시 오류 로그로 알립니다.
 
@@ -169,6 +173,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 
 - `web/assets/vendor/bootstrap.min.css` · `bootstrap.LICENSE` (MIT, 5.3.8)
 - `web/assets/map_geometry.js`: 월드(m)↔캔버스(px) 좌표 변환(순수 함수, `node`로 회귀 테스트)
+- `web/assets/logs.js`: 로그 패널(레벨 색상·시각·파일명·쿼리 생성 순수 함수 + 패널 배선, `node`로 회귀 테스트)
 - `web/assets/style.css`: Bootstrap 위에 얹는 최소 오버라이드(지도 캔버스, 설정 표 등)
 - `web/assets/app.js`: 외부 JS 의존성 없음(바닐라). Bootstrap JS 번들은 쓰지 않습니다.
 
@@ -186,7 +191,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 
 ## 폴링과 요청 한도
 
-`/api/status` 폴링은 3초 간격(분당 20회)입니다. `http_rate_limit_per_minute`(기본 60)를 넘으면
+`/api/status` 폴링은 3초 간격(분당 20회)이고, 로그 패널도 3초 간격으로 `/api/logs`를 조회합니다(화면 "자동 갱신"을 끄면 폴링하지 않음). `http_rate_limit_per_minute`(기본 60)를 넘으면
 서버가 429 를 반환하는데, 이때 화면은 "요청 한도 초과 — N초 후 재시도"로 표시하고 간격을 최대
 15초까지 늘려 재시도합니다. 여러 탭을 동시에 열면 한도를 쉽게 넘으므로 한 탭 사용을 권장합니다.
 
@@ -220,6 +225,59 @@ curl -s http://127.0.0.1:9090/api/config | jq '.counts, .default_counts'
 # 기본값이 쓰인 항목만 보기
 curl -s http://127.0.0.1:9090/api/config | jq -r '.agent.parameters[] | select(.source=="default") | .name'
 ```
+
+## 로그 패널
+
+"로그" 카드는 대시보드가 구독한 `/rosout` 의 최근 줄을 화면에 보여 주고, 같은 내용을 파일로
+내려받게 해 줍니다. 에이전트 노드를 포함한 모든 ROS 2 노드의 로거 출력이 `/rosout` 에 모이므로,
+스킬 실행 실패·타임아웃·정책 거부 같은 운영 로그를 브라우저에서 바로 확인할 수 있습니다.
+
+- 조회는 `log_topic`(기본 `/rosout`) 구독 버퍼에서만 이뤄집니다. 버퍼는 `log_buffer_size`
+  (기본 500줄, 50~20000 보정)로 제한되어 로봇을 오래 켜 두어도 메모리가 늘지 않습니다.
+- **대시보드가 켜진 뒤 수신한 줄만** 보관합니다. 기동 이전 로그나 재시작 이후 과거 로그는
+  남아 있지 않습니다.
+- 필터: 레벨(`debug`/`info`/`warn`/`error`, "이상" 조건), 검색어(메시지·노드 이름 부분 일치),
+  줄 수(기본 200, 최대 2000). 화면 "자동 갱신"을 끄면 폴링하지 않고 "새로 고침"으로만 갱신합니다.
+- 레벨이 높은 줄은 색으로 구분하고(debug 회색, info 파랑, warn 노랑, error/fatal 빨강),
+  새 줄이 오면 자동으로 아래로 따라갑니다. 위로 스크롤해 과거 로그를 보는 중에는 위치를 유지합니다.
+
+```bash
+# 최근 로그(error 이상, 50줄)
+curl -s "http://127.0.0.1:9090/api/logs?level=error&limit=50" | jq '.stored, .returned, .entries[-1]'
+
+# 메시지/노드 검색
+curl -s "http://127.0.0.1:9090/api/logs?q=patrol" | jq -r '.entries[] | "\(.level) \(.node) \(.message)"'
+```
+
+### 파일로 저장
+
+"파일로 저장" 버튼은 현재 필터 조건(레벨·검색어)으로 `/api/logs/export` 를 호출해 브라우저
+다운로드로 저장합니다. 파일명은 `robo_claw_log_<YYYYMMDD_HHMMSS>.log` 이고, 본문은 아래 형식입니다.
+
+```text
+# RoboClaw dashboard log export — 2026-10-28T02:45:17.036Z stored=20 returned=1 level=error q=
+2026-10-28T02:45:12.906Z ERROR smoke_talker: smoke boom (/ws/src/.../execution.py:431)
+```
+
+기계 분석용으로 JSON Lines(한 줄 = 한 객체)도 받을 수 있습니다.
+
+```bash
+curl -s -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
+  "http://127.0.0.1:9090/api/logs/export?format=jsonl&level=warn&limit=2000" > robo_claw_log.jsonl
+```
+
+시각은 `/rosout` 의 ROS 타임스탬프를 UTC ISO-8601(밀리초)로 적습니다. ROS 시계가 0인
+시뮬레이션/부팅 직후에는 수신 시각을 대신 사용합니다.
+
+### 알아 둘 점
+
+- 노드 로거(`get_logger()`)를 거치지 않고 Python `logging` 모듈로만 남긴 로그는 `/rosout` 에
+  오르지 않으므로 이 패널에 보이지 않습니다. 그런 로그는 컨테이너 표준 출력(`docker logs`)이나
+  워크스페이스 `log/` 디렉터리에서 확인합니다.
+- 로그 조회와 파일 저장은 `readonly` 권한입니다. 쿼리 문자열이 붙은 요청(`/api/logs?level=error`)도
+  경로를 떼고 권한을 판정하므로 공개 경로로 우회되지 않습니다(`test_http_handlers.py`).
+- 줄 수 제한·버퍼 크기 제한은 의도된 안전장치입니다. 로그 폭주 시 화면과 응답이 느려지지 않도록
+  `limit` 을 키우기보다 검색어로 좁히는 편이 좋습니다.
 
 ## 지도와 현재 위치
 

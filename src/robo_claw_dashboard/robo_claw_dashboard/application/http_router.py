@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 from ..domain.paths import mime_type, safe_join_web_path
 
@@ -67,6 +68,48 @@ def _handle_initial_pose(body: Any, service: Any) -> HttpResponse:
     return _json(service.set_initial_pose(payload))
 
 
+def _split_query(request_path: str) -> tuple[str, dict[str, str]]:
+    """URL path 에서 쿼리 문자열을 분리한다(같은 키가 여러 번 오면 마지막 값)."""
+    path, _, raw = str(request_path or "/").partition("?")
+    if not raw:
+        return path or "/", {}
+    try:
+        parsed = parse_qs(raw, keep_blank_values=False)
+    except ValueError:  # 기형 쿼리 문자열은 무시하고 path 만 라우팅한다
+        return path or "/", {}
+    return path or "/", {key: values[-1] for key, values in parsed.items() if values}
+
+
+def _parse_limit(raw: str | None) -> int | None:
+    """`limit` 쿼리를 정수로 바꾼다(없거나 잘못된 값은 None → 서비스 기본값)."""
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _handle_logs(query: dict[str, str], service: Any) -> HttpResponse:
+    """GET /api/logs - 레벨/검색어/줄 수 조건으로 최근 로그를 반환한다."""
+    return _json(
+        service.logs_snapshot(
+            level=query.get("level"), query=query.get("q"), limit=_parse_limit(query.get("limit"))
+        )
+    )
+
+
+def _handle_logs_export(query: dict[str, str], service: Any) -> HttpResponse:
+    """GET /api/logs/export - 로그를 파일(.log/.jsonl) 본문으로 반환한다."""
+    content_type, text = service.logs_export(
+        level=query.get("level"),
+        query=query.get("q"),
+        limit=_parse_limit(query.get("limit")),
+        fmt=query.get("format") or "txt",
+    )
+    return HttpResponse(200, content_type, text.encode("utf-8"))
+
+
 def route_http(
     method: str,
     request_path: str,
@@ -77,22 +120,28 @@ def route_http(
     authorizer: Callable[[str, str], bool] | None = None,
 ) -> HttpResponse:
     """HTTP 요청(method/path/body)을 대시보드 리소스/API로 라우팅한다."""
-    if authorizer is not None and not authorizer(method, request_path):
+    path, query = _split_query(request_path)
+
+    if authorizer is not None and not authorizer(method, path):
         return _json({"error": "권한 없음"}, 401)
 
-    if method == "GET" and (request_path == "/" or request_path.startswith("/assets/")):
-        return _serve_static(static_root, request_path)
-    if method == "GET" and request_path == "/api/status":
+    if method == "GET" and (path == "/" or path.startswith("/assets/")):
+        return _serve_static(static_root, path)
+    if method == "GET" and path == "/api/status":
         return _json(service.status())
-    if method == "GET" and request_path == "/health":
+    if method == "GET" and path == "/health":
         return _json({"status": "ok", "dashboard": "robo_claw_dashboard"})
-    if method == "GET" and request_path == "/api/map":
+    if method == "GET" and path == "/api/map":
         return _json(service.map_snapshot())
-    if method == "GET" and request_path == "/api/config":
+    if method == "GET" and path == "/api/config":
         return _json(service.config_snapshot())
-    if method == "POST" and request_path == "/api/chat":
+    if method == "GET" and path == "/api/logs":
+        return _handle_logs(query, service)
+    if method == "GET" and path == "/api/logs/export":
+        return _handle_logs_export(query, service)
+    if method == "POST" and path == "/api/chat":
         return _handle_chat(body, service)
-    if method == "POST" and request_path == "/api/initial_pose":
+    if method == "POST" and path == "/api/initial_pose":
         return _handle_initial_pose(body, service)
 
-    return _json({"error": f"알 수 없는 경로: {method} {request_path}"}, 404)
+    return _json({"error": f"알 수 없는 경로: {method} {path}"}, 404)

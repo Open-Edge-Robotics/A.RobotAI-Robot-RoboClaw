@@ -17,6 +17,7 @@ from ..domain.localization import (
     unavailable_pose,
     validate_initial_pose,
 )
+from ..domain.logs import format_log_jsonl, format_log_text, unavailable_logs
 from ..domain.peers import normalize_peers
 from ..domain.validation import validate_chat_message
 
@@ -48,6 +49,14 @@ class DashboardBackend(Protocol):
     def set_initial_pose(self, pose: dict[str, Any]) -> dict[str, Any]: ...
 
     def describe_config(self) -> dict[str, Any] | None: ...
+
+    def logs(
+        self,
+        *,
+        min_level: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]: ...
 
 
 class DashboardService:
@@ -92,6 +101,46 @@ class DashboardService:
     def map_snapshot(self) -> dict[str, Any]:
         """지도 셀 데이터를 포함한 스냅샷을 반환한다(미수신 시 available=false)."""
         return self._latest_map()
+
+    def logs_snapshot(
+        self,
+        *,
+        level: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """최근 로그 스냅샷을 반환한다(버퍼 없음/조회 실패는 정상 상태로 처리)."""
+        fetch = getattr(self._backend, "logs", None)
+        if fetch is None:
+            return unavailable_logs("로그 버퍼가 구성되지 않았습니다")
+        try:
+            payload = fetch(min_level=level, query=query, limit=limit)
+        except Exception:  # noqa: BLE001 - 로그 조회 실패로 대시보드를 멈추지 않는다
+            logger.debug("logs failed", exc_info=True)
+            return unavailable_logs("로그 조회 실패")
+        if not isinstance(payload, dict):
+            return unavailable_logs("로그 응답 형식 오류")
+        return payload
+
+    def logs_export(
+        self,
+        *,
+        level: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+        fmt: str = "txt",
+    ) -> tuple[str, str]:
+        """로그를 파일로 저장할 수 있는 텍스트/JSONL 과 content-type 으로 직렬화한다."""
+        payload = self.logs_snapshot(level=level, query=query, limit=limit)
+        entries = payload.get("entries") or []
+        if str(fmt or "").strip().lower() == "jsonl":
+            return "application/x-ndjson; charset=utf-8", format_log_jsonl(entries)
+        header = (
+            f"RoboClaw dashboard log export — {payload.get('timestamp')} "
+            f"stored={payload.get('stored')} returned={payload.get('returned')} "
+            f"level={payload.get('level') or 'all'} q={payload.get('query') or ''}"
+        )
+        return "text/plain; charset=utf-8", format_log_text(entries, header=header)
 
     def set_initial_pose(self, payload: Any) -> dict[str, Any]:
         """AMCL 초기 위치를 설정한다. 검증 실패는 발행 전에 거부한다."""

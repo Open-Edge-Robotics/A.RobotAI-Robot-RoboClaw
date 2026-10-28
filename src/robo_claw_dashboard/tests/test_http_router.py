@@ -12,6 +12,8 @@ class FakeService:
         self._send_result = send_result or {"success": True, "message": "완료"}
         self.sent: list[str] = []
         self.initial_pose_payloads: list = []
+        self.log_calls: list[dict] = []
+        self.log_export_calls: list[dict] = []
         self._initial_pose_result = {"success": True, "message": "초기 위치를 설정했습니다"}
 
     def status(self):
@@ -30,6 +32,16 @@ class FakeService:
     def set_initial_pose(self, payload):
         self.initial_pose_payloads.append(payload)
         return dict(self._initial_pose_result)
+
+    def logs_snapshot(self, **kwargs):
+        self.log_calls.append(dict(kwargs))
+        return {"available": True, "entries": [{"message": "patrol failed"}]}
+
+    def logs_export(self, **kwargs):
+        self.log_export_calls.append(dict(kwargs))
+        if kwargs.get("fmt") == "jsonl":
+            return "application/x-ndjson; charset=utf-8", '{"message": "patrol failed"}\n'
+        return "text/plain; charset=utf-8", "2023-11-14T22:13:20.125Z WARN  /nav2: patrol failed\n"
 
 
 @pytest.fixture
@@ -181,3 +193,69 @@ def test_get_config_returns_panel(web_root):
     resp = route_http("GET", "/api/config", static_root=web_root, service=ConfigService())
     assert resp.status == 200
     assert b'"available": true' in resp.body
+
+
+class TestLogsEndpoints:
+    def test_get_logs_forwards_filters(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "GET",
+            "/api/logs?level=warn&q=patrol&limit=50",
+            static_root=web_root,
+            service=svc,
+        )
+        assert resp.status == 200
+        assert b"patrol failed" in resp.body
+        assert svc.log_calls == [{"level": "warn", "query": "patrol", "limit": 50}]
+
+    def test_get_logs_without_query_uses_defaults(self, web_root):
+        svc = FakeService()
+        resp = route_http("GET", "/api/logs", static_root=web_root, service=svc)
+        assert resp.status == 200
+        assert svc.log_calls == [{"level": None, "query": None, "limit": None}]
+
+    def test_get_logs_invalid_limit_is_ignored(self, web_root):
+        svc = FakeService()
+        route_http("GET", "/api/logs?limit=abc", static_root=web_root, service=svc)
+        assert svc.log_calls == [{"level": None, "query": None, "limit": None}]
+
+    def test_export_returns_text_file(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "GET", "/api/logs/export?format=txt&level=error", static_root=web_root, service=svc
+        )
+        assert resp.status == 200
+        assert resp.content_type.startswith("text/plain")
+        assert b"patrol failed" in resp.body
+        assert svc.log_export_calls == [
+            {"level": "error", "query": None, "limit": None, "fmt": "txt"}
+        ]
+
+    def test_export_supports_jsonl(self, web_root):
+        resp = route_http(
+            "GET", "/api/logs/export?format=jsonl", static_root=web_root, service=FakeService()
+        )
+        assert resp.status == 200
+        assert resp.content_type.startswith("application/x-ndjson")
+        assert resp.body.startswith(b'{"message"')
+
+    def test_static_path_with_query_still_serves_index(self, web_root):
+        resp = route_http("GET", "/?tab=logs", static_root=web_root, service=FakeService())
+        assert resp.status == 200
+        assert b"<html>hi</html>" in resp.body
+
+    def test_authorizer_receives_path_without_query(self, web_root):
+        seen: list[tuple[str, str]] = []
+
+        def authorizer(method: str, path: str) -> bool:
+            seen.append((method, path))
+            return True
+
+        route_http(
+            "GET",
+            "/api/logs?limit=10",
+            static_root=web_root,
+            service=FakeService(),
+            authorizer=authorizer,
+        )
+        assert seen == [("GET", "/api/logs")]

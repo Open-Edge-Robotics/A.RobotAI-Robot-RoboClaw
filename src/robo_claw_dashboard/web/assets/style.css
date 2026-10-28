@@ -130,13 +130,88 @@ main {
 /* 결과 메시지 */
 #map-result.text-success,
 #config-result.text-success,
-#chat-result.text-success {
+#chat-result.text-success,
+#log-result.text-success {
   color: var(--bs-success) !important;
 }
 #map-result.text-danger,
 #config-result.text-danger,
-#chat-result.text-danger {
+#chat-result.text-danger,
+#log-result.text-danger {
   color: var(--bs-danger) !important;
+}
+
+/* 로그 패널 */
+.rc-log-level-select {
+  width: auto;
+}
+
+.rc-log-search {
+  min-width: 180px;
+  max-width: 260px;
+}
+
+.rc-log-view {
+  height: 340px;
+  overflow-y: auto;
+  background: #0a0d14;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  padding: 8px 10px;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.rc-log-line {
+  display: flex;
+  gap: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rc-log-time {
+  flex: 0 0 auto;
+  color: #7f8c9f;
+}
+
+.rc-log-level {
+  flex: 0 0 46px;
+  font-weight: 600;
+}
+
+.rc-log-node {
+  flex: 0 0 auto;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9aa7b8;
+}
+
+.rc-log-msg {
+  flex: 1 1 auto;
+}
+
+.rc-log-debug {
+  color: #8f9bb3;
+}
+.rc-log-info {
+  color: #6fb3ff;
+}
+.rc-log-warn {
+  color: #e0b341;
+}
+.rc-log-error {
+  color: #ef6b6b;
+}
+.rc-log-fatal {
+  color: #ff4d6d;
+}
+
+.rc-log-empty {
+  color: var(--bs-secondary-color);
+  font-style: italic;
 }
 
 @media (max-width: 991.98px) {
@@ -145,5 +220,8 @@ main {
   }
   .rc-config-filter {
     width: 100%;
+  }
+  .rc-log-search {
+    max-width: none;
   }
 }

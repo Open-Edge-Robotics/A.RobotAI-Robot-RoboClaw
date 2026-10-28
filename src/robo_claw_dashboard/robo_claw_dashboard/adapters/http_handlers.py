@@ -35,9 +35,14 @@ def handle_request(
     static_root: str,
     security: Any,
 ) -> HttpResponse:
-    """인증 후 route_http 를 호출해 응답을 구성한다."""
+    """인증 후 route_http 를 호출해 응답을 구성한다.
+
+    권한 판정은 쿼리 문자열을 뗀 path 로, 라우팅은 쿼리를 포함한 원본 경로로 한다.
+    쿼리가 붙은 요청이 공개 경로로 판정되어 인증을 우회하지 않게 하기 위함이다.
+    """
+    route_path = urlparse(request_path).path or "/"
     result = security.authorize(
-        client_ip=client_ip, method=method, path=request_path, headers=headers
+        client_ip=client_ip, method=method, path=route_path, headers=headers
     )
     if not result.allowed:
         return _send_json(result.status_code, result.payload)
@@ -65,7 +70,8 @@ def make_handler(service: Any, static_root: str, security: Any) -> type:
             return self.rfile.read(length) if length else b""
 
         def _dispatch(self) -> None:
-            request_path = urlparse(self.path).path
+            # 쿼리 문자열(?level=error 등)을 라우터가 해석할 수 있도록 원본 self.path 를 넘긴다.
+            request_path = self.path or "/"
             body = self._read_body() if self.command == "POST" else None
             resp = handle_request(
                 method=self.command,
