@@ -5,7 +5,6 @@
 """
 
 import pytest
-
 from robo_claw_agent.domain.peer_occupancy import (
     DEFAULT_MAX_AGE_SEC,
     PeerPoseSample,

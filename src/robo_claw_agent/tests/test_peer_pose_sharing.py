@@ -7,7 +7,6 @@ import time
 from types import SimpleNamespace
 
 import pytest
-
 from robo_claw_agent.domain.peer_occupancy import PeerPoseSample
 from robo_claw_agent.skills.peer_pose_sharing import (
     PeerPoseRegistry,

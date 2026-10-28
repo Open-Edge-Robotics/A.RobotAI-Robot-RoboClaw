@@ -8,6 +8,8 @@ RoboClaw 에이전트는 두 가지 방식으로 다른 RoboClaw 인스턴스와
 | gRPC 피어 통신          | `call_peer_robot`, `broadcast_to_peers`, `list_peer_robots`, `query_peer_status` | `GRPC_TARGET_PEERS_JSON`에 등록된 원격 로봇       | 같은 ROS 네트워크가 아니어도(별도 서브넷/폐쇄망) 동작. `robo_claw_channel`의 gRPC 메신저 서버/클라이언트를 경유 |
 | **자율협동 (LLM 대화)** | `autonomous_cooperate`, `stop_autonomous_cooperate`                              | `GRPC_TARGET_PEERS_JSON`에 등록된 동료 로봇       | 동료와 지속적으로 자연어 메시지를 주고받으며 도움 요청/지시/판단. 백그라운드 루프로 동작                        |
 | **자리 양보 (결정론)**  | `request_yield_slot` (+ `~/yield_slot` 서비스)                                   | 같은 ROS 네트워크(도메인)의 동료 에이전트 노드    | 목표 지점을 점유한 동료에게 양보를 요청. LLM 판단을 거치지 않고 로컬 정책으로 즉시 판정                        |
+| **자리 양보 (gRPC)**    | `request_yield_slot` → `call_peer_yield`                                         | `GRPC_TARGET_PEERS_JSON`에 등록된 원격 로봇       | ROS 서비스가 발견되지 않을 때 JSON 구조화 요청을 중계. 수신측이 로컬 `YieldSlot`으로 판정                     |
+| **자세 공유**           | `/peer_poses` 토픽                                                               | 같은 ROS 네트워크(도메인)의 모든 동료             | 1Hz 자세 공유. 이동 전에 목표 지점 점유를 판정해 실패 원인을 귀속                                        |
 
 ## 1. 설정 (`.env`)
 
@@ -276,6 +278,74 @@ ros2 service call /Former0047/robo_claw_agent_node/yield_slot robo_claw_msgs/srv
 - 수신측 처리: `src/robo_claw_agent/robo_claw_agent/skills/yield_slot_service.py`
 - 요청자 스킬: `src/robo_claw_agent/robo_claw_agent/skills/yield_skill.py`
 - 서비스 정의: `robo_claw_msgs/srv/YieldSlot.srv`, 노드 서비스 이름 `~/yield_slot`
+
+## 2-3. 동료 자세 공유와 점유 판정 (`/peer_poses`)
+
+같은 ROS 도메인의 로봇들이 자기 자세를 1Hz로 공유합니다. 이 정보로 이동을
+시도하기 **전에** 목표 지점이 동료에게 막혀 있는지 알 수 있어, Nav2 실패를
+기다렸다가 원인을 추측하지 않습니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 토픽 | `/peer_poses` (`robo_claw_msgs/msg/PeerPose`) |
+| 주기 | 1Hz |
+| QoS | RELIABLE + TRANSIENT_LOCAL (depth 5) — 늦게 뜬 로봇도 마지막 자세를 받음 |
+| 필드 | `agent_id`, `x`, `y`, `yaw`, `frame_id`, `current_skill`, `yieldable` |
+
+점유 판정은 fail-closed입니다. 다음 자세는 점유로 보지 않습니다.
+
+- 5초보다 오래된 자세
+- `frame_id`가 `map`이 아닌 자세
+- 좌표가 유한하지 않은 자세(nan/inf)
+- 시계 오차로 미래 시각이 된 자세
+
+경계 거리(정확히 반경)는 점유로 봅니다. 자리 양보 판정과 같은 기준입니다.
+
+### `navigate_to` 연동
+
+1. 목표 좌표에 동료가 있으면 `blocked_by_peers` / `blocked_by_peers_detail`을 결과에
+   남깁니다. 이동 실패의 원인을 동료 점유로 귀속해, planner가 `request_yield_slot`
+   호출 여부를 판단할 근거가 됩니다.
+2. `yield_precheck_enabled`(기본 `true`)면 목표 점유 동료에게 **이동 전에**
+   `request_yield_slot`을 호출합니다. 교섭이 거절되어도 이동은 그대로 시도하므로
+   기존 주행 경로를 막지 않습니다. 선제 교섭을 끄려면 이 파라미터를 `false`로 둡니다.
+
+```bash
+# 자세 공유만 확인 (다른 로봇의 자세가 보이는지)
+ros2 topic echo /peer_poses --once
+```
+
+### 내부 구조
+
+- 점유 판정(순수): `src/robo_claw_agent/robo_claw_agent/domain/peer_occupancy.py`
+- 레지스트리·발행/수신: `src/robo_claw_agent/robo_claw_agent/skills/peer_pose_sharing.py`
+- 메시지 정의: `robo_claw_msgs/msg/PeerPose.msg`
+
+## 2-4. 서브넷이 분리된 로봇의 자리 양보 (gRPC 중계)
+
+`GRPC_TARGET_PEERS_JSON`으로 연결된 로봇은 같은 ROS 도메인이 아니므로
+`*/yield_slot` 서비스가 발견되지 않습니다. 이때 `request_yield_slot`은 메신저
+클라이언트의 `call_peer_yield` 서비스로 구조화된 요청을 중계합니다.
+
+```text
+agent → (ROS) CallPeerYield → messenger client_node → (gRPC SendCommand, type=yield_slot)
+      → 상대 channel_node → (ROS) YieldSlot → 상대 agent
+```
+
+- gRPC `content`는 자유 문자열이므로 JSON 페이로드를 씁니다(`robo_claw_channel/yield_protocol.py`).
+- 수신측은 **형식 검증을 통과한 값만** 로컬 `YieldSlot` 서비스로 승격합니다.
+  잘못된 페이로드·알 수 없는 판정 코드·크기 초과는 거부합니다.
+- `type=yield_slot`은 협동 메시지와 같은 엄격한 인증·만료·중복 검사를 적용합니다.
+- 처리기가 없는 노드로 `yield_slot` 메시지가 오면 **자연어 경로로 흘리지 않고** 거부합니다.
+  좌표 JSON을 LLM이 지시문으로 해석하는 것을 막기 위함입니다.
+
+### 내부 구조
+
+- 전송 규약(순수): `src/robo_claw_channel/robo_claw_channel/yield_protocol.py`
+- gRPC 라우팅: `src/robo_claw_channel/robo_claw_channel/grpc_server.py` (`type=yield_slot`)
+- 수신 중계: `src/robo_claw_channel/robo_claw_channel/channel_node.py` (`on_yield_request`)
+- 요청 중계: `src/robo_claw_channel/robo_claw_channel/client_node.py` (`~/call_peer_yield`)
+- 서비스 정의: `robo_claw_msgs/srv/CallPeerYield.srv`
 
 ## 3. 내부 구조
 

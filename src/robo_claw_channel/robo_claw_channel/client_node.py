@@ -22,7 +22,13 @@ from rclpy.node import Node
 
 from robo_claw_msgs.action import ExecuteTask
 from robo_claw_msgs.msg import PeerInfo
-from robo_claw_msgs.srv import CallPeerRobot, ListPeers, PeerMessage, SendMessage
+from robo_claw_msgs.srv import (
+    CallPeerRobot,
+    CallPeerYield,
+    ListPeers,
+    PeerMessage,
+    SendMessage,
+)
 
 # pb2 및 grpc stub 임포트
 from . import messenger_pb2 as pb2
@@ -150,9 +156,7 @@ class MessengerClientNode(Node):
             raw_tokens = json.loads(grpc_peer_tokens_json or "{}")
             if not isinstance(raw_tokens, dict):
                 raw_tokens = {}
-            self._peer_tokens_map = {
-                str(k).strip(): str(v).strip() for k, v in raw_tokens.items()
-            }
+            self._peer_tokens_map = {str(k).strip(): str(v).strip() for k, v in raw_tokens.items()}
         except Exception:
             self._peer_tokens_map = {}
 
@@ -192,6 +196,14 @@ class MessengerClientNode(Node):
             CallPeerRobot,
             "~/call_peer",
             self._handle_call_peer,
+            callback_group=self._cb_group,
+        )
+
+        # 구조화된 자리 양보 요청을 gRPC로 중계하기 위한 서비스 서버 생성
+        self._call_peer_yield_srv = self.create_service(
+            CallPeerYield,
+            "~/call_peer_yield",
+            self._handle_call_peer_yield,
             callback_group=self._cb_group,
         )
 
@@ -538,6 +550,99 @@ class MessengerClientNode(Node):
             response.success = False
             response.error_message = f"모든 피어 전송 실패: {'; '.join(error_msgs)}"
 
+        return response
+
+    def _handle_call_peer_yield(self, request, response) -> Any:
+        """구조화된 자리 양보 요청을 gRPC 피어(다른 서브넷 포함)로 중계한다.
+
+        자유 문자열 채널을 쓰므로 페이로드는 JSON 이고, 응답의 ``result_json`` 을
+        다시 구조화된 필드로 풀어 돌려준다. 형식이 깨진 응답은 판정 없음으로
+        처리한다(fail-closed).
+        """
+        from .yield_protocol import YIELD_MESSAGE_TYPE, decode_response, encode_request
+
+        peer_name = self._resolve_peer_name(request.peer_name)
+        timeout_sec = request.timeout_sec or self._timeout
+
+        with self._peer_stubs_lock:
+            stub = self._peer_stubs.get(peer_name)
+        if not stub:
+            response.success = False
+            response.decision = "denied"
+            response.reason = "peer_not_connected"
+            response.distance_m = -1.0
+            response.error_message = f"연결된 피어를 찾을 수 없습니다: {peer_name}"
+            return response
+
+        content = encode_request(
+            requester_id=self._sender_id,
+            target_x=request.target_x,
+            target_y=request.target_y,
+            requester_x=request.requester_x,
+            requester_y=request.requester_y,
+            radius_m=request.radius_m,
+            timeout_sec=request.timeout_sec,
+        )
+        if content is None:
+            response.success = False
+            response.decision = "denied"
+            response.reason = "invalid_request"
+            response.distance_m = -1.0
+            response.error_message = "자리 양보 요청 파라미터가 유효하지 않습니다."
+            return response
+
+        try:
+            self.get_logger().info(f"[{peer_name}] Requesting yield: {content}")
+            chat_msg = self._authorized_peer_message(
+                peer_name,
+                pb2.ChatMessage(
+                    sender_id=self._sender_id,
+                    content=content,
+                    timestamp=int(time.time()),
+                    metadata={"type": YIELD_MESSAGE_TYPE},
+                ),
+            )
+            chat_msg.metadata["message_id"] = uuid.uuid4().hex
+            chat_msg.metadata["created_at"] = str(time.time())
+            chat_msg.metadata["expires_at"] = str(time.time() + max(1.0, float(timeout_sec)))
+
+            cmd_resp = stub.SendCommand(
+                chat_msg,
+                timeout=timeout_sec,
+                metadata=self._peer_rpc_metadata(peer_name),
+            )
+            decision = decode_response(getattr(cmd_resp, "result_json", "") or "")
+            if decision is None:
+                response.success = False
+                response.decision = "denied"
+                response.reason = "invalid_response"
+                response.distance_m = -1.0
+                response.error_message = cmd_resp.message or "자리 양보 응답을 해석할 수 없습니다."
+                return response
+
+            response.success = bool(cmd_resp.success)
+            response.decision = decision["decision"]
+            response.reason = decision["reason"]
+            response.distance_m = decision["distance_m"]
+            response.retry_after_sec = decision["retry_after_sec"]
+            response.has_yield_spot = decision["has_yield_spot"]
+            response.yield_spot_x = decision["yield_spot_x"]
+            response.yield_spot_y = decision["yield_spot_y"]
+            response.message = decision["message"] or cmd_resp.message
+            if not cmd_resp.success:
+                response.error_message = cmd_resp.message or "자리 양보 요청 실패"
+        except grpc.RpcError as e:
+            response.success = False
+            response.decision = "denied"
+            response.reason = "grpc_error"
+            response.distance_m = -1.0
+            response.error_message = f"gRPC 호출 실패: {e}"
+        except Exception as e:  # noqa: BLE001
+            response.success = False
+            response.decision = "denied"
+            response.reason = "internal_error"
+            response.distance_m = -1.0
+            response.error_message = f"자리 양보 요청 중 오류: {e}"
         return response
 
     def _handle_call_peer(self, request, response) -> Any:

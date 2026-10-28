@@ -14,6 +14,7 @@ import grpc
 from . import messenger_pb2 as pb2
 from . import messenger_pb2_grpc as pb2_grpc
 from .task_result import unpack_callback_result
+from .yield_protocol import YIELD_MESSAGE_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,15 @@ def rpc_error_summary(exc: grpc.RpcError) -> str:
     return f"code={code} details={details}"
 
 
+# 동료 로봇 사이의 구조화 메시지 타입 — 인증·만료·중복 검사를 공통 적용한다.
+_COOP_MESSAGE_TYPES = frozenset({"peer_cooperation", YIELD_MESSAGE_TYPE})
+
+
+def _is_coop_type(message_type: str) -> bool:
+    """협동 계열 메시지 타입인지(엄격 인증·만료·중복 검사 대상)."""
+    return str(message_type or "") in _COOP_MESSAGE_TYPES
+
+
 class MessengerServicer(pb2_grpc.RoboMessengerServicer):
     """gRPC 서비스 로직 정의"""
 
@@ -59,10 +69,12 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
         max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
         dedup_path: str = DEFAULT_DEDUP_PATH,
         on_stream_message_cb: Callable | None = None,
+        on_yield_request_cb: Callable[[str, str], object] | None = None,
     ):
         self._on_stream_message_cb = on_stream_message_cb
         self._on_message_cb = on_message_cb
         self._on_peer_message_cb = on_peer_message_cb
+        self._on_yield_request_cb = on_yield_request_cb
         self._peer_auth_token = peer_auth_token
         self._peer_auth_tokens = peer_auth_tokens or {}
         self._max_file_bytes = max(1, int(max_file_bytes))
@@ -104,7 +116,7 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                                 "[gRPC] Unauthorized message rejected [%s]",
                                 self._auth_failure_detail(req, context),
                             )
-                            is_coop = req.metadata.get("type", "") == "peer_cooperation"
+                            is_coop = _is_coop_type(req.metadata.get("type", ""))
                             error_content = (
                                 "협동 메시지 인증 실패"
                                 if is_coop
@@ -120,7 +132,7 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                             )
                             continue
                         message_type = req.metadata.get("type", "")
-                        if message_type == "peer_cooperation" and self._is_expired(req):
+                        if (_is_coop_type(req.metadata.get("type", ""))) and self._is_expired(req):
                             msg_queue.put(
                                 pb2.ChatMessage(
                                     sender_id="robot",
@@ -129,7 +141,9 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                                 )
                             )
                             continue
-                        if message_type == "peer_cooperation" and self._is_duplicate(req):
+                        if (_is_coop_type(req.metadata.get("type", ""))) and self._is_duplicate(
+                            req
+                        ):
                             msg_queue.put(
                                 pb2.ChatMessage(
                                     sender_id="robot",
@@ -138,7 +152,18 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                                 )
                             )
                             continue
-                        if message_type == "peer_cooperation" and self._on_peer_message_cb:
+                        if req.metadata.get("type", "") == YIELD_MESSAGE_TYPE:
+                            if not self._on_yield_request_cb:
+                                msg_queue.put(
+                                    pb2.ChatMessage(
+                                        sender_id="robot",
+                                        content="자리 양보 요청을 처리할 수 없습니다.",
+                                        timestamp=int(time.time()),
+                                    )
+                                )
+                                continue
+                            res_result = self._on_yield_request_cb(req.sender_id, req.content)
+                        elif message_type == "peer_cooperation" and self._on_peer_message_cb:
                             res_result = self._on_peer_message_cb(req.sender_id, req.content)
                         elif self._on_stream_message_cb:
 
@@ -201,18 +226,26 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                 "[gRPC SendCommand] Unauthorized command rejected [%s]",
                 self._auth_failure_detail(request, context),
             )
-            is_coop = request.metadata.get("type", "") == "peer_cooperation"
+            is_coop = _is_coop_type(request.metadata.get("type", ""))
             error_message = (
                 "협동 메시지 인증 실패"
                 if is_coop
                 else "gRPC 인증 실패 (인증 토큰 누락 또는 불일치)"
             )
             return pb2.CommandResponse(success=False, message=error_message)
-        if request.metadata.get("type", "") == "peer_cooperation" and self._is_expired(request):
+        if _is_coop_type(request.metadata.get("type", "")) and self._is_expired(request):
             return pb2.CommandResponse(success=False, message="만료된 협동 메시지")
-        if request.metadata.get("type", "") == "peer_cooperation" and self._is_duplicate(request):
+        if _is_coop_type(request.metadata.get("type", "")) and self._is_duplicate(request):
             return pb2.CommandResponse(success=True, message="중복 협동 메시지를 무시했습니다.")
-        if request.metadata.get("type", "") == "peer_cooperation" and self._on_peer_message_cb:
+        if request.metadata.get("type", "") == YIELD_MESSAGE_TYPE:
+            # 자리 양보 메시지를 자연어 명령으로 흘려보내면 LLM이 좌표 JSON을
+            # 지시문으로 해석한다. 처리기가 없으면 명시적으로 거부한다.
+            if not self._on_yield_request_cb:
+                return pb2.CommandResponse(
+                    success=False, message="자리 양보 요청을 처리할 수 없습니다."
+                )
+            res_result = self._on_yield_request_cb(request.sender_id, request.content)
+        elif request.metadata.get("type", "") == "peer_cooperation" and self._on_peer_message_cb:
             res_result = self._on_peer_message_cb(request.sender_id, request.content)
         elif self._on_stream_message_cb:
             assistant_messages: list[str] = []
@@ -500,6 +533,7 @@ class GrpcServer:
         dedup_path: str = DEFAULT_DEDUP_PATH,
         bind_host: str = "127.0.0.1",
         on_stream_message_cb: Callable | None = None,
+        on_yield_request_cb: Callable[[str, str], object] | None = None,
     ):
         self._port = port
         self._bind_host = bind_host
@@ -511,6 +545,7 @@ class GrpcServer:
             max_file_bytes,
             dedup_path,
             on_stream_message_cb=on_stream_message_cb,
+            on_yield_request_cb=on_yield_request_cb,
         )
         self._server = None
 

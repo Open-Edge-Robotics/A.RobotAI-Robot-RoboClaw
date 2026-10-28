@@ -31,6 +31,8 @@ YIELD_SLOT_SERVICE_SUFFIX = "/yield_slot"
 YIELD_CALL_TIMEOUT_SEC = 30.0
 # 재시도 안내를 받았을 때 기다릴 최대 시간(초). 이보다 길면 포기하고 보고한다.
 MAX_RETRY_WAIT_SEC = 10.0
+# gRPC 중계 요청 대기 상한(초). 수신측이 실제 이동까지 마치고 응답한다.
+YIELD_GRPC_TIMEOUT_SEC = 90.0
 
 _ACCEPTED = ACCEPTED
 _BUSY = BUSY
@@ -246,7 +248,34 @@ class RequestYieldSlotSkill(BaseSkill):
         wanted = str(requested or "").strip()
         if wanted:
             return [wanted]
-        return sorted(self._resolve_services())
+        peers = sorted(self._resolve_services())
+        if peers:
+            return peers
+        # 같은 ROS 도메인이 아니면 서비스가 없다. gRPC로 연결된 피어 이름을 쓴다.
+        return self._grpc_peer_names()
+
+    def _grpc_peer_names(self) -> list[str]:
+        """메신저 클라이언트가 알고 있는 연결된 피어 이름 목록."""
+        client = getattr(self.node, "_list_peers_client", None)
+        if client is None:
+            return []
+        from robo_claw_agent import ros_future
+        from robo_claw_msgs.srv import ListPeers
+
+        ok, response = ros_future.call_service(
+            client,
+            ListPeers.Request(),
+            call_timeout_sec=10.0,
+            not_found_message="피어 목록 서비스를 찾을 수 없습니다.",
+            timeout_message="피어 목록 조회 시간 초과",
+        )
+        if not ok or not getattr(response, "success", False):
+            return []
+        return sorted(
+            str(peer.peer_name)
+            for peer in response.peers
+            if bool(getattr(peer, "connected", False))
+        )
 
     def _resolve_services(self) -> dict[str, str]:
         node = self.node
@@ -285,20 +314,84 @@ class RequestYieldSlotSkill(BaseSkill):
         outcomes: list[PeerYieldOutcome] = []
         for peer_name in peer_names:
             service_name = services.get(peer_name)
-            if service_name is None:
+            if service_name is not None:
                 outcomes.append(
-                    PeerYieldOutcome(
-                        peer_name=peer_name,
-                        decision=_DENIED,
-                        reason="service_not_found",
-                        message="yield_slot 서비스를 찾지 못했습니다.",
-                    )
+                    self._call_peer(service_name, peer_name, target, radius, requester_pose)
                 )
                 continue
+            # 같은 ROS 도메인이 아니면 서비스가 발견되지 않는다. 이때는 gRPC로
+            # 구조화 요청을 중계한다(메신저 클라이언트 노드가 서버 역할).
+            outcome = self._call_peer_via_grpc(peer_name, target, radius, requester_pose)
+            if outcome is not None:
+                outcomes.append(outcome)
+                continue
             outcomes.append(
-                self._call_peer(service_name, peer_name, target, radius, requester_pose)
+                PeerYieldOutcome(
+                    peer_name=peer_name,
+                    decision=_DENIED,
+                    reason="service_not_found",
+                    message="yield_slot 서비스를 찾지 못했습니다.",
+                )
             )
         return outcomes
+
+    def _call_peer_via_grpc(
+        self,
+        peer_name: str,
+        target: Pose2D,
+        radius: float,
+        requester_pose: Pose2D | None,
+    ) -> PeerYieldOutcome | None:
+        """gRPC 피어 중계로 양보를 요청한다. 클라이언트가 없으면 None."""
+        client = getattr(self.node, "_call_peer_yield_client", None)
+        if client is None:
+            return None
+
+        from robo_claw_agent import ros_future
+        from robo_claw_msgs.srv import CallPeerYield
+
+        request = CallPeerYield.Request()
+        request.peer_name = peer_name
+        request.target_x = target.x
+        request.target_y = target.y
+        request.radius_m = radius
+        request.timeout_sec = YIELD_GRPC_TIMEOUT_SEC
+        if requester_pose is not None:
+            request.requester_x = requester_pose.x
+            request.requester_y = requester_pose.y
+        else:
+            request.requester_x = float("nan")
+            request.requester_y = float("nan")
+
+        ok, response = ros_future.call_service(
+            client,
+            request,
+            call_timeout_sec=YIELD_GRPC_TIMEOUT_SEC + 10.0,
+            not_found_message="메신저 클라이언트의 call_peer_yield 서비스를 찾을 수 없습니다.",
+            timeout_message="자리 양보 gRPC 요청 시간 초과",
+            ready_timeout_sec=5.0,
+        )
+        if not ok:
+            return PeerYieldOutcome(
+                peer_name=peer_name,
+                decision=_DENIED,
+                reason="grpc_call_failed",
+                message=str(response),
+            )
+
+        spot = None
+        if bool(getattr(response, "has_yield_spot", False)):
+            spot = (float(response.yield_spot_x), float(response.yield_spot_y))
+        return PeerYieldOutcome(
+            peer_name=peer_name,
+            decision=str(response.decision or ""),
+            reason=str(response.reason or ""),
+            retry_after_sec=float(getattr(response, "retry_after_sec", 0.0) or 0.0),
+            yield_spot=spot,
+            message=str(
+                getattr(response, "message", "") or getattr(response, "error_message", "") or ""
+            ),
+        )
 
     def _call_peer(
         self,

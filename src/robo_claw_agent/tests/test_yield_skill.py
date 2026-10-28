@@ -224,3 +224,92 @@ def test_skill_fails_closed_when_no_peer_service_exists():
 
     assert result["success"] is False
     assert "동료" in result["message"]
+
+
+# --- gRPC 중계 (서브넷 분리 환경) --------------------------------------------
+
+
+def _skill_with_grpc_peers(outcomes, *, connected_peers=("Former0047",)):
+    """로컬 ROS 서비스가 없는 환경을 흉내내는 스킬 인스턴스."""
+    skill = RequestYieldSlotSkill()
+    grpc_calls: list[str] = []
+
+    class _Node:
+        _agent_id = "Stretch3"
+        _call_peer_yield_client = object()
+        _list_peers_client = object()
+
+        @staticmethod
+        def get_service_names_and_types():
+            return []
+
+    skill.set_node(_Node())
+    skill._requester_pose = lambda: None  # type: ignore[method-assign]
+
+    def _grpc_peer_names():
+        return sorted(connected_peers)
+
+    def _call_peer_via_grpc(peer_name, target, radius, requester_pose):
+        grpc_calls.append(peer_name)
+        return outcomes.get(peer_name)
+
+    skill._grpc_peer_names = _grpc_peer_names  # type: ignore[method-assign]
+    skill._call_peer_via_grpc = _call_peer_via_grpc  # type: ignore[method-assign]
+    return skill, grpc_calls
+
+
+def test_grpc_fallback_is_used_when_no_local_service_exists():
+    skill, grpc_calls = _skill_with_grpc_peers(
+        {
+            "Former0047": PeerYieldOutcome(
+                "Former0047", ACCEPTED, "yield_prepared", yield_spot=(0.0, 3.0)
+            )
+        }
+    )
+
+    result = skill.execute({"target_x": 2.0, "target_y": 3.0})
+
+    assert result["success"] is True
+    assert result["yielded_peers"] == ["Former0047"]
+    assert grpc_calls == ["Former0047"]
+
+
+def test_grpc_fallback_reports_busy_peer():
+    skill, _ = _skill_with_grpc_peers(
+        {"Former0047": PeerYieldOutcome("Former0047", BUSY, "agent_busy", retry_after_sec=3.0)}
+    )
+
+    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "max_attempts": 1})
+
+    assert result["success"] is False
+    assert result["reason"] == "peers_busy"
+
+
+def test_explicit_peer_name_skips_discovery():
+    skill, grpc_calls = _skill_with_grpc_peers(
+        {"Target": PeerYieldOutcome("Target", NOT_NEEDED, "not_blocking")}
+    )
+
+    result = skill.execute({"target_x": 2.0, "target_y": 3.0, "peer_name": "Target"})
+
+    assert grpc_calls == ["Target"]
+    assert result["reason"] == "no_peer_blocking"
+
+
+def test_no_connected_peers_fails_closed():
+    skill = RequestYieldSlotSkill()
+
+    class _Node:
+        _agent_id = "Stretch3"
+
+        @staticmethod
+        def get_service_names_and_types():
+            return []
+
+    skill.set_node(_Node())
+    skill._grpc_peer_names = lambda: []  # type: ignore[method-assign]
+
+    result = skill.execute({"target_x": 2.0, "target_y": 3.0})
+
+    assert result["success"] is False
+    assert "동료" in result["message"]

@@ -21,7 +21,13 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from robo_claw_msgs.action import ExecuteTask
-from robo_claw_msgs.srv import ExecuteSkill, PeerMessage, QueryState, SendMessage
+from robo_claw_msgs.srv import (
+    ExecuteSkill,
+    PeerMessage,
+    QueryState,
+    SendMessage,
+    YieldSlot,
+)
 
 from .channels import (
     BaseMessengerChannel,
@@ -31,6 +37,9 @@ from .channels import (
     TelegramChannel,
 )
 from .grpc_server import DEFAULT_DEDUP_PATH, DEFAULT_MAX_FILE_BYTES, GrpcServer
+
+# 자리 양보 판정 응답 대기 상한(초). 수신측이 실제 이동까지 마치고 응답한다.
+YIELD_SLOT_CALL_TIMEOUT_SEC = 120.0
 from .http_handlers import make_http_handler
 from .param_helpers import param_bool, param_float, param_int, param_string
 from .ros_future_utils import (
@@ -148,6 +157,12 @@ class ChannelNode(Node):
             f"{self._agent_ns}/peer_message",
             callback_group=self._cb_group,
         )
+        # 자리 양보 — gRPC로 받은 구조화 요청을 에이전트의 YieldSlot 서비스로 넘긴다.
+        self._yield_slot_client = self.create_client(
+            YieldSlot,
+            f"{self._agent_ns}/yield_slot",
+            callback_group=self._cb_group,
+        )
 
         self._send_msg_srv = self.create_service(
             SendMessage,
@@ -181,6 +196,7 @@ class ChannelNode(Node):
                 grpc_port,
                 on_msg,
                 on_peer_message_cb=self.on_peer_message,
+                on_yield_request_cb=self.on_yield_request,
                 on_stream_message_cb=on_msg,
                 peer_auth_token=grpc_peer_token,
                 peer_auth_tokens=grpc_peer_tokens,
@@ -280,6 +296,63 @@ class ChannelNode(Node):
         if not response.success:
             return False, response.error_message or "협동 메시지 수신 실패", ""
         return True, response.result_message or "협동 메시지 수신", ""
+
+    def on_yield_request(self, sender_id: str, content: str) -> tuple[bool, str, str]:
+        """gRPC로 받은 자리 양보 요청을 로컬 에이전트 정책으로 판정한다.
+
+        gRPC 페이로드는 자유 문자열이므로 형식 검증을 통과한 값만 서비스로
+        승격한다. 판정 결과는 ``result_json`` 으로 돌려줘 호출자가 구조적으로
+        읽을 수 있게 한다.
+        """
+        from .yield_protocol import decode_request, encode_response
+
+        request_data = decode_request(content)
+        if request_data is None:
+            return False, "자리 양보 요청 형식이 잘못되었습니다.", ""
+
+        ready_error = wait_for_ready(
+            self._yield_slot_client.wait_for_service,
+            5.0,
+            "YieldSlot 서비스 연결 실패",
+        )
+        if ready_error:
+            return False, ready_error, ""
+
+        request = YieldSlot.Request()
+        request.requester_id = request_data["requester_id"] or str(sender_id or "")
+        request.target_x = request_data["target_x"]
+        request.target_y = request_data["target_y"]
+        request.requester_x = request_data["requester_x"]
+        request.requester_y = request_data["requester_y"]
+        request.radius_m = request_data["radius_m"]
+        request.timeout_sec = request_data["timeout_sec"]
+
+        ok, response = await_future_result(
+            self._yield_slot_client.call_async(request),
+            timeout_sec=YIELD_SLOT_CALL_TIMEOUT_SEC,
+            timeout_error="자리 양보 판정 타임아웃",
+            none_error="자리 양보 판정 응답 없음",
+        )
+        if not ok:
+            return False, str(response), ""
+
+        result_json = encode_response(
+            decision=str(response.decision or ""),
+            reason=str(response.reason or ""),
+            distance_m=float(response.distance_m),
+            retry_after_sec=float(response.retry_after_sec),
+            has_yield_spot=bool(response.has_yield_spot),
+            yield_spot_x=float(response.yield_spot_x),
+            yield_spot_y=float(response.yield_spot_y),
+            message=str(response.message or ""),
+        )
+        success = bool(response.success) and response.decision in {
+            "not_needed",
+            "accepted",
+            "busy",
+            "denied",
+        }
+        return success, str(response.message or response.reason or ""), result_json
 
     def _wait_for_future(self, future: Any, timeout_sec: float) -> bool:
         return wait_for_future(future, timeout_sec)

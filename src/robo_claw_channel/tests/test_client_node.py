@@ -193,6 +193,85 @@ class TestMessengerClientNodeUnit:
         assert res.success is False
         assert "연결된 동료 로봇" in res.error_message
 
+    # --- 자리 양보 gRPC 중계 -------------------------------------------------
+
+    def _make_call_peer_yield_request(self, **overrides):
+        request = MagicMock()
+        request.peer_name = overrides.get("peer_name", "Former0047")
+        request.target_x = overrides.get("target_x", 2.0)
+        request.target_y = overrides.get("target_y", 3.0)
+        request.requester_x = overrides.get("requester_x", 5.0)
+        request.requester_y = overrides.get("requester_y", 5.0)
+        request.radius_m = overrides.get("radius_m", 0.8)
+        request.timeout_sec = overrides.get("timeout_sec", 60.0)
+        return request
+
+    def test_call_peer_yield_unknown_peer_fails_closed(self):
+        self.node._sender_id = "Stretch3"
+        self.node._peer_stubs = {}
+        self.node._peers = []
+
+        res = self.node._handle_call_peer_yield(self._make_call_peer_yield_request(), MagicMock())
+
+        assert res.success is False
+        assert res.decision == "denied"
+        assert res.reason == "peer_not_connected"
+
+    def test_call_peer_yield_rejects_invalid_target(self):
+        self.node._sender_id = "Stretch3"
+        self.node._peer_stubs = {"Former0047": MagicMock()}
+
+        res = self.node._handle_call_peer_yield(
+            self._make_call_peer_yield_request(target_x=float("nan")), MagicMock()
+        )
+
+        assert res.success is False
+        assert res.reason == "invalid_request"
+
+    def test_call_peer_yield_round_trips_decision(self):
+        from robo_claw_channel.yield_protocol import YIELD_MESSAGE_TYPE, encode_response
+
+        stub = MagicMock()
+        stub.SendCommand.return_value = pb2.CommandResponse(
+            success=True,
+            message="비켜섰습니다.",
+            result_json=encode_response(
+                decision="accepted",
+                reason="yield_prepared",
+                has_yield_spot=True,
+                yield_spot_x=0.0,
+                yield_spot_y=3.0,
+                message="비켜섰습니다.",
+            ),
+        )
+        self.node._sender_id = "Stretch3"
+        self.node._peer_stubs = {"Former0047": stub}
+        self.node._peers = []
+
+        res = self.node._handle_call_peer_yield(self._make_call_peer_yield_request(), MagicMock())
+
+        assert res.success is True
+        assert res.decision == "accepted"
+        assert res.has_yield_spot is True
+        assert res.yield_spot_y == 3.0
+        sent = stub.SendCommand.call_args.args[0]
+        assert sent.metadata["type"] == YIELD_MESSAGE_TYPE
+        assert "target_x" in sent.content
+
+    def test_call_peer_yield_rejects_unparseable_response(self):
+        stub = MagicMock()
+        stub.SendCommand.return_value = pb2.CommandResponse(
+            success=True, message="알 수 없는 응답", result_json="not-json"
+        )
+        self.node._sender_id = "Stretch3"
+        self.node._peer_stubs = {"Former0047": stub}
+        self.node._peers = []
+
+        res = self.node._handle_call_peer_yield(self._make_call_peer_yield_request(), MagicMock())
+
+        assert res.success is False
+        assert res.reason == "invalid_response"
+
     def _make_call_peer_request(self, **overrides):
         request = MagicMock()
         request.peer_name = overrides.get("peer_name", "robot_a")
@@ -317,9 +396,7 @@ class TestMessengerClientNodeUnit:
         """피어 설정에 auth_token이 없어도 공통 grpc_peer_token이 있으면 반환한다."""
         self.node._common_peer_token = "shared-secret"
         self.node._peer_tokens_map = {}
-        self.node._peers = [
-            {"agent_name": "Stretch3", "host": "192.168.50.64", "port": 50052}
-        ]
+        self.node._peers = [{"agent_name": "Stretch3", "host": "192.168.50.64", "port": 50052}]
 
         token = self.node._peer_auth_token("Stretch3")
         assert token == "shared-secret"
@@ -328,9 +405,7 @@ class TestMessengerClientNodeUnit:
         """grpc_peer_tokens_json에 등록된 특정 피어의 토큰을 대소문자 무관하게 사용한다."""
         self.node._common_peer_token = "shared-secret"
         self.node._peer_tokens_map = {"stretch3": "stretch-specific-token"}
-        self.node._peers = [
-            {"agent_name": "Stretch3", "host": "192.168.50.64", "port": 50052}
-        ]
+        self.node._peers = [{"agent_name": "Stretch3", "host": "192.168.50.64", "port": 50052}]
 
         token = self.node._peer_auth_token("Stretch3")
         assert token == "stretch-specific-token"
@@ -350,9 +425,7 @@ class TestMessengerClientNodeUnit:
         """_enqueue_peer_message 호출 시 메시지에 auth_token이 없으면 자동으로 부착한다."""
         self.node._common_peer_token = "shared-secret"
         self.node._peer_tokens_map = {}
-        self.node._peers = [
-            {"agent_name": "Stretch3", "host": "192.168.50.64", "port": 50052}
-        ]
+        self.node._peers = [{"agent_name": "Stretch3", "host": "192.168.50.64", "port": 50052}]
         self.node._peer_queues = {"Stretch3": queue.Queue()}
 
         raw_msg = pb2.ChatMessage(sender_id="robot", content="알림", timestamp=100)

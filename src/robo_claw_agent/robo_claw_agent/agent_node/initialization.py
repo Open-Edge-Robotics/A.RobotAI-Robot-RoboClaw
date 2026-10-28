@@ -17,6 +17,7 @@ from robo_claw_msgs.action import ExecuteTask
 from robo_claw_msgs.msg import AgentStatus, PeerPose
 from robo_claw_msgs.srv import (
     CallPeerRobot,
+    CallPeerYield,
     ExecuteSkill,
     ListPeers,
     PeerMessage,
@@ -331,6 +332,14 @@ def setup_ros_interfaces(node) -> None:
     node._list_peers_client = node.create_client(
         ListPeers,
         "/robo_claw_messenger_client_node/list_peers",
+        callback_group=cb_group,
+    )
+
+    # 구조화된 자리 양보 요청을 gRPC 피어(다른 서브넷 포함)로 중계하는 클라이언트
+    # (client_node/MessengerClientNode가 서버 역할)
+    node._call_peer_yield_client = node.create_client(
+        CallPeerYield,
+        "/robo_claw_messenger_client_node/call_peer_yield",
         callback_group=cb_group,
     )
 
