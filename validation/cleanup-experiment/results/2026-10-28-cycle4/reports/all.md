@@ -1,14 +1,14 @@
 | 실험 조건 | 반복 횟수 | 전체 성공률 | 할당 정확도 | 위임 성공률 | 평균 시간 | 재계획 성공률 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 정상 협업 | 20 | 100.0% | 100.0% | 100.0% | 171.9s | 해당 없음 |
+| 정상 협업 | 32 | 96.9% | 100.0% | 100.0% | 167.8s | 해당 없음 |
 
 구간별 평균:
 
-- navigate: 28.5s
-- observe: 27.2s
+- navigate: 29.8s
+- observe: 27.4s
 - discovery: 0.0s
-- delegate: 106.5s
-- handle: 116.3s
+- delegate: 104.8s
+- handle: 115.1s
 
-장소 status 집계: delegated_demo=20
-위임 준비 20건 / 차단 0건
+장소 status 집계: delegated_demo=31, unreachable=1
+위임 준비 31건 / 차단 0건
