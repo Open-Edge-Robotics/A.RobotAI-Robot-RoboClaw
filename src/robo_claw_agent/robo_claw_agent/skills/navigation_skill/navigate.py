@@ -7,6 +7,10 @@ from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills.yield_precheck import (
+    request_peer_yield,
+    should_precheck_yield,
+)
 
 from .core import (
     _cancel_active_goal,
@@ -194,9 +198,9 @@ class NavigateToSkill(BaseSkill):
         # 동료에게 자리를 먼저 확인한다. 좌표 비교는 쓰지 않는다 — 로봇마다 같은
         # 맵이라도 좌표가 다를 수 있으므로, 기억된 장소 이름으로만 협상한다.
         # 이 교섭은 이동을 막지 않는다(거절되면 기존처럼 Nav2가 시도한다).
-        if self._should_precheck_yield(target_name):
+        if should_precheck_yield(self.node, target_name):
             self.send_user_message(f"🙋 {dest_str}지점 자리를 동료에게 먼저 확인합니다.")
-            self._request_peer_yield(place=target_name)
+            request_peer_yield(self.node, place=target_name)
 
         accepted, message, goal_handle = _send_navigation_goal(self.node, x, y, frame, yaw=yaw)
         if not accepted:
@@ -282,61 +286,6 @@ class NavigateToSkill(BaseSkill):
         if early_abort_diagnosed:
             fail_kwargs["failure_reason"] = "progress_checker_timeout"
         return self.fail_result(f"{dest_str}지점으로 이동 실패: {result_message}", **fail_kwargs)
-
-    # --- 동료 자리 협상 -------------------------------------------------------
-
-    def _yield_precheck_mode(self) -> str:
-        """``ask``: 장소 이름이 있으면 동료에게 자리를 먼저 확인한다.
-
-        ``off``: 선제 요청을 하지 않는다. 좌표 비교를 쓰지 않으므로 로컬 자세로
-        점유를 추정하는 모드는 두지 않는다.
-        """
-        if self.node is None:
-            return "off"
-        try:
-            if self.node.has_parameter("yield_precheck_mode"):
-                mode = str(
-                    self.node.get_parameter("yield_precheck_mode")
-                    .get_parameter_value()
-                    .string_value
-                    or ""
-                ).strip()
-                if mode in {"ask", "off"}:
-                    return mode
-        except Exception:  # noqa: BLE001
-            return "off"
-        return "ask"
-
-    def _should_precheck_yield(self, place_name: str) -> bool:
-        """선제 자리 요청을 지금 보낼지 판단한다.
-
-        장소 이름이 없으면 동료에게 물을 기준이 없으므로 요청하지 않는다
-        (좌표를 넘기지 않는다는 원칙과 같은 이유).
-        """
-        if self._yield_precheck_mode() == "off":
-            return False
-        return bool(str(place_name or "").strip())
-
-    def _request_peer_yield(self, *, place: str) -> None:
-        """동료에게 자리를 요청한다. 실패해도 이동은 계속 시도한다."""
-        if self._yield_precheck_mode() == "off":
-            return
-        skills = getattr(self.node, "_skills", None)
-        if skills is None or not skills.has_skill("request_yield_slot"):
-            return
-        try:
-            result = skills.execute(
-                "request_yield_slot",
-                {"target_place": str(place).strip()},
-                timeout_sec=70.0,
-            )
-            logger.info(
-                "[navigate_to] yield precheck result: success=%s message=%s",
-                getattr(result, "success", False),
-                getattr(result, "message", ""),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[navigate_to] yield precheck failed: %s", exc)
 
 
 class FollowWaypointsSkill(BaseSkill):

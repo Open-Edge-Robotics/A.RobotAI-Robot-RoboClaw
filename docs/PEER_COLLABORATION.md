@@ -231,11 +231,19 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 ### 요청자 흐름
 
-1. `navigate_to`가 목표에 도달하지 못하면 `request_yield_slot`에 `target_place`(장소 이름)를 넘깁니다.
-2. 같은 ROS 도메인의 `*/yield_slot` 서비스를 찾아 동료별로 요청합니다(`peer_name`을 주면 그 동료만).
-3. 응답이 `accepted`면 동료가 이미 비켜선 상태이므로 `navigate_to`를 다시 시도합니다.
-4. `busy`면 `retry_after_sec`만큼 기다렸다가 `max_attempts`(기본 2회)까지 재요청합니다.
-5. `not_needed`면 동료가 그 자리를 점유하지 않았다는 뜻이므로 원인을 다른 곳에서 찾아야 합니다.
+1. 이동 스킬은 Nav2 goal을 보내기 **전에** `request_yield_slot`에 `target_place`(장소
+   이름)를 넘겨 자리를 먼저 확인합니다. 이 교섭은 이동을 막지 않습니다(거절·시간
+   초과여도 goal은 그대로 전송).
+2. 선확인은 다음 세 경로에서 모두 동작합니다.
+   - `navigate_to`의 장소 이름 이동(사용자 요청)
+   - 동료가 위임한 이동(`autonomous_cooperate`의 `execute_task`)
+   - 자율협동 장소 순회(`_run_place_sweep`)
+   좌표만 있는 이동은 자기 시멘틱 맵에서 가까운 장소 이름(기본 1.0m)을 되짚어
+   확인하고, 이름을 찾지 못하면 좌표를 넘기지 않는 원칙에 따라 묻지 않습니다.
+3. 같은 ROS 도메인의 `*/yield_slot` 서비스를 찾아 동료별로 요청합니다(`peer_name`을 주면 그 동료만).
+4. 응답이 `accepted`면 동료가 이미 비켜선 상태입니다.
+5. `busy`면 `retry_after_sec`만큼 기다렸다가 `max_attempts`(기본 2회)까지 재요청합니다.
+6. `not_needed`면 동료가 그 자리를 점유하지 않았다는 뜻이므로 원인을 다른 곳에서 찾아야 합니다.
 
 ### 수신측 판정 순서
 
@@ -292,11 +300,11 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 | 모드 | 동작 |
 | --- | --- |
-| `ask`(기본) | **장소 이름이 있으면** 동료에게 이동 전에 직접 묻는다 |
-| `off` | 선제 요청을 하지 않는다 |
+| `ask`(기본) | 장소 이름이 있으면 동료에게 이동 전에 직접 묻는다 |
+| `off` | 모든 이동 경로에서 선제 요청을 하지 않는다 |
 
 좌표 비교를 쓰지 않으므로 로컬 자세로 점유를 추정하는 모드는 두지 않습니다.
-좌표만 있고 장소 이름이 없으면 요청하지 않습니다 — 로봇마다 같은 맵이라도
+좌표만 있고 장소 이름을 찾지 못하면 요청하지 않습니다 — 로봇마다 같은 맵이라도
 좌표가 다를 수 있어 좌표를 넘기지 않는 것이 원칙입니다.
 
 ```bash
@@ -310,6 +318,7 @@ ros2 service call /Former0047/robo_claw_agent_node/yield_slot robo_claw_msgs/srv
 - 판정 규칙(순수): `src/robo_claw_agent/robo_claw_agent/domain/yield_slot.py`
 - 수신측 처리: `src/robo_claw_agent/robo_claw_agent/skills/yield_slot_service.py`
 - 요청자 스킬: `src/robo_claw_agent/robo_claw_agent/skills/yield_skill.py`
+- 요청자 선확인 규칙(공용): `src/robo_claw_agent/robo_claw_agent/skills/yield_precheck.py`
 - 서비스 정의: `robo_claw_msgs/srv/YieldSlot.srv`, 노드 서비스 이름 `~/yield_slot`
 
 ## 2-3. 서브넷이 분리된 로봇의 자리 양보 (gRPC 중계)

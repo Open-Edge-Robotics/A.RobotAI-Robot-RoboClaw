@@ -23,6 +23,7 @@ from typing import Any
 
 from robo_claw_agent import ros_future
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills.yield_precheck import precheck_yield_for_move
 
 from .conversation import get_peer_conversation
 from .globals import (
@@ -431,6 +432,9 @@ class AutonomousCooperateSkill(BaseSkill):
             if not is_cooperation_active():
                 return
             target = {"x": place["x"], "y": place["y"], "frame_id": "map"}
+            # 순회는 좌표로 이동하므로 navigate_to 가 자리 선확인을 건너뛴다. 이미 아는
+            # 장소 이름으로 동료에게 먼저 묻는다(실패해도 이동은 계속한다).
+            precheck_yield_for_move(node, "navigate_to", target, place=place["name"])
             nav_result = skills.execute("navigate_to", target, timeout_sec=180.0)
             if not getattr(nav_result, "success", False):
                 self._send_goal_update(
@@ -714,6 +718,10 @@ class AutonomousCooperateSkill(BaseSkill):
             }
         try:
             timeout_sec = float(policy.limits.get("max_duration_sec", 120.0))
+            # 동료가 요청한 이동도 출발 전에 자리를 확인한다. 장소 이름이 있으면
+            # navigate_to 가 직접 묻고, 좌표만 있으면 여기서 시멘틱 맵으로 장소를
+            # 되짚어 확인한다. 선확인 실패는 이동을 막지 않는다(fail-open).
+            precheck_yield_for_move(node, skill_name, skill_params)
             result = node._skills.execute(skill_name, skill_params, timeout_sec=timeout_sec)
             response = {
                 "success": bool(getattr(result, "success", False)),

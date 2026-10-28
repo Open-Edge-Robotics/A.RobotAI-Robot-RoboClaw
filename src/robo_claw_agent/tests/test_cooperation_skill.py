@@ -250,6 +250,100 @@ def test_semantic_sweep_places_reads_memory_and_deduplicates():
     assert places == [{"name": "거실", "x": 1.0, "y": 2.0}]
 
 
+def test_place_sweep_prechecks_the_known_place_name_before_navigating(monkeypatch):
+    """순회는 좌표로 이동하므로, 이미 아는 장소 이름으로 동료에게 먼저 묻는다."""
+    from robo_claw_agent.skills.cooperation_skill import globals as coop_globals
+
+    coop_globals._COOPERATE_ACTIVE.set()
+    try:
+        node = _make_node()
+        skill = AutonomousCooperateSkill()
+        skill.set_node(node)
+        skill._goal = ""
+        monkeypatch.setattr(
+            skill,
+            "_semantic_sweep_places",
+            lambda limit=8: [{"name": "거실", "x": 2.0, "y": 3.0}],
+        )
+        updates: list[str] = []
+        monkeypatch.setattr(skill, "_send_goal_update", lambda m: updates.append(m))
+
+        skill._run_place_sweep()
+
+        executed = [call.args[0] for call in node._skills.execute.call_args_list]
+        assert executed == ["request_yield_slot", "navigate_to", "analyze_scene"]
+        assert node._skills.execute.call_args_list[0].args[1] == {"target_place": "거실"}
+    finally:
+        coop_globals._COOPERATE_ACTIVE.clear()
+
+
+def test_peer_task_with_coordinates_prechecks_the_yield_place():
+    """동료 위임 이동이 좌표만 담아도 시멘틱 맵으로 장소를 되짚어 선확인한다."""
+    node = _make_node()
+    node._memory.get_all_objects.return_value = [
+        {"name": "거실", "position": {"x": 2.0, "y": 3.0}, "metadata": {"kind": "place"}}
+    ]
+    node._skills.get_skill.return_value = SimpleNamespace(risk_level="action")
+    skill = AutonomousCooperateSkill()
+    skill.set_node(node)
+    skill._allow_remote_task_execution = True
+    skill._remote_allowed_skills = {"navigate_to"}
+
+    skill._execute_task("거실로 와줘", "navigate_to", {"x": 2.05, "y": 3.0})
+
+    executed = [call.args[0] for call in node._skills.execute.call_args_list]
+    assert executed == ["request_yield_slot", "navigate_to"]
+    assert node._skills.execute.call_args_list[0].args[1] == {"target_place": "거실"}
+
+
+def test_peer_task_without_a_resolvable_place_skips_the_precheck():
+    node = _make_node()
+    node._skills.get_skill.return_value = SimpleNamespace(risk_level="action")
+    skill = AutonomousCooperateSkill()
+    skill.set_node(node)
+    skill._allow_remote_task_execution = True
+    skill._remote_allowed_skills = {"navigate_to"}
+
+    skill._execute_task("어딘가로 이동", "navigate_to", {"x": 40.0, "y": 40.0})
+
+    executed = [call.args[0] for call in node._skills.execute.call_args_list]
+    assert executed == ["navigate_to"]
+
+
+def test_peer_task_with_a_place_name_does_not_double_request(monkeypatch):
+    """장소 이름이 있으면 navigate_to 가 직접 묻는다. 위임 경로가 중복 요청하지 않는다."""
+    node = _make_node()
+    node._skills.get_skill.return_value = SimpleNamespace(risk_level="action")
+    skill = AutonomousCooperateSkill()
+    skill.set_node(node)
+    skill._allow_remote_task_execution = True
+    skill._remote_allowed_skills = {"navigate_to"}
+
+    skill._execute_task("거실로 이동", "navigate_to", {"target_name": "거실"})
+
+    executed = [call.args[0] for call in node._skills.execute.call_args_list]
+    assert executed == ["navigate_to"]
+
+
+def test_peer_task_precheck_is_disabled_by_mode_off():
+    node = _make_node()
+    node.has_parameter.return_value = True
+    node.get_parameter.return_value.get_parameter_value.return_value.string_value = "off"
+    node._memory.get_all_objects.return_value = [
+        {"name": "거실", "position": {"x": 2.0, "y": 3.0}, "metadata": {"kind": "place"}}
+    ]
+    node._skills.get_skill.return_value = SimpleNamespace(risk_level="action")
+    skill = AutonomousCooperateSkill()
+    skill.set_node(node)
+    skill._allow_remote_task_execution = True
+    skill._remote_allowed_skills = {"navigate_to"}
+
+    skill._execute_task("거실로 와줘", "navigate_to", {"x": 2.0, "y": 3.0})
+
+    executed = [call.args[0] for call in node._skills.execute.call_args_list]
+    assert executed == ["navigate_to"]
+
+
 def test_place_sweep_starts_without_cleanup_goal(monkeypatch):
     skill = AutonomousCooperateSkill()
     skill.set_node(_make_node())
