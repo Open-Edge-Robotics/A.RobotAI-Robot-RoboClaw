@@ -22,6 +22,8 @@ MAX_PAYLOAD_LENGTH = 2048
 # 요청 값 상한 — 손상된 페이로드가 비정상 파라미터로 승격되지 않게 한다.
 MAX_RADIUS_M = 2.0
 MAX_TIMEOUT_SEC = 120.0
+# 장소 이름 상한 — 자유 문자열 채널로 실리므로 길이를 제한한다.
+MAX_PLACE_LENGTH = 64
 
 _ALLOWED_DECISIONS = frozenset({"not_needed", "accepted", "busy", "denied"})
 
@@ -61,13 +63,25 @@ def encode_request(
     requester_y: float,
     radius_m: float = 0.0,
     timeout_sec: float = 0.0,
+    target_place: str = "",
+    has_target_coords: bool = True,
+    requester_at_target: bool | None = None,
 ) -> str | None:
-    """요청 페이로드를 만든다. 값이 유효하지 않으면 None."""
+    """요청 페이로드를 만든다. 값이 유효하지 않으면 None.
+
+    ``has_target_coords=False`` 면 장소 이름(``target_place``)만으로 요청한다.
+    두 로봇이 같은 맵을 쓰지 않을 때 쓰는 방식이다.
+    """
     if not str(requester_id or "").strip():
         return None
-    target = (_finite(target_x), _finite(target_y))
+    place = str(target_place or "").strip()
+    target = (_finite(target_x), _finite(target_y)) if has_target_coords else (0.0, 0.0)
     requester = (_finite_or_nan(requester_x), _finite_or_nan(requester_y))
-    if target[0] is None or target[1] is None:
+    if has_target_coords and (target[0] is None or target[1] is None):
+        return None
+    if not has_target_coords and not place:
+        return None
+    if len(place) > MAX_PLACE_LENGTH:
         return None
     # 요청자 위치는 모를 수 있다(nan). 다만 숫자여야 한다.
     if requester[0] is None or requester[1] is None:
@@ -80,13 +94,17 @@ def encode_request(
         return None
     payload = {
         "requester_id": str(requester_id).strip(),
+        "has_target_coords": bool(has_target_coords),
         "target_x": target[0],
         "target_y": target[1],
+        "target_place": place,
         "requester_x": requester[0],
         "requester_y": requester[1],
         "radius_m": radius,
         "timeout_sec": timeout,
     }
+    if requester_at_target is not None:
+        payload["requester_at_target"] = bool(requester_at_target)
     encoded = json.dumps(payload, separators=(",", ":"))
     return encoded if len(encoded) <= MAX_PAYLOAD_LENGTH else None
 
@@ -107,10 +125,19 @@ def decode_request(content: str) -> dict[str, Any] | None:
     if not requester_id:
         return None
 
-    target_x = _finite(data.get("target_x"))
-    target_y = _finite(data.get("target_y"))
-    if target_x is None or target_y is None:
+    has_target_coords = bool(data.get("has_target_coords", True))
+    target_place = str(data.get("target_place") or "").strip()
+    if len(target_place) > MAX_PLACE_LENGTH:
         return None
+    if has_target_coords:
+        target_x = _finite(data.get("target_x"))
+        target_y = _finite(data.get("target_y"))
+        if target_x is None or target_y is None:
+            return None
+    else:
+        target_x = target_y = 0.0
+        if not target_place:
+            return None
 
     # 요청자 위치는 nan 을 허용한다(위치 미상). 숫자가 아니면 거부한다.
     requester_x = _finite_or_nan(data.get("requester_x"))
@@ -127,15 +154,20 @@ def decode_request(content: str) -> dict[str, Any] | None:
     if timeout < 0.0 or timeout > MAX_TIMEOUT_SEC:
         return None
 
-    return {
+    payload: dict[str, Any] = {
         "requester_id": requester_id,
+        "has_target_coords": has_target_coords,
         "target_x": target_x,
         "target_y": target_y,
+        "target_place": target_place,
         "requester_x": requester_x,
         "requester_y": requester_y,
         "radius_m": radius,
         "timeout_sec": timeout,
     }
+    if "requester_at_target" in data:
+        payload["requester_at_target"] = bool(data.get("requester_at_target"))
+    return payload
 
 
 def encode_response(

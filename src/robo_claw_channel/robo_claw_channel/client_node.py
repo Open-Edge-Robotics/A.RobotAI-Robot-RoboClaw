@@ -582,6 +582,13 @@ class MessengerClientNode(Node):
             requester_y=request.requester_y,
             radius_m=request.radius_m,
             timeout_sec=request.timeout_sec,
+            target_place=getattr(request, "target_place", ""),
+            has_target_coords=bool(getattr(request, "has_target_coords", True)),
+            requester_at_target=(
+                bool(request.requester_at_target)
+                if bool(getattr(request, "has_requester_at_target", False))
+                else None
+            ),
         )
         if content is None:
             response.success = False

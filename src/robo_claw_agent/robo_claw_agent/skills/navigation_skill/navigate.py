@@ -207,7 +207,12 @@ class NavigateToSkill(BaseSkill):
                 f"🙋 {dest_str}지점에 동료({', '.join(s.agent_id for s in occupants)})가 있어 "
                 "자리를 요청합니다."
             )
-            self._request_peer_yield(x, y)
+        if self._should_precheck_yield(occupants, target_name):
+            if not occupants:
+                self.send_user_message(
+                    f"🙋 {dest_str}지점 자리를 동료에게 먼저 확인합니다."
+                )
+            self._request_peer_yield(x, y, place=target_name)
             occupants = self._blocking_peers(x, y)
 
         accepted, message, goal_handle = _send_navigation_goal(self.node, x, y, frame, yaw=yaw)
@@ -316,33 +321,66 @@ class NavigateToSkill(BaseSkill):
             logger.debug("Peer occupancy lookup failed (ignored): %s", exc)
             return []
 
-    def _yield_precheck_enabled(self) -> bool:
-        if self.node is None:
-            return False
-        try:
-            if not self.node.has_parameter("yield_precheck_enabled"):
-                return False
-            return bool(
-                self.node.get_parameter("yield_precheck_enabled")
-                .get_parameter_value()
-                .bool_value
-            )
-        except Exception:  # noqa: BLE001
-            return False
+    def _yield_precheck_mode(self) -> str:
+        """``local``: 로컬 자세 정보로 점유를 확인했을 때만 요청.
 
-    def _request_peer_yield(self, x: float, y: float) -> None:
+        ``ask``: 로컬 정보가 없어도(맵·도메인 미공유) 동료에게 직접 물어본다.
+        ``off``: 선제 요청을 하지 않는다.
+
+        구버전 ``yield_precheck_enabled``(bool)도 계속 인식한다.
+        """
+        if self.node is None:
+            return "off"
+        try:
+            if self.node.has_parameter("yield_precheck_mode"):
+                mode = str(
+                    self.node.get_parameter("yield_precheck_mode")
+                    .get_parameter_value()
+                    .string_value
+                    or ""
+                ).strip()
+                if mode in {"local", "ask", "off"}:
+                    return mode
+            if self.node.has_parameter("yield_precheck_enabled"):
+                enabled = bool(
+                    self.node.get_parameter("yield_precheck_enabled")
+                    .get_parameter_value()
+                    .bool_value
+                )
+                return "local" if enabled else "off"
+        except Exception:  # noqa: BLE001
+            return "off"
+        return "local"
+
+    def _should_precheck_yield(self, occupants: list[Any], place_name: str) -> bool:
+        """선제 자리 요청을 지금 보낼지 판단한다.
+
+        ``ask`` 모드는 동료에게 직접 묻는 방식이라 로컬 자세 정보가 필요 없다.
+        다만 두 로봇이 같은 맵을 공유하지 않으면 좌표 비교가 무의미하므로
+        **장소 이름이 있을 때만** 요청한다(엉뚱한 양보 요청 방지).
+        """
+        mode = self._yield_precheck_mode()
+        if mode == "off":
+            return False
+        if occupants:
+            return True
+        if mode == "ask":
+            return bool(str(place_name or "").strip())
+        return False
+
+    def _request_peer_yield(self, x: float, y: float, *, place: str = "") -> None:
         """점유 동료에게 자리를 요청한다. 실패해도 이동은 계속 시도한다."""
-        if not self._yield_precheck_enabled():
+        if self._yield_precheck_mode() == "off":
             return
         skills = getattr(self.node, "_skills", None)
         if skills is None or not skills.has_skill("request_yield_slot"):
             return
         try:
-            result = skills.execute(
-                "request_yield_slot",
-                {"target_x": x, "target_y": y},
-                timeout_sec=70.0,
-            )
+            params: dict[str, Any] = {"target_x": x, "target_y": y}
+            if str(place or "").strip():
+                # 맵을 공유하지 않는 로봇은 장소 이름으로 협상해야 한다.
+                params = {"target_place": str(place).strip()}
+            result = skills.execute("request_yield_slot", params, timeout_sec=70.0)
             logger.info(
                 "[navigate_to] yield precheck result: success=%s message=%s",
                 getattr(result, "success", False),

@@ -400,3 +400,110 @@ def test_execution_gate_does_not_touch_non_accepted_decisions():
 
     assert gated.decision == NOT_NEEDED
     assert gated.reason == "not_blocking"
+
+
+# --- 장소 이름 기반 협상 (맵 미공유 환경) ------------------------------------
+
+
+def _place_request(*, requester_id="Stretch3", place="안방", requester_at_target=None):
+    return YieldRequest(
+        requester_id=requester_id,
+        target=None,
+        target_place=place,
+        requester_at_target=requester_at_target,
+    )
+
+
+def test_place_only_request_passes_validation():
+    assert validate_yield_request(_place_request()) == ""
+
+
+def test_request_without_coords_or_place_is_rejected():
+    request = YieldRequest(requester_id="Stretch3")
+
+    assert validate_yield_request(request)
+
+
+def test_unresolved_place_cannot_be_evaluated():
+    """장소 이름은 수신측이 자기 맵에서 해석해야 한다. 해석 전엔 판정하지 않는다."""
+    decision = evaluate_yield_request(_place_request(), _state())
+
+    assert decision.decision == DENIED
+    assert decision.reason == "target_unknown"
+
+
+def test_place_resolved_to_receiver_frame_is_judged_with_receiver_coordinates():
+    """장소를 수신측 좌표로 해석하면 수신측 pose와 비교해 판정한다.
+
+    요청자가 동시 점유 여부를 보내지 않았으므로 보수적으로 동시 점유로 본다.
+    """
+    request = _place_request().with_target(Pose2D(2.0, 3.0, 0.0))
+
+    decision = evaluate_yield_request(request, _state())
+
+    assert decision.distance_m == pytest.approx(0.11, abs=0.01)
+    assert decision.decision == BUSY
+    assert decision.reason == "requester_lower_priority"
+
+
+def test_with_target_keeps_the_place_name():
+    request = _place_request().with_target(Pose2D(1.0, 2.0, 0.0))
+
+    assert request.place_name() == "안방"
+    assert request.target is not None
+
+
+def test_requester_at_target_true_is_treated_as_contested():
+    """요청자가 자기 맵에서 '나도 그 자리에 있다'고 판정하면 중재로 넘어간다."""
+    request = _place_request(requester_id="Zeta", requester_at_target=True).with_target(
+        Pose2D(2.0, 3.0, 0.0)
+    )
+
+    decision = evaluate_yield_request(request, _state(agent_id="Former0047"))
+
+    assert decision.decision == BUSY
+    assert decision.reason == "requester_lower_priority"
+
+
+def test_requester_at_target_false_means_occupant_yields():
+    request = _place_request(requester_id="Zeta", requester_at_target=False).with_target(
+        Pose2D(2.0, 3.0, 0.0)
+    )
+
+    decision = evaluate_yield_request(request, _state(agent_id="Former0047"))
+
+    assert decision.decision == ACCEPTED
+
+
+def test_requester_at_target_overrides_foreign_pose():
+    """다른 로봇의 좌표(다른 맵)를 넘겨도 요청자의 로컬 판정이 우선한다."""
+    request = YieldRequest(
+        requester_id="Zeta",
+        target=Pose2D(2.0, 3.0, 0.0),
+        # 다른 맵의 좌표라 목표와 겹쳐 보이지만, 요청자는 "나는 그 자리에 없다"고 판정했다.
+        requester_pose=Pose2D(2.0, 3.05, 0.0),
+        requester_at_target=False,
+    )
+
+    decision = evaluate_yield_request(request, _state(agent_id="Former0047"))
+
+    assert decision.decision == ACCEPTED
+
+
+def test_place_negotiation_yields_exactly_one_robot_when_both_are_there():
+    """양쪽 모두 자기 맵에서 그 장소에 있다고 판정해도 한 대만 양보한다."""
+    target = Pose2D(2.0, 3.0, 0.0)
+    stretch = _state(agent_id="Stretch3", pose=target)
+    former = _state(agent_id="Former0047", pose=target)
+
+    stretch_sees_former = evaluate_yield_request(
+        _place_request(requester_id="Stretch3", requester_at_target=True).with_target(target),
+        former,
+    )
+    former_sees_stretch = evaluate_yield_request(
+        _place_request(requester_id="Former0047", requester_at_target=True).with_target(target),
+        stretch,
+    )
+
+    accepted = [d for d in (stretch_sees_former, former_sees_stretch) if d.accepted]
+    assert len(accepted) == 1

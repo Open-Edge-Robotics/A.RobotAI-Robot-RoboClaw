@@ -34,7 +34,13 @@ def test_request_round_trip():
     encoded = encode_request(**_REQUEST)
 
     assert encoded is not None
-    assert decode_request(encoded) == {**_REQUEST, "radius_m": 0.0, "timeout_sec": 0.0}
+    assert decode_request(encoded) == {
+        **_REQUEST,
+        "has_target_coords": True,
+        "target_place": "",
+        "radius_m": 0.0,
+        "timeout_sec": 0.0,
+    }
 
 
 def test_message_type_constant_is_stable():
@@ -132,3 +138,94 @@ def test_response_negative_retry_is_clamped():
 
     assert decoded is not None
     assert decoded["retry_after_sec"] == 0.0
+
+
+# --- 장소 이름 기반 요청 (맵 미공유 환경) ------------------------------------
+
+
+def test_place_request_round_trip_without_coordinates():
+    encoded = encode_request(
+        requester_id="Former0047",
+        target_x=0.0,
+        target_y=0.0,
+        requester_x=float("nan"),
+        requester_y=float("nan"),
+        has_target_coords=False,
+        target_place="안방",
+        requester_at_target=False,
+    )
+
+    decoded = decode_request(encoded)
+
+    assert decoded is not None
+    assert decoded["has_target_coords"] is False
+    assert decoded["target_place"] == "안방"
+    assert decoded["requester_at_target"] is False
+
+
+def test_place_request_without_coords_or_place_is_rejected():
+    encoded = encode_request(
+        requester_id="Former0047",
+        target_x=0.0,
+        target_y=0.0,
+        requester_x=0.0,
+        requester_y=0.0,
+        has_target_coords=False,
+        target_place="",
+    )
+
+    assert encoded is None
+
+
+def test_overlong_place_name_is_rejected():
+    encoded = encode_request(
+        requester_id="Former0047",
+        target_x=0.0,
+        target_y=0.0,
+        requester_x=0.0,
+        requester_y=0.0,
+        has_target_coords=False,
+        target_place="가" * 200,
+    )
+
+    assert encoded is None
+
+
+def test_decoded_place_request_without_place_is_rejected():
+    payload = json.dumps(
+        {
+            "requester_id": "Former0047",
+            "has_target_coords": False,
+            "target_place": "",
+            "requester_x": 0.0,
+            "requester_y": 0.0,
+        }
+    )
+
+    assert decode_request(payload) is None
+
+
+def test_requester_at_target_is_optional_and_absent_when_not_judged():
+    decoded = decode_request(encode_request(**_REQUEST))
+
+    assert decoded is not None
+    assert "requester_at_target" not in decoded
+
+
+def test_old_payload_without_new_fields_still_decodes():
+    """구버전 페이로드(has_target_coords 없음)는 좌표 요청으로 해석한다."""
+    legacy = json.dumps(
+        {
+            "requester_id": "Stretch3",
+            "target_x": 2.0,
+            "target_y": 3.0,
+            "requester_x": 5.0,
+            "requester_y": 5.0,
+        }
+    )
+
+    decoded = decode_request(legacy)
+
+    assert decoded is not None
+    assert decoded["has_target_coords"] is True
+    assert decoded["target_place"] == ""

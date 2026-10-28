@@ -509,12 +509,21 @@ class AgentNode(Node, ExecutionMixin):
         radius = request.radius_m if request.radius_m > 0.0 else DEFAULT_RADIUS_M
         timeout_sec = request.timeout_sec if request.timeout_sec > 0.0 else DEFAULT_TIMEOUT_SEC
         requester_pose = Pose2D(request.requester_x, request.requester_y, 0.0)
+        target = None
+        if bool(getattr(request, "has_target_coords", False)):
+            candidate = Pose2D(request.target_x, request.target_y, 0.0)
+            target = candidate if candidate.is_finite() else None
+        requester_at_target = None
+        if bool(getattr(request, "has_requester_at_target", False)):
+            requester_at_target = bool(request.requester_at_target)
         yield_request = YieldRequest(
             requester_id=request.requester_id,
-            target=Pose2D(request.target_x, request.target_y, 0.0),
+            target=target,
             radius_m=radius,
             timeout_sec=timeout_sec,
             requester_pose=requester_pose if requester_pose.is_finite() else None,
+            target_place=str(getattr(request, "target_place", "") or ""),
+            requester_at_target=requester_at_target,
         )
 
         try:

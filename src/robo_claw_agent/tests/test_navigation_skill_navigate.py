@@ -199,7 +199,7 @@ def test_navigate_to_respects_configured_arrival_tolerance(monkeypatch):
 # --- 동료 점유 진단·선제 자리 요청 -------------------------------------------
 
 
-def _node_with_peers(occupants=(), *, precheck=True, has_yield_skill=True):
+def _node_with_peers(occupants=(), *, precheck=True, has_yield_skill=True, mode=None):
     """동료 자세 레지스트리와 스킬 매니저를 가진 더미 노드."""
     import time
 
@@ -225,11 +225,26 @@ def _node_with_peers(occupants=(), *, precheck=True, has_yield_skill=True):
         _agent_id = "Stretch3"
         _peer_pose_registry = registry
         _skills = _Skills()
+        _memory = object()
 
+        # 클래스 본문 스코프는 중첩 람다의 클로저가 아니므로, 함수 인자(mode,
+        # precheck)를 직접 참조한다.
         def has_parameter(self, name):
+            if name == "yield_precheck_mode":
+                return mode is not None
             return name == "yield_precheck_enabled"
 
         def get_parameter(self, name):
+            if name == "yield_precheck_mode":
+                return type(
+                    "P",
+                    (),
+                    {
+                        "get_parameter_value": lambda self: type(
+                            "V", (), {"string_value": mode}
+                        )()
+                    },
+                )()
             return type(
                 "P",
                 (),
@@ -313,3 +328,75 @@ def test_precheck_requires_the_skill_to_be_registered(monkeypatch):
 
     assert skill.execute({"x": 5.0, "y": 5.0})["success"] is True
     assert calls == []
+
+
+def _patch_place_resolution(monkeypatch):
+    monkeypatch.setattr(
+        "robo_claw_agent.skills.navigation_skill.navigate._resolve_target_coordinates",
+        lambda memory, name: {"position": {"x": 2.0, "y": 3.0}},
+    )
+
+
+def test_ask_mode_requests_yield_by_place_name_without_local_pose_data(monkeypatch):
+    """맵·도메인을 공유하지 않아도 장소 이름으로 동료에게 직접 물어본다."""
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers([], precheck=True, mode="ask")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+    _patch_place_resolution(monkeypatch)
+
+    skill.execute({"target_name": "안방", "x": 2.0, "y": 3.0})
+
+    assert calls == [("request_yield_slot", {"target_place": "안방"})]
+
+
+def test_ask_mode_skips_coordinate_only_targets(monkeypatch):
+    """좌표만 있고 장소 이름이 없으면 맵 불일치 위험이 있어 묻지 않는다."""
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers([], precheck=True, mode="ask")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+
+    skill.execute({"x": 2.0, "y": 3.0})
+
+    assert calls == []
+
+
+def test_off_mode_never_requests_yield(monkeypatch):
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], precheck=True, mode="off")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+
+    assert skill.execute({"x": 5.0, "y": 5.0})["success"] is True
+    assert calls == []
+
+
+def test_local_mode_uses_coordinates_when_occupancy_is_known(monkeypatch):
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers([("Former0047", 5.0, 5.0)], mode="local")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+
+    skill.execute({"x": 5.0, "y": 5.0})
+
+    assert calls == [("request_yield_slot", {"target_x": 5.0, "target_y": 5.0})]
+
+
+def test_local_mode_prefers_place_name_when_available(monkeypatch):
+    # 해석된 장소 좌표(2.0, 3.0)에 동료가 서 있는 상황.
+    skill = NavigateToSkill()
+    skill.node, calls = _node_with_peers([("Former0047", 2.0, 3.0)], mode="local")
+    skill.get_map_pose = lambda: {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame": "map"}
+
+    _patch_navigate_deps(monkeypatch, (True, "success"))
+    _patch_place_resolution(monkeypatch)
+
+    skill.execute({"target_name": "안방", "x": 5.0, "y": 5.0})
+
+    # 맵을 공유하지 않을 수 있으므로 좌표 대신 장소 이름으로 협상한다.
+    assert calls == [("request_yield_slot", {"target_place": "안방"})]
