@@ -36,8 +36,7 @@ container_running() {
 }
 
 if ! container_running; then
-    echo "wait_for_base: 경고 — $CONTAINER 가 실행 중이 아닙니다. 그대로 nav2 를 기동합니다." >&2
-    exit 0
+    echo "wait_for_base: $CONTAINER 가 아직 실행 중이 아닙니다. 기동을 기다립니다." >&2
 fi
 
 probe_output() {
@@ -52,15 +51,27 @@ probe_output() {
         bash -lc "source /opt/ros/humble/setup.bash; timeout 20 ros2 topic info $ODOM_TOPIC" 2>/dev/null || true
 }
 
+# 베이스 unit 은 Type=simple 이라 `docker run` 프로세스가 뜨는 순간 started 로 보고된다.
+# 그래서 nav unit 의 ExecStartPre 시점에는 컨테이너가 아직 Running 이 아닐 수 있다.
+# 이때 바로 포기하면 게이트가 무의미해진다(2026-10-29 재부팅 실측). 컨테이너 기동과
+# /base_controller/odom 공개를 하나의 시간 상한 안에서 함께 기다린다.
+container_seen="0"
 for ((i = 0; i < TIMEOUT; i += 5)); do
-    out="$(probe_output)"
-    if grep -qE 'Publisher count: [1-9]' <<< "$out"; then
-        echo "wait_for_base: $ODOM_TOPIC publisher 준비됨 (${i}s)"
-        exit 0
+    if container_running; then
+        container_seen="1"
+        out="$(probe_output)"
+        if grep -qE 'Publisher count: [1-9]' <<< "$out"; then
+            echo "wait_for_base: $ODOM_TOPIC publisher 준비됨 (${i}s)"
+            exit 0
+        fi
     fi
     sleep 5
 done
 
-echo "wait_for_base: 경고 — ${TIMEOUT}s 안에 $ODOM_TOPIC publisher 를 찾지 못했습니다." >&2
+if [ "$container_seen" = "0" ]; then
+    echo "wait_for_base: 경고 — ${TIMEOUT}s 안에 $CONTAINER 가 실행되지 않았습니다." >&2
+else
+    echo "wait_for_base: 경고 — ${TIMEOUT}s 안에 $ODOM_TOPIC publisher 를 찾지 못했습니다." >&2
+fi
 echo "wait_for_base: 그대로 nav2 를 기동합니다. 베이스가 죽어 있으면 former_bringup_watchdog 가 복구합니다." >&2
 exit 0
