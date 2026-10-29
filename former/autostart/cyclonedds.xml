@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Former 로봇 공통 CycloneDDS 설정 (eth0 = LiDAR 직결망 192.168.10.0/24).
+     실기기에서는 /home/former/cyclonedds_conf/cyclonedds.xml 로 설치한다
+     (former/autostart/install_autostart.sh base).
+
+     주의: 인터페이스를 바꾸기 전에 아래 두 가지를 함께 확인해야 한다.
+       1) 이 인터페이스는 부팅 시점에 이미 올라와 있어야 한다. USB 이더넷(eth1 등)에
+          바인딩하면 주소가 붙기 전에 DDS 참가자를 만들어
+          `rmw_create_node: failed to create domain` 으로 ros2_control_node 와
+          robot_state_publisher 가 죽는다(2026-10-29 former0045, docs/NAVI_ISSUE.md 3.9).
+       2) 같은 링크에 다른 ROS 배포판(jazzy 등)의 노드가 있으면 안 된다. 같은 도메인에
+          섞이면 humble 의 rclpy graph 질의가 `empty node name returned by the RMW layer`
+          로 실패해 controller spawner 가 전부 죽는다(같은 사고의 두 번째 증상).
+     NERO 팔 PC 카메라를 받아야 할 때는 도메인을 분리하고 브리지를 따로 둔다. -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface autodetermine="false" name="eth0" priority="default" multicast="default" />
+      </Interfaces>
+      <AllowMulticast>default</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+  </Domain>
+</CycloneDDS>

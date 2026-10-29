@@ -3,6 +3,41 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-10-29 — former0045 재부팅 후 네비게이션 정지를 고치고 베이스 감시·준비 게이트를 붙입니다
+
+- former0045 가 재부팅 뒤 네비게이션이 동작하지 않았습니다. nav2 lifecycle 은 `active` 였고
+  amcl 도 살아 있었는데 `/base_controller/odom` publisher 가 0개, `odom→base_link` TF 가
+  없었습니다. amcl 은 모든 스캔을 `Message Filter dropping` 으로 버리고 있었습니다.
+- 원인은 DDS 설정이었습니다. `/home/former/cyclonedds_conf/cyclonedds.xml` 이 부팅 3초 뒤에
+  올라오는 USB 이더넷(eth1)에만 바인딩되어, base 컨테이너의 `ros2_control_node` 와
+  `robot_state_publisher` 가 `rmw_create_node: failed to create domain` 으로 exit -6 으로
+  죽었습니다. 이어서 controller spawner 3종(`joint_state_broadcaster`, `base_controller`,
+  `former_io_controller`)이 `empty node name returned by the RMW layer` 로 죽어
+  컨트롤러가 하나도 올라오지 않았습니다. eth1 은 NERO 팔 PC(192.168.127.10, ROS 2 jazzy,
+  같은 `ROS_DOMAIN_ID=4`)와 직결된 링크라 같은 도메인에 다른 배포판 노드가 섞인 상태였습니다.
+  launch 프로세스는 살아 있어 `docker --restart` 정책도 발동하지 않았습니다.
+- 조치 1: 설정을 정상 동작하던 eth0 바인딩으로 되돌리고 base 컨테이너를 재기동했습니다.
+  spawner 3종이 모두 `Configured and activated` 로 끝나고 `/base_controller/odom`
+  publisher 1, `odom→base_link` TF(`[0, 0, 0.085]`, 0047 과 동일), `/amcl_pose` 정상 발행,
+  `/navigate_to_pose` action 서버까지 확인했습니다.
+- 조치 2: 재발 방지를 위해 `former/autostart/` 에 베이스 unit 템플릿
+  (`former_bringup.service.in`, 전경 실행 `Restart=always`), 공통 DDS 설정
+  (`cyclonedds.xml`, 설치 시 타임스탬프 백업), `wait_for_net.sh`(DDS 인터페이스 주소 대기),
+  `wait_for_base.sh`(nav 기동 전 `/base_controller/odom` 대기), 베이스 watchdog
+  (`former_bringup_watchdog.sh` + `.service`/`.timer`, 60초 주기, 30분 3회 한도)를 넣었습니다.
+- 조치 3: `install_autostart.sh` 에 `base` 대상을 추가해 DDS 설정·베이스 unit·watchdog 을
+  로봇마다 같은 파일로 설치하도록 했습니다(기존에는 베이스 unit 과 DDS 설정이 로봇에만 있고
+  0045/0047 내용이 서로 달랐습니다). nav unit 에는 `wait_for_base.sh 120` 준비 게이트를 넣어
+  "컨테이너 생성"이 아니라 "베이스 준비" 기준으로 순서를 잡습니다. 두 대기 스크립트는 시간
+  초과를 실패로 처리하지 않습니다(베이스 지연으로 기동을 막지 않고 경고만 남깁니다).
+- 검증: 스크립트 `bash -n`, unit 렌더 결과 `systemd-analyze verify`, 각 스크립트의 정상·
+  시간초과·오류 경로를 로컬에서 실행해 확인했습니다. 실기 0045 에서 `ros2 control
+  list_controllers`(`base_controller ... active`)와 `/base_controller/odom` publisher 확인
+  명령이 그대로 동작하는 것도 확인했습니다. **로봇 재부팅 후 자동 복구와 watchdog 실동작은
+  미검증**입니다(다음 재부팅 때 `journalctl -u former_bringup_watchdog` 으로 확인 필요).
+- 문서: `former/FORMER_GUIDE.md` 10절(unit 구성·베이스 준비·DDS 설정·설치 절차),
+  `docs/NAVI_ISSUE.md` 3.9절(같은 증상의 진단 절차)을 갱신했습니다.
+
 ## 2026-10-29 — former0045 부팅 자동 시작을 추가하고 두 로봇의 RoboClaw 에이전트를 부팅 시 기동합니다
 
 - former0047 에만 있던 nav2 부팅 자동 시작을 former0045 에도 적용하고, 두 로봇의

@@ -18,6 +18,9 @@
 
 **크래시가 다시 나면 이 순서로 봅니다.**
 
+0. 재부팅 직후부터 `/odom`(또는 `odom→base_link` TF) 자체가 없다면 AMCL 문제가 아니라
+   베이스 기동 실패입니다. 3.9절(DDS 인터페이스 바인딩)을 먼저 봅니다.
+
 1. `docker logs former00XX_nav 2>&1 | grep "process has died"` 로 죽은 노드를 확인합니다. `amcl` 이 아니면 이 문서의 원인이 아닙니다.
 2. `ros2 param get /amcl recovery_alpha_fast` 가 `0.0` 인지 확인합니다. 아니라면 `former_nav2_run.sh` 등 핫픽스 없는 경로로 떴거나 params 가 되돌아간 것입니다(5절).
 3. `0.0` 인데도 죽으면 새로운 원인입니다. 6절 절차로 core 를 받아 백트레이스부터 확인합니다. 로그만으로 추측하지 않습니다(이번 건에서 추측이 두 번 빗나갔습니다, 3.6절).
@@ -33,6 +36,7 @@
 | `former/scripts/nav_map_tools.py` | 지도 잡음 진단·정리, 병목 폭과 임계값별 계획 가능 면적 계산 |
 | `former/maps/map_konjiam_L_107-1_clean.pgm/.yaml` | 잡음 점 제거·벽 구멍 폐쇄 지도(원본 유지, 3.8절) |
 | `former/FORMER_GUIDE.md` 9절 | 같은 내용의 운영 가이드 |
+| `former/autostart/cyclonedds.xml`, `wait_for_net.sh`, `wait_for_base.sh`, `former_bringup_watchdog.sh` | 베이스 기동 실패(3.9절) 재발 방지 - DDS 설정·준비 게이트·watchdog |
 | 로봇 `~/konjiam/former/former0047/debug/` | 크래시 core, 백트레이스, 로그(저장소에는 없음) |
 
 ## 1. 증상
@@ -163,6 +167,55 @@ Nav2 기본값은 `recovery_alpha_fast: 0.0`, `recovery_alpha_slow: 0.0` 입니�
 - `python3 former/scripts/check_nav_params.py` 가 PASS 여야 합니다(이전 파라미터에서는 FAIL).
 - 회복 기동(`spin`/`backup`)은 footprint 전체를 검사하므로 1.0 m 보다 좁은 통로에서 실패하는 것이 정상입니다.
 - 주행 검증 전에는 실기를 움직이지 않습니다. 검증 지표는 문 통과 성공률, `failed to create plan` 0건, `spin failed` 0건입니다.
+
+### 3.9 부팅 후 베이스가 통째로 비는 경우 — DDS 인터페이스 바인딩 (2026-10-29 former0045)
+
+AMCL 크래시와는 다른 원인이고, 지도·파라미터와도 무관합니다. 재부팅 뒤 골을 찍어도
+로봇이 움직이지 않고 로그에 `Message Filter dropping ... timestamp on the message is earlier
+than all the data in the transform cache`, `Invalid frame ID "odom" ... frame does not exist`
+가 나오면 이 경우입니다.
+
+| 관찰 | 값 |
+| --- | --- |
+| 증상 | nav2 lifecycle 은 `active`, amcl 은 살아 있는데 `odom→base_link` TF 가 없음 |
+| 확인 | `ros2 topic info /base_controller/odom` → publisher 0, `ros2 run tf2_ros tf2_echo odom base_link` 무응답 |
+| 직접 원인 | 베이스 컨테이너의 `ros2_control_node`·`robot_state_publisher`·controller spawner 가 기동 중 사망 |
+| 근본 원인 | `/home/former/cyclonedds_conf/cyclonedds.xml` 이 부팅 직후에야 올라오는 USB 이더넷(eth1)에만 바인딩되어 `rmw_create_node: failed to create domain` (exit -6) |
+
+당시 로그(2026-10-29 17:42, former0045):
+
+```text
+[robot_state_publisher-1] [ERROR] [rmw_cyclonedds_cpp]: rmw_create_node: failed to create domain, error Error
+[robot_state_publisher-1] terminate called after throwing an instance of 'rclcpp::exceptions::RCLError'
+[ERROR] [robot_state_publisher-1]: process has died [exit code -6]
+[ERROR] [ros2_control_node-3]: process has died [exit code -6]
+[spawner-4] rclpy._rclpy_pybind11.RCLError: Failed to get node names:
+            empty node name returned by the RMW layer, at ./src/rcl/graph.c:360
+[ERROR] [spawner-4]: process has died (joint_state_broadcaster)
+```
+
+두 가지가 겹칩니다.
+
+1. eth1 은 부팅 3초 뒤 carrier 가 올라오는 USB NIC 입니다. 그 전에 DDS 참가자를 만들면
+   바인딩할 주소가 없어 생성이 실패하고, `ros2_control_node` 와 `robot_state_publisher` 는
+   예외를 처리하지 않아 프로세스가 죽습니다. launch 프로세스는 살아 있어
+   `docker --restart` 정책도 발동하지 않습니다.
+2. eth1 은 NERO 팔 PC(192.168.127.10, ROS 2 jazzy, 같은 `ROS_DOMAIN_ID=4`)와 직결된
+   링크입니다. 같은 도메인에 다른 배포판 노드가 섞이면 humble 의 rclpy graph 질의가
+   `empty node name` 으로 실패해 controller spawner 가 전부 죽습니다.
+
+조치(2026-10-29): DDS 설정을 eth0(정상 동작하던 값)으로 되돌리고, 재발 방지를 위해
+`former/autostart/` 에 다음을 넣었습니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `former/autostart/cyclonedds.xml` | 로봇 공통 DDS 설정(eth0). `install_autostart.sh base` 가 배포하며 기존 파일은 타임스탬프 백업 |
+| `former/autostart/wait_for_net.sh` | base unit `ExecStartPre`. DDS 인터페이스 주소가 붙을 때까지 최대 30초 대기 |
+| `former/autostart/wait_for_base.sh` | nav unit `ExecStartPre`. `/base_controller/odom` publisher 를 최대 120초 대기 |
+| `former/autostart/former_bringup_watchdog.sh` + `.timer` | 60초마다 `base_controller active` 확인, 아니면 `systemctl restart former_bringup` (30분 3회 한도) |
+
+NERO 팔 카메라를 0045 로 받아야 한다면, 인터페이스를 늘리는 대신 **도메인을 분리**하고
+`domain_bridge` 같은 중계를 따로 두는 방식으로 설계합니다.
 
 ## 4. 현재 적용된 핫픽스 (이미지 재빌드 없이)
 

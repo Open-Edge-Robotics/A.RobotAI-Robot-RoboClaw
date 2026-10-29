@@ -18,6 +18,10 @@ Environment=RC_MAP_FILE=__MAP_FILE__
 WorkingDirectory=__NAV_DIR__
 # 이전 실행(수동 기동 포함)이 남긴 동명 컨테이너를 정리한다. 없으면 무시한다.
 ExecStartPre=-/usr/bin/docker rm -f __ROBOT_ID___nav
+# 베이스가 준비되기 전에 올라오면 amcl 이 모든 스캔을 버리며 조용히 멈춘다
+# (2026-10-29 former0045). /base_controller/odom publisher 를 상한 시간만큼 기다린다.
+# 기다려도 없으면 경고만 남기고 그대로 기동한다(베이스 지연으로 nav2 를 막지 않는다).
+ExecStartPre=/bin/bash __AUTOSTART_DIR__/wait_for_base.sh 120
 ExecStart=/bin/bash __NAV_DIR__/run_nav_stable.sh
 # nav2 는 lifecycle 종료에 시간이 걸리므로 30초까지 기다린다.
 ExecStop=/usr/bin/docker stop --time 30 __ROBOT_ID___nav

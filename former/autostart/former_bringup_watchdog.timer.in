@@ -1,0 +1,13 @@
+[Unit]
+Description=__ROBOT_ID__ 로봇 베이스 health watchdog 주기 실행 (60초)
+Documentation=file://__AUTOSTART_DIR__/../FORMER_GUIDE.md
+
+[Timer]
+# 부팅 직후 베이스가 뜰 시간을 준다.
+OnBootSec=180
+OnUnitActiveSec=60
+AccuracySec=5s
+Unit=former_bringup_watchdog.service
+
+[Install]
+WantedBy=timers.target

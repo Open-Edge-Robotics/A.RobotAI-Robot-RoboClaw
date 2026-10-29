@@ -393,29 +393,56 @@ RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./restart_nav.sh
 - 지도 origin 과 해상도가 같으므로 `initpose.md` 의 초기 위치는 그대로 쓸 수 있습니다.
 - 로봇 폭보다 좁은 통로를 지도에서 막는 `--min-passage=0.42` 옵션도 있습니다. 이 맵에서는 1,171 셀이 추가로 막혀 지도 형상이 크게 바뀌므로 기본적으로 쓰지 않습니다. 0.41 m 보다 좁은 틈은 `inscribed 0.205` 때문에 계획 단계에서 이미 통행 불가로 처리됩니다.
 
-## 10. 부팅 시 자동 시작 (nav2, RoboClaw 에이전트)
+## 10. 부팅 시 자동 시작 (베이스, nav2, RoboClaw 에이전트)
 
 두 로봇(`former0045`, `former0047`)은 로봇 베이스(`former_bringup.service`)와 카메라
 (`realsense_bringup.service`)를 systemd unit 으로 부팅 시 자동 기동합니다. 여기에 더해
-Navigation2 와 RoboClaw 에이전트도 같은 방식으로 올립니다. unit 템플릿과 설치 스크립트는
-두 로봇이 공유하는 `former/autostart/` 에 있습니다(실기기에서는
-`/home/former/konjiam/former/autostart/`).
+Navigation2, RoboClaw 에이전트, 베이스 health watchdog, CycloneDDS 설정도 같은 방식으로
+관리합니다. unit 템플릿과 설치 스크립트는 두 로봇이 공유하는 `former/autostart/` 에
+있습니다(실기기에서는 `/home/former/konjiam/former/autostart/`).
 
 ### 10.1 unit 구성
 
 | 대상 | unit | 실행 명령 | 재기동 | 로그 |
 | --- | --- | --- | --- | --- |
+| 베이스 | `former_bringup.service` | `docker run --rm -i ... bringup_robot.launch.py` (전경) | `Restart=always`, 10초 | `journalctl -u former_bringup` |
+| 베이스 감시 | `former_bringup_watchdog.timer` → `.service` | `former_bringup_watchdog.sh` (60초 주기) | 30분 3회 한도 | `journalctl -u former_bringup_watchdog` |
 | nav2 | `former_nav_bringup.service` | `run_nav_stable.sh` (`RC_FOREGROUND=1`) | `Restart=on-failure`, 15초 | `journalctl -u former_nav_bringup` |
 | 에이전트 | `roboclaw_bringup.service` | `run_roboclaw.sh` → `./rclaw launch former kon4X --docker` | `Restart=on-failure`, 20초 | `journalctl -u roboclaw_bringup` |
 
-- 두 unit 모두 `docker.service`, `network-online.target`, `former_bringup.service`,
+- 베이스 unit 은 원래 로봇에만 있고 두 로봇의 내용이 서로 달랐습니다. 2026-10-29 부터
+  `former/autostart/former_bringup.service.in` 템플릿으로 통일했습니다(로봇별 launch
+  인자만 `use_namespace` 로 갈립니다).
+- nav2·에이전트 unit 은 `docker.service`, `network-online.target`, `former_bringup.service`,
   `realsense_bringup.service`, `cyclonedds_tunes.service` 이후에 시작합니다(`After` 만
   사용). 베이스 장애로 nav2·에이전트가 함께 내려가지 않게 하기 위해서입니다.
 - 종료는 `docker stop --time 30` 으로 lifecycle 종료를 기다립니다.
 - 로봇별 컨테이너는 `former0045_nav` / `former0047_nav` 이고, 에이전트는 두 로봇 모두
   `robo_claw_container` 입니다.
 
-### 10.2 전경 실행이 필요한 이유
+### 10.2 베이스 준비와 DDS 설정
+
+베이스·nav2·에이전트는 모두 컨테이너 안에서 같은 `cyclonedds_conf/cyclonedds.xml` 로 DDS
+참가자를 만듭니다. 그래서 준비 확인과 감시를 unit 에 넣었습니다.
+
+| 장치 | 하는 일 | 없을 때 증상 |
+| --- | --- | --- |
+| `ExecStartPre` `wait_for_net.sh` (base) | `cyclonedds.xml` 의 인터페이스(eth0)에 IPv4 주소가 붙을 때까지 최대 30초 대기 | 주소가 없는데 참가자를 만들면 `rmw_create_node: failed to create domain` 으로 `ros2_control_node`·`robot_state_publisher` 가 죽어 `/odom`·TF 가 사라짐 |
+| `ExecStartPre` `wait_for_base.sh` (nav) | `/base_controller/odom` publisher 가 나타날 때까지 최대 120초 대기 | nav2 가 TF 없이 올라와 amcl 이 모든 스캔을 버리며 조용히 멈춤 |
+| `former_bringup_watchdog.timer` | 60초마다 `ros2 control list_controllers` 로 `base_controller active` 확인, 아니면 `systemctl restart former_bringup` | launch 프로세스는 살아 있고 자식 노드만 죽은 경우를 systemd 가 알 수 없음 |
+
+두 대기 스크립트는 **시간 초과를 실패로 처리하지 않습니다.** 링크가 늦게 올라오거나
+일시적으로 없어도 기동을 막지 않고 경고만 남기며, 실제 복구는 watchdog 이 맡습니다.
+watchdog 은 30분에 3회까지만 재기동하고 그 뒤에는 `failed` 로 남겨 수동 점검 대상이
+됩니다. 관리자가 `systemctl stop former_bringup` 으로 내려 둔 경우에는 아무것도 하지
+않습니다.
+
+DDS 인터페이스를 바꾸려면 `former/autostart/cyclonedds.xml` 을 고치고
+`sudo ./install_autostart.sh <robot> base` 로 배포합니다. USB 이더넷처럼 부팅 후에
+나타나는 인터페이스나, 다른 ROS 배포판(jazzy) 노드가 있는 링크를 바인딩하면 베이스가
+통째로 죽습니다(2026-10-29 former0045 사례, `docs/NAVI_ISSUE.md` 3.9).
+
+### 10.3 전경 실행이 필요한 이유
 
 - nav2: `run_former_env.sh` 는 TTY 가 없는 환경에서 `docker run -t` 를 붙이지 않습니다
   (stdin 이 TTY 가 아니면 `-i` 만 사용). `RC_FOREGROUND=1` 이면 `docker run` 이 붙은 채로
@@ -429,17 +456,22 @@ Navigation2 와 RoboClaw 에이전트도 같은 방식으로 올립니다. unit 
   컨테이너가 `--privileged` 로 뜨기 때문에 두 노드 중 없는 것이 있어도 기동합니다
   (실측: `--privileged` 없이는 실패, 있으면 통과).
 
-### 10.3 설치/해제
+### 10.4 설치/해제
 
 ```bash
 cd /home/former/konjiam/former/autostart
 
-# unit 등록 + 즉시 기동 (root 권한 필요). 대상은 nav, claw, all
+# unit 등록 + 즉시 기동 (root 권한 필요). 대상은 base, nav, claw, all
 sudo ./install_autostart.sh former0045 all
 sudo ./install_autostart.sh former0047 all
 
+# 베이스 + DDS 설정 + watchdog 만 다시 설치
+sudo ./install_autostart.sh former0045 base
+
 # 상태 확인 (systemctl status + 컨테이너 상태)
 sudo ./install_autostart.sh former0047 status
+journalctl -u former_bringup -f
+journalctl -u former_bringup_watchdog -f
 journalctl -u former_nav_bringup -f
 journalctl -u roboclaw_bringup -f
 
@@ -454,9 +486,19 @@ sudo ./install_autostart.sh former0047 disable
 sudo RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./install_autostart.sh former0047 nav
 ```
 
-### 10.4 주의 사항
+### 10.5 주의 사항
 
 - `install` 은 이미 떠 있는 동명 컨테이너(수동 기동분 포함)를 정리하고 다시 기동합니다.
+- `base` 설치는 베이스를 **전경 실행**(`docker run --rm -i`)으로 바꿉니다. launch 가
+  죽으면 unit 도 종료되어 systemd 가 재기동하므로, 상태는 `docker ps` 대신
+  `systemctl status former_bringup` 으로 봅니다.
+- `base` 설치는 기존 `cyclonedds_conf/cyclonedds.xml` 을 타임스탬프 백업
+  (`cyclonedds.xml.bak.YYYYMMDD_HHMMSS`)으로 남기고 교체합니다. 이미 떠 있는 컨테이너는
+  재기동해야 새 설정을 읽으므로, 설정만 바꿨다면 `all` 또는 `base` 뒤에 nav2 도
+  재기동합니다.
+- `install` 은 교체 전 기존 unit 을 `/etc/systemd/system/<unit>.bak.YYYYMMDD_HHMMSS` 로
+  백업합니다. 새 unit 이 문제를 일으키면 백업을 되돌리고 `systemctl daemon-reload` 하면
+  됩니다.
 - 자동 시작 상태에서는 부팅 직후부터 주행 명령(`/base_controller/cmd_vel_unstamped`)을 받을 수 있습니다. 이동 명령을 스스로 내리지는 않지만, 실기 시험 중에는 nav unit 을 `stop` 으로 내려 두는 편이 안전합니다.
 - 초기 위치는 각 로봇의 `initpose.md` 를 매 기동마다 반영하며, 파라미터는 임시 디렉터리(`/tmp/former_initpose_<robot>`)에 생성해 컨테이너 `/ws/params` 로 마운트합니다. 이 경로는 재부팅 시 사라지지만 기동 시 다시 생성됩니다.
 - 에이전트는 기동 직후 원격 설정 서버에서 활성 설정을 가져오고, 실패하면

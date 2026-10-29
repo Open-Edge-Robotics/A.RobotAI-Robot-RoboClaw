@@ -1,0 +1,14 @@
+[Unit]
+Description=__ROBOT_ID__ 로봇 베이스 health watchdog (base_controller 상태 확인)
+Documentation=file://__AUTOSTART_DIR__/../FORMER_GUIDE.md
+After=docker.service former_bringup.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=__ROBOT_HOME__
+Environment=RC_ROBOT_HOME=__ROBOT_HOME__
+Environment=RC_BASE_CONTAINER=former_robot
+Environment=RC_BASE_UNIT=former_bringup.service
+ExecStart=/bin/bash __AUTOSTART_DIR__/former_bringup_watchdog.sh
+SyslogIdentifier=former-watchdog
