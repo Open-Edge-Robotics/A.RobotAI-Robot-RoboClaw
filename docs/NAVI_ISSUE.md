@@ -215,7 +215,8 @@ than all the data in the transform cache`, `Invalid frame ID "odom" ... frame do
 | `former/autostart/former_bringup_watchdog.sh` + `.timer` | 60초마다 `base_controller active` 확인, 아니면 `systemctl restart former_bringup` (30분 3회 한도) |
 
 NERO 팔 카메라를 0045 로 받아야 한다면, 인터페이스를 늘리는 대신 **도메인을 분리**하고
-`domain_bridge` 같은 중계를 따로 두는 방식으로 설계합니다.
+`domain_bridge` 같은 중계를 따로 두는 방식으로 설계합니다. 두 로봇과 NERO 팔이 같은 도메인을
+쓰는 문제와 변경 대상·검증 항목은 `docs/ISSUE_DOMAIN.md` 에 정리했습니다.
 
 ## 4. 현재 적용된 핫픽스 (이미지 재빌드 없이)
 
