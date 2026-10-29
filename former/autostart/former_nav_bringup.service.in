@@ -1,5 +1,5 @@
 [Unit]
-Description=former0047 Navigation2 bringup (former0047_nav container)
+Description=__ROBOT_ID__ Navigation2 bringup (__ROBOT_ID___nav container)
 Documentation=file://__NAV_DIR__/README.md
 Requires=docker.service
 Wants=network-online.target
@@ -17,15 +17,15 @@ Environment=ROS_DOMAIN_ID=4
 Environment=RC_MAP_FILE=__MAP_FILE__
 WorkingDirectory=__NAV_DIR__
 # 이전 실행(수동 기동 포함)이 남긴 동명 컨테이너를 정리한다. 없으면 무시한다.
-ExecStartPre=-/usr/bin/docker rm -f former0047_nav
+ExecStartPre=-/usr/bin/docker rm -f __ROBOT_ID___nav
 ExecStart=/bin/bash __NAV_DIR__/run_nav_stable.sh
 # nav2 는 lifecycle 종료에 시간이 걸리므로 30초까지 기다린다.
-ExecStop=/usr/bin/docker stop --time 30 former0047_nav
+ExecStop=/usr/bin/docker stop --time 30 __ROBOT_ID___nav
 Restart=on-failure
 RestartSec=15
 TimeoutStartSec=300
 TimeoutStopSec=120
-SyslogIdentifier=former0047-nav
+SyslogIdentifier=__ROBOT_ID__-nav
 
 [Install]
 WantedBy=multi-user.target

@@ -3,7 +3,33 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
-## 2026-10-28 — 동료가 요청한 이동에도 자리 양보 선확인을 적용합니다
+## 2026-10-29 — former0045 부팅 자동 시작을 추가하고 두 로봇의 RoboClaw 에이전트를 부팅 시 기동합니다
+
+- former0047 에만 있던 nav2 부팅 자동 시작을 former0045 에도 적용하고, 두 로봇의
+  RoboClaw 에이전트(`rclaw launch former kon4X --docker`)도 부팅 시 자동 기동하도록
+  `former/autostart/` 에 unit 템플릿 2종(`former_nav_bringup.service`,
+  `roboclaw_bringup.service`)과 설치 스크립트 `install_autostart.sh` 를 모았습니다.
+  로봇별 복제 대신 로봇 id 를 인자로 받아 치환하는 방식입니다.
+- `rclaw` 는 에이전트 컨테이너를 `docker run -it` 으로 띄우는데 systemd 에는 TTY 가
+  없어 `the input device is not a TTY`(exit 1) 로 즉시 종료됩니다. `run_roboclaw.sh` 가
+  `script -q -e -c ...` 로 pty 를 붙여 전경 실행하고, 종료 코드로 `Restart=on-failure`
+  (20초) 재기동 여부를 판단합니다.
+- `--device /dev/ttyACM0` 은 두 로봇에 없는 노드지만, 컨테이너가 `--privileged` 로 뜨기
+  때문에 기동에 지장이 없습니다(실측: `--privileged` 없이는 실패, 있으면 통과). 대화형
+  셸에서 직접 실행하면 TTY 가 있어 지금까지 문제가 드러나지 않았습니다. 그래서 rclaw
+  바이너리는 수정하지 않았습니다.
+- `former0045/run_nav_stable.sh` 에 former0047 과 같은 `RC_FOREGROUND=1` 전경 모드를
+  넣어 systemd 가 `docker run` 수명을 감시할 수 있게 했습니다. 기존
+  `former0047/install_nav_autostart.sh` 와 `former_nav_bringup.service.in` 은
+  `former/autostart/` 로 통합해 제거했습니다.
+- 0045 의 `run_former_env.sh` 는 0047 과 달리 TTY 플래그 처리가 없어, systemd 처럼
+  TTY 가 없는 환경에서 `-it` 를 붙여 `the input device is not a TTY`(exit 1) 로
+  nav2 가 재기동 루프(15초)에 걸렸습니다. 실제 TTY 판별(`[ ! -t 0 ] || [ ! -t 1 ]`)로
+  `-i` 만 남기는 0047 로직을 그대로 백포트했고, 수정 후 재기동 없이 nav2 가 정상
+  기동했습니다.
+- 검증: 두 로봇에서 unit 설치 후 `systemctl is-active`, `docker ps`, `journalctl` 로
+  nav2·에이전트 컨테이너 기동을 실제 확인했습니다. 재부팅 후 자동 기동은 **미검증**입니다.
+
 
 - 자리 양보 선확인(`yield_precheck_mode=ask`)이 `navigate_to` 실행 안에만 있어서,
   동료가 위임한 이동(`autonomous_cooperate`의 `execute_task`)과 자율협동 장소 순회는

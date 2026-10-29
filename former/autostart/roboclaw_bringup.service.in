@@ -1,0 +1,27 @@
+[Unit]
+Description=RoboClaw agent bringup (robo_claw_container, __ROBOT_ID__)
+Documentation=file://__AUTOSTART_DIR__/../FORMER_GUIDE.md
+Requires=docker.service
+Wants=network-online.target
+# 로봇 베이스/센서와 순서만 맞춘다(After). 베이스 장애로 에이전트까지 내려가지
+# 않도록 Wants 로는 걸지 않는다. 토픽이 없으면 에이전트가 discovery 만 다시 돈다.
+After=docker.service network-online.target former_bringup.service realsense_bringup.service cyclonedds_tunes.service
+
+[Service]
+Type=simple
+User=former
+Group=former
+Environment=HOME=__ROBOT_HOME__
+WorkingDirectory=__WS__
+# 수동 기동분을 포함해 동명 컨테이너를 정리한다. 없으면 무시한다.
+ExecStartPre=-/usr/bin/docker rm -f robo_claw_container
+ExecStart=/bin/bash __AUTOSTART_DIR__/run_roboclaw.sh __ROBOT_TAG__
+# 에이전트는 lifecycle 종료와 RAG 정리에 시간이 걸리므로 30초까지 기다린다.
+ExecStop=/usr/bin/docker stop --time 30 robo_claw_container
+Restart=on-failure
+RestartSec=20
+TimeoutStopSec=120
+SyslogIdentifier=roboclaw-__ROBOT_TAG__
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@ former/
 ├── config/                     # 공용 SLAM 파라미터 (mapper_params.yaml 등)
 ├── params/                     # 공용 Nav2 파라미터 (nav2_params.yaml 등)
 ├── maps/                       # 사전 작성된 맵 (w2_2f, w2_2f_2, w2_5f 등)
+├── autostart/                  # 부팅 자동 시작(systemd) unit 템플릿과 설치 스크립트 (두 로봇 공용)
 ├── former0045/                 # former-0045 로봇 전용 스크립트
 │   ├── run_former_env.sh       # ROS 2 환경 통합 컨트롤러
 │   ├── former_nav2_run.sh      # Nav2 백그라운드 구동 래퍼
@@ -18,6 +19,8 @@ former/
 │   ├── former_slam_run.sh      # SLAM 백그라운드 구동 래퍼
 │   ├── former_slam_rviz.sh     # SLAM RViz 모니터링
 │   ├── run_former_docker.sh    # RoboClaw 에이전트 구동 런처
+│   ├── run_nav_stable.sh       # 실기용 Nav2 기동 (노드 분리 + cmd_vel 리맵 + 스캔 재스탬프)
+│   ├── restart_nav.sh          # nav2 컨테이너만 정리 후 재기동
 │   └── README.md
 └── former0047/                 # former-0047 로봇 전용 스크립트 (Jetson/GPU 특화)
     ├── run_former_env.sh       # ROS 2 환경 통합 컨트롤러 (--runtime nvidia, :0 디스플레이 등)
@@ -28,8 +31,6 @@ former/
     ├── run_former_docker.sh    # RoboClaw 에이전트 구동 런처
     ├── run_nav_stable.sh       # 실기용 Nav2 기동 (노드 분리 + cmd_vel 리맵 + 스캔 재스탬프)
     ├── restart_nav.sh          # nav2 컨테이너만 정리 후 재기동
-    ├── install_nav_autostart.sh        # nav2 부팅 자동 시작(systemd) 설치/해제
-    ├── former_nav_bringup.service.in   # 자동 시작 unit 템플릿
     └── README.md
 ```
 
@@ -392,48 +393,74 @@ RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./restart_nav.sh
 - 지도 origin 과 해상도가 같으므로 `initpose.md` 의 초기 위치는 그대로 쓸 수 있습니다.
 - 로봇 폭보다 좁은 통로를 지도에서 막는 `--min-passage=0.42` 옵션도 있습니다. 이 맵에서는 1,171 셀이 추가로 막혀 지도 형상이 크게 바뀌므로 기본적으로 쓰지 않습니다. 0.41 m 보다 좁은 틈은 `inscribed 0.205` 때문에 계획 단계에서 이미 통행 불가로 처리됩니다.
 
-## 10. 부팅 시 자동 시작 (nav2)
+## 10. 부팅 시 자동 시작 (nav2, RoboClaw 에이전트)
 
-`former0047` 은 로봇 베이스(`former_bringup.service`)와 카메라(`realsense_bringup.service`)를 systemd unit 으로 부팅 시 자동 기동합니다. nav2 도 같은 방식으로 올리려면 `former_nav_bringup.service` 를 등록합니다.
+두 로봇(`former0045`, `former0047`)은 로봇 베이스(`former_bringup.service`)와 카메라
+(`realsense_bringup.service`)를 systemd unit 으로 부팅 시 자동 기동합니다. 여기에 더해
+Navigation2 와 RoboClaw 에이전트도 같은 방식으로 올립니다. unit 템플릿과 설치 스크립트는
+두 로봇이 공유하는 `former/autostart/` 에 있습니다(실기기에서는
+`/home/former/konjiam/former/autostart/`).
 
-### 동작 방식
+### 10.1 unit 구성
 
-| 항목 | 내용 |
-| --- | --- |
-| 실행 | `run_nav_stable.sh` 를 `RC_FOREGROUND=1`(전경)로 실행 → `docker run` 이 붙은 채로 systemd 가 감시 |
-| 순서 | `docker.service`, `former_bringup.service`, `realsense_bringup.service`, `cyclonedds_tunes.service` 이후 |
-| 장애 대응 | launch 프로세스가 죽으면 `Restart=on-failure`, 15초 후 재기동 |
-| 종료 | `docker stop --time 30 former0047_nav` (lifecycle 종료 대기) |
-| 로그 | `journalctl -u former_nav_bringup` |
+| 대상 | unit | 실행 명령 | 재기동 | 로그 |
+| --- | --- | --- | --- | --- |
+| nav2 | `former_nav_bringup.service` | `run_nav_stable.sh` (`RC_FOREGROUND=1`) | `Restart=on-failure`, 15초 | `journalctl -u former_nav_bringup` |
+| 에이전트 | `roboclaw_bringup.service` | `run_roboclaw.sh` → `./rclaw launch former kon4X --docker` | `Restart=on-failure`, 20초 | `journalctl -u roboclaw_bringup` |
 
-전경 실행을 위해 `run_former_env.sh` 는 TTY 가 없는 환경에서 `docker run -t` 를 붙이지 않습니다(stdin 이 TTY 가 아니면 `-i` 만 사용). 직접 실행할 때는 기존과 동일하게 백그라운드(`-itd`)로 뜹니다.
+- 두 unit 모두 `docker.service`, `network-online.target`, `former_bringup.service`,
+  `realsense_bringup.service`, `cyclonedds_tunes.service` 이후에 시작합니다(`After` 만
+  사용). 베이스 장애로 nav2·에이전트가 함께 내려가지 않게 하기 위해서입니다.
+- 종료는 `docker stop --time 30` 으로 lifecycle 종료를 기다립니다.
+- 로봇별 컨테이너는 `former0045_nav` / `former0047_nav` 이고, 에이전트는 두 로봇 모두
+  `robo_claw_container` 입니다.
 
-### 설치/해제
+### 10.2 전경 실행이 필요한 이유
+
+- nav2: `run_former_env.sh` 는 TTY 가 없는 환경에서 `docker run -t` 를 붙이지 않습니다
+  (stdin 이 TTY 가 아니면 `-i` 만 사용). `RC_FOREGROUND=1` 이면 `docker run` 이 붙은 채로
+  남아 systemd 가 프로세스 수명으로 컨테이너 생존을 감시합니다. 직접 실행할 때는 기존과
+  동일하게 백그라운드(`-itd`)로 뜹니다.
+- 에이전트: `rclaw launch ... --docker` 는 내부에서 `docker run -it` 을 실행합니다.
+  systemd 에는 TTY 가 없어 그대로 부팅 기동하면
+  `the input device is not a TTY`(exit 1) 로 즉시 실패합니다. `run_roboclaw.sh` 가
+  `script -q -e -c ...` 로 pty 를 붙여 실행하므로 docker 가 TTY 를 얻습니다.
+- 참고: `rclaw` 는 `--device /dev/ttyUSB0 --device /dev/ttyACM0` 을 항상 넘기지만
+  컨테이너가 `--privileged` 로 뜨기 때문에 두 노드 중 없는 것이 있어도 기동합니다
+  (실측: `--privileged` 없이는 실패, 있으면 통과).
+
+### 10.3 설치/해제
 
 ```bash
-cd /home/former/konjiam/former/former0047
+cd /home/former/konjiam/former/autostart
 
-# unit 등록 + 즉시 기동 (root 권한 필요)
-sudo ./install_nav_autostart.sh
+# unit 등록 + 즉시 기동 (root 권한 필요). 대상은 nav, claw, all
+sudo ./install_autostart.sh former0045 all
+sudo ./install_autostart.sh former0047 all
 
-# 상태 확인
-sudo ./install_nav_autostart.sh status
+# 상태 확인 (systemctl status + 컨테이너 상태)
+sudo ./install_autostart.sh former0047 status
 journalctl -u former_nav_bringup -f
+journalctl -u roboclaw_bringup -f
 
 # 지금만 정지 / 자동 시작 해제
-sudo ./install_nav_autostart.sh stop
-sudo ./install_nav_autostart.sh disable
+sudo ./install_autostart.sh former0047 stop
+sudo ./install_autostart.sh former0047 disable
 ```
 
 다른 맵으로 자동 기동하려면 설치 전에 `RC_MAP_FILE` 을 지정합니다.
 
 ```bash
-sudo RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./install_nav_autostart.sh
+sudo RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./install_autostart.sh former0047 nav
 ```
 
-### 주의 사항
+### 10.4 주의 사항
 
-- `install` 은 이미 떠 있는 `former0047_nav` 컨테이너를 정리하고 다시 기동합니다.
-- 자동 시작 상태에서는 부팅 직후부터 주행 명령(`/base_controller/cmd_vel_unstamped`)을 받을 수 있습니다. 이동 명령을 스스로 내리지는 않지만, 실기 시험 중에는 `stop` 으로 내려 두는 편이 안전합니다.
-- 초기 위치는 `../initpose.md` 를 매 기동마다 반영하며, 파라미터는 임시 디렉터리(`/tmp/former_initpose_former0047`)에 생성해 컨테이너 `/ws/params` 로 마운트합니다. 이 경로는 재부팅 시 사라지지만 기동 시 다시 생성됩니다.
-- 도커 restart policy(`unless-stopped`) 대신 systemd 를 쓰는 이유는 위 임시 파라미터 생성과 장애 시 재기동 정책을 unit 에서 관리하기 위해서입니다.
+- `install` 은 이미 떠 있는 동명 컨테이너(수동 기동분 포함)를 정리하고 다시 기동합니다.
+- 자동 시작 상태에서는 부팅 직후부터 주행 명령(`/base_controller/cmd_vel_unstamped`)을 받을 수 있습니다. 이동 명령을 스스로 내리지는 않지만, 실기 시험 중에는 nav unit 을 `stop` 으로 내려 두는 편이 안전합니다.
+- 초기 위치는 각 로봇의 `initpose.md` 를 매 기동마다 반영하며, 파라미터는 임시 디렉터리(`/tmp/former_initpose_<robot>`)에 생성해 컨테이너 `/ws/params` 로 마운트합니다. 이 경로는 재부팅 시 사라지지만 기동 시 다시 생성됩니다.
+- 에이전트는 기동 직후 원격 설정 서버에서 활성 설정을 가져오고, 실패하면
+  `~/.robo_claw/config_cache/former_kon4X/` 캐시로 폴백합니다. 캐시가 없는 상태에서
+  네트워크도 끊기면 기동에 실패하므로, 새 로봇에서는 먼저 한 번 수동 실행해 캐시를 만듭니다.
+- 도커 restart policy(`unless-stopped`) 대신 systemd 를 쓰는 이유는 nav2 의 임시 파라미터
+  생성과 장애 시 재기동 정책을 unit 에서 관리하기 위해서입니다.
