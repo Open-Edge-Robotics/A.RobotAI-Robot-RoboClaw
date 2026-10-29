@@ -31,21 +31,27 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   "컨테이너 생성"이 아니라 "베이스 준비" 기준으로 순서를 잡습니다. 두 대기 스크립트는 시간
   초과를 실패로 처리하지 않습니다(베이스 지연으로 기동을 막지 않고 경고만 남깁니다).
 - 검증: 스크립트 `bash -n`, unit 렌더 결과 `systemd-analyze verify`, 각 스크립트의 정상·
-  시간초과·오류 경로를 로컬에서 실행해 확인했습니다. 실기 0045 에서 `ros2 control
+  시간초과·오류 경로를 로컬과 실기에서 실행해 확인했습니다. 실기 0045 에서 `ros2 control
   list_controllers`(`base_controller ... active`)와 `/base_controller/odom` publisher 확인
-  명령이 그대로 동작하는 것도 확인했습니다. **로봇 재부팅 후 자동 복구와 watchdog 실동작은
-  미검증**입니다(다음 재부팅 때 `journalctl -u former_bringup_watchdog` 으로 확인 필요).
+  명령이 그대로 동작하는 것도 확인했습니다. 재부팅 검증 결과는 아래 두 항목에 적었습니다.
 - 문서: `former/FORMER_GUIDE.md` 10절(unit 구성·베이스 준비·DDS 설정·설치 절차),
   `docs/NAVI_ISSUE.md` 3.9절(같은 증상의 진단 절차)을 갱신했습니다.
-- 재부팅 검증(2026-10-29 18:14, 두 로봇): base·nav·agent unit 모두 `active`,
-  `NRestarts 0`, watchdog timer 가 60초 주기로 `Succeeded`, `base_controller` active,
-  `/base_controller/odom` publisher 1, `odom→base_link` TF 존재, `/amcl_pose` 발행,
-  nav 로그의 `Message Filter dropping` 0건입니다(사고 당시에는 5분에 239건).
+- 재부팅 검증 1차(2026-10-29 18:14, 두 로봇): base·nav·agent unit 모두 `active`,
+  `NRestarts 0`, `base_controller` active, `/base_controller/odom` publisher 1,
+  `odom→base_link` TF 존재, `/amcl_pose` 발행, nav 로그의 `Message Filter dropping`
+  0건입니다(사고 당시에는 5분에 239건).
 - 같은 재부팅에서 준비 게이트 버그를 하나 더 잡았습니다. 베이스 unit 은 `Type=simple` 이라
   `docker run` 프로세스가 뜨는 순간 started 로 보고되므로, nav 의 `ExecStartPre` 시점에는
   컨테이너가 아직 Running 이 아니었고 게이트가 “실행 중이 아닙니다” 경고를 남기고 즉시
   포기했습니다(18:15:38 로그). 컨테이너 기동과 `/base_controller/odom` 공개를 하나의 시간
   상한 안에서 함께 기다리도록 고쳤습니다.
+- 재부팅 검증 2차(2026-10-29 18:25, 게이트 수정 반영 후, 두 로봇): base unit 시작
+  18:26:16/18:26:28, nav unit 시작 18:26:24/18:26:36 으로 게이트가 컨테이너 기동을 기다린 뒤
+  `wait_for_base: /base_controller/odom publisher 준비됨 (5s)` 를 남기고 nav2 를
+  출발시켰습니다. `NRestarts` 는 base·nav 모두 0, `map→base_link` TF 는 initpose 와 일치
+  (0045 `[-0.518, -0.527, 0]`, 0047 `[-0.532, -0.017, 0]`), nav 로그의
+  `Message Filter dropping`·`process has died` 는 0건입니다. watchdog 은 부팅 +180초
+  (18:28:09)에 첫 실행으로 `Succeeded`, 이후 60초 주기로 돕니다.
 
 ## 2026-10-29 — former0045 부팅 자동 시작을 추가하고 두 로봇의 RoboClaw 에이전트를 부팅 시 기동합니다
 
