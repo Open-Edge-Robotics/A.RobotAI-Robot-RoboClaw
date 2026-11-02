@@ -449,5 +449,6 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/ISSUE_DOMAIN.md](docs/ISSUE_DOMAIN.md)                                 | 미해결: 두 로봇·NERO 팔이 같은 DDS 도메인을 써서 생기는 그래프 혼선       |
 | [CHANGE_LOG.md](CHANGE_LOG.md)                                               | 전체 변경 이력 — RAG 위치 지식 개선(P1~P5) 상세는 부록                    |
 | [former/FORMER_GUIDE.md](former/FORMER_GUIDE.md)                             | Former 로봇 구동(SLAM/Nav2) 및 에이전트 연동                              |
+| [cloid/motion_list/MOTION_CATALOG.md](cloid/motion_list/MOTION_CATALOG.md)    | CLOi 모션 카탈로그(83개): 카테고리·id·선행 모션                            |
 | [robo_claw_cli/README.md](robo_claw_cli/README.md)                           | 설정 동기화 및 시나리오 기반 QA 자동화 CLI                                |
 | [validation/README.md](validation/README.md)                                 | **자동화 테스트 가이드(QA용)** — 코드 회귀 + 실로봇 시나리오              |
