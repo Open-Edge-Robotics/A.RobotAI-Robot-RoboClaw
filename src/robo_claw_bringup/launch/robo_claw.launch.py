@@ -638,6 +638,22 @@ def _launch_setup(context, *args, **kwargs):
                 "http_blocked_skills_json": ParameterValue(
                     LaunchConfiguration("http_blocked_skills_json"), value_type=str
                 ),
+                "robot_config": robot_config,
+                "config_environment": ParameterValue(
+                    LaunchConfiguration("config_environment"), value_type=str
+                ),
+                "config_server_url": ParameterValue(
+                    LaunchConfiguration("config_server_url"), value_type=str
+                ),
+                "config_device_token": ParameterValue(
+                    LaunchConfiguration("config_device_token"), value_type=str
+                ),
+                "scenario_file": ParameterValue(
+                    LaunchConfiguration("scenario_file"), value_type=str
+                ),
+                "robot_soul_file": robot_soul_file,
+                "robot_limits_file": robot_limits_file,
+                "agent_workspace_dir": agent_workspace_dir,
             }
         ],
         condition=IfCondition(LaunchConfiguration("use_dashboard")),
@@ -899,6 +915,26 @@ def generate_launch_description() -> LaunchDescription:
                 "use_dashboard",
                 default_value="false",
                 description="Dashboard 웹 노드 실행 여부 (true | false)",
+            ),
+            DeclareLaunchArgument(
+                "config_environment",
+                default_value="",
+                description="AI Config Server 환경 이름 (예: dev, prod, sim)",
+            ),
+            DeclareLaunchArgument(
+                "config_server_url",
+                default_value="",
+                description="AI Config Server URL (시나리오 동기화용)",
+            ),
+            DeclareLaunchArgument(
+                "config_device_token",
+                default_value="",
+                description="AI Config Server 디바이스 인증 토큰",
+            ),
+            DeclareLaunchArgument(
+                "scenario_file",
+                default_value="",
+                description="로컬 시나리오 JSON 파일 경로 (오버라이드용)",
             ),
             DeclareLaunchArgument(
                 "memory_path",

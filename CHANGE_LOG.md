@@ -3,6 +3,15 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-03 — 대시보드 시나리오 테스트 실행·보고서 다운로드 및 Docker 빌드 보완
+
+- **배경**: 로봇에서 시스템 서비스로 기동 중인 RoboClaw를 중지하지 않고도 AI Config Server의 테스트 시나리오를 받아 실행하고 결과 보고서를 내려받을 수 있도록 웹 대시보드(`robo_claw_dashboard`)에 시나리오 검증 기능을 통합했습니다. 또한 Docker 이미지 빌드 시 `robo_claw_dashboard` manifest 복사 및 vendored 메시지 CMake 경로가 빠져 있던 문제를 함께 수정했습니다.
+- **조치**:
+  - `robo_claw_dashboard` 도메인(`scenario_models.py`, `scenario_evaluator.py`, `scenario_report.py`)과 비동기 실행기(`scenario_runner.py`)를 추가해 AI Config Server/캐시/로컬 파일/내장 13단계 기본 시나리오 로드, 단일 실행 락(`409 Conflict`), 스텝별 실시간 상태 추적, Markdown(`.md`)/JSON(`.json`) 보고서 생성을 구현했습니다.
+  - `/api/scenarios`, `/api/scenarios/run`, `/api/scenarios/cancel`, `/api/scenarios/status`, `/api/scenarios/report` 엔드포인트와 `readonly`/`control` 권한 정책을 연결하고, 대시보드 웹 UI(`web/index.html`, `web/assets/app.js`, `web/assets/style.css`)에 시나리오 검증 패널을 추가했습니다.
+  - `Dockerfile`의 rosdep manifest 복사 단계에 `src/robo_claw_dashboard/package.xml`을 추가하고 `colcon build` CMake 인자에 `task_manager_msgs_DIR`와 `tofu_msgs_DIR`를 명시했습니다.
+- **검증**: `src/robo_claw_dashboard/tests/` 전체 통과, `ruff check`/`ruff format --check` 통과, `node -c` JS 구문 검사 통과, `scripts/check_docker_deps.py` 통과.
+
 ## 2026-11-02 — 스킬 선택 방식을 설정 서버에서 선택할 수 있게 합니다
 
 - **배경**: `llm_tool_calling`은 코드 파라미터와 `agent.yaml`에만 있어서 설정 서버 프로필에서 네이티브 도구 호출과 JSON 응답 경로를 바꿀 수 없었습니다. 복합 명령 처리도 이 값에 좌우되는데(도구 호출 경로는 분해기를 우회) 운영 중 선택할 방법이 없었습니다.

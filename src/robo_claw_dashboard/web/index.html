@@ -35,7 +35,7 @@
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label small mb-1" for="control-token">제어(control)</label>
-            <input id="control-token" class="form-control form-control-sm" type="password" placeholder="/chat · 초기 위치 설정용" autocomplete="off">
+            <input id="control-token" class="form-control form-control-sm" type="password" placeholder="/chat · 초기 위치 · 시나리오 실행용" autocomplete="off">
           </div>
           <div class="col-12 col-md-auto">
             <button id="save-tokens" class="btn btn-primary btn-sm" type="button">토큰 저장</button>
@@ -195,6 +195,76 @@
             <div id="chat-result" class="small" aria-live="polite"></div>
           </div>
         </form>
+      </div>
+    </section>
+
+    <section class="card mt-3" id="scenario-panel">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <h2 class="h6 mb-0 text-primary-emphasis">
+          테스트 시나리오 검증 <small id="scenario-source" class="text-body-secondary fw-normal">(로딩 중…)</small>
+        </h2>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <button id="scenario-refresh" type="button" class="btn btn-outline-secondary btn-sm">AI Config 서버에서 불러오기</button>
+          <label class="btn btn-outline-secondary btn-sm mb-0" for="scenario-file-input">
+            커스텀 JSON 불러오기
+            <input type="file" id="scenario-file-input" accept=".json" class="d-none">
+          </label>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="mb-3">
+          <div class="fw-semibold small" id="scenario-title">–</div>
+          <div class="small text-body-secondary" id="scenario-desc">–</div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+          <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="opt-run-navigation">
+              <label class="form-check-label small" for="opt-run-navigation">주행(Navigation) 테스트 포함</label>
+            </div>
+            <div class="form-check form-check-inline m-0">
+              <input class="form-check-input" type="checkbox" id="opt-run-manipulation">
+              <label class="form-check-label small" for="opt-run-manipulation">매니퓰레이션(Manipulation) 테스트 포함</label>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center gap-2">
+            <button id="scenario-run-btn" type="button" class="btn btn-primary btn-sm">시나리오 실행</button>
+            <button id="scenario-cancel-btn" type="button" class="btn btn-outline-danger btn-sm" disabled>실행 중지</button>
+          </div>
+        </div>
+
+        <div class="rc-scenario-summary d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3 p-2 rounded border">
+          <div id="scenario-run-status" class="small">상태: 대기 중</div>
+          <div id="scenario-progress-bar" class="progress rc-scenario-progress flex-grow-1" role="progressbar" aria-label="시나리오 진행률">
+            <div class="progress-bar progress-fill bg-primary" style="width: 0%"></div>
+            <span class="progress-label small">0%</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="scenario-download-md" type="button" class="btn btn-outline-primary btn-sm" disabled>보고서 다운로드 (.md)</button>
+            <button id="scenario-download-json" type="button" class="btn btn-outline-secondary btn-sm" disabled>결과 다운로드 (.json)</button>
+          </div>
+        </div>
+
+        <div class="table-responsive rc-scenario-table-wrap">
+          <table class="table table-sm table-hover align-middle mb-0 rc-scenario-table">
+            <thead>
+              <tr class="small text-body-secondary">
+                <th style="width: 44px;" class="text-center">선택</th>
+                <th style="width: 80px;">Step</th>
+                <th>항목명</th>
+                <th style="width: 120px;">유형</th>
+                <th style="width: 90px;">상태</th>
+                <th style="width: 90px;">소요시간</th>
+                <th>상세 결과</th>
+              </tr>
+            </thead>
+            <tbody id="scenario-tbody" class="small">
+              <tr><td colspan="7" class="text-center text-body-secondary py-3">시나리오를 불러오는 중입니다…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   </main>

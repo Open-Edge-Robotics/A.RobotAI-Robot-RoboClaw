@@ -8,10 +8,10 @@
 
 | 구성 요소                   | 파일                                       | 책임                                              |
 | --------------------------- | ------------------------------------------ | ------------------------------------------------- |
-| 도메인(순수 규칙)           | `domain/`                                  | 상태 매핑, 스냅샷 취합, 배터리 정규화, 지도/위치 정규화, 초기 위치 검증, 경로 검증, 로그 버퍼/필터 |
-| 유스케이스                  | `application/`                             | `DashboardService`, HTTP 라우팅                   |
+| 도메인(순수 규칙)           | `domain/`                                  | 상태 매핑, 스냅샷 취합, 배터리 정규화, 지도/위치 정규화, 초기 위치 검증, 경로 검증, 로그 버퍼/필터, 시나리오 모델/평가/보고서 |
+| 유스케이스                  | `application/`                             | `DashboardService`, `ScenarioRunnerService`, HTTP 라우팅 |
 | 어댑터                      | `adapters/`                                | ROS 클라이언트, HTTP 핸들러, 보안 정책             |
-| 노드/브라우저 프론트        | `dashboard_node.py`, `web/`               | 파라미터 배선, 지도 캔버스/위치 표시, 실행 설정·로그 패널, 정적 HTML/JS/CSS |
+| 노드/브라우저 프론트        | `dashboard_node.py`, `web/`               | 파라미터 배선, 지도 캔버스/위치 표시, 실행 설정·로그·시나리오 패널, 정적 HTML/JS/CSS |
 
 ## 실행 방법
 
@@ -133,6 +133,11 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/logs/export` | `GET` | auth 활성 시 readonly 이상 | 로그를 `.log`(text) 또는 `.jsonl` 본문으로 반환 |
 | `/api/chat`   | `POST` | control                 | 자연어 메시지를 에이전트에 전달 (`ExecuteTask`) |
 | `/api/initial_pose` | `POST` | control           | AMCL 초기 위치 설정 (`/initialpose` 발행)     |
+| `/api/scenarios` | `GET` | auth 활성 시 readonly 이상 | 활성 테스트 시나리오 조회 (`?refresh=1` 동기화) |
+| `/api/scenarios/run` | `POST` | control | 테스트 시나리오 비동기 실행 |
+| `/api/scenarios/cancel` | `POST` | control | 실행 중인 시나리오 중단 |
+| `/api/scenarios/status` | `GET` | auth 활성 시 readonly 이상 | 시나리오 실행 진행률 및 스텝별 결과 조회 |
+| `/api/scenarios/report` | `GET` | auth 활성 시 readonly 이상 | 테스트 결과 보고서 다운로드 (`format=md\|json`) |
 
 토큰은 `Authorization: Bearer <token>` 또는 `X-RoboClaw-Token: <token>` 헤더로 전달합니다. 프론트의 "접근 토큰" 입력란에 저장하면 브라우저가 헤더로 자동 전송합니다.
 
@@ -148,6 +153,14 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `http_allowed_cidrs_json`  | `["127.0.0.1/32","::1/128"]`   | 허용 클라이언트 CIDR                          |
 | `http_rate_limit_per_minute` | `60`                          | 분당 요청 제한                                |
 | `http_blocked_skills_json` | `["delete_file","emergency_stop",...]` | 차단 위험 스킬                        |
+| `config_environment`       | `""`                            | 시나리오 대상 환경 (`RC_ENVIRONMENT` 연동)    |
+| `config_server_url`        | `""`                            | AI Config Server 주소                         |
+| `config_device_token`      | `""`                            | AI Config Server 인증 디바이스 토큰           |
+| `scenario_file`            | `""`                            | 로컬 커스텀 시나리오 JSON 파일 경로           |
+| `robot_config`             | `""`                            | 대상 로봇 설정 이름                           |
+| `robot_soul_file`          | `""`                            | 페르소나 검증용 `ROBOT.md` 파일 경로          |
+| `robot_limits_file`        | `""`                            | 주행/속도 가드레일용 `ROBOT_LIMITS.json` 경로 |
+| `agent_workspace_dir`      | `""`                            | 보고서 및 이미지 아티팩트 저장 디렉터리       |
 
 지도/위치 표시에 쓰는 ROS2 노드 파라미터입니다. launch 인자는 아니며 노드 파라미터로만 지정합니다.
 
@@ -351,6 +364,30 @@ curl -X POST http://127.0.0.1:9090/api/chat \
   -H "X-RoboClaw-Token: $RC_HTTP_CONTROL_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"현재 배터리 상태 알려줘"}'
+```
+
+## 테스트 시나리오 실행 및 보고서 다운로드
+
+대시보드 웹 UI의 "테스트 시나리오 검증" 카드 또는 HTTP API를 통해 시나리오를 불러오고, 비동기로 실행하며, 실시간 진행 상태 확인 및 결과 보고서를 다운로드합니다.
+
+- 시나리오 로드 우선순위: `scenario_file`(로컬 파일) → AI Config Server(`/api/v1/scenarios/active`) → 로컬 캐시(`~/.robo_claw/config_cache/<robot>_<env>/scenario.json`) → 내장 13단계 기본 시나리오
+- 브라우저에서 로컬 `.json` 파일을 직접 선택해 일회성 시나리오로 실행할 수도 있습니다.
+- 실행 완료 후 `.md`(Markdown) 및 `.json`(JSON) 보고서를 브라우저로 바로 다운로드할 수 있습니다.
+
+```bash
+# 시나리오 동기화 조회
+curl -s "http://127.0.0.1:9090/api/scenarios?refresh=1" \
+  -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN"
+
+# 시나리오 비동기 실행
+curl -X POST http://127.0.0.1:9090/api/scenarios/run \
+  -H "X-RoboClaw-Token: $RC_HTTP_CONTROL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled_ids": ["ping", "robot_info", "battery"], "run_navigation": false, "run_manipulation": false}'
+
+# 보고서 다운로드 (.md / .json)
+curl -OJ "http://127.0.0.1:9090/api/scenarios/report?format=md" \
+  -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN"
 ```
 
 ## 안전 관련

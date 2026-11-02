@@ -27,6 +27,9 @@
     statusInFlight: false,
     pollDelay: STATUS_INTERVAL_MS,
     pollTimer: null,
+    currentScenario: null,
+    customScenarioObj: null,
+    scenarioPollTimer: null,
   };
 
   function el(id) {
@@ -38,6 +41,26 @@
       readonly: localStorage.getItem(READONLY_KEY) || "",
       control: localStorage.getItem(CONTROL_KEY) || "",
     };
+  }
+
+  function getReadToken() {
+    const tokens = loadTokens();
+    return tokens.readonly || tokens.control;
+  }
+
+  function getControlToken() {
+    const tokens = loadTokens();
+    return tokens.control;
+  }
+
+  function escapeHtml(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   function authHeaders(token) {
@@ -658,6 +681,369 @@
     });
   }
 
+  // ---- 테스트 시나리오 검증 패널 ------------------------------------------
+
+  async function loadScenario(refresh) {
+    const token = getReadToken();
+    try {
+      const url = "/api/scenarios" + (refresh ? "?refresh=1" : "");
+      const { ok, status, data } = await fetchJson(url, token);
+      if (!ok) {
+        setText("scenario-source", "(로드 실패)");
+        setText("scenario-desc", "시나리오를 가져오지 못했습니다. (" + status + ")");
+        return;
+      }
+      state.currentScenario = data.scenario || data;
+      const source = data.source || state.currentScenario.source || "기본 내장";
+      setText("scenario-source", "(" + source + ")");
+      setText(
+        "scenario-title",
+        state.currentScenario.title || state.currentScenario.name || "테스트 시나리오"
+      );
+      setText("scenario-desc", state.currentScenario.description || "등록된 설명이 없습니다.");
+      renderScenarioTable(state.currentScenario.test_cases || []);
+    } catch (err) {
+      setText("scenario-source", "(연결 대기)");
+      setText("scenario-desc", "시나리오 서비스 연결 대기 중: " + err.message);
+    }
+  }
+
+  function renderScenarioTable(testCases) {
+    const tbody = el("scenario-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+
+    if (!testCases || !testCases.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td colspan="7" class="text-center text-body-secondary py-3">등록된 테스트 케이스가 없습니다.</td>';
+      tbody.appendChild(tr);
+      return;
+    }
+
+    const runNav = el("opt-run-navigation") ? el("opt-run-navigation").checked : false;
+    const runManip = el("opt-run-manipulation") ? el("opt-run-manipulation").checked : false;
+
+    testCases.forEach((tc, idx) => {
+      const tr = document.createElement("tr");
+      tr.id = "tc-row-" + tc.id;
+      tr.dataset.tcId = tc.id;
+
+      let isChecked = tc.enabled !== false;
+      if (tc.type === "navigation" && !runNav) isChecked = false;
+      if (tc.type === "manipulation" && !runManip) isChecked = false;
+
+      const stepNum = tc.step != null ? escapeHtml(tc.step) : String(idx + 1);
+      const safeName = escapeHtml(tc.name || tc.id);
+      const safeId = escapeHtml(tc.id);
+      const safeType = escapeHtml(tc.type || "custom");
+
+      tr.innerHTML = `
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input tc-check" data-id="${safeId}" data-type="${safeType}" ${isChecked ? "checked" : ""}>
+        </td>
+        <td class="text-body-secondary">${stepNum}</td>
+        <td>
+          <div class="d-flex flex-column">
+            <span class="fw-medium">${safeName}</span>
+            <small class="text-body-secondary font-monospace">${safeId}</small>
+          </div>
+        </td>
+        <td><span class="badge text-bg-dark border font-monospace">${safeType}</span></td>
+        <td id="tc-status-${safeId}"><span class="badge text-bg-secondary">PENDING</span></td>
+        <td id="tc-duration-${safeId}" class="font-monospace text-body-secondary">–</td>
+        <td><div class="rc-tc-detail" id="tc-detail-${safeId}">–</div></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function scheduleScenarioPoll() {
+    if (state.scenarioPollTimer) clearTimeout(state.scenarioPollTimer);
+    state.scenarioPollTimer = setTimeout(() => {
+      refreshScenarioStatus();
+    }, 1500);
+  }
+
+  async function refreshScenarioStatus(token) {
+    const t = token !== undefined ? token : getReadToken();
+    try {
+      const resp = await fetch("/api/scenarios/status", {
+        headers: { "Content-Type": "application/json", ...authHeaders(t) },
+      });
+      if (!resp.ok) return;
+      const data = await resp.json().catch(() => ({}));
+      renderScenarioStatus(data);
+    } catch (_err) {
+      // 주기적 폴링 실패 시 무시
+    }
+  }
+
+  function renderScenarioStatus(data) {
+    if (!data) return;
+    const runState = (data.state || data.status || "IDLE").toUpperCase();
+    const isRunning = runState === "RUNNING";
+
+    const runBtn = el("scenario-run-btn");
+    const cancelBtn = el("scenario-cancel-btn");
+    if (runBtn) runBtn.disabled = isRunning;
+    if (cancelBtn) cancelBtn.disabled = !isRunning;
+
+    const hasReport = !!data.has_report;
+    const dlMd = el("scenario-download-md");
+    const dlJson = el("scenario-download-json");
+    if (dlMd) dlMd.disabled = !hasReport;
+    if (dlJson) dlJson.disabled = !hasReport;
+
+    const statusBanner = el("scenario-run-status");
+    if (statusBanner) {
+      let stateLabel = runState;
+      let badgeVariant = "text-bg-secondary";
+      if (runState === "RUNNING") {
+        stateLabel = "실행 중";
+        badgeVariant = "text-bg-primary";
+      } else if (runState === "COMPLETED") {
+        stateLabel = "완료";
+        badgeVariant = "text-bg-success";
+      } else if (runState === "CANCELLED") {
+        stateLabel = "중단됨";
+        badgeVariant = "text-bg-warning";
+      } else if (runState === "FAILED") {
+        stateLabel = "실패";
+        badgeVariant = "text-bg-danger";
+      } else if (runState === "IDLE") {
+        stateLabel = "대기 중";
+        badgeVariant = "text-bg-secondary";
+      }
+
+      const summary = data.summary || {};
+      const total = summary.total != null ? summary.total : data.total_steps || 0;
+      const pass = summary.pass || 0;
+      const fail = summary.fail || 0;
+      const warn = summary.warning != null ? summary.warning : summary.warn || 0;
+      const skip = summary.skip || 0;
+
+      statusBanner.innerHTML = `
+        <span class="badge ${badgeVariant}">${stateLabel}</span>
+        <span class="ms-2">
+          PASS: <strong>${pass}</strong> · FAIL: <strong>${fail}</strong> · WARN: <strong>${warn}</strong> · SKIP: <strong>${skip}</strong>
+          ${total ? ` (총 ${total}개)` : ""}
+        </span>
+      `;
+    }
+
+    const progressFill = document.querySelector("#scenario-progress-bar .progress-fill");
+    const progressLabel = document.querySelector("#scenario-progress-bar .progress-label");
+    if (progressFill && progressLabel) {
+      let percent = 0;
+      if (data.progress_percent != null) {
+        percent = Math.min(100, Math.max(0, Math.round(data.progress_percent)));
+      } else if (data.total_steps > 0) {
+        const finished =
+          (data.summary
+            ? data.summary.pass + data.summary.fail + (data.summary.warning || 0) + data.summary.skip
+            : data.current_step) || 0;
+        percent = Math.min(100, Math.max(0, Math.round((finished / data.total_steps) * 100)));
+      }
+      progressFill.style.width = percent + "%";
+      progressLabel.textContent = percent + "%";
+    }
+
+    const results = data.steps || data.step_results || data.results || [];
+    for (const res of results) {
+      if (!res || !res.id) continue;
+      const statusCell = el("tc-status-" + res.id);
+      const durationCell = el("tc-duration-" + res.id);
+      const detailCell = el("tc-detail-" + res.id);
+
+      if (statusCell) {
+        const s = (res.status || "PENDING").toUpperCase();
+        let badgeVariant = "text-bg-secondary";
+        if (s === "PASS") badgeVariant = "text-bg-success";
+        else if (s === "FAIL") badgeVariant = "text-bg-danger";
+        else if (s === "WARNING" || s === "WARN") badgeVariant = "text-bg-warning";
+        else if (s === "SKIP") badgeVariant = "text-bg-dark border";
+        else if (s === "RUNNING") badgeVariant = "text-bg-primary";
+        statusCell.innerHTML = `<span class="badge ${badgeVariant}">${escapeHtml(s)}</span>`;
+      }
+
+      if (durationCell) {
+        durationCell.textContent = res.duration_ms != null ? res.duration_ms + " ms" : "–";
+      }
+
+      if (detailCell) {
+        detailCell.textContent = res.detail || "–";
+      }
+    }
+
+    if (isRunning) {
+      scheduleScenarioPoll();
+    } else if (state.scenarioPollTimer) {
+      clearTimeout(state.scenarioPollTimer);
+      state.scenarioPollTimer = null;
+    }
+  }
+
+  async function downloadReport(format) {
+    const token = getReadToken();
+    try {
+      const resp = await fetch("/api/scenarios/report?format=" + encodeURIComponent(format), {
+        headers: authHeaders(token),
+      });
+      if (!resp.ok) {
+        throw new Error("보고서 다운로드 실패 (" + resp.status + ")");
+      }
+      const blob = await resp.blob();
+      const disposition = resp.headers.get("Content-Disposition");
+      let filename = "scenario_report." + (format === "json" ? "json" : "md");
+      if (disposition && disposition.includes("filename=")) {
+        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) filename = match[1].replace(/['"]/g, "");
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("다운로드 오류: " + err.message);
+    }
+  }
+
+  function setupScenarios() {
+    const refreshBtn = el("scenario-refresh");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async () => {
+        state.customScenarioObj = null;
+        setText("scenario-source", "(동기화 중…)");
+        await loadScenario(true);
+      });
+    }
+
+    const fileInput = el("scenario-file-input");
+    if (fileInput) {
+      fileInput.addEventListener("change", (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const json = JSON.parse(e.target.result);
+            state.customScenarioObj = json;
+            state.currentScenario = json.scenario || json;
+            setText("scenario-source", "(커스텀 JSON: " + file.name + ")");
+            setText(
+              "scenario-title",
+              state.currentScenario.title || state.currentScenario.name || file.name
+            );
+            setText("scenario-desc", state.currentScenario.description || "사용자 로컬 JSON 시나리오");
+            renderScenarioTable(state.currentScenario.test_cases || []);
+          } catch (err) {
+            alert("JSON 파싱 실패: " + err.message);
+          }
+        };
+        reader.readAsText(file);
+        fileInput.value = "";
+      });
+    }
+
+    const navOpt = el("opt-run-navigation");
+    if (navOpt) {
+      navOpt.addEventListener("change", () => {
+        const checks = document.querySelectorAll('.tc-check[data-type="navigation"]');
+        checks.forEach((cb) => {
+          cb.checked = navOpt.checked;
+        });
+      });
+    }
+
+    const manipOpt = el("opt-run-manipulation");
+    if (manipOpt) {
+      manipOpt.addEventListener("change", () => {
+        const checks = document.querySelectorAll('.tc-check[data-type="manipulation"]');
+        checks.forEach((cb) => {
+          cb.checked = manipOpt.checked;
+        });
+      });
+    }
+
+    const runBtn = el("scenario-run-btn");
+    if (runBtn) {
+      runBtn.addEventListener("click", async () => {
+        const token = getControlToken();
+        const checkedBoxes = Array.from(document.querySelectorAll(".tc-check:checked"));
+        const enabledIds = checkedBoxes.map((cb) => cb.dataset.id);
+        const runNav = el("opt-run-navigation") ? el("opt-run-navigation").checked : false;
+        const runManip = el("opt-run-manipulation") ? el("opt-run-manipulation").checked : false;
+
+        const body = {
+          enabled_ids: enabledIds,
+          run_navigation: runNav,
+          run_manipulation: runManip,
+        };
+        if (state.customScenarioObj) {
+          body.scenario = state.customScenarioObj;
+        }
+
+        runBtn.disabled = true;
+        const statusBanner = el("scenario-run-status");
+        if (statusBanner) {
+          statusBanner.textContent = "상태: 시나리오 실행 요청 중…";
+        }
+
+        try {
+          const { ok, status, data } = await fetchJson("/api/scenarios/run", token, {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+          if (!ok) {
+            alert("실행 요청 실패 (" + status + "): " + (data.error || "요청 거부됨"));
+            runBtn.disabled = false;
+            return;
+          }
+          await refreshScenarioStatus();
+          scheduleScenarioPoll();
+        } catch (err) {
+          alert("실행 오류: " + err.message);
+          runBtn.disabled = false;
+        }
+      });
+    }
+
+    const cancelBtn = el("scenario-cancel-btn");
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", async () => {
+        const token = getControlToken();
+        cancelBtn.disabled = true;
+        try {
+          const { ok, status, data } = await fetchJson("/api/scenarios/cancel", token, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          if (!ok) {
+            alert("중단 요청 실패 (" + status + "): " + (data.error || "요청 거부됨"));
+          }
+          await refreshScenarioStatus();
+        } catch (err) {
+          alert("중단 오류: " + err.message);
+        }
+      });
+    }
+
+    const dlMd = el("scenario-download-md");
+    if (dlMd) {
+      dlMd.addEventListener("click", () => downloadReport("md"));
+    }
+
+    const dlJson = el("scenario-download-json");
+    if (dlJson) {
+      dlJson.addEventListener("click", () => downloadReport("json"));
+    }
+  }
+
   function schedulePolling(token) {
     state.pollTimer = setTimeout(async () => {
       const nextDelay = await refreshStatus(token);
@@ -682,6 +1068,9 @@
     setupChat();
     setupMapInteraction();
     setupLogPanel();
+    setupScenarios();
+    loadScenario();
+    refreshScenarioStatus();
     startPolling();
     loadConfig().then(() => {
       // 에이전트 노드가 늦게 뜨는 경우를 한 번만 더 시도한다.

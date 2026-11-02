@@ -5,6 +5,7 @@
 """
 
 import json
+import os
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +18,7 @@ from rclpy.node import Node
 from .adapters.http_handlers import make_handler
 from .adapters.ros_adapter import RosBackend
 from .adapters.security import DashboardHttpSecurityPolicy
+from .application.scenario_runner import ScenarioConfig, resolve_cli_config_defaults
 from .application.service import DashboardService
 from .domain.exposure import ERROR, exposure_findings, is_loopback_host, parse_allowed_cidrs
 
@@ -91,6 +93,14 @@ class DashboardNode(Node):
         self._declare("http_allowed_cidrs_json", DEFAULT_CIDRS_JSON)
         self._declare("http_rate_limit_per_minute", 60)
         self._declare("http_blocked_skills_json", json.dumps(DEFAULT_BLOCKED_SKILLS))
+        self._declare("robot_config", "")
+        self._declare("config_environment", "")
+        self._declare("config_server_url", "")
+        self._declare("config_device_token", "")
+        self._declare("scenario_file", "")
+        self._declare("robot_soul_file", "")
+        self._declare("robot_limits_file", "")
+        self._declare("agent_workspace_dir", "")
 
         host = str(self.get_parameter("dashboard_host").value)
         port = _as_int(self.get_parameter("dashboard_port").value, 9090)
@@ -115,6 +125,57 @@ class DashboardNode(Node):
             self._resolve_contract_file()
         )
         static_root = _resolve_static_root(str(self.get_parameter("static_root").value), self)
+
+        # 시나리오 테스트 설정 구성
+        robot_name = str(self.get_parameter("robot_config").value or "") or os.environ.get(
+            "RC_ROBOT_CONFIG", ""
+        )
+        environment = str(self.get_parameter("config_environment").value or "") or os.environ.get(
+            "RC_ENVIRONMENT", ""
+        )
+        config_server_url = str(
+            self.get_parameter("config_server_url").value or ""
+        ) or os.environ.get("CONFIG_URL", "")
+        device_token = (
+            str(self.get_parameter("config_device_token").value or "")
+            or os.environ.get("DEVICE_TOKEN", "")
+            or os.environ.get("ROBO_CLAW_CLI_DEVICE_TOKEN", "")
+        )
+        if not config_server_url or not device_token:
+            cli_defaults = resolve_cli_config_defaults()
+            if not config_server_url:
+                config_server_url = str(cli_defaults.get("config_server_url") or "")
+            if not device_token:
+                device_token = str(cli_defaults.get("device_token") or "")
+
+        scenario_file = str(self.get_parameter("scenario_file").value or "") or os.environ.get(
+            "SCENARIO_FILE", ""
+        )
+        robot_soul_file = str(self.get_parameter("robot_soul_file").value or "") or os.environ.get(
+            "RC_ROBOT_SOUL_FILE", ""
+        )
+        robot_limits_file = str(
+            self.get_parameter("robot_limits_file").value or ""
+        ) or os.environ.get("RC_ROBOT_LIMITS_FILE", "")
+        agent_workspace_dir = str(
+            self.get_parameter("agent_workspace_dir").value or ""
+        ) or os.environ.get("RC_AGENT_WORKSPACE_DIR", "")
+
+        cache_dir = ""
+        if robot_name and environment:
+            cache_dir = os.path.expanduser(f"~/.robo_claw/config_cache/{robot_name}_{environment}")
+
+        scenario_cfg = ScenarioConfig(
+            robot_name=robot_name,
+            environment=environment,
+            config_server_url=config_server_url,
+            device_token=device_token,
+            scenario_file=scenario_file,
+            cache_dir=cache_dir,
+            robot_soul_file=robot_soul_file,
+            robot_limits_file=robot_limits_file,
+            agent_workspace_dir=agent_workspace_dir,
+        )
 
         allowed_cidrs, cidr_error = parse_allowed_cidrs(
             str(self.get_parameter("http_allowed_cidrs_json").value),
@@ -150,7 +211,7 @@ class DashboardNode(Node):
             log_topic=log_topic,
             log_buffer_size=log_buffer_size,
         )
-        self._service = DashboardService(backend)
+        self._service = DashboardService(backend, scenario_config=scenario_cfg)
         handler = make_handler(self._service, static_root, security)
 
         self._http_server = ThreadingHTTPServer((host, port), handler)

@@ -21,11 +21,30 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
 
     #: auth 활성 시 readonly 토큰이 필요한 GET 경로.
     READONLY_GET_PATHS = frozenset(
-        {"/api/status", "/api/map", "/api/config", "/api/logs", "/api/logs/export"}
+        {
+            "/api/status",
+            "/api/map",
+            "/api/config",
+            "/api/logs",
+            "/api/logs/export",
+            "/api/scenarios",
+            "/api/scenarios/status",
+            "/api/scenarios/report",
+        }
+    )
+
+    #: control 토큰이 필요한 POST 경로.
+    CONTROL_POST_PATHS = frozenset(
+        {
+            "/api/chat",
+            "/api/initial_pose",
+            "/api/scenarios/run",
+            "/api/scenarios/cancel",
+        }
     )
 
     def _required_role(self, *, method: str, path: str) -> str:
-        if method == "POST" and path in ("/api/chat", "/api/initial_pose"):
+        if method == "POST" and path in self.CONTROL_POST_PATHS:
             return "control"
         if method == "GET" and path in self.READONLY_GET_PATHS:
             return "readonly" if self.auth_enabled else "public"

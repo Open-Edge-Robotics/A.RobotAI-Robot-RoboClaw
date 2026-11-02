@@ -1,5 +1,7 @@
 """HTTP 라우터 component 테스트 — fake service 로 rclpy 없이 검증."""
 
+import json
+
 import pytest
 from robo_claw_dashboard.application.http_router import route_http
 
@@ -15,6 +17,8 @@ class FakeService:
         self.log_calls: list[dict] = []
         self.log_export_calls: list[dict] = []
         self._initial_pose_result = {"success": True, "message": "초기 위치를 설정했습니다"}
+        self.run_payloads: list[dict] = []
+        self.cancelled: bool = False
 
     def status(self):
         return dict(self._status)
@@ -42,6 +46,32 @@ class FakeService:
         if kwargs.get("fmt") == "jsonl":
             return "application/x-ndjson; charset=utf-8", '{"message": "patrol failed"}\n'
         return "text/plain; charset=utf-8", "2023-11-14T22:13:20.125Z WARN  /nav2: patrol failed\n"
+
+    def get_scenario(self, refresh=False):
+        return {"source": "default", "refresh": refresh, "scenario": {"name": "Test"}}
+
+    def start_scenario_run(self, payload=None):
+        self.run_payloads.append(payload or {})
+        if payload and payload.get("conflict"):
+            return {"accepted": False, "status_code": 409, "error": "이미 실행 중"}
+        return {"accepted": True, "status_code": 202, "run_id": "run_1"}
+
+    def cancel_scenario_run(self):
+        self.cancelled = True
+        return {"cancelled": True}
+
+    def scenario_status(self):
+        return {"status": "IDLE", "progress": 0}
+
+    def scenario_report(self, fmt="md"):
+        if fmt == "none":
+            return {"found": False, "status_code": 404, "error": "보고서 없음"}
+        return {
+            "found": True,
+            "content_type": "text/markdown; charset=utf-8",
+            "filename": "rep.md",
+            "body": b"# Report",
+        }
 
 
 @pytest.fixture
@@ -259,3 +289,98 @@ class TestLogsEndpoints:
             authorizer=authorizer,
         )
         assert seen == [("GET", "/api/logs")]
+
+
+class TestScenarioEndpoints:
+    def test_get_scenarios_without_refresh(self, web_root):
+        svc = FakeService()
+        resp = route_http("GET", "/api/scenarios", static_root=web_root, service=svc)
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert data["source"] == "default"
+        assert data["refresh"] is False
+
+    def test_get_scenarios_with_refresh(self, web_root):
+        svc = FakeService()
+        resp = route_http("GET", "/api/scenarios?refresh=1", static_root=web_root, service=svc)
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert data["refresh"] is True
+
+    def test_post_scenarios_run_empty_body(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "POST", "/api/scenarios/run", static_root=web_root, body=None, service=svc
+        )
+        assert resp.status == 202
+        assert svc.run_payloads == [{}]
+
+    def test_post_scenarios_run_valid_json(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "POST",
+            "/api/scenarios/run",
+            static_root=web_root,
+            body=b'{"run_navigation": true}',
+            service=svc,
+        )
+        assert resp.status == 202
+        assert svc.run_payloads == [{"run_navigation": True}]
+
+    def test_post_scenarios_run_invalid_json(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "POST",
+            "/api/scenarios/run",
+            static_root=web_root,
+            body=b"{not json",
+            service=svc,
+        )
+        assert resp.status == 400
+
+    def test_post_scenarios_run_conflict_409(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "POST",
+            "/api/scenarios/run",
+            static_root=web_root,
+            body=b'{"conflict": true}',
+            service=svc,
+        )
+        assert resp.status == 409
+
+    def test_post_scenarios_cancel(self, web_root):
+        svc = FakeService()
+        resp = route_http("POST", "/api/scenarios/cancel", static_root=web_root, service=svc)
+        assert resp.status == 200
+        assert svc.cancelled is True
+
+    def test_get_scenarios_status(self, web_root):
+        svc = FakeService()
+        resp = route_http("GET", "/api/scenarios/status", static_root=web_root, service=svc)
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert data["status"] == "IDLE"
+
+    def test_get_scenarios_report_md(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "GET",
+            "/api/scenarios/report?format=md",
+            static_root=web_root,
+            service=svc,
+        )
+        assert resp.status == 200
+        assert "text/markdown" in resp.content_type
+        assert resp.headers.get("Content-Disposition") == 'attachment; filename="rep.md"'
+        assert resp.body == b"# Report"
+
+    def test_get_scenarios_report_not_found_404(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "GET",
+            "/api/scenarios/report?format=none",
+            static_root=web_root,
+            service=svc,
+        )
+        assert resp.status == 404

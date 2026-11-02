@@ -33,6 +33,26 @@ class FakeService:
     def logs_export(self, **kwargs):
         return "text/plain; charset=utf-8", ""
 
+    def get_scenario(self, refresh=False):
+        return {"source": "default", "refresh": refresh}
+
+    def start_scenario_run(self, payload=None):
+        return {"accepted": True, "status_code": 202}
+
+    def cancel_scenario_run(self):
+        return {"cancelled": True}
+
+    def scenario_status(self):
+        return {"status": "IDLE"}
+
+    def scenario_report(self, fmt="md"):
+        return {
+            "found": True,
+            "content_type": "text/markdown; charset=utf-8",
+            "filename": "rep.md",
+            "body": b"# Report",
+        }
+
 
 def _policy(**kw):
     return DashboardHttpSecurityPolicy(
@@ -342,3 +362,85 @@ class TestConfigEndpointAuth:
         )
         assert denied.status == 401
         assert allowed.status == 200
+
+
+class TestScenarioEndpointsAuth:
+    def test_scenarios_run_requires_control(self, web_root):
+        security = _policy(control="c-secret")
+        denied = handle_request(
+            "POST",
+            "/api/scenarios/run",
+            client_ip="127.0.0.1",
+            headers={},
+            body=b"{}",
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "POST",
+            "/api/scenarios/run",
+            client_ip="127.0.0.1",
+            headers={"X-RoboClaw-Token": "c-secret"},
+            body=b"{}",
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 202
+
+    def test_scenarios_cancel_requires_control(self, web_root):
+        security = _policy(readonly="r-secret", control="c-secret")
+        denied = handle_request(
+            "POST",
+            "/api/scenarios/cancel",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer r-secret"},
+            body=b"{}",
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "POST",
+            "/api/scenarios/cancel",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer c-secret"},
+            body=b"{}",
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 200
+
+    def test_scenarios_get_status_report_require_readonly(self, web_root):
+        security = _policy(readonly="r-secret")
+        for path in (
+            "/api/scenarios?refresh=1",
+            "/api/scenarios/status",
+            "/api/scenarios/report?format=md",
+        ):
+            denied = handle_request(
+                "GET",
+                path,
+                client_ip="127.0.0.1",
+                headers={},
+                body=None,
+                service=FakeService(),
+                static_root=web_root,
+                security=security,
+            )
+            allowed = handle_request(
+                "GET",
+                path,
+                client_ip="127.0.0.1",
+                headers={"Authorization": "Bearer r-secret"},
+                body=None,
+                service=FakeService(),
+                static_root=web_root,
+                security=security,
+            )
+            assert denied.status == 401
+            assert allowed.status == 200

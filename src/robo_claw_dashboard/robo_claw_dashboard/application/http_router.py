@@ -6,7 +6,7 @@ http.server 나 rclpy 와 무관한 순수 로직으로, 테스트에서는 fake
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -21,11 +21,21 @@ class HttpResponse:
     status: Status
     content_type: str
     body: bytes
+    headers: dict[str, str] = field(default_factory=dict)
 
 
-def _json(data: dict[str, Any], status: Status = 200) -> HttpResponse:
+def _json(
+    data: dict[str, Any],
+    status: Status = 200,
+    headers: dict[str, str] | None = None,
+) -> HttpResponse:
     body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    return HttpResponse(status, "application/json; charset=utf-8", body)
+    return HttpResponse(
+        status,
+        "application/json; charset=utf-8",
+        body,
+        headers=headers or {},
+    )
 
 
 def _serve_static(static_root: str, request_path: str) -> HttpResponse:
@@ -110,6 +120,37 @@ def _handle_logs_export(query: dict[str, str], service: Any) -> HttpResponse:
     return HttpResponse(200, content_type, text.encode("utf-8"))
 
 
+def _handle_scenario_run(body: Any, service: Any) -> HttpResponse:
+    """POST /api/scenarios/run - 시나리오 테스트 실행."""
+    payload: dict[str, Any] = {}
+    if body not in (None, b"", ""):
+        ok, raw = _parse_body(body)
+        if not ok or not isinstance(raw, dict):
+            return _json({"error": "잘못된 JSON 형식입니다."}, 400)
+        payload = raw
+
+    res = service.start_scenario_run(payload)
+    status_code = int(res.pop("status_code", 202 if res.get("accepted") else 400))
+    return _json(res, status=status_code)
+
+
+def _handle_scenario_report(query: dict[str, str], service: Any) -> HttpResponse:
+    """GET /api/scenarios/report - 보고서 다운로드."""
+    fmt = (query.get("format") or "md").lower()
+    rep = service.scenario_report(fmt=fmt)
+    if not rep.get("found"):
+        return _json(
+            {"error": rep.get("error", "not found")},
+            status=int(rep.get("status_code", 404)),
+        )
+    return HttpResponse(
+        status=200,
+        content_type=rep["content_type"],
+        body=rep["body"],
+        headers={"Content-Disposition": f'attachment; filename="{rep["filename"]}"'},
+    )
+
+
 def route_http(
     method: str,
     request_path: str,
@@ -143,5 +184,18 @@ def route_http(
         return _handle_chat(body, service)
     if method == "POST" and path == "/api/initial_pose":
         return _handle_initial_pose(body, service)
+
+    # 시나리오 테스트 엔드포인트
+    if method == "GET" and path == "/api/scenarios":
+        refresh = (query.get("refresh") or "0").lower() in ("1", "true", "yes")
+        return _json(service.get_scenario(refresh=refresh))
+    if method == "POST" and path == "/api/scenarios/run":
+        return _handle_scenario_run(body, service)
+    if method == "POST" and path == "/api/scenarios/cancel":
+        return _json(service.cancel_scenario_run())
+    if method == "GET" and path == "/api/scenarios/status":
+        return _json(service.scenario_status())
+    if method == "GET" and path == "/api/scenarios/report":
+        return _handle_scenario_report(query, service)
 
     return _json({"error": f"알 수 없는 경로: {method} {path}"}, 404)

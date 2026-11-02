@@ -144,6 +144,7 @@ COPY src/robo_claw_agent/package.xml src/robo_claw_agent/package.xml
 COPY src/robo_claw_bringup/package.xml src/robo_claw_bringup/package.xml
 COPY src/robo_claw_channel/package.xml src/robo_claw_channel/package.xml
 COPY src/robo_claw_core/package.xml src/robo_claw_core/package.xml
+COPY src/robo_claw_dashboard/package.xml src/robo_claw_dashboard/package.xml
 COPY src/robo_claw_discovery/package.xml src/robo_claw_discovery/package.xml
 COPY src/robo_claw_grpc/package.xml src/robo_claw_grpc/package.xml
 COPY src/robo_claw_msgs/package.xml src/robo_claw_msgs/package.xml
@@ -207,6 +208,8 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
       --no-warn-unused-cli \
       -DCMAKE_BUILD_TYPE=Release \
       -Drobo_claw_msgs_DIR=/ros2_ws/install/robo_claw_msgs/share/robo_claw_msgs/cmake \
+      -Dtask_manager_msgs_DIR=/ros2_ws/install/task_manager_msgs/share/task_manager_msgs/cmake \
+      -Dtofu_msgs_DIR=/ros2_ws/install/tofu_msgs/share/tofu_msgs/cmake \
       -DCMAKE_LIBRARY_PATH=/opt/ros/${ROS_DISTRO}/lib \
       -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/ros2_ws/cmake_find_lib_init.cmake && \
     test -s install/robo_claw_grpc/local/lib/python3.10/dist-packages/robo_claw_grpc/robo_pb2.py && \

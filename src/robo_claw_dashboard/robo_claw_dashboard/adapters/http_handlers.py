@@ -86,6 +86,9 @@ def make_handler(service: Any, static_root: str, security: Any) -> type:
             self.send_response(resp.status)
             self.send_header("Content-Type", resp.content_type)
             self.send_header("Content-Length", str(len(resp.body)))
+            if hasattr(resp, "headers") and resp.headers:
+                for k, v in resp.headers.items():
+                    self.send_header(k, v)
             self.end_headers()
             self.wfile.write(resp.body)
 

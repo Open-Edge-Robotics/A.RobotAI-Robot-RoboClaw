@@ -214,6 +214,50 @@ main {
   font-style: italic;
 }
 
+/* 시나리오 검증 패널 */
+.rc-scenario-summary {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rc-scenario-progress {
+  position: relative;
+  min-width: 160px;
+  height: 1.25rem;
+  border: 1px solid var(--bs-border-color);
+}
+
+.rc-scenario-progress .progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--bs-body-color);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.rc-scenario-table-wrap {
+  max-height: 440px;
+  overflow-y: auto;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-sm);
+}
+
+.rc-scenario-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bs-body-bg);
+  z-index: 1;
+}
+
+.rc-tc-detail {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
 @media (max-width: 991.98px) {
   :root {
     --rc-map-height: 360px;

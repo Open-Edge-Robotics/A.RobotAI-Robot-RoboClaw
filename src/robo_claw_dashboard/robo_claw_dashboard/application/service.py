@@ -20,6 +20,7 @@ from ..domain.localization import (
 from ..domain.logs import format_log_jsonl, format_log_text, unavailable_logs
 from ..domain.peers import normalize_peers
 from ..domain.validation import validate_chat_message
+from .scenario_runner import ScenarioConfig, ScenarioRunnerService
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,35 @@ class DashboardBackend(Protocol):
 class DashboardService:
     """대시보드 조회/전송 유스케이스를 구현한다."""
 
-    def __init__(self, backend: DashboardBackend) -> None:
+    def __init__(
+        self,
+        backend: DashboardBackend,
+        *,
+        scenario_runner: ScenarioRunnerService | None = None,
+        scenario_config: ScenarioConfig | None = None,
+    ) -> None:
         self._backend = backend
+        self._scenario_runner = scenario_runner or ScenarioRunnerService(backend, scenario_config)
+
+    def get_scenario(self, *, refresh: bool = False) -> dict[str, Any]:
+        """현재 로드된 시나리오 또는 새로 고침된 시나리오를 반환한다."""
+        return self._scenario_runner.get_scenario(refresh=refresh)
+
+    def start_scenario_run(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """시나리오 테스트 실행을 요청한다."""
+        return self._scenario_runner.start_run(payload)
+
+    def cancel_scenario_run(self) -> dict[str, Any]:
+        """실행 중인 시나리오 테스트를 중단한다."""
+        return self._scenario_runner.cancel_run()
+
+    def scenario_status(self) -> dict[str, Any]:
+        """현재 시나리오 실행 진행률 및 스텝별 결과를 반환한다."""
+        return self._scenario_runner.status()
+
+    def scenario_report(self, fmt: str = "md") -> dict[str, Any]:
+        """완료된 시나리오 보고서를 조회한다."""
+        return self._scenario_runner.get_report(fmt=fmt)
 
     def status(self, *, now: datetime | None = None) -> dict[str, Any]:
         return build_snapshot(
