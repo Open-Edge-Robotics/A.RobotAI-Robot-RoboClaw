@@ -275,6 +275,25 @@ CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 �
 - **개체별 설정**: 모든 cloid 개체에 등록되므로, 개체별로 `RC_CLOID_EXPRESSION_ENABLED`
   값을 지정해 켜거나 끕니다(기본 `false`).
 
+## 모션 카탈로그
+
+상체 모션은 노드가 직접 소유하지 않고 로봇의 모션 목록을 그대로 조회해 사용합니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 우선 순위 | `/task_manager/motion_map` 토픽 → 없을 때만 파일 fallback |
+| fallback 파라미터 | `cloid_motion_catalog_file` (기본 `/ws/motion_list/motion_map.json`) |
+| 조회 스킬 | `list_cloid_motions` — id·이름·카테고리·설명·`pre_id` |
+| 실행 스킬 | `execute_cloid_motion` — `confirm=true` 필요, `pre_id` 선행 실행 |
+| 실측 스냅샷 | 2026-11-02 기준 83개 모션·18개 카테고리([MOTION_CATALOG.md](../cloid/motion_list/MOTION_CATALOG.md)) |
+
+- 모션 `id`는 로봇·소프트웨어 버전에 따라 달라지므로 코드에 고정하지 않습니다. 카테고리별
+  allowlist가 필요한 기능(표현 모션·정리 시연)은 개별 파라미터로 id를 지정합니다.
+- `display_name`은 중복이 있을 수 있어 실행 시에는 `id`를 기준으로 고릅니다.
+- `pre_id`가 있는 모션은 선행 모션을 먼저 보내야 하며, 순환·중첩·누락은 차단합니다.
+- 카탈로그가 바뀌면 `docker cp cloi-robo-claw:/ws/motion_list/motion_map.json` 으로
+  사본을 갱신하고 MOTION_CATALOG 표를 재생성합니다.
+
 ## x64 DevBox SIL
 
 x64 SIL 명령은 체크아웃의 경로 스코프 DevBox 안에서 실행합니다.

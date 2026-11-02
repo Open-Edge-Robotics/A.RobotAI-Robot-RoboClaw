@@ -3,6 +3,32 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-02 — BT·QA·CLOiD 문서를 현재 코드와 맞추고 CLOi 모션 카탈로그를 연결합니다
+
+- `docs/behavior-tree/` 3개 문서가 2026-10-06 이후 구조 변경을 반영하지 못하고 있었습니다.
+  `autonomous_act` patrol 트리에는 지도 준비 게이트(`InitializeMapStatus`,
+  `MapReadyGate`, `CheckHasMap`, `CheckMapCoverage`, `RunExploreOnce`)가 없고, 대신
+  `LocalObservationNode`(목적지 없음 시 제자리 관찰)와 `CheckAutonomousActive` 재확인이
+  `PerCycleWork` 에 들어 있습니다. `DecideAndAct` 앞에는 `ResolveCleanupHandoff` 가 추가되어
+  정리 대상이면 LLM 재계획 없이 위임/불가 판정을 확정합니다.
+- 같은 이유로 `min_coverage_pct`, `exploration_radius`, `has_map` 은 호환성용 deprecated
+  파라미터임을 명시했습니다(지도 탐험은 `explore` 스킬 담당). Blackboard 표에는
+  `patrol_*`, `stationary_observation_*`, `cleanup_handoff_*` 키를 추가했습니다.
+- `validation/README.md` 는 2026-10-06 최초 작성 상태여서 그 뒤 추가된 정리 태스크 실험
+  (`validation/cleanup-experiment/`, `scripts/cleanup_run_report.py`)과 System 1 라우터
+  평가(`validation/system1/run_laya_tests.sh`, `scripts/eval_tool_calling.py`)를 C·D 절로
+  추가했습니다.
+- `README.md` 패키지 표에 `robo_claw_dashboard`, `robo_claw_cli` 를 넣고, 주요 특징에 자리
+  양보 협상(`request_yield_slot`)을, 자동화 검증 절에 정리 태스크 실험과 라우터 평가를
+  추가했습니다. 중복으로 들어 있던 `docs/behavior-tree/README.md` 표 행도 하나로 합쳤습니다.
+- `docs/CLOiD_GUIDE.md` 에 모션 카탈로그 절을 추가해 `/task_manager/motion_map` 우선,
+  `cloid_motion_catalog_file` fallback, 2026-11-02 실측 83개 모션 스냅샷
+  ([MOTION_CATALOG.md](cloid/motion_list/MOTION_CATALOG.md))을 연결했습니다.
+- `docs/PEER_COLLABORATION.md` 에 남아 있던 "요청자는 기존 좌표 방식으로 폴백" 문장을
+  삭제했습니다. 좌표 기반 자세 공유는 `645c4e0` 에서 제거되어 폴백 경로가 없습니다.
+- 검증: 저장소 전체 마크다운 상대 링크 검사(깨진 링크 0), `task lint-skills`,
+  `task lint-prompt-tone` 통과. 코드 변경은 없습니다.
+
 ## 2026-10-29 — former0045 재부팅 후 네비게이션 정지를 고치고 베이스 감시·준비 게이트를 붙입니다
 
 - former0045 가 재부팅 뒤 네비게이션이 동작하지 않았습니다. nav2 lifecycle 은 `active` 였고

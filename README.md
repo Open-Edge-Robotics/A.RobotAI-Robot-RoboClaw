@@ -14,7 +14,7 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 - **음성 인터페이스(HRI)**: TTS(Piper/gTTS)를 통한 음성 응답 및 STT 연동 지원.
 - **물리적 안전 가드레일**: 조인트 속도 강제 제한 및 비상 정지(Emergency Stop) 기능.
 - **로봇 신뢰성 향상 및 자가진단**: 물리 제약 스펙(`ROBOT_LIMITS.json`), 장애 조치 가이드(`TROUBLESHOOTING.md`) 및 실시간 자가진단 상태(`RobotHealthState`) 피드백을 통해 LLM 에이전트가 오차 한계와 하드웨어 에러 상태를 스스로 평가하고 안전하게 조치하도록 구성.
-- **멀티 에이전트 협업**: 같은 ROS 네트워크의 다른 에이전트에게 작업을 위임하거나, gRPC로 연결된 원격 동료 로봇(폐쇄망 포함)과 상태를 주고받고 협업. **자율협동**(`autonomous_cooperate`)으로 동료와 지속적 자연어 대화를 주고받으며 도움 요청/지시/판단.
+- **멀티 에이전트 협업**: 같은 ROS 네트워크의 다른 에이전트에게 작업을 위임하거나, gRPC로 연결된 원격 동료 로봇(폐쇄망 포함)과 상태를 주고받고 협업. **자율협동**(`autonomous_cooperate`)으로 동료와 지속적 자연어 대화를 주고받으며 도움 요청/지시/판단. 같은 장소를 동시에 목표로 잡으면 **자리 양보 협상**(`request_yield_slot`)으로 장소 이름만 주고받아 한 대가 비켜섭니다([PEER_COLLABORATION.md](docs/PEER_COLLABORATION.md)).
 - **폐쇄망 최적화**: **gRPC 기반 내부 전용 메신저** 지원으로 외부 인터넷 없이도 실시간 제어 가능.
 - **멀티 채널 인터페이스**: HTTP REST API는 물론, **Discord, Slack, Telegram**과 직접 연동.
 - **외부 도구 연동**: MCP(Model Context Protocol) 서버에 연결해 외부 도구를 스킬처럼 호출 가능.
@@ -32,6 +32,8 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 | `robo_claw_grpc`      | **Python** | `robo_mcp` 등 외부 시스템 연동용 `RosGrpc` 서비스(로봇 상태/내비게이션/매니퓰레이션/카메라/스킬 실행/태스크 실행 등). `robo_claw_channel`의 메신저 gRPC와는 별개 |
 | `robo_claw_bringup`   | Python     | 전체 시스템 및 시뮬레이션 통합 런처                                                                                                                              |
 | `robo_claw_vision`    | **C++**    | ONNX Runtime + YOLOv8 실시간 객체 인식, Detection2DArray 발행                                                                                                    |
+| `robo_claw_dashboard` | **Python** | 웹 대시보드 노드 — 상태·지도·로그 조회와 메시지 전송(기본 포트 9090)                                                                                             |
+| `robo_claw_cli`       | **Go**     | `rclaw` CLI — 설정 동기화, `run`/`launch`/`sim`, 진단, 시나리오 QA 자동화                                                                                        |
 
 ## 🛠️ 설치 및 의존성
 ```cmd
@@ -407,6 +409,8 @@ pytest -m unit
 
 - **로봇 없이(코드 회귀)**: `./validation/rag_regression/run_rag_tests.sh` — RAG 위치 지식 개선이 코드에 반영됐는지 순수 파이썬으로 검증.
 - **실로봇 시나리오**: `robo_claw_cli`로 First-Use 시나리오를 자동 판정. 품질팀 공유용 절차는 **[validation/README.md](validation/README.md)** 참고.
+- **정리 태스크 실험**: `validation/cleanup-experiment/run_cleanup_experiment.py`로 4장소 순환 등 조건별 반복 실험을 돌리고, `scripts/cleanup_run_report.py`로 run log를 표 2 지표로 집계합니다([CLEANUP_EXPERIMENT_RUNBOOK.md](docs/CLEANUP_EXPERIMENT_RUNBOOK.md), [CLEANUP_RUN_METRICS.md](docs/CLEANUP_RUN_METRICS.md)).
+- **System 1 라우터 평가**: `validation/system1/run_laya_tests.sh`가 Laya 서버 라이브 테스트와 `scripts/system1_eval.py` 라우터 평가를 한 번에 실행합니다.
 
 ## 📚 상세 가이드
 
@@ -422,7 +426,6 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/CONFIGURATION_GUIDE.md](docs/CONFIGURATION_GUIDE.md)                   | 설정 소유권, 실행 방식별 우선순위, AI Config Server profile               |
 | [docs/RAG_AND_LEARNING.md](docs/RAG_AND_LEARNING.md)                         | RAG/Qdrant 설정, 스킬 자가 학습, 탐험 관찰 로깅                           |
 | [docs/ROBOT_CONFIG.md](docs/ROBOT_CONFIG.md)                                 | `ROBOT.md` 개성, `ROBOT_LIMITS.json`, 장애 조치 `TROUBLESHOOTING.md`      |
-| [docs/behavior-tree/README.md](docs/behavior-tree/README.md)                 | 자율 행동(BT) 요약과 트리 전체 구조·노드 카탈로그                         |
 | [docs/behavior-tree/README.md](docs/behavior-tree/README.md)                 | BT 엔진 코어, 자율행동/반응형 트리 전체 구조와 노드 카탈로그              |
 | [docs/PEER_COLLABORATION.md](docs/PEER_COLLABORATION.md)                     | 멀티 에이전트(동료 로봇) gRPC 협업/작업 위임                              |
 | [docs/CLEANUP_RUN_METRICS.md](docs/CLEANUP_RUN_METRICS.md)                   | 정리 태스크 실험 계측(run log)과 표 2 지표 집계                           |
@@ -451,4 +454,4 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [former/FORMER_GUIDE.md](former/FORMER_GUIDE.md)                             | Former 로봇 구동(SLAM/Nav2) 및 에이전트 연동                              |
 | [cloid/motion_list/MOTION_CATALOG.md](cloid/motion_list/MOTION_CATALOG.md)    | CLOi 모션 카탈로그(83개): 카테고리·id·선행 모션                            |
 | [robo_claw_cli/README.md](robo_claw_cli/README.md)                           | 설정 동기화 및 시나리오 기반 QA 자동화 CLI                                |
-| [validation/README.md](validation/README.md)                                 | **자동화 테스트 가이드(QA용)** — 코드 회귀 + 실로봇 시나리오              |
+| [validation/README.md](validation/README.md)                                 | **자동화 테스트 가이드(QA용)** — 회귀·시나리오·정리 실험·라우터 평가      |

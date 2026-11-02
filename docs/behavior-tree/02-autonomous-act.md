@@ -20,11 +20,12 @@
 | `min_battery_pct`       | `20.0`     | 이 아래로 떨어지면 안전 종료                                                  |
 | `allow_unknown_battery` | `True`     | 배터리 신호 부재 시 경고만 하고 루프 유지                                     |
 | `check_only_battery`    | `True`     | `True`면 배터리 부족해도 체크만 수행(세션 유지), `False`면 저배터리 세션 종료 |
-| `min_coverage_pct`      | `40.0`     | 지도 탐사율이 이 미만이면 탐험 수행                                           |
-| `exploration_radius`    | `3.0`      | 한 번에 탐험할 프론티어 반경(m)                                               |
 | `cycle_interval_sec`    | `3.0`      | 사이클 간 대기                                                                |
 | `max_cycles`            | `0`        | 최대 사이클 수 (0=무제한)                                                     |
-| `has_map`               | `None`     | 지도 존재 여부 (None=자동 판별)                                               |
+
+`min_coverage_pct`, `exploration_radius`, `has_map`은 스키마에 남아 있지만
+(`deprecated: true`) 자율 순찰에서 사용하지 않습니다. 지도 탐험이 필요하면 `explore`
+스킬을, 정해진 지점 반복 순찰은 `patrol`(`rounds=0`) 스킬을 사용합니다.
 
 ---
 
@@ -46,27 +47,23 @@ flowchart TB
     N3 --> P1["SEQ · PerCycleWork"]
     N3 --> P2["CycleDone · 항상 SUCCESS"]
 
-    P1 --> W1["InitializeMapStatus"]
-    P1 --> W2["FB · MapReadyGate"]
-    P1 --> W3["EnsurePlacesRegistered"]
-    P1 --> W4["PatrolNextPlaceNode"]
+    P1 --> W1["EnsurePlacesRegistered"]
+    P1 --> W2["PatrolNextPlaceNode"]
+    P1 --> W3["LocalObservationNode"]
+    P1 --> W4["CheckAutonomousActive · 재확인"]
     P1 --> W5["RefreshPeerStatusCache"]
     P1 --> W6["ProcessPeerMessages"]
     P1 --> W7["AnalyzeCurrentScene"]
     P1 --> W8["LogObservationNode"]
     P1 --> W9["FB · ActOnInteresting"]
 
-    W2 --> M1["CheckHasMap"]
-    W2 --> M2["FB · EnsureMapReady"]
-    M2 --> M3["CheckMapCoverage"]
-    M2 --> M4["RunExploreOnce"]
-
     W9 --> A1["SEQ · DecideAndAct"]
     W9 --> A2["Done · 항상 SUCCESS"]
     A1 --> D1["InterestingSceneGate"]
-    A1 --> D2["LLMDecideAction"]
-    A1 --> D3["ValidateDecidedAction"]
-    A1 --> D4["ExecuteDecidedAction"]
+    A1 --> D2["ResolveCleanupHandoff"]
+    A1 --> D3["LLMDecideAction"]
+    A1 --> D4["ValidateDecidedAction"]
+    A1 --> D5["ExecuteDecidedAction"]
 ```
 
 ### 루트 구조의 3중 방어 설계
@@ -113,27 +110,27 @@ _AUTONOMOUS_ACTIVE.clear()
 ## 2. PerCycleWork 시퀀스 — 한 사이클의 9단계
 
 `PerCycleWork`는 매 사이클 순서대로 실행되는 9개 노드의 Sequence입니다.
-README 최상위의 "BT 구조 (매 사이클)" 7단계 설명이 이 시퀀스에 해당합니다.
+[README.md](README.md) 4절의 트리 미리보기가 이 시퀀스에 해당합니다.
 
 ```
-1. InitializeMapStatus        지도 존재 여부(has_map) 판별 → blackboard
-2. MapReadyGate (FB)          지도 없으면 탐사율 확인 후 프론티어 탐험
-       ├ CheckHasMap
-       └ EnsureMapReady (FB)
-             ├ CheckMapCoverage   (탐사율 >= 40% 면 통과)
-             └ RunExploreOnce     (미달 시 프론티어 1곳 탐험)
-3. EnsurePlacesRegistered     순찰할 장소가 없으면 시맨틱맵/RAG/지도발굴로 확보
-4. PatrolNextPlaceNode         가장 오래 안 간 장소로 결정적 이동 (LLM 불필요)
+1. EnsurePlacesRegistered      순찰할 장소가 없으면 시맨틱맵/지도발굴로 확보
+2. PatrolNextPlaceNode         가장 오래 안 간 장소로 결정적 이동 (LLM 불필요)
+3. LocalObservationNode        목적지가 없으면 제자리 4방향 관찰 한 번 수행
+4. CheckAutonomousActive       관찰 중 stop_autonomous 가 들어왔는지 재확인
 5. RefreshPeerStatusCache      동료 로봇 배터리/위치 상태 주기적 캐싱 (60초)
 6. ProcessPeerMessages         동료가 보낸 메시지를 수집해 LLM 판단에 "동료와의 최근 대화"로 주입
 7. AnalyzeCurrentScene         VLM으로 현재 장면 분석 → blackboard
 8. LogObservationNode          장면을 RAG에 자동 기록 (log_observation)
-9. ActOnInteresting (FB)       특이사항 있으면 LLM 판단·실행, 없으면 조용히 통과
+9. ActOnInteresting (FB)       특이사항 있으면 정리 위임 → LLM 판단·실행, 없으면 조용히 통과
 ```
+
+지도 준비 노드(`InitializeMapStatus`, `MapReadyGate`, `CheckHasMap`, `CheckMapCoverage`,
+`RunExploreOnce`)는 `f7d353f` 이후 순찰 루프에서 빠졌습니다. 클래스는 남아 있지만
+`autonomous_act` 트리에는 연결되지 않으며, 지도 탐험은 `explore` 스킬이 담당합니다.
 
 ### 핵심 설계 ①: "결정적 순찰 + 조건부 LLM 개입"
 
-정상적인 순찰 이동(4번)은 **LLM 없이** `PatrolNextPlaceNode`가 결정적으로 처리합니다.
+정상적인 순찰 이동(2번)은 **LLM 없이** `PatrolNextPlaceNode`가 결정적으로 처리합니다.
 등록된 장소 중 `last_seen`(마지막 방문 시각)이 가장 오래된 곳을 골라 이동하고, 방문 후
 시각을 갱신해 자연히 라운드로빈 순환이 됩니다.
 
@@ -155,10 +152,12 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    G["InterestingSceneGate\nSUCCESS"] --> L["LLMDecideAction"]
+    G["InterestingSceneGate\nSUCCESS"] --> C["ResolveCleanupHandoff\n정리 대상이면 위임/불가 판정 확정"]
+    C -->|"정리 대상 확정\n(LLM 재계획 생략)"| V["ValidateDecidedAction"]
+    C -->|"정리 대상 없음"| L["LLMDecideAction"]
     L --> L1["단일 행동:\n{skill, params, reason}"]
     L --> L2["다단계 계획:\n{plan:[...], reason}\n→ task_queue에 적재"]
-    L1 --> V["ValidateDecidedAction"]
+    L1 --> V
     L2 --> V
     V -->|"미등록 스킬 /\n목적지 좌표 못 찾음"| VF["FAILURE\n→ decision_invalid_reason 기록\n→ 다음 사이클 LLM에 피드백"]
     V -->|"검증 통과"| E["ExecuteDecidedAction"]
@@ -170,9 +169,16 @@ flowchart TB
   시스템 프롬프트로 조립해 LLM에게 다음 행동을 JSON으로 받습니다. 매니퓰레이션 능력이 없으면
   "동료에게 위임" 힌트를 강제 주입합니다. RAG 과거 관찰도 검색해 주입합니다.
 - **`ValidateDecidedAction`** — 실행 전에 (a) 등록된 스킬인지, (b) 목적지가 좌표로 해석 가능한지
-  검증. 무효하면 폐기하고 사유를 `decision_invalid_reason`에 남겨 다음 사이클 LLM에 피드백합니다.
+  검증합니다. 정리 위임으로 확정된 `delegate_task`/`call_peer_robot`은 코드가 확정한 결정이므로
+  같은 값일 때만 통과시킵니다. 무효하면 폐기하고 사유를 `decision_invalid_reason`에 남겨 다음
+  사이클 LLM에 피드백합니다.
 - **`ExecuteDecidedAction`** — `task_queue`가 있으면 큐에서 하나 꺼내 실행(다단계 계획), 없으면
   단일 `decided_skill` 실행. 동일 (스킬,목적지) 반복 실패를 카운트해 2회 이상이면 LLM에 경고로 알립니다.
+- **`ResolveCleanupHandoff`** — 장면에서 정리 대상(폐기물·수건·쿠션 등)이 확인되면 LLM 판단보다
+  먼저 위임 여부를 결정합니다. 시연 모션 ID가 설정된 CLOiD 는 로컬 시연을 수행하고, 그 외
+  개체는 연결된 조작 가능 동료에게 `cleanup_demo`/`delegate_task` 로 한 번만 위임합니다.
+  위임 여부·차단 사유·후보 스냅샷은 `cleanup_handoff` run log 로 기록됩니다(상세:
+  [CLEANUP_RUN_METRICS.md](../CLEANUP_RUN_METRICS.md)).
 
 ---
 
@@ -238,11 +244,12 @@ sequenceDiagram
     Root->>Safe: tick()
     Safe->>Safe: CheckBatterySufficient → SUCCESS
     Root->>Work: tick()
-    Work->>Work: InitMap→MapGate→EnsurePlaces
-    Work->>Work: PatrolNextPlace (결정적 이동)
+    Work->>Work: EnsurePlaces→PatrolNextPlace (결정적 이동)
+    Work->>Work: LocalObservation(목적지 없음)→CheckActive
     Work->>Work: RefreshPeer→PeerMessages→AnalyzeScene(VLM)→LogObs(RAG)
     Work->>Work: InterestingSceneGate?
     alt 특이사항 감지
+        Work->>Work: ResolveCleanupHandoff (정리 대상이면 위임)
         Work->>LLM: 다음 행동 결정 (JSON)
         LLM->>SM: ExecuteDecidedAction → skill 실행
     else 특이사항 없음

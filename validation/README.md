@@ -7,6 +7,8 @@
 | :---------------------------- | :--------: | :---- | :---------------------------------------------------------------------- |
 | **A. 코드 회귀 테스트**       | ❌ 불필요  | ~1초  | 코드/이미지에 RAG 위치 지식 개선(P1~P5)이 들어있는지 결정론적 검증      |
 | **B. 실로봇 시나리오 테스트** |  ✅ 필요   | ~수분 | 실제 로봇에서 First-Use 시나리오(이동·기억·조회·역방향조회)를 자동 판정 |
+| **C. 정리 태스크 협업 실험**  | ✅ 필요    | ~30분 | 동료 로봇 위임·시연 흐름을 조건별로 반복 실행하고 run log 로 집계       |
+| **D. System 1 라우터 평가**   | 선택(서버) | ~수분 | Laya 라우터·도구 호출 정확도 평가(서버·모델 필요)                       |
 
 > **실행 위치 선택** — B의 실로봇 테스트는 두 가지 방법이 있습니다.
 >
@@ -162,6 +164,54 @@ ssh former@10.159.172.69 'docker exec robo_claw_container bash -c \
 
 이전 실행에서 쌓인 옛 `skill_episode`는 새 코드가 검색에서 자동 제외하므로 재테스트에 영향은 없지만,
 완전히 깨끗이 하려면 기동 후 에이전트에 `rag_reindex` 실행.
+
+---
+
+## C. 정리 태스크 협업 실험 (동료 위임 + 시연)
+
+`'안방 정리해줘'` 처럼 정리 요청이 동료 로봇 위임으로 이어지는 흐름을 조건별·반복
+실행하고, 남긴 run log 를 표 2 지표(반복 횟수·성공률·할당 정확도·위임 성공률·평균 시간)로
+집계합니다. 실험 자산은 [`cleanup-experiment/`](cleanup-experiment/README.md) 에 있습니다.
+
+```bash
+# 1) 사전 준비 확인 (로봇에 명령을 보내지 않음)
+python3 validation/cleanup-experiment/run_cleanup_experiment.py --dry-run --all
+
+# 2) 조건별 반복 실행 (조건 파일: normal / constrained / recovery / cycle4)
+python3 validation/cleanup-experiment/run_cleanup_experiment.py \
+    --condition cycle4 --host <로봇 IP> \
+    --run-log /workspace/log/cleanup_runs.jsonl \
+    --output validation/cleanup-experiment/report-cycle4.md
+
+# 3) run log 집계 — 네트워크·주행 예외를 제외한 평균과 장소별 표
+RC_CLEANUP_RUN_LOG_PATH=/workspace/log/cleanup_runs.jsonl \
+  python3 scripts/cleanup_run_report.py --expect-peer "Cloid 2호" \
+  --markdown --exclude-exceptions
+```
+
+- 실행 절차·조건 정의: [`docs/CLEANUP_EXPERIMENT_RUNBOOK.md`](../docs/CLEANUP_EXPERIMENT_RUNBOOK.md)
+- 지표 정의·run log 레코드 형식: [`docs/CLEANUP_RUN_METRICS.md`](../docs/CLEANUP_RUN_METRICS.md)
+- `--exclude-exceptions` 를 주면 네트워크 단절·주행 타임아웃으로 실패한 회차를 반복 횟수에서
+  빼고 예외로 따로 출력합니다. 커뮤니케이션 실패(전달·응답 자체 실패)는 그대로 실패로 집계합니다.
+
+---
+
+## D. System 1 라우터 평가
+
+Laya 라우터가 인사·단순 조회를 스킬 호출로 올바르게 매핑하는지 서버 단독으로 검증합니다.
+
+```bash
+# 라이브 테스트(pytest) + 라우터 평가(system1_eval.py)를 한 번에 실행
+./validation/system1/run_laya_tests.sh
+LAYA_ENDPOINT=http://127.0.0.1:8000 ./validation/system1/run_laya_tests.sh -k latency
+
+# 스킬 선택 정확도 A/B (JSON 응답 vs 네이티브 tool calling)
+./scripts/run_in_ros_env.sh --ws python3 scripts/eval_tool_calling.py \
+    --model <모델> --repeats 3 --json-out /tmp/tool_calling_ab.json
+```
+
+- 케이스 파일: `validation/system1/{router,laya,tool,tool_calling,compound}_cases.jsonl`
+- 라우터 설정·운영: [`docs/SYSTEM1_FAST_ROUTER.md`](../docs/SYSTEM1_FAST_ROUTER.md)
 
 ---
 

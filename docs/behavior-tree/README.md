@@ -41,7 +41,7 @@ flowchart TB
     end
 
     subgraph L2["② Behavior Tree 계층 (자율 행동 루프)"]
-        BT["autonomous_skill/\n\nSequence/Fallback/Parallel 트리를\n매 사이클 tick — 배터리·지도·순찰·\n장면분석·LLM판단·실행을 조합"]
+        BT["autonomous_skill/\n\nSequence/Fallback/Parallel 트리를\n매 사이클 tick — 배터리·순찰·\n장면분석·LLM판단·실행을 조합"]
     end
 
     ReAct --> SM
@@ -79,13 +79,14 @@ skills/autonomous_skill/
 ├── globals.py             # 전역 제어 플래그: _AUTONOMOUS_ACTIVE / _SLEEP_WAKE
 │
 ├── conditions.py          # 조건 노드: CheckAutonomousActive / CheckBatterySufficient /
-│                          #   CheckMapCoverage / CheckHasMap
+│                          #   CheckMapCoverage / CheckHasMap (지도 계열은 순찰 루프 미사용)
 │
 ├── environment_nodes.py   # 환경 인지 액션: InitializeMapStatus / EnsurePlacesRegistered /
 │                          #   RefreshPeerStatusCache / AnalyzeCurrentScene / LogObservationNode
 ├── decision_nodes.py      # 판단 액션: LLMDecideAction / ValidateDecidedAction / GoalPlannerNode
-├── execution_nodes.py     # 실행 액션: EmergencyLowBattery / RunExploreOnce /
-│                          #   ExecuteDecidedAction / SleepBetweenCycles / CheckGoalAchieved
+├── execution_nodes.py     # 실행 액션: EmergencyLowBattery / RunExploreOnce / LocalObservationNode /
+│                          #   ResolveCleanupHandoff / ExecuteDecidedAction / SleepBetweenCycles /
+│                          #   CheckGoalAchieved
 ├── patrol_nodes.py        # 순찰 계층: PatrolNextPlaceNode / InterestingSceneGate
 ├── navigation_nodes.py    # 이동 액션: NavigateNode / ApproachObjectNode / ExploreNode
 ├── perception_nodes.py    # 감시 액션: MonitorObjectNode
@@ -162,24 +163,20 @@ flowchart TB
     A3 --> C1["SEQ · PerCycleWork"]
     A3 --> C2["CycleDone (항상 SUCCESS)"]
 
-    C1 --> D1["InitializeMapStatus"]
-    C1 --> D2["FB · MapReadyGate"]
-    C1 --> D3["EnsurePlacesRegistered"]
-    C1 --> D4["PatrolNextPlaceNode\n(가장 오래된 장소로 순찰)"]
+    C1 --> D1["EnsurePlacesRegistered"]
+    C1 --> D2["PatrolNextPlaceNode\n(가장 오래된 장소로 순찰)"]
+    C1 --> D3["LocalObservationNode\n(목적지 없으면 제자리 관찰)"]
+    C1 --> D4["CheckAutonomousActive\n(관찰 중 중단 재확인)"]
     C1 --> D5["RefreshPeerStatusCache"]
     C1 --> D6["ProcessPeerMessages\n(동료 메시지 수집)"]
     C1 --> D7["AnalyzeCurrentScene\n(VLM 장면 분석)"]
     C1 --> D8["LogObservationNode\n(RAG 자동 기록)"]
     C1 --> D9["FB · ActOnInteresting"]
 
-    D2 --> E1["CheckHasMap"]
-    D2 --> E2["FB · EnsureMapReady"]
-    E2 --> F1["CheckMapCoverage\n(min_coverage_pct, 기본 40%)"]
-    E2 --> F2["RunExploreOnce\n(프론티어 탐험)"]
-
     D9 --> G1["SEQ · DecideAndAct"]
     D9 --> G2["Done (항상 SUCCESS)"]
-    G1 --> H1["InterestingSceneGate\n(특이사항 게이트)"]
+    G1 --> H0["InterestingSceneGate\n(특이사항 게이트)"]
+    G1 --> H1["ResolveCleanupHandoff\n(정리 대상이면 동료에게 위임)"]
     G1 --> H2["LLMDecideAction\n(LLM 다음 행동 결정)"]
     G1 --> H3["ValidateDecidedAction"]
     G1 --> H4["ExecuteDecidedAction"]
@@ -187,11 +184,14 @@ flowchart TB
 
 이 트리의 설계 의도는 **"정상 순찰은 값싸게(LLM 없이), 특이사항 발생 시에만 LLM 개입"** 입니다.
 `InterestingSceneGate`가 실패하면 `DecideAndAct` 시퀀스가 열리지 않아 LLM 호출을 절약합니다.
+지도 탐험은 순찰 루프에 포함되지 않으므로, 지도가 필요할 때는 `explore` 스킬을 따로
+실행합니다(`min_coverage_pct`/`exploration_radius`/`has_map`은 호환성용 deprecated 파라미터).
 
 ---
 
 ## 5. 관련 문서
 
-- 프로젝트 최상위 [README.md](../../README.md) — `## 🤖 자율 행동 (autonomous_act)` 절
-- 스킬 실행 엔진: `src/robo_claw_agent/robo_claw_agent/skill_manager.py`
+- [02-autonomous-act.md](02-autonomous-act.md) — 사이클 단계·goal 모드·종료 조건 상세
+- [04-node-catalog.md](04-node-catalog.md) — 노드 목록과 Blackboard 키 전체 맵
+- 스킬 실행 엔진: `src/robo_claw_agent/robo_claw_agent/skills/manager.py`
 - ReAct 계획 계층: `src/robo_claw_agent/robo_claw_agent/agent_node/planner/`

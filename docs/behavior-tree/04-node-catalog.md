@@ -3,7 +3,7 @@
 > 소스: `skills/autonomous_skill/` 전체
 
 BT 트리를 구성하는 모든 노드의 목록, 노드 간 통신 매개체인 Blackboard 키, 그리고 스레딩/생명주기
-모델을 정리합니다.
+모델을 정리합니다. `autonomous_act` patrol 트리에 실제로 연결되는 노드는 [02-autonomous-act.md](02-autonomous-act.md)의 트리 그림을 기준으로 확인합니다.
 
 ---
 
@@ -21,14 +21,14 @@ BT 트리를 구성하는 모든 노드의 목록, 노드 간 통신 매개체�
 | ------------------------ | ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `CheckAutonomousActive`  | 자율 루프 활성 여부     | `_AUTONOMOUS_ACTIVE` 플래그                 | 활성=SUCCESS                                                                                     |
 | `CheckBatterySufficient` | 배터리 ≥ `min_pct`(20%) | `/battery_state` 토픽 → 없으면 sysfs `BAT*` | 충분=SUCCESS, 신호부재/부족 시 check_only=True면 상태기록 후 SUCCESS, check_only=False면 FAILURE |
-| `CheckMapCoverage`       | 탐사율 ≥ `min_pct`(40%) | `/map` OccupancyGrid                        | 충분=SUCCESS, 맵없음=FAILURE                                                                     |
-| `CheckHasMap`            | 지도 존재 여부          | `blackboard["has_map"]`                     | 있음=SUCCESS                                                                                     |
+| `CheckMapCoverage`       | 탐사율 ≥ `min_pct`(40%) | `/map` OccupancyGrid                        | 충분=SUCCESS, 맵없음=FAILURE. 현재 순찰 트리에는 연결되지 않음                                   |
+| `CheckHasMap`            | 지도 존재 여부          | `blackboard["has_map"]`                     | 있음=SUCCESS. 현재 순찰 트리에는 연결되지 않음                                                   |
 
 ## 3. 환경 인지 액션 (`environment_nodes.py`)
 
 | 노드                     | 하는 일                                                      | Blackboard 쓰기                              |
 | ------------------------ | ------------------------------------------------------------ | -------------------------------------------- |
-| `InitializeMapStatus`    | `/map` 미탐사율(≤30%)로 `has_map` 판별 (파라미터 우선)       | `has_map`                                    |
+| `InitializeMapStatus`    | `/map` 미탐사율(≤30%)로 `has_map` 판별 (파라미터 우선)       | `has_map`. 현재 순찰 트리에는 연결되지 않음  |
 | `EnsurePlacesRegistered` | 순찰 장소 확보: 시맨틱맵 → RAG 후보 → 지도 자동발굴 우선순위 | `places_registered`, `place_source_priority` |
 | `RefreshPeerStatusCache` | 동료 로봇 배터리/위치 상태 60초 주기 백그라운드 캐싱         | `peer_status_cache`, `peer_status_cache_ts`  |
 | `AnalyzeCurrentScene`    | VLM(`analyze_scene`)으로 장면 분석                           | `scene_analysis`, `detected_objects`         |
@@ -45,13 +45,19 @@ BT 트리를 구성하는 모든 노드의 목록, 노드 간 통신 매개체�
 
 ## 5. 실행 액션 (`execution_nodes.py`)
 
-| 노드                   | 하는 일                                                                                                                                 | 비고                 |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `EmergencyLowBattery`  | check_only=True(기본) 시 경고 알림 후 SUCCESS 유지, check_only=False 시 저배터리에서 `_AUTONOMOUS_ACTIVE.clear()` → FAILURE로 루프 종료 | SafetyGate 폴백      |
-| `RunExploreOnce`       | 프론티어 1곳을 blocking 이동(최대 60초). 프론티어 없으면 `has_map=True`                                                                 | explore_skill 재사용 |
-| `ExecuteDecidedAction` | `task_queue` 우선 소비, 없으면 `decided_skill` 실행. 반복 실패 카운트 추적                                                              | 항상 SUCCESS 반환    |
-| `SleepBetweenCycles`   | `cycle_interval_sec` 대기. `_SLEEP_WAKE`로 즉시 깨움                                                                                    | 사이클 간격          |
-| `CheckGoalAchieved`    | (goal 모드) `task_queue` 비면 목표 달성 처리 후 루프 종료                                                                               | —                    |
+| 노드                    | 하는 일                                                                                                                                 | 비고                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `EmergencyLowBattery`   | check_only=True(기본) 시 경고 알림 후 SUCCESS 유지, check_only=False 시 저배터리에서 `_AUTONOMOUS_ACTIVE.clear()` → FAILURE로 루프 종료 | SafetyGate 폴백      |
+| `RunExploreOnce`        | 프론티어 1곳을 blocking 이동(최대 60초). 프론티어 없으면 `has_map=True`                                                                 | explore_skill 재사용 |
+| `LocalObservationNode`  | 기억된 목적지가 없으면 제자리 4방향 관찰(`scan_room`)을 한 번 수행. 목적지가 있으면 그대로 통과                                         | 항상 SUCCESS 반환    |
+| `ResolveCleanupHandoff` | 장면의 정리 대상(폐기물·수건·쿠션)을 확인해 로컬 시연 또는 동료 위임을 코드로 확정. LLM 재계획으로 덮어쓰지 않음                        | `cleanup_handoff_*`  |
+| `ExecuteDecidedAction`  | `task_queue` 우선 소비, 없으면 `decided_skill` 실행. 반복 실패 카운트 추적                                                              | 항상 SUCCESS 반환    |
+| `SleepBetweenCycles`    | `cycle_interval_sec` 대기. `_SLEEP_WAKE`로 즉시 깨움                                                                                    | 사이클 간격          |
+| `CheckGoalAchieved`     | (goal 모드) `task_queue` 비면 목표 달성 처리 후 루프 종료                                                                               | —                    |
+
+> `RunExploreOnce`는 `InitializeMapStatus`·`CheckMapCoverage`·`CheckHasMap`과 함께 지도 준비
+> 게이트가 순찰 루프에서 빠진 뒤 트리에 연결되지 않습니다. 지도 탐험이 필요하면 `explore`
+> 스킬을 사용합니다.
 
 ## 6. 순찰/이동/감시/체인 액션
 
@@ -80,6 +86,9 @@ flowchart LR
         hm["has_map"]
         pr["places_registered"]
         cov["current_map_coverage"]
+        plp["patrol_last_place / patrol_last_success"]
+        psp["patrol_has_destination / patrol_sweep_complete"]
+        so["stationary_observation_only / _scan_done / _scan_result"]
     end
     subgraph 배터리
         bp["battery_pct"]
@@ -101,14 +110,17 @@ flowchart LR
         pf["planning_failure_count / planning_failure_reason"]
         qef["queue_execution_failed"]
         lar["last_action_result / last_action_success"]
+        ch["cleanup_handoff_prepared / _blocked / _target / _status"]
     end
     subgraph 동료
         psc["peer_status_cache"]
         ppm["pending_peer_messages"]
     end
 
-    InitializeMapStatus --> hm
-    CheckMapCoverage --> cov
+    EnsurePlacesRegistered --> pr
+    PatrolNextPlaceNode --> plp & psp
+    LocalObservationNode --> so
+    ResolveCleanupHandoff --> ch
     CheckBatterySufficient --> bp & lbp & bu
     AnalyzeCurrentScene --> sa & do
     MonitorObjectNode --> dtp
@@ -120,28 +132,33 @@ flowchart LR
     GoalPlannerNode --> ga & tq & pf
 ```
 
-| 키                                                 | 타입       | 생산자                                              | 소비자                                                    |
-| -------------------------------------------------- | ---------- | --------------------------------------------------- | --------------------------------------------------------- |
-| `cycle_count`                                      | int        | 구동 루프                                           | LLMDecideAction, ExecuteDecidedAction                     |
-| `has_map`                                          | bool       | InitializeMapStatus / RunExploreOnce                | CheckHasMap, EnsurePlacesRegistered                       |
-| `places_registered`, `place_source_priority`       | bool/str   | EnsurePlacesRegistered                              | (내부 캐시)                                               |
-| `current_map_coverage`                             | float      | CheckMapCoverage                                    | LLMDecideAction                                           |
-| `battery_pct`, `low_battery_pct`                   | float      | CheckBatterySufficient                              | EmergencyLowBattery                                       |
-| `battery_unknown`                                  | bool       | CheckBatterySufficient                              | EmergencyLowBattery, LLMDecideAction                      |
-| `scene_analysis`, `detected_objects`               | str/list   | AnalyzeCurrentScene                                 | InterestingSceneGate, LLMDecideAction, LogObservationNode |
-| `detected_target_pos`                              | dict       | MonitorObjectNode                                   | CheckInterrupted, ApproachObjectNode                      |
-| `decided_skill`/`decided_params`/`decided_reason`  | str/dict   | LLMDecideAction                                     | ValidateDecidedAction, ExecuteDecidedAction               |
-| `task_queue`                                       | list       | LLMDecideAction / GoalPlannerNode                   | ExecuteDecidedAction, CheckGoalAchieved                   |
-| `task_history`                                     | list       | ExecuteDecidedAction                                | LLMDecideAction (최근 5개 프롬프트 주입)                  |
-| `decision_invalid_reason`                          | str        | ValidateDecidedAction                               | LLMDecideAction (재시도 피드백)                           |
-| `repeat_failure_key`/`repeat_failure_count`        | str/int    | ExecuteDecidedAction                                | LLMDecideAction (반복 실패 경고)                          |
-| `goal`/`goal_achieved`                             | str/bool   | (초기값)/GoalPlannerNode·CheckGoalAchieved          | 구동 루프 종료 판정                                       |
-| `planning_failure_count`/`planning_failure_reason` | int/str    | GoalPlannerNode                                     | GoalPlannerNode (계획 실패 반복 제한, LLM 피드백)         |
-| `queue_execution_failed`                           | bool       | ExecuteDecidedAction                                | CheckGoalAchieved (실행 실패와 목표 달성 분리)            |
-| `last_action_result`/`last_action_success`         | dict/bool  | ExecuteDecidedAction                                | LLMDecideAction (직전 실행 결과 반영)                     |
-| `peer_status_cache`/`peer_status_cache_ts`         | dict/float | RefreshPeerStatusCache                              | LLMDecideAction (위임 판단)                               |
-| `pending_peer_messages`                            | list       | ProcessPeerMessages (cooperation_skill/bt_nodes.py) | LLMDecideAction (동료 대화 주입)                          |
-| `patrol_last_place`/`patrol_last_success`          | str/bool   | PatrolNextPlaceNode                                 | (로깅/상태)                                               |
+| 키                                                                            | 타입           | 생산자                                                        | 소비자                                                           |
+| ----------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `cycle_count`                                                                 | int            | 구동 루프                                                     | LLMDecideAction, ExecuteDecidedAction                            |
+| `has_map`                                                                     | bool           | InitializeMapStatus / RunExploreOnce (순찰 루프에서는 미사용) | CheckHasMap, EnsurePlacesRegistered                              |
+| `places_registered`, `place_source_priority`                                  | bool/str       | EnsurePlacesRegistered                                        | (내부 캐시)                                                      |
+| `current_map_coverage`                                                        | float          | CheckMapCoverage (순찰 루프에서는 미사용)                     | LLMDecideAction                                                  |
+| `patrol_has_destination`/`patrol_sweep_complete`                              | bool           | PatrolNextPlaceNode / 구동 루프                               | LocalObservationNode, ValidateDecidedAction                      |
+| `patrol_last_place`/`patrol_last_success`                                     | str/bool/float | PatrolNextPlaceNode                                           | ResolveCleanupHandoff (위임 장소 이름), 로깅                     |
+| `patrol_attempted_places`/`patrol_blocked_until`                              | set/dict       | 구동 루프 / PatrolNextPlaceNode                               | 한 바퀴 종료 판정, 실패 목적지 60초 제외                         |
+| `stationary_observation_only`/`stationary_scan_done`/`stationary_scan_result` | bool/obj       | LocalObservationNode                                          | ValidateDecidedAction (제자리 관찰 전용 스킬만 허용)             |
+| `battery_pct`, `low_battery_pct`                                              | float          | CheckBatterySufficient                                        | EmergencyLowBattery                                              |
+| `battery_unknown`                                                             | bool           | CheckBatterySufficient                                        | EmergencyLowBattery, LLMDecideAction                             |
+| `scene_analysis`, `detected_objects`                                          | str/list       | AnalyzeCurrentScene                                           | InterestingSceneGate, LLMDecideAction, LogObservationNode        |
+| `detected_target_pos`                                                         | dict           | MonitorObjectNode                                             | CheckInterrupted, ApproachObjectNode                             |
+| `decided_skill`/`decided_params`/`decided_reason`                             | str/dict       | LLMDecideAction                                               | ValidateDecidedAction, ExecuteDecidedAction                      |
+| `task_queue`                                                                  | list           | LLMDecideAction / GoalPlannerNode                             | ExecuteDecidedAction, CheckGoalAchieved                          |
+| `task_history`                                                                | list           | ExecuteDecidedAction                                          | LLMDecideAction (최근 5개 프롬프트 주입)                         |
+| `decision_invalid_reason`                                                     | str            | ValidateDecidedAction                                         | LLMDecideAction (재시도 피드백)                                  |
+| `repeat_failure_key`/`repeat_failure_count`                                   | str/int        | ExecuteDecidedAction                                          | LLMDecideAction (반복 실패 경고)                                 |
+| `goal`/`goal_achieved`                                                        | str/bool       | (초기값)/GoalPlannerNode·CheckGoalAchieved                    | 구동 루프 종료 판정                                              |
+| `planning_failure_count`/`planning_failure_reason`                            | int/str        | GoalPlannerNode                                               | GoalPlannerNode (계획 실패 반복 제한, LLM 피드백)                |
+| `queue_execution_failed`                                                      | bool           | ExecuteDecidedAction                                          | CheckGoalAchieved (실행 실패와 목표 달성 분리)                   |
+| `last_action_result`/`last_action_success`                                    | dict/bool      | ExecuteDecidedAction                                          | LLMDecideAction (직전 실행 결과 반영)                            |
+| `cleanup_handoff_prepared`/`cleanup_handoff_blocked`                          | bool           | ResolveCleanupHandoff                                         | LLMDecideAction (재계획 생략), ValidateDecidedAction (위임 허용) |
+| `cleanup_handoff_target`/`cleanup_handoff_status`                             | dict/str       | ResolveCleanupHandoff                                         | ExecuteDecidedAction, 사용자 보고                                |
+| `peer_status_cache`/`peer_status_cache_ts`                                    | dict/float     | RefreshPeerStatusCache                                        | LLMDecideAction (위임 판단)                                      |
+| `pending_peer_messages`                                                       | list           | ProcessPeerMessages (cooperation_skill/bt_nodes.py)           | LLMDecideAction (동료 대화 주입)                                 |
 
 ---
 
