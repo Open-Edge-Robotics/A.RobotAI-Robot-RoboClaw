@@ -78,3 +78,15 @@ def test_cloid_navigation_pose_setting_mapping() -> None:
     assert module.ENV_TO_LAUNCH_ARGUMENT["RC_CLOID_NAVIGATION_POSE_ENABLED"] == (
         "cloid_navigation_pose_enabled"
     )
+
+
+def test_llm_tool_calling_setting_mapping() -> None:
+    """스킬 선택 방식 스위치는 Config Server → env → launch → ROS 파라미터로 이어진다."""
+    module = _load_generated_runtime_config()
+    field = module.RUNTIME_CONFIG_FIELDS["llm.tool_calling"]
+    assert field["env"] == "RC_LLM_TOOL_CALLING"
+    assert field["launch_argument"] == "llm_tool_calling"
+    assert field["parameter"] == "llm_tool_calling"
+    assert field["scope"] == "runtime"
+    assert field["secret"] is False
+    assert module.ENV_TO_LAUNCH_ARGUMENT["RC_LLM_TOOL_CALLING"] == "llm_tool_calling"

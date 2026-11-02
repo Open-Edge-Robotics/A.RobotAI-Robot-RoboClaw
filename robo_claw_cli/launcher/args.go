@@ -202,6 +202,11 @@ func BuildCommonLaunchArgs(lctx *LaunchContext) []string {
 		args = append(args, fmt.Sprintf("skill_learning_reflect_interval_sec:=%s", v))
 	}
 
+	// 스킬 선택 방식(네이티브 도구 호출) 오버라이드. 비우면 노드 기본값(true)을 쓴다.
+	if v := env["RC_LLM_TOOL_CALLING"]; v != "" {
+		args = append(args, fmt.Sprintf("llm_tool_calling:=%s", v))
+	}
+
 	// 태스크 큐 / 복합 명령 자동 분해 설정
 	if v := env["RC_TASK_QUEUE_MAX_SIZE"]; v != "" {
 		args = append(args, fmt.Sprintf("task_queue_max_size:=%s", v))

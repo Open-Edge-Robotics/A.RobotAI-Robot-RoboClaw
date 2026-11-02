@@ -328,11 +328,12 @@ tool calling 과 동일 방식). 스킬이 선택되면 그 스킬의 `input_sch
 | 스킬 선택 결과 | `{"skill": "...", "params": {...}}` 파싱 | `tool_calls` 의 name/arguments |
 | 프롬프트 강제 | `[응답 형식 (JSON만 반환)]` 섹션 | `[도구 사용 규칙]` 섹션 |
 
-**스위치**: `llm_tool_calling` (ROS 파라미터, `src/robo_claw_bringup/config/agent.yaml`)
+**스위치**: `llm_tool_calling` (`RC_LLM_TOOL_CALLING`, 계약 `llm.tool_calling`)
 
 - `true` (기본): 네이티브 tool calling 사용
-- `false`: 기존 JSON 경로로 되돌림 (A/B 비교 기준선)
-- provider 가 tool calling 을 지원하지 않으면 자동으로 JSON 경로로 fallback 합니다.
+- `false`: 기존 JSON 경로로 되돌림 (A/B 비교 기준선). 이 경로에서만 복합 명령을 `TaskDecomposer`가 분해합니다.
+- provider 가 tool calling 을 지원하지 않으면 값과 무관하게 자동으로 JSON 경로로 fallback 합니다.
+- AI Config Server 프로필에서 필드로 선택할 수 있고, `.env`·launch 인수·ROS 파라미터로 전달됩니다.
 
 ### A/B 평가 (원본 대비 개선량 측정)
 

@@ -523,3 +523,5 @@ Ollama 네이티브 도구 호출은 [공식 agent loop 예제](https://docs.oll
 
 
 네이티브 도구 호출이 활성화되어 있고 프로바이더가 이를 지원하면, 복합 요청도 원문 그대로 하나의 도구 루프에서 처리합니다. 별도 명령 분해기를 호출하거나 단계마다 대화를 새로 만들지 않습니다. 따라서 도구 호출과 결과 이력이 다음 라운드에 이어지며, 단계 전환을 위한 `[전체 명령]`·`[이전 단계 요약]` system 메시지를 추가하지 않습니다. 네이티브 도구 호출을 사용하지 않는 경로에서는 기존 `enable_task_decomposition` 설정을 적용합니다.
+
+스위치는 `llm_tool_calling`(`RC_LLM_TOOL_CALLING`)이며 계약 `llm.tool_calling`으로 AI Config Server 프로필에서 선택합니다. 기본값은 `true`이고, provider가 도구 호출을 지원하지 않으면 값과 무관하게 JSON 경로로 폴백합니다. 복합 명령 처리를 분해기 경로로 되돌리려면 이 값을 `false`로 두고 `RC_ENABLE_TASK_DECOMPOSITION`을 유지합니다.

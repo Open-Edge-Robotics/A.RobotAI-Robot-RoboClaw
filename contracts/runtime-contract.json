@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.11.0",
+  "contract_version": "2.12.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -44,6 +44,28 @@
       "launch_argument": "llm_model",
       "ros_parameter": "llm_model",
       "value_type": "string",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "llm.tool_calling",
+      "type": "boolean",
+      "scope": "runtime",
+      "default": true,
+      "secret": false,
+      "description": "Use provider-native tool calling for skill selection. When false the agent lists skills in the prompt, forces JSON responses, and decomposes compound instructions with the task decomposer instead of keeping one tool conversation.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "RC_LLM_TOOL_CALLING",
+      "api_json": "llm_tool_calling",
+      "launch_argument": "llm_tool_calling",
+      "ros_parameter": "llm_tool_calling",
+      "value_type": "bool",
       "modes": [
         "local",
         "docker",

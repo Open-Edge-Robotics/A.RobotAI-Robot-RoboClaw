@@ -354,6 +354,7 @@ else
 
   add_param "${RC_LLM_PROVIDER:-}" "llm_provider"
   add_param "${RC_LLM_MODEL:-}" "llm_model"
+  add_param "${RC_LLM_TOOL_CALLING:-}" "llm_tool_calling"
   add_param "${RC_LLM_EMBEDDING_MODEL:-}" "llm_embedding_model"
   add_param "${RC_LLM_EMBEDDING_PROVIDER:-}" "llm_embedding_provider"
   add_param "${RC_LLM_EMBEDDING_BASE_URL:-}" "llm_embedding_base_url"

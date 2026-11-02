@@ -8,6 +8,7 @@ Schema version: `2.0`
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `llm.provider` | `RC_LLM_PROVIDER` | `llm_provider` | `string` | `azure` | `runtime` | `false` | local, docker, simulation, config_server |
 | `llm.model` | `RC_LLM_MODEL` | `llm_model` | `string` | `gpt-4.1` | `runtime` | `false` | local, docker, simulation, config_server |
+| `llm.tool_calling` | `RC_LLM_TOOL_CALLING` | `llm_tool_calling` | `boolean` | `True` | `runtime` | `false` | local, docker, simulation, config_server |
 | `ros.domain_id` | `ROS_DOMAIN_ID` | `ros_domain_id` | `integer` | `0` | `host` | `false` | local, docker, simulation, config_server |
 | `agent.id` | `RC_AGENT_ID` | `agent_id` | `string` | `robo_claw_agent` | `runtime` | `false` | local, docker, simulation, config_server |
 | `agent.cloid_cleanup_demo_enabled` | `RC_CLOID_CLEANUP_DEMO_ENABLED` | `cloid_cleanup_demo_enabled` | `boolean` | `True` | `robot_profile` | `false` | local, docker, simulation, config_server |
@@ -94,6 +95,10 @@ LLM provider used by the agent.
 ### `llm.model`
 
 Main conversation model name.
+
+### `llm.tool_calling`
+
+Use provider-native tool calling for skill selection. When false the agent lists skills in the prompt, forces JSON responses, and decomposes compound instructions with the task decomposer instead of keeping one tool conversation.
 
 ### `ros.domain_id`
 

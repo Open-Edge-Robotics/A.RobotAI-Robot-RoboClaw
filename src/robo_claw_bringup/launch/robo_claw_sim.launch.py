@@ -227,6 +227,7 @@ def launch_setup(context, *args, **kwargs):
                 "run_core": "false",  # 시뮬레이션 환경에서는 core_node를 비활성화 (기존 sim launch 구조 유지)
                 "llm_provider": llm_provider,
                 "llm_model": llm_model,
+                "llm_tool_calling": LaunchConfiguration("llm_tool_calling"),
                 "compact_skill_prompt": LaunchConfiguration("compact_skill_prompt"),
                 "agent_id": agent_id,
                 "llm_embedding_model": llm_embedding_model,

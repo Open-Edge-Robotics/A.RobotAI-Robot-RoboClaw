@@ -215,6 +215,7 @@ def _launch_setup(context, *args, **kwargs):
     robot_config = LaunchConfiguration("robot_config").perform(context)
     llm_provider = LaunchConfiguration("llm_provider").perform(context)
     llm_model = LaunchConfiguration("llm_model").perform(context)
+    llm_tool_calling = LaunchConfiguration("llm_tool_calling").perform(context)
     robot_yaml = os.path.join(bringup_share, "config", f"{robot_config}_config.yaml")
 
     camera_topic = _resolve_camera_topic(
@@ -427,6 +428,7 @@ def _launch_setup(context, *args, **kwargs):
                 'memory_path': (memory_path, memory_path),
                 'task_queue_max_size': (task_queue_max_size, _safe_int(task_queue_max_size)),
                 'llm_fail_fast': (llm_fail_fast, llm_fail_fast.lower() in ('1', 'true', 'yes', 'on')),
+                'llm_tool_calling': (llm_tool_calling, llm_tool_calling.lower() in ('1', 'true', 'yes', 'on')),
                 'strict_config': (strict_config, strict_config.lower() in ('1', 'true', 'yes', 'on')),
                 'enable_task_decomposition': (enable_task_decomposition, enable_task_decomposition.lower() in ('1', 'true', 'yes', 'on')),
                 'task_decomposition_max_steps': (task_decomposition_max_steps, _safe_int(task_decomposition_max_steps)),

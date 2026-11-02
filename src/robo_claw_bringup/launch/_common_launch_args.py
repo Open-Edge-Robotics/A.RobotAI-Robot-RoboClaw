@@ -28,6 +28,11 @@ def common_launch_arguments():
             description="LLM 모델 이름",
         ),
         DeclareLaunchArgument(
+            "llm_tool_calling",
+            default_value="",
+            description="스킬 선택 방식 오버라이드(true=네이티브 도구 호출, false=JSON 응답+복합 명령 분해기). 비우면 코드 기본값(true) 사용",
+        ),
+        DeclareLaunchArgument(
             "llm_embedding_model",
             default_value="",
             description="임베딩 모델 오버라이드. 비우면 agent.yaml 값을 사용",

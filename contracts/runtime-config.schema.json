@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RoboClaw Runtime Configuration",
   "type": "object",
-  "x-contract-version": "2.11.0",
+  "x-contract-version": "2.12.0",
   "required": [
     "schema_version",
     "config_revision",
@@ -48,6 +48,14 @@
           "description": "Main conversation model name.",
           "default": "gpt-4.1",
           "x-canonical-name": "llm.model",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "llm_tool_calling": {
+          "type": "boolean",
+          "description": "Use provider-native tool calling for skill selection. When false the agent lists skills in the prompt, forces JSON responses, and decomposes compound instructions with the task decomposer instead of keeping one tool conversation.",
+          "default": true,
+          "x-canonical-name": "llm.tool_calling",
           "x-scope": "runtime",
           "x-secret": false
         },

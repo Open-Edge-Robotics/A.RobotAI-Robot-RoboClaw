@@ -47,6 +47,14 @@
           "x-scope": "runtime",
           "x-secret": false
         },
+        "llm_tool_calling": {
+          "type": "boolean",
+          "description": "Use provider-native tool calling for skill selection. When false the agent lists skills in the prompt, forces JSON responses, and decomposes compound instructions with the task decomposer instead of keeping one tool conversation.",
+          "default": true,
+          "x-canonical-name": "llm.tool_calling",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
         "ros_domain_id": {
           "type": "integer",
           "description": "ROS 2 domain identifier.",

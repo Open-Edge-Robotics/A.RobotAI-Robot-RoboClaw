@@ -119,6 +119,7 @@ type RoboClawConfig struct {
 	SkillLearningReflectIntervalSec   int     `json:"skill_learning_reflect_interval_sec"`
 	TaskQueueMaxSize                  int     `json:"task_queue_max_size"`
 	LlmFailFast                       bool    `json:"llm_fail_fast"`
+	LlmToolCalling                    bool    `json:"llm_tool_calling"`
 	StrictConfig                      bool    `json:"strict_config"`
 	EnableTaskDecomposition           bool    `json:"enable_task_decomposition"`
 	TaskDecompositionMaxSteps         int     `json:"task_decomposition_max_steps"`

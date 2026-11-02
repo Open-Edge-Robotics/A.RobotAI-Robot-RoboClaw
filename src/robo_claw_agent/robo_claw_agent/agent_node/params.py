@@ -28,9 +28,13 @@ class AgentParams:
     anthropic_key: str = ""
     ollama_options_json: str = "{}"
     llm_timeout_sec: float = 120.0
-    # 네이티브 도구(tool) 호출 사용 여부.
+    # 네이티브 도구(tool) 호출 사용 여부. 계약 `llm.tool_calling`(`RC_LLM_TOOL_CALLING`)으로
+    # 설정 서버 프로필에서 선택한다.
     # True: 스킬을 LLM API 의 tools 파라미터로 등록하고 응답 형식 강제(JSON)를
-    #       제거한다. False: 기존 JSON 응답 경로(기준선)를 그대로 쓴다.
+    #       제거한다. 복합 명령도 한 대화에서 LLM 이 단계를 이어가므로 복합 명령
+    #       분해기(TaskDecomposer)를 쓰지 않는다.
+    # False: 기존 JSON 응답 경로(기준선)를 그대로 쓰고 복합 명령은 분해기가 나눈다.
+    # provider 가 도구 호출을 지원하지 않으면 자동으로 JSON 경로로 폴백한다.
     # A/B 비교는 scripts/eval_tool_calling.py 참고.
     llm_tool_calling: bool = True
     camera_topic: str = ""

@@ -31,6 +31,21 @@
           "config_server"
         ]
     },
+    "llm.tool_calling": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "RC_LLM_TOOL_CALLING",
+      "api_json": "llm_tool_calling",
+      "launch_argument": "llm_tool_calling",
+      "ros_parameter": "llm_tool_calling",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "ros.domain_id": {
       "type": "integer",
       "scope": "host",

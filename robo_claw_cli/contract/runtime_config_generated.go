@@ -35,6 +35,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "llm_model",
 		Secret:         false,
 	},
+	"llm.tool_calling": {
+		Canonical:      "llm.tool_calling",
+		Type:           "boolean",
+		Scope:          "runtime",
+		Env:            "RC_LLM_TOOL_CALLING",
+		APIJSON:        "llm_tool_calling",
+		LaunchArgument: "llm_tool_calling",
+		ROSParameter:   "llm_tool_calling",
+		Secret:         false,
+	},
 	"ros.domain_id": {
 		Canonical:      "ros.domain_id",
 		Type:           "integer",

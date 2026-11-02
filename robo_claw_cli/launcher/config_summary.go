@@ -431,6 +431,7 @@ func (b *summaryBuilder) appendAgentSection(lctx *LaunchContext) {
 
 	b.envOrCfgRow("태스크 큐 최대 크기", "RC_TASK_QUEUE_MAX_SIZE", strconv.Itoa(cfg.TaskQueueMaxSize))
 	b.envOrCfgBoolRow("LLM fail fast", "RC_LLM_FAIL_FAST", cfg.LlmFailFast)
+	b.envOrCfgBoolRow("스킬 선택 도구 호출", "RC_LLM_TOOL_CALLING", cfg.LlmToolCalling)
 	b.envOrCfgBoolRow("strict config", "RC_STRICT_CONFIG", cfg.StrictConfig)
 	b.envOrCfgBoolRow("태스크 분해 사용", "RC_ENABLE_TASK_DECOMPOSITION", cfg.EnableTaskDecomposition)
 	b.envOrCfgRow("분해 최대 스텝", "RC_TASK_DECOMPOSITION_MAX_STEPS", strconv.Itoa(cfg.TaskDecompositionMaxSteps))

@@ -104,6 +104,7 @@ func BuildRunLaunchArgs(envMap map[string]string, llmProvider, llmModel, channel
 		{"RC_LLM_EMBEDDING_PROVIDER", "llm_embedding_provider"},
 		{"RC_LLM_EMBEDDING_BASE_URL", "llm_embedding_base_url"},
 		{"RC_LLM_EMBEDDING_API_KEY", "llm_embedding_api_key"},
+		{"RC_LLM_TOOL_CALLING", "llm_tool_calling"},
 		{"RC_OLLAMA_BASE_URL", "llm_base_url"},
 		{"RC_ENABLE_RAG", "enable_rag"},
 		{"RC_RAG_VECTOR_BACKEND", "rag_vector_backend"},

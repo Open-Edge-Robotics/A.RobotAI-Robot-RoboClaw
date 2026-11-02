@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-02 — 스킬 선택 방식을 설정 서버에서 선택할 수 있게 합니다
+
+- **배경**: `llm_tool_calling`은 코드 파라미터와 `agent.yaml`에만 있어서 설정 서버 프로필에서 네이티브 도구 호출과 JSON 응답 경로를 바꿀 수 없었습니다. 복합 명령 처리도 이 값에 좌우되는데(도구 호출 경로는 분해기를 우회) 운영 중 선택할 방법이 없었습니다.
+- **조치**:
+  - 공통 컨트랙트에 `llm.tool_calling`(`RC_LLM_TOOL_CALLING`, API `llm_tool_calling`)을 등록해 계약 버전을 2.12.0으로 올리고, 벤더링 컨트랙트와 생성 아티팩트를 갱신했습니다.
+  - `.env.example`, launch 인수(`_common_launch_args.py`, `robo_claw.launch.py`, `robo_claw_sim.launch.py`), docker 실행 스크립트, `rclaw` 인수 매핑·요약을 같은 이름으로 연결했습니다. 값이 비어 있으면 launch 인수를 만들지 않아 노드 기본값(`true`)이 유지됩니다.
+- **검증**: `./rclaw contract check` 통과, `go vet ./...`·`go test ./...` 통과, `pytest src/robo_claw_bringup/tests` 63건 통과, 관련 에이전트 테스트 52건 통과.
+- AI Config Server 저장소에도 같은 계약 필드를 프로필 모델·`.env` 출력·설정 UI에 연결했습니다(별도 저장소 커밋).
+- **남은 작업**: `rcf-config-contract`에 `v2.12.0` 태그를 만들어야 `--version` 경로의 원격 릴리스 다운로드가 동작합니다. 현재 두 소비 저장소는 로컬 번들(`--from`)으로 갱신된 상태입니다.
+
 ## 2026-11-02 — BT·QA·CLOiD 문서를 현재 코드와 맞추고 CLOi 모션 카탈로그를 연결합니다
 
 - `docs/behavior-tree/` 3개 문서가 2026-10-06 이후 구조 변경을 반영하지 못하고 있었습니다.

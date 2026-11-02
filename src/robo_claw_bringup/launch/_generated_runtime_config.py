@@ -16,6 +16,13 @@ RUNTIME_CONFIG_FIELDS = {
         "scope": "runtime",
         "secret": False,
     },
+    "llm.tool_calling": {
+        "env": "RC_LLM_TOOL_CALLING",
+        "launch_argument": "llm_tool_calling",
+        "parameter": "llm_tool_calling",
+        "scope": "runtime",
+        "secret": False,
+    },
     "ros.domain_id": {
         "env": "ROS_DOMAIN_ID",
         "launch_argument": "",
@@ -552,6 +559,7 @@ RUNTIME_CONFIG_FIELDS = {
 ENV_TO_LAUNCH_ARGUMENT = {
     "RC_LLM_PROVIDER": "llm_provider",
     "RC_LLM_MODEL": "llm_model",
+    "RC_LLM_TOOL_CALLING": "llm_tool_calling",
     "RC_AGENT_ID": "agent_id",
     "RC_CLOID_CLEANUP_DEMO_ENABLED": "cloid_cleanup_demo_enabled",
     "RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON": "cloid_cleanup_demo_motion_ids_json",

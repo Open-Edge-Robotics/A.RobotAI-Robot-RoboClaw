@@ -313,6 +313,25 @@ func TestBuildCommonLaunchArgsTaskDecomposition(t *testing.T) {
 	}
 }
 
+// 스킬 선택 방식(네이티브 도구 호출)이 ROS launch 인수로 전달되는지 검증한다.
+func TestBuildCommonLaunchArgsLlmToolCalling(t *testing.T) {
+	joined := strings.Join(
+		BuildCommonLaunchArgs(baseCtx(map[string]string{"RC_LLM_TOOL_CALLING": "false"})),
+		" ",
+	)
+	if !strings.Contains(joined, "llm_tool_calling:=false") {
+		t.Errorf("기대한 launch 인수 누락: llm_tool_calling:=false\n실제: %s", joined)
+	}
+}
+
+// 미설정이면 launch 인수를 만들지 않아 노드 기본값(true)이 유지된다.
+func TestBuildCommonLaunchArgsLlmToolCallingOmitted(t *testing.T) {
+	joined := strings.Join(BuildCommonLaunchArgs(baseCtx(map[string]string{})), " ")
+	if strings.Contains(joined, "llm_tool_calling:=") {
+		t.Errorf("미설정 시 인수가 없어야 함: llm_tool_calling:=\n실제: %s", joined)
+	}
+}
+
 // 태스크 큐 / 복합 명령 분해 변수가 없으면 관련 인수도 생성되지 않아야 한다.
 func TestBuildCommonLaunchArgsTaskDecompositionOmitted(t *testing.T) {
 	joined := strings.Join(BuildCommonLaunchArgs(baseCtx(map[string]string{})), " ")

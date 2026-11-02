@@ -5,6 +5,7 @@ rcf_generated_launch_argument() {
   case "$1" in
     RC_LLM_PROVIDER) printf '%s' 'llm_provider' ;;
     RC_LLM_MODEL) printf '%s' 'llm_model' ;;
+    RC_LLM_TOOL_CALLING) printf '%s' 'llm_tool_calling' ;;
     RC_AGENT_ID) printf '%s' 'agent_id' ;;
     RC_CLOID_CLEANUP_DEMO_ENABLED) printf '%s' 'cloid_cleanup_demo_enabled' ;;
     RC_CLOID_CLEANUP_DEMO_MOTION_IDS_JSON) printf '%s' 'cloid_cleanup_demo_motion_ids_json' ;;
