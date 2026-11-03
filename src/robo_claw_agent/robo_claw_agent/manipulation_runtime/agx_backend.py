@@ -25,7 +25,7 @@ from typing import Any
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from std_srvs.srv import Empty
+from std_srvs.srv import Empty, SetBool
 
 from ._ros_sync import wait_for_future_sync
 from .exceptions import (
@@ -35,6 +35,7 @@ from .exceptions import (
 )
 
 _POSITION_KEYS = ("x", "y", "z")
+_REPUBLISH_INTERVAL_SEC = 0.5
 
 
 class AgxDriverBackend:
@@ -48,6 +49,9 @@ class AgxDriverBackend:
         self._joint_feedback_seen = False
         self._tcp_feedback_seen = False
         self._home_client = None
+        self._enable_client = None
+        self._control_enable_client = None
+        self._driver_ready = False
 
         try:
             self._move_joint_pub = node.create_publisher(
@@ -74,6 +78,60 @@ class AgxDriverBackend:
                 f"AGX 드라이버 토픽 인터페이스 생성 실패: {exc}"
             ) from exc
 
+    # ── 드라이버 활성화 (enable_agx_arm / control_enable) ──
+
+    def _call_set_bool_service(self, client_attr: str, service_name: str, label: str) -> None:
+        name = str(service_name or "").strip()
+        if not name:
+            return
+
+        client = getattr(self, client_attr, None)
+        if client is None:
+            try:
+                client = self._node.create_client(SetBool, name)
+                setattr(self, client_attr, client)
+            except Exception as exc:  # noqa: BLE001 - 서비스 클라이언트 생성 실패
+                raise ManipulationRuntimeUnavailableError(
+                    f"AGX {label} 서비스 클라이언트 생성 실패({name}): {exc}"
+                ) from exc
+
+        if not client.wait_for_service(timeout_sec=5.0):
+            raise ManipulationRuntimeUnavailableError(
+                f"AGX {label} 서비스({name})가 활성화되어 있지 않습니다. "
+                "팔 드라이버 기동 상태를 확인하세요."
+            )
+
+        request = SetBool.Request()
+        request.data = True
+        future = client.call_async(request)
+        wait_for_future_sync(
+            self._node,
+            future,
+            float(self._config.agx_motion_timeout_sec),
+            f"{label} 서비스({name}) 호출 타임아웃 ({float(self._config.agx_motion_timeout_sec):.1f}초)",
+            error_cls=ManipulationError,
+        )
+        response = future.result()
+        if response is not None and getattr(response, "success", True) is False:
+            detail = str(getattr(response, "message", "") or "").strip()
+            suffix = f": {detail}" if detail else ""
+            raise ManipulationError(f"AGX {label} 실패({name}){suffix}")
+
+    def _ensure_driver_ready(self) -> None:
+        if self._driver_ready:
+            return
+        self._call_set_bool_service(
+            "_enable_client",
+            getattr(self._config, "agx_enable_service", "enable_agx_arm"),
+            "모터 활성화",
+        )
+        self._call_set_bool_service(
+            "_control_enable_client",
+            getattr(self._config, "agx_control_enable_service", "control_enable"),
+            "외부 제어 게이트 활성화",
+        )
+        self._driver_ready = True
+
     # ── 피드백 ──
 
     def _on_joint_state(self, msg: JointState) -> None:
@@ -90,11 +148,30 @@ class AgxDriverBackend:
         except Exception:  # noqa: BLE001 - 다른 executor 가 spin 중이면 sleep 으로 대체
             time.sleep(0.05)
 
-    def _wait_until(self, predicate: Any, label: str, feedback_seen: Any) -> None:
+    def _wait_for_feedback(self, feedback_seen: Any, label: str) -> None:
+        start = time.monotonic()
+        feedback_deadline = start + float(self._config.agx_feedback_timeout_sec)
+        while not feedback_seen():
+            if time.monotonic() > feedback_deadline:
+                self._driver_ready = False
+                raise ManipulationError(
+                    f"{label}: 팔 피드백을 받지 못했습니다. 드라이버 기동, CAN, "
+                    f"ROS_DOMAIN_ID/RMW 설정을 확인하세요."
+                )
+            self._spin_once()
+
+    def _wait_until(
+        self,
+        predicate: Any,
+        label: str,
+        feedback_seen: Any,
+        republish_fn: Any = None,
+    ) -> None:
         """목표 수렴까지 대기한다. 피드백/목표 도달 실패는 예외로 알린다."""
         start = time.monotonic()
         motion_deadline = start + float(self._config.agx_motion_timeout_sec)
         feedback_deadline = start + float(self._config.agx_feedback_timeout_sec)
+        last_publish = start
 
         while True:
             if predicate():
@@ -102,15 +179,20 @@ class AgxDriverBackend:
 
             now = time.monotonic()
             if not feedback_seen() and now > feedback_deadline:
+                self._driver_ready = False
                 raise ManipulationError(
                     f"{label}: 팔 피드백을 받지 못했습니다. 드라이버 기동, CAN, "
                     f"ROS_DOMAIN_ID/RMW 설정을 확인하세요."
                 )
             if now > motion_deadline:
+                self._driver_ready = False
                 raise ManipulationError(
                     f"{label}: {float(self._config.agx_motion_timeout_sec):.1f}초 내에 "
                     f"목표에 도달하지 못했습니다."
                 )
+            if republish_fn is not None and (now - last_publish) >= _REPUBLISH_INTERVAL_SEC:
+                republish_fn()
+                last_publish = now
             self._spin_once()
 
     # ── 목표 판정 ──
@@ -166,6 +248,7 @@ class AgxDriverBackend:
 
     def call_home_service(self) -> None:
         """드라이버의 home 서비스(std_srvs/Empty)를 호출한다."""
+        self._ensure_driver_ready()
         service_name = str(self._config.agx_home_service or "move_home").strip()
         if not service_name:
             raise ManipulationConfigError("manipulation_agx_home_service 가 비어 있습니다.")
@@ -196,6 +279,9 @@ class AgxDriverBackend:
     def move_to_joint_target(self, group_name: str, joint_values: Mapping[str, float]) -> None:
         del group_name  # 드라이버는 MoveIt planning group 개념이 없다
 
+        self._ensure_driver_ready()
+        self._wait_for_feedback(lambda: self._joint_feedback_seen, "joint 목표")
+
         targets = {
             str(name).strip(): float(value)
             for name, value in joint_values.items()
@@ -204,15 +290,27 @@ class AgxDriverBackend:
         if not targets:
             raise ManipulationConfigError("joint target 이 비어 있습니다.")
 
+        # 드라이버는 생략된 관절을 0.0 으로 채우므로 피드백의 현재 관절값을 유지한다.
+        cmd_positions: dict[str, float] = {}
+        if self._latest_joint_state is not None:
+            for name, pos in zip(
+                self._latest_joint_state.name,
+                self._latest_joint_state.position,
+                strict=False,
+            ):
+                cmd_positions[str(name).strip()] = float(pos)
+        cmd_positions.update(targets)
+
         msg = JointState()
-        msg.name = list(targets.keys())
-        msg.position = [targets[name] for name in msg.name]
+        msg.name = list(cmd_positions.keys())
+        msg.position = [cmd_positions[name] for name in msg.name]
         self._move_joint_pub.publish(msg)
 
         self._wait_until(
             lambda: self._joints_reached(targets),
             "joint 목표",
             lambda: self._joint_feedback_seen,
+            republish_fn=lambda: self._move_joint_pub.publish(msg),
         )
 
     def move_to_pose_target(
@@ -238,6 +336,9 @@ class AgxDriverBackend:
                 raise ManipulationConfigError(f"pose target 에 '{key}' 값이 없습니다.")
             targets[key] = float(value)
 
+        self._ensure_driver_ready()
+        self._wait_for_feedback(lambda: self._tcp_feedback_seen, "pose 목표")
+
         msg = PoseStamped()
         msg.header.frame_id = base_frame
         msg.pose.position.x = targets["x"]
@@ -256,4 +357,5 @@ class AgxDriverBackend:
             lambda: self._pose_reached(targets),
             "pose 목표",
             lambda: self._tcp_feedback_seen,
+            republish_fn=lambda: publisher.publish(msg),
         )

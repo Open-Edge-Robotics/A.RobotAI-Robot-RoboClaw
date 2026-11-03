@@ -28,29 +28,34 @@ class _RecordingPublisher:
 
 
 class _DoneFuture:
+    def __init__(self, response: object = None) -> None:
+        self._response = response
+
     def done(self) -> bool:
         return True
 
-    def result(self) -> None:
-        return None
+    def result(self) -> object:
+        return self._response
 
     def cancel(self) -> None:
         return None
 
 
 class _FakeClient:
-    def __init__(self, service_available: bool = True) -> None:
+    def __init__(self, service_available: bool = True, response: object = None) -> None:
         self.service_available = service_available
         self.calls = 0
+        self.requests: list[object] = []
+        self.response = response
 
     def wait_for_service(self, timeout_sec: float) -> bool:
         del timeout_sec
         return self.service_available
 
     def call_async(self, request: object) -> _DoneFuture:
-        del request
         self.calls += 1
-        return _DoneFuture()
+        self.requests.append(request)
+        return _DoneFuture(self.response)
 
 
 class _FakeNode:
@@ -64,9 +69,9 @@ class _FakeNode:
 
     def create_client(self, srv_type: object, name: str) -> _FakeClient:
         del srv_type
-        client = _FakeClient(self._service_available)
-        self.clients[name] = client
-        return client
+        if name not in self.clients:
+            self.clients[name] = _FakeClient(self._service_available)
+        return self.clients[name]
 
     def create_publisher(self, msg_type: object, topic: str, qos: int) -> _RecordingPublisher:
         del msg_type, qos
@@ -193,8 +198,10 @@ def test_move_to_named_pose_home_calls_driver_service() -> None:
 
 
 def test_move_to_named_pose_home_reports_missing_service() -> None:
-    node = _FakeNode(service_available=False)
-    backend = AgxDriverBackend(node, _config(named_pose_joint_values={}))
+    config = _config(named_pose_joint_values={})
+    node = _FakeNode(service_available=True)
+    node.clients[config.agx_home_service] = _FakeClient(service_available=False)
+    backend = AgxDriverBackend(node, config)
 
     with pytest.raises(ManipulationRuntimeUnavailableError, match="move_home"):
         backend.move_to_named_pose("arm", "home")
@@ -258,3 +265,58 @@ def test_pose_target_requires_all_position_components() -> None:
 
     with pytest.raises(ManipulationConfigError, match="'z' 값이 없습니다"):
         backend.move_to_pose_target("arm", goal, "link7")
+
+
+def test_move_enables_arm_and_control_gate_before_motion() -> None:
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 0.0])
+    )
+    backend.move_to_joint_target("arm", {"joint1": 0.0, "joint2": 0.0})
+    backend.move_to_joint_target("arm", {"joint1": 0.0, "joint2": 0.0})
+
+    enable_client = node.clients[config.agx_enable_service]
+    gate_client = node.clients[config.agx_control_enable_service]
+    assert enable_client.calls == 1
+    assert getattr(enable_client.requests[0], "data", None) is True
+    assert gate_client.calls == 1
+    assert getattr(gate_client.requests[0], "data", None) is True
+
+
+def test_move_raises_when_enable_service_returns_false() -> None:
+    class _FailedResp:
+        success = False
+        message = "Agx_arm is not connected"
+
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+    node.create_client(object, config.agx_enable_service).response = _FailedResp()
+
+    with pytest.raises(ManipulationError, match="Agx_arm is not connected"):
+        backend.move_to_named_pose("arm", "home")
+
+
+def test_move_to_joint_target_preserves_unspecified_arm_joints_from_feedback() -> None:
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2", "joint3"], [0.5, -0.35, 0.2])
+    )
+    backend.move_to_joint_target("arm", {"joint1": 0.5})
+
+    published = node.publishers[config.agx_move_joint_topic][0].messages
+    assert len(published) >= 1
+    msg = published[0]
+    assert isinstance(msg, JointState)
+    joint_map = dict(zip(msg.name, msg.position, strict=False))
+    assert joint_map == {
+        "joint1": pytest.approx(0.5),
+        "joint2": pytest.approx(-0.35),
+        "joint3": pytest.approx(0.2),
+    }

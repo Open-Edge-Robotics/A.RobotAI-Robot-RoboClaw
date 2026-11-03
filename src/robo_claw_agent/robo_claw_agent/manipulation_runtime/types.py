@@ -55,6 +55,8 @@ class ManipulationConfig:
     agx_motion_timeout_sec: float = 30.0
     agx_feedback_timeout_sec: float = 5.0
     agx_home_service: str = "move_home"
+    agx_enable_service: str = "enable_agx_arm"
+    agx_control_enable_service: str = "control_enable"
 
 
 class ManipulationBackend(Protocol):
@@ -62,9 +64,7 @@ class ManipulationBackend(Protocol):
 
     def move_to_named_pose(self, group_name: str, target_name: str) -> None: ...
 
-    def move_to_joint_target(
-        self, group_name: str, joint_values: Mapping[str, float]
-    ) -> None: ...
+    def move_to_joint_target(self, group_name: str, joint_values: Mapping[str, float]) -> None: ...
 
     def move_to_pose_target(
         self,

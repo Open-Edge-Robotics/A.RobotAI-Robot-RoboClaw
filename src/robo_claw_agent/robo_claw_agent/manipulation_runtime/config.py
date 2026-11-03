@@ -39,11 +39,7 @@ def _unwrap_parameter_value(param: Any) -> Any:
 
 
 def _read_node_param(node: Any, name: str, default: Any) -> Any:
-    if (
-        node is None
-        or not hasattr(node, "has_parameter")
-        or not node.has_parameter(name)
-    ):
+    if node is None or not hasattr(node, "has_parameter") or not node.has_parameter(name):
         return default
 
     try:
@@ -93,16 +89,12 @@ def _parse_mapping_json(raw_value: Any, name: str) -> dict[str, Any]:
         return dict(raw_value)
 
     if not isinstance(raw_value, str):
-        raise ManipulationConfigError(
-            f"파라미터 '{name}' 는 JSON 객체 문자열이어야 합니다."
-        )
+        raise ManipulationConfigError(f"파라미터 '{name}' 는 JSON 객체 문자열이어야 합니다.")
 
     try:
         parsed = json.loads(raw_value)
     except json.JSONDecodeError as exc:
-        raise ManipulationConfigError(
-            f"파라미터 '{name}' JSON 파싱 실패: {exc}"
-        ) from exc
+        raise ManipulationConfigError(f"파라미터 '{name}' JSON 파싱 실패: {exc}") from exc
 
     if not isinstance(parsed, dict):
         raise ManipulationConfigError(f"파라미터 '{name}' 는 JSON 객체여야 합니다.")
@@ -175,9 +167,7 @@ def load_manipulation_config(node: Any) -> ManipulationConfig:
         planner_id=_read_string(node, "manipulation_planner_id", ""),
         cartesian_step=_read_float(node, "manipulation_cartesian_step", 0.01),
         velocity_scaling=_read_float(node, "manipulation_velocity_scaling", 0.2),
-        acceleration_scaling=_read_float(
-            node, "manipulation_acceleration_scaling", 0.2
-        ),
+        acceleration_scaling=_read_float(node, "manipulation_acceleration_scaling", 0.2),
         default_approach_distance_m=_read_float(
             node, "manipulation_default_approach_distance_m", 0.1
         ),
@@ -200,19 +190,13 @@ def load_manipulation_config(node: Any) -> ManipulationConfig:
         agx_tcp_pose_topic=_read_string(
             node, "manipulation_agx_tcp_pose_topic", "feedback/tcp_pose"
         ),
-        agx_joint_tolerance_rad=_read_float(
-            node, "manipulation_agx_joint_tolerance_rad", 0.02
-        ),
-        agx_pose_tolerance_m=_read_float(
-            node, "manipulation_agx_pose_tolerance_m", 0.01
-        ),
-        agx_motion_timeout_sec=_read_float(
-            node, "manipulation_agx_motion_timeout_sec", 30.0
-        ),
-        agx_feedback_timeout_sec=_read_float(
-            node, "manipulation_agx_feedback_timeout_sec", 5.0
-        ),
-        agx_home_service=_read_string(
-            node, "manipulation_agx_home_service", "move_home"
+        agx_joint_tolerance_rad=_read_float(node, "manipulation_agx_joint_tolerance_rad", 0.02),
+        agx_pose_tolerance_m=_read_float(node, "manipulation_agx_pose_tolerance_m", 0.01),
+        agx_motion_timeout_sec=_read_float(node, "manipulation_agx_motion_timeout_sec", 30.0),
+        agx_feedback_timeout_sec=_read_float(node, "manipulation_agx_feedback_timeout_sec", 5.0),
+        agx_home_service=_read_string(node, "manipulation_agx_home_service", "move_home"),
+        agx_enable_service=_read_string(node, "manipulation_agx_enable_service", "enable_agx_arm"),
+        agx_control_enable_service=_read_string(
+            node, "manipulation_agx_control_enable_service", "control_enable"
         ),
     )
