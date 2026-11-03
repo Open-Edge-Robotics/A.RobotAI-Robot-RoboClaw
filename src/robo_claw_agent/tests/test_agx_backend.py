@@ -67,22 +67,32 @@ class _FakeNode:
         self.clients: dict[str, _FakeClient] = {}
         self._service_available = service_available
 
-    def create_client(self, srv_type: object, name: str) -> _FakeClient:
-        del srv_type
+    def create_client(
+        self, srv_type: object, name: str, *args: object, **kwargs: object
+    ) -> _FakeClient:
+        del srv_type, args, kwargs
         if name not in self.clients:
             self.clients[name] = _FakeClient(self._service_available)
         return self.clients[name]
 
-    def create_publisher(self, msg_type: object, topic: str, qos: int) -> _RecordingPublisher:
-        del msg_type, qos
+    def create_publisher(
+        self, msg_type: object, topic: str, qos: int, *args: object, **kwargs: object
+    ) -> _RecordingPublisher:
+        del msg_type, qos, args, kwargs
         publisher = _RecordingPublisher()
         self.publishers.setdefault(topic, []).append(publisher)
         return publisher
 
     def create_subscription(
-        self, msg_type: object, topic: str, callback: object, qos: int
+        self,
+        msg_type: object,
+        topic: str,
+        callback: object,
+        qos: int,
+        *args: object,
+        **kwargs: object,
     ) -> object:
-        del msg_type, qos
+        del msg_type, qos, args, kwargs
         self.subscriptions[topic] = callback
         return callback
 
@@ -320,3 +330,21 @@ def test_move_to_joint_target_preserves_unspecified_arm_joints_from_feedback() -
         "joint2": pytest.approx(-0.35),
         "joint3": pytest.approx(0.2),
     }
+
+
+def test_move_to_joint_target_publishes_only_gripper_when_targets_is_gripper_only() -> None:
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2", "gripper"], [0.5, -0.35, 0.05])
+    )
+    backend.move_to_joint_target("gripper", {"gripper": 0.05})
+
+    published = node.publishers[config.agx_move_joint_topic][0].messages
+    assert len(published) >= 1
+    msg = published[0]
+    assert isinstance(msg, JointState)
+    assert list(msg.name) == ["gripper"]
+    assert list(msg.position) == [pytest.approx(0.05)]

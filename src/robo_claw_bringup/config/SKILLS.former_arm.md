@@ -11,8 +11,8 @@
 
 - **팔 보유**: 7-DOF 팔(`joint1`..`joint7`, MoveIt group `arm`)이 장착되어 있습니다.
   조작 계열 스킬(`arm_pose`, `move_joints`, `move_pose`)이 카탈로그에 등록됩니다.
-- **그리퍼 미확인**: 엔드이펙터 종류가 확정되지 않아 `open_gripper`, `close_gripper`,
-  `grasp`, `place` 계열은 실행되지 않을 수 있습니다. 그리퍼 그룹이 없는데 호출하면 실패합니다.
+- **그리퍼 장착**: AgileX 그리퍼(`agx_gripper`, group `gripper`)가 장착되어 있습니다.
+  `open_gripper` (50mm 개방), `close_gripper` (0mm 폐쇄), `move_joints` (`gripper` 0.0~0.1m) 사용이 가능합니다.
 - **Stretch3 전용 서비스 없음**: `/stow_the_robot`, `/switch_to_navigation_mode` 가 없어
   `stow_for_navigation`, `switch_stretch_mode`, `stretch_*_mode` 는 사용할 수 없습니다.
 

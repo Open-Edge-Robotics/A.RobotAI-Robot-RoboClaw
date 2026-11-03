@@ -3,6 +3,18 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-03 — Former0045 AgileX Nero 팔 Humble 드라이버 도커 연동 및 조작 백엔드 보완
+
+- **배경**: Former0045에 장착된 AgileX Nero(7-DOF) 팔 및 그리퍼(`agx_gripper`)가 구동되지 않는 문제를 해결하기 위해, 팔 제어 PC(`nero-arm`, `192.168.50.202`)에서 `nero_humble:1.0` Docker 컨테이너를 기동하여 Humble ROS 2 환경을 일치시키고, RoboClaw `AgxDriverBackend`를 보완하여 실기 하드웨어 움직임을 검증했습니다.
+- **조치**:
+  - **Humble 드라이버 컨테이너 상시 기동**: `nero-arm`에 `nero_arm_driver`(`nero_humble:1.0`, `--restart unless-stopped`, `speed_percent:=20`, `effector_type:=agx_gripper`, `auto_enable:=true`)를 기동하고 CAN 인터페이스(`can0`, 1Mbps) 통신 연결을 완료했습니다.
+  - **그리퍼 단독 제어 분리**: 드라이버의 `move_j` 콜백이 팔 관절을 포함할 경우 모터를 강제 구동하는 특성을 고려하여, `targets`가 오직 `gripper`만 포함할 때는 `name: ['gripper']`만 발행하여 팔 관절 간섭 없이 안전하게 동작하도록 분리했습니다.
+  - **생략 관절 피드백 보존**: 팔 관절 제어 시 지정되지 않은 관절을 피드백(`_latest_joint_state`)에서 복원하여 드라이버가 0.0으로 리셋하는 현상을 방지했습니다.
+  - **스케줄러 사전 등록**: `AgentNode.__init__`에서 manipulation 런타임을 사전 초기화(`runtime._ensure_backend()`)하여 노드가 executor에 등록되기 전에 토픽 구독자/발행자가 정상 생성되도록 구성했습니다.
+  - **설정 및 한계값 반영**: `former_arm_config.yaml`에 그리퍼 프리셋(open: 0.05m, close: 0.0m)을 등록하고, `ROBOT_LIMITS.former_arm.json`에 `gripper` 범위([0.0, 0.1]) 및 관절 마진을 보정했습니다.
+  - **문서화**: `docs/MANIPULATION.md`에 Nero 팔 드라이버 기동 가이드, CAN 설정, 토픽/서비스 인터페이스 계약, 실기 검증 결과 및 피드백 콜백 스케줄링 트러블슈팅 가이드를 정리했습니다.
+- **검증**: `pytest src/robo_claw_agent/tests/test_agx_backend.py` 15건 전체 통과, 실기 하드웨어 그리퍼 열기(50mm, `gripper: 0.0498m`) 및 닫기(`gripper: 0.00038m`) 물리적 구동 확인.
+
 ## 2026-11-04 — 대시보드에서 AI Config 서버 접속 정보를 직접 입력해 시나리오 동기화
 
 - **배경**: `rclaw former kon47` 처럼 CLI 로 실행하면 환경(`kon47`)이 CLI 내부에만 존재하고 dashboard 노드의 `config_environment` 인자로 전달되지 않았습니다. 그 결과 `config_environment`·`config_server_url` 이 빈 값이 되어 `scenario_runner` 가 원격 조회와 로컬 캐시 조회를 모두 건너뛰었고, 웹에서 "AI Config 서버에서 불러오기" 를 눌러도 내장 기본 시나리오만 다시 그려져 무반응처럼 보였습니다. Docker 로 기동한 대시보드는 호스트의 CLI 설정 파일과 캐시 디렉토리도 볼 수 없어 환경변수 주입만으로는 해결되지 않습니다.

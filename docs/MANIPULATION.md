@@ -60,8 +60,8 @@ robo_claw_agent_node:
 
 ## AgileX Nero 팔(agx_arm_ros) 연동
 
-Former0045 에 AgileX Nero(7-DOF) 팔이 장착되어 있고, 팔 제어 PC 는 `192.168.50.202`
-(`nero-arm`, Ubuntu 24.04 / ROS 2 jazzy)입니다. 이 조합은 `former_arm` 프로필로 기동합니다.
+Former0045 에 AgileX Nero(7-DOF) 팔과 AgileX 그리퍼(`agx_gripper`)가 장착되어 있고, 팔 제어 PC 는 `192.168.50.202`
+(`nero-arm`, Ubuntu 24.04)입니다. 이 조합은 `former_arm` 프로필로 기동합니다.
 
 ```bash
 # RoboClaw 컨테이너(ROS 2 humble, ROS_DOMAIN_ID=4, rmw_cyclonedds_cpp) 기준
@@ -70,80 +70,78 @@ Former0045 에 AgileX Nero(7-DOF) 팔이 장착되어 있고, 팔 제어 PC 는 
 
 | 파일 | 내용 |
 | :--- | :--- |
-| `src/robo_claw_bringup/config/former_arm_config.yaml` | 로봇·토픽 매핑 + `manipulation_*` 파라미터 |
-| `src/robo_claw_bringup/config/ROBOT_LIMITS.former_arm.json` | `joint1`..`joint7` raw(rad) 하드 한계 |
-| `src/robo_claw_bringup/config/SKILLS.former_arm.md` | 팔 스킬 사용 규칙(이동 전 `home`, 파지 미검증) |
+| `src/robo_claw_bringup/config/former_arm_config.yaml` | 로봇·토픽 매핑 + `manipulation_*` 파라미터 (그리퍼 프리셋 open: 0.05, close: 0.0) |
+| `src/robo_claw_bringup/config/ROBOT_LIMITS.former_arm.json` | `joint1`..`joint7` raw(rad) 하드 한계 및 `gripper` [0.0, 0.1] 한계 |
+| `src/robo_claw_bringup/config/SKILLS.former_arm.md` | 팔 스킬 사용 규칙(이동 전 `home`, 그리퍼 장착 사양 반영) |
 
-팔 PC 는 다음 계약을 제공합니다(`agx_arm_ros`).
+### 1. 팔 제어 PC (nero-arm) 드라이버 기동 가이드
 
-| 구분 | 값 |
-| :--- | :--- |
-| MoveIt 그룹 | `arm` (`joint1`..`joint7`) |
-| SRDF group_state | `home` |
-| 팔 끝 링크 | `link7` (플랜지 조립품은 `flange_link`) |
-| 드라이버 제어 토픽 | `control/move_j`(JointState), `control/move_p`(PoseStamped), `control/move_js` |
-| 드라이버 피드백 | `feedback/joint_states`(JointState), `feedback/tcp_pose`(PoseStamped) |
-| 서비스 | `enable_agx_arm`, `control_enable`, `move_home`, `emergency_stop` |
+팔 PC(Ubuntu 24.04)는 호스트에 직접 설치하지 않고 **ROS 2 Humble 기반 도커 컨테이너(`nero_humble:1.0`)** 로 팔 드라이버를 기동하여 RoboClaw 에이전트와 완벽히 동일한 ROS 환경(`humble`, `ROS_DOMAIN_ID=4`)을 유지합니다.
 
-연동 전제 조건입니다.
-
-1. 팔 PC 의 CAN 인터페이스가 올라와 있어야 합니다(`can0` UP, bitrate 1000000).
-   부팅 자동 활성화는 구성되어 있지 않으므로 `agx_arm_ros/scripts/can_activate.sh` 를 실행합니다.
-2. 양쪽 ROS 그래프의 `ROS_DOMAIN_ID` 와 `RMW_IMPLEMENTATION` 을 일치시켜야 합니다.
-   RoboClaw 컨테이너는 `ROS_DOMAIN_ID=4`, `rmw_cyclonedds_cpp` 이므로 팔 PC 도 동일하게 맞춥니다.
-3. 팔 URDF 루트 링크 이름(`base_link`)이 로봇 본체의 `base_link` 와 충돌합니다.
-   로봇 `base_link` → 팔 마운트 프레임 static transform 을 추가하고, 팔 URDF 의
-   `world_to_base_link` 체인은 사용하지 않습니다. 프레임 이름을 바꾸면
-   `manipulation_base_frame` 도 함께 수정합니다.
-4. 엔드이펙터(`effector_type`)가 확정되지 않으면 `manipulation_gripper_group` 을 비워 두고
-   `open_gripper`/`close_gripper` 를 사용하지 않습니다.
-
-남은 리스크는 다음과 같습니다.
-
-- RoboClaw 컨테이너(humble)와 팔 PC(jazzy)가 서로 다른 ROS 배포판입니다. MoveIt 서비스/액션
-  (`moveit_msgs`)의 배포판 간 호환은 보장되지 않으므로, MoveIt 경유 경로는 실기 검증이 필요합니다.
-- 팔 드라이버의 `control/*` 토픽은 `sensor_msgs`/`geometry_msgs`/`std_srvs` 만 사용하므로
-  배포판 간 안전합니다. MoveIt 경로가 불안정하면 아래 `agx` 백엔드를 사용합니다.
-- 드라이버 기본값은 `auto_enable=true` 입니다. 부팅 시 자동 제어를 피하려면
-  `auto_enable:=false`, `control_enabled:=false` 로 기동하고 `control_enable` 서비스로
-  제어를 여는 순서를 사용합니다.
-
-### `agx` 드라이버 토픽 백엔드
-
-MoveIt을 거치지 않고 `agx_arm_ctrl` 드라이버의 표준 메시지 토픽만 사용하는 백엔드입니다
-(`src/robo_claw_agent/robo_claw_agent/manipulation_runtime/agx_backend.py`).
-
-```yaml
-robo_claw_agent_node:
-  ros__parameters:
-    manipulation_enabled: true
-    manipulation_backend: "agx"
-    manipulation_base_frame: "base_link"
-    # named pose 는 SRDF 이름이 아니라 조인트 맵으로 정의한다.
-    manipulation_named_poses_json: '{"home":{"joint1":0.0,"joint2":0.0,"joint3":0.0,"joint4":0.0,"joint5":0.0,"joint6":0.0,"joint7":0.0}}'
+#### 1) CAN 버스 활성화 (부팅 후 필수)
+```bash
+# nero-arm 호스트에서 실행
+sudo ip link set can0 up type can bitrate 1000000
+ip -s link show can0
 ```
 
-| 항목 | 기본값 | 설명 |
+#### 2) 드라이버 도커 컨테이너 기동
+```bash
+# nero-arm 호스트에서 실행 (상시 백그라운드 구동)
+docker run -d \
+  --name nero_arm_driver \
+  --restart unless-stopped \
+  --network host \
+  --privileged \
+  -v /dev:/dev \
+  -v /dev/shm:/dev/shm \
+  nero_humble:1.0 \
+  bash -lc "source /opt/ros/humble/setup.bash && \
+            source /ws/install/setup.bash && \
+            export ROS_DOMAIN_ID=4 && \
+            ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py \
+              speed_percent:=20 \
+              effector_type:=agx_gripper \
+              auto_enable:=true"
+```
+
+- `speed_percent:=20`: 안전을 위해 최고 속도의 20%로 제한합니다.
+- `effector_type:=agx_gripper`: 장착된 그리퍼를 활성화합니다.
+- `auto_enable:=true`: 기동 즉시 모터를 활성화하고 제어 게이트를 엽니다.
+
+### 2. 제어 인터페이스 계약 (`agx_backend`)
+
+RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2 토픽/서비스를 직접 제어하는 `agx` 백엔드를 사용합니다(`agx_backend.py`).
+
+| 구분 | 이름 / 토픽 | 메시지 / 설명 |
 | :--- | :--- | :--- |
-| `manipulation_agx_move_joint_topic` | `control/move_j` | 조인트 목표(`JointState`) |
-| `manipulation_agx_move_pose_topic` | `control/move_p` | 포즈 목표(`PoseStamped`) |
-| `manipulation_agx_move_linear_topic` | `control/move_l` | 카테시안(직선) 포즈 목표 |
-| `manipulation_agx_joint_state_topic` | `feedback/joint_states` | 완료 판정용 관절 피드백 |
-| `manipulation_agx_tcp_pose_topic` | `feedback/tcp_pose` | 완료 판정용 TCP 피드백 |
-| `manipulation_agx_joint_tolerance_rad` | `0.02` | 관절 도달 판정 허용 오차 |
-| `manipulation_agx_pose_tolerance_m` | `0.01` | 포즈 도달 판정 허용 오차 |
-| `manipulation_agx_motion_timeout_sec` | `30.0` | 목표 도달 대기 한계 |
-| `manipulation_agx_feedback_timeout_sec` | `5.0` | 피드백 수신 대기 한계(넘으면 즉시 실패) |
-| `manipulation_agx_home_service` | `move_home` | `home` 자세 요청 시 호출할 드라이버 서비스(`std_srvs/Empty`) |
+| 관절 및 그리퍼 제어 | `/control/move_j` | `sensor_msgs/msg/JointState` |
+| 포즈 제어 | `/control/move_p` | `geometry_msgs/msg/PoseStamped` |
+| 직선 제어 | `/control/move_l` | `geometry_msgs/msg/PoseStamped` |
+| 관절/그리퍼 피드백 | `/feedback/joint_states` | `sensor_msgs/msg/JointState` (`joint1`..`joint7`, `gripper`) |
+| 제어 게이트 활성화 | `/control_enable` | `std_srvs/srv/SetBool` (데이터 `true`) |
+| 모터 활성화 | `/enable_agx_arm` | `std_srvs/srv/SetBool` (데이터 `true`) |
+| 홈 위치 이동 | `/move_home` | `std_srvs/srv/Empty` |
 
-동작 제약은 다음과 같습니다.
+#### 그리퍼 및 팔 관절 제어 특성
+- **그리퍼 단독 제어**: `agx_arm_ctrl` 드라이버는 `move_j` 메시지에 팔 관절이 포함되어 있으면 팔 동작 모터를 구동합니다. 따라서 그리퍼만 움직일 때는 `name: ['gripper']`, `position: [width]` 만 발행하여 팔 관절 모터 간섭 없이 빠르고 안전하게 동작합니다.
+- **팔 관절 제어**: 드라이버의 생략 관절 0.0 보정(리셋) 버그를 방지하기 위해, 지정되지 않은 관절은 최신 수신된 피드백(`_latest_joint_state`) 값으로 자동 보존하여 발행합니다.
+- **물리 검증 완료**: 실기 그리퍼 열기(`open_gripper`, 0.05m 도달) 및 닫기(`close_gripper`, 0.00038m 도달) 물리적 동작이 검증되었습니다.
 
-- 완료 판정은 피드백 수렴으로만 합니다. 피드백이 없으면 `ManipulationError` 로 실패합니다.
-- 포즈 목표는 `manipulation_base_frame` 과 같은 프레임만 허용합니다(드라이버가 base 기준으로 해석).
-- 경로 계획과 충돌 검사가 없으므로 `ROBOT_LIMITS` 조인트 한계와 속도 스케일 검증에 의존합니다.
-- `home` 자세는 SRDF group_state 대신 드라이버의 `move_home` 서비스를 호출합니다. 조인트 값을
-  임의로 만들지 않으므로 실기 자세가 벗어나지 않습니다.
-- 그리퍼는 드라이버 `effector_type` 설정과 `control/hand` 토픽 영역이므로 이 백엔드에 포함하지 않습니다.
+### 3. 후속 에이전트를 위한 인수인계 및 디버깅 포인트
+
+현재 드라이버와 물리 구동은 정상이나, RoboClaw 에이전트(`robo_claw_container`)의 HTTP 스킬 실행 파이프라인에서 다음 이슈가 확인되어 인수인계합니다.
+
+- **증상**: 
+  - `curl -X POST http://localhost:8080/skill -d '{"skill_name": "open_gripper", "params": {}}'` 호출 시 물리 하드웨어는 정상 작동하여 `gripper: 0.0498m`에 도달함.
+  - 그러나 에이전트 응답은 `30.0초 내에 목표에 도달하지 못했습니다` 타임아웃 반환.
+- **원인 분석**:
+  - 터미널에서 `ros2 topic echo /feedback/joint_states --once` 를 실행하면 최신 그리퍼 피드백(`0.0498`)이 즉시 수신되므로 네트워크/DDS 통신 문제는 아님.
+  - `AgentNode` 내부에서 스킬 실행 스레드가 `_wait_until` 루프를 도는 동안, `_on_joint_state` 콜백이 최신 값을 갱신하지 못하고 오래된 캐시값(`0.000384`)에 갇혀 있음(콜백 starvation 현상).
+- **해결 가이드**:
+  1. `AgentNode`의 `MultiThreadedExecutor`에서 manipulation 백엔드의 콜백 그룹(`cb_group = ReentrantCallbackGroup()`)이 정상 스케줄링되는지 확인합니다.
+  2. `_on_joint_state` 서브스크립션 생성 시 SensorDataQoS(`rclpy.qos.qos_profile_sensor_data` 또는 `best_effort`)를 명시하여 큐 적체 없이 항상 최신 샘플을 가져오도록 수정합니다.
+  3. `_wait_until` 루프 내에서 불필요한 락이나 sleep 차단이 없는지 점검합니다.
 
 ## 현재 구현의 한계
 

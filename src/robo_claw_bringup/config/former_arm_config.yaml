@@ -72,7 +72,7 @@ robo_claw_agent_node:
     # SRDF group_state 이름만 사용한다. 조인트 값을 직접 정의한 사전 자세는
     # 실기 검증 전까지 추가하지 않는다.
     manipulation_named_poses_json: '{"home": "home"}'
-    manipulation_gripper_presets_json: '{}'
+    manipulation_gripper_presets_json: '{"open": {"gripper": 0.05}, "close": {"gripper": 0.0}}'
 
     # 실기 초기 검증 구간: 속도/가속 스케일을 낮게 유지한다.
     # 팔 PC 의 driver speed_percent(0 = SDK 기본) 와 함께 동작한다.

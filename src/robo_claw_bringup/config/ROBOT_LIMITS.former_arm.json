@@ -8,12 +8,13 @@
     "note": "Former0045 에 장착된 AgileX Nero(7-DOF, joint1..joint7) 팔의 한계입니다. joint_limits 는 팔 URDF(nero_description.urdf) revolute limit 을 그대로 옮긴 raw(rad) 하드 한계이며, move_joints 실행 직전 검증에 사용합니다. 실행 속도는 former_arm_config.yaml 의 manipulation_velocity_scaling(0.1)과 팔 PC driver speed_percent 로 제한합니다. 팔 PC 연동 상태(CAN, ROS 그래프, MoveIt arm group)를 확인할 수 없으면 조작 스킬을 실행하지 않습니다.",
     "joint_limits": {
       "joint1": [-2.70526, 2.70526],
-      "joint2": [-1.74, 1.74],
+      "joint2": [-1.76, 1.74],
       "joint3": [-2.75, 2.75],
-      "joint4": [-1.01, 2.14],
+      "joint4": [-1.01, 2.22],
       "joint5": [-2.75, 2.75],
       "joint6": [-0.7330383, 0.8726646],
-      "joint7": [-1.5707963, 1.5707963]
+      "joint7": [-1.5707963, 1.72],
+      "gripper": [0.0, 0.1]
     }
   }
 }

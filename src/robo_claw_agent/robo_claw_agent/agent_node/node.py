@@ -76,9 +76,7 @@ class AgentNode(Node, ExecutionMixin):
         self.get_logger().debug(f"Parameters loaded: skill_modules={p.skill_modules}")
         self.get_logger().debug(f"Camera topic parameter: {p.camera_topic or '(not set)'}")
         if p.gripper_camera_topic:
-            self.get_logger().info(
-                f"Gripper camera topic parameter: {p.gripper_camera_topic}"
-            )
+            self.get_logger().info(f"Gripper camera topic parameter: {p.gripper_camera_topic}")
 
         self._agent_id = p.agent_id
         # 동료의 자리 양보 요청을 수락할지 여부 (yield_slot_enabled 파라미터)
@@ -134,7 +132,9 @@ class AgentNode(Node, ExecutionMixin):
         qdrant_primary = setup_memory_and_rag(self, p)
         self._skills = SkillManager(self)  # type: ignore
         if self._skills.mock_robot:
-            self.get_logger().warning("MOCK ROBOT: 로봇 스킬은 실제 실행 없이 가짜 성공을 반환합니다.")
+            self.get_logger().warning(
+                "MOCK ROBOT: 로봇 스킬은 실제 실행 없이 가짜 성공을 반환합니다."
+            )
         self._apply_skill_policy(p)
         self._llm: BaseLLMBridge | None = None
         self._mcp_manager = None
@@ -151,9 +151,7 @@ class AgentNode(Node, ExecutionMixin):
         self._enable_task_decomposition = p.enable_task_decomposition
         self._task_decomposition_max_steps = p.task_decomposition_max_steps
         self._task_step_max_retries = p.task_step_max_retries
-        self._task_decomposition_wait_margin_cap_sec = (
-            p.task_decomposition_wait_margin_cap_sec
-        )
+        self._task_decomposition_wait_margin_cap_sec = p.task_decomposition_wait_margin_cap_sec
 
         # 시작 시 벡터 DB 지식 목록 로드
         self._startup_knowledge_ctx = self._load_startup_knowledge()
@@ -162,6 +160,17 @@ class AgentNode(Node, ExecutionMixin):
         # 주행 전 상체 자세 준비 상태는 팔을 움직인 스킬이 성공하면 무효화된다.
         # 스킬 계층이 주행 안전 규칙을 알지 않도록 nav_safety 훅을 주입한다.
         register_cloid_navigation_pose_invalidation(self, self._skills)
+
+        # Manipulation 런타임 사전 초기화: 노드가 executor에 등록되기 전에
+        # backend의 토픽 구독/발행자를 생성하여 executor wait_set에 온전히 등록되도록 보장한다.
+        try:
+            from ..skills.manipulation_skill.core import _get_runtime
+
+            runtime = _get_runtime(self)
+            runtime._ensure_backend()
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().debug(f"Manipulation 런타임 사전 초기화 건너뜀: {exc}")
+
         setup_ros_interfaces(self)
 
         # 태스크 큐 초기화 — 순차 실행 보장 (max_size=0 이면 큐 비활성화)
@@ -242,7 +251,9 @@ class AgentNode(Node, ExecutionMixin):
                 reflected = summary.get("reflected", [])
                 if reflected:
                     self.mark_skill_lessons_dirty()
-                    self.get_logger().info(f"Skill lessons auto-updated: {summary.get('message', '')}")
+                    self.get_logger().info(
+                        f"Skill lessons auto-updated: {summary.get('message', '')}"
+                    )
             except Exception as e:  # noqa: BLE001
                 self.get_logger().warning(f"Automatic skill lesson extraction failed: {e}")
             finally:
@@ -530,9 +541,7 @@ class AgentNode(Node, ExecutionMixin):
             if decision.accepted and decision.yield_spot is not None:
                 moved = execute_yield_move(self, decision.yield_spot)
                 if not moved:
-                    decision = YieldDecision(
-                        DENIED, "move_failed", distance_m=decision.distance_m
-                    )
+                    decision = YieldDecision(DENIED, "move_failed", distance_m=decision.distance_m)
             message = decision_message(
                 decision, requester_id=yield_request.requester_id, moved=moved
             )

@@ -18,11 +18,11 @@ MoveIt 서비스(`moveit_msgs`)를 거치지 않으므로 ROS 배포판이 다�
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Mapping
 from typing import Any
 
-import rclpy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Empty, SetBool
@@ -33,6 +33,8 @@ from .exceptions import (
     ManipulationError,
     ManipulationRuntimeUnavailableError,
 )
+
+logger = logging.getLogger(__name__)
 
 _POSITION_KEYS = ("x", "y", "z")
 _REPUBLISH_INTERVAL_SEC = 0.5
@@ -53,6 +55,19 @@ class AgxDriverBackend:
         self._control_enable_client = None
         self._driver_ready = False
 
+        cb_group = None
+        try:
+            from rclpy.callback_groups import ReentrantCallbackGroup
+
+            cb_group = ReentrantCallbackGroup()
+        except ImportError:
+            pass
+        self._cb_group = cb_group
+
+        sub_kwargs: dict[str, Any] = {}
+        if self._cb_group is not None:
+            sub_kwargs["callback_group"] = self._cb_group
+
         try:
             self._move_joint_pub = node.create_publisher(
                 JointState, config.agx_move_joint_topic, 10
@@ -61,18 +76,35 @@ class AgxDriverBackend:
             self._move_linear_pub = node.create_publisher(
                 PoseStamped, config.agx_move_linear_topic, 10
             )
-            node.create_subscription(
-                JointState,
-                config.agx_joint_state_topic,
-                self._on_joint_state,
-                10,
-            )
-            node.create_subscription(
-                PoseStamped,
-                config.agx_tcp_pose_topic,
-                self._on_tcp_pose,
-                10,
-            )
+            try:
+                node.create_subscription(
+                    JointState,
+                    config.agx_joint_state_topic,
+                    self._on_joint_state,
+                    10,
+                    **sub_kwargs,
+                )
+                node.create_subscription(
+                    PoseStamped,
+                    config.agx_tcp_pose_topic,
+                    self._on_tcp_pose,
+                    10,
+                    **sub_kwargs,
+                )
+            except TypeError:
+                # _FakeNode 처럼 callback_group 을 받지 않는 대역 노드 fallback
+                node.create_subscription(
+                    JointState,
+                    config.agx_joint_state_topic,
+                    self._on_joint_state,
+                    10,
+                )
+                node.create_subscription(
+                    PoseStamped,
+                    config.agx_tcp_pose_topic,
+                    self._on_tcp_pose,
+                    10,
+                )
         except Exception as exc:  # noqa: BLE001 - 드라이버 인터페이스 생성 실패
             raise ManipulationRuntimeUnavailableError(
                 f"AGX 드라이버 토픽 인터페이스 생성 실패: {exc}"
@@ -88,7 +120,13 @@ class AgxDriverBackend:
         client = getattr(self, client_attr, None)
         if client is None:
             try:
-                client = self._node.create_client(SetBool, name)
+                client_kwargs: dict[str, Any] = {}
+                if self._cb_group is not None:
+                    client_kwargs["callback_group"] = self._cb_group
+                try:
+                    client = self._node.create_client(SetBool, name, **client_kwargs)
+                except TypeError:
+                    client = self._node.create_client(SetBool, name)
                 setattr(self, client_attr, client)
             except Exception as exc:  # noqa: BLE001 - 서비스 클라이언트 생성 실패
                 raise ManipulationRuntimeUnavailableError(
@@ -134,19 +172,29 @@ class AgxDriverBackend:
 
     # ── 피드백 ──
 
+    def _log_info(self, msg: str) -> None:
+        try:
+            self._node.get_logger().info(msg)
+        except Exception:
+            logger.info(msg)
+
     def _on_joint_state(self, msg: JointState) -> None:
         self._latest_joint_state = msg
         self._joint_feedback_seen = True
+        joint_map = dict(zip(msg.name, msg.position, strict=False))
+        g_val = float(joint_map.get("gripper") or 0.0)
+        j1_val = float(joint_map.get("joint1") or 0.0)
+        self._log_info(f"AGX feedback: gripper={g_val:.6f}, joint1={j1_val:.3f}")
 
     def _on_tcp_pose(self, msg: PoseStamped) -> None:
         self._latest_tcp_pose = msg
         self._tcp_feedback_seen = True
 
     def _spin_once(self) -> None:
-        try:
-            rclpy.spin_once(self._node, timeout_sec=0.05)
-        except Exception:  # noqa: BLE001 - 다른 executor 가 spin 중이면 sleep 으로 대체
-            time.sleep(0.05)
+        # agent_node 는 MultiThreadedExecutor 에서 실행되므로 rclpy.spin_once()를
+        # 직접 호출하면 C++ RMW 레벨에서 데드락이 발생할 수 있다.
+        # sleep 으로 백그라운드 executor 가 콜백을 처리하도록 유도한다.
+        time.sleep(0.05)
 
     def _wait_for_feedback(self, feedback_seen: Any, label: str) -> None:
         start = time.monotonic()
@@ -172,9 +220,11 @@ class AgxDriverBackend:
         motion_deadline = start + float(self._config.agx_motion_timeout_sec)
         feedback_deadline = start + float(self._config.agx_feedback_timeout_sec)
         last_publish = start
+        last_log = start
 
         while True:
             if predicate():
+                self._log_info(f"{label}: 목표 도달 완료 ({time.monotonic() - start:.2f}s 경과)")
                 return
 
             now = time.monotonic()
@@ -193,6 +243,22 @@ class AgxDriverBackend:
             if republish_fn is not None and (now - last_publish) >= _REPUBLISH_INTERVAL_SEC:
                 republish_fn()
                 last_publish = now
+            if (now - last_log) >= 1.0:
+                cur_gripper = (
+                    dict(
+                        zip(
+                            self._latest_joint_state.name,
+                            self._latest_joint_state.position,
+                            strict=False,
+                        )
+                    ).get("gripper")
+                    if self._latest_joint_state
+                    else None
+                )
+                self._log_info(
+                    f"{label} 대기 중: elapsed={now - start:.1f}s, current_gripper={cur_gripper}"
+                )
+                last_log = now
             self._spin_once()
 
     # ── 목표 판정 ──
@@ -255,7 +321,15 @@ class AgxDriverBackend:
 
         try:
             if self._home_client is None:
-                self._home_client = self._node.create_client(Empty, service_name)
+                client_kwargs: dict[str, Any] = {}
+                if self._cb_group is not None:
+                    client_kwargs["callback_group"] = self._cb_group
+                try:
+                    self._home_client = self._node.create_client(
+                        Empty, service_name, **client_kwargs
+                    )
+                except TypeError:
+                    self._home_client = self._node.create_client(Empty, service_name)
         except Exception as exc:  # noqa: BLE001 - 서비스 클라이언트 생성 실패
             raise ManipulationRuntimeUnavailableError(
                 f"AGX home 서비스 클라이언트 생성 실패({service_name}): {exc}"
@@ -290,9 +364,13 @@ class AgxDriverBackend:
         if not targets:
             raise ManipulationConfigError("joint target 이 비어 있습니다.")
 
-        # 드라이버는 생략된 관절을 0.0 으로 채우므로 피드백의 현재 관절값을 유지한다.
+        # targets 가 오직 그리퍼(gripper)만 포함하는 경우, 드라이버가 불필요한
+        # 팔 move_j 를 수행하지 않도록 gripper 만 발행한다.
+        # 팔 관절이 포함된 경우에만 드라이버의 생략 관절 0.0 보정을 위해
+        # 현재 피드백의 팔 관절값을 유지한다.
+        is_gripper_only = all("gripper" in name.lower() for name in targets)
         cmd_positions: dict[str, float] = {}
-        if self._latest_joint_state is not None:
+        if not is_gripper_only and self._latest_joint_state is not None:
             for name, pos in zip(
                 self._latest_joint_state.name,
                 self._latest_joint_state.position,
