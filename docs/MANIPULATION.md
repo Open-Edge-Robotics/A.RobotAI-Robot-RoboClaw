@@ -134,12 +134,15 @@ robo_claw_agent_node:
 | `manipulation_agx_pose_tolerance_m` | `0.01` | 포즈 도달 판정 허용 오차 |
 | `manipulation_agx_motion_timeout_sec` | `30.0` | 목표 도달 대기 한계 |
 | `manipulation_agx_feedback_timeout_sec` | `5.0` | 피드백 수신 대기 한계(넘으면 즉시 실패) |
+| `manipulation_agx_home_service` | `move_home` | `home` 자세 요청 시 호출할 드라이버 서비스(`std_srvs/Empty`) |
 
 동작 제약은 다음과 같습니다.
 
 - 완료 판정은 피드백 수렴으로만 합니다. 피드백이 없으면 `ManipulationError` 로 실패합니다.
 - 포즈 목표는 `manipulation_base_frame` 과 같은 프레임만 허용합니다(드라이버가 base 기준으로 해석).
 - 경로 계획과 충돌 검사가 없으므로 `ROBOT_LIMITS` 조인트 한계와 속도 스케일 검증에 의존합니다.
+- `home` 자세는 SRDF group_state 대신 드라이버의 `move_home` 서비스를 호출합니다. 조인트 값을
+  임의로 만들지 않으므로 실기 자세가 벗어나지 않습니다.
 - 그리퍼는 드라이버 `effector_type` 설정과 `control/hand` 토픽 영역이므로 이 백엔드에 포함하지 않습니다.
 
 ## 현재 구현의 한계

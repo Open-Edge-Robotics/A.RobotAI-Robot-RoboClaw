@@ -49,9 +49,10 @@ robo_claw_agent_node:
     # 팔이 없는 Former(former_config.yaml)는 manipulation_enabled: false 를 유지한다.
     manipulation_enabled: true
 
-    # 팔 백엔드. 현재 구현된 MoveIt 경로는 robo_claw_core 의 manipulator_node 로
-    # service(/robo_claw_manipulator_node/execute_manipulator)를 호출한다.
-    manipulation_backend: "moveit"
+    # 팔 백엔드. RoboClaw 컨테이너(humble)와 팔 제어 PC(jazzy)가 서로 다른 배포판이라
+    # MoveIt 서비스 경유 대신 드라이버 토픽/서비스 기반 "agx" 백엔드를 사용한다.
+    # (moveit 경로는 moveit_msgs 배포판 간 호환 검증 전까지 사용하지 않는다)
+    manipulation_backend: "agx"
 
     # MoveIt SRDF 그룹 이름 (agx_arm_moveit: group "arm", joint1..joint7)
     manipulation_arm_group: "arm"
