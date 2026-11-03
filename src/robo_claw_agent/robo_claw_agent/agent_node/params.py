@@ -226,6 +226,17 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("manipulation_default_retreat_distance_m", 0.1)
     node.declare_parameter("manipulation_cmd_vel_topic", "")
 
+    # AGX(agx_arm_ctrl) 드라이버 토픽 기반 백엔드 (manipulation_backend: "agx")
+    node.declare_parameter("manipulation_agx_move_joint_topic", "control/move_j")
+    node.declare_parameter("manipulation_agx_move_pose_topic", "control/move_p")
+    node.declare_parameter("manipulation_agx_move_linear_topic", "control/move_l")
+    node.declare_parameter("manipulation_agx_joint_state_topic", "feedback/joint_states")
+    node.declare_parameter("manipulation_agx_tcp_pose_topic", "feedback/tcp_pose")
+    node.declare_parameter("manipulation_agx_joint_tolerance_rad", 0.02)
+    node.declare_parameter("manipulation_agx_pose_tolerance_m", 0.01)
+    node.declare_parameter("manipulation_agx_motion_timeout_sec", 30.0)
+    node.declare_parameter("manipulation_agx_feedback_timeout_sec", 5.0)
+
     # 공통 스킬 정책
     node.declare_parameter("skill_allowed_json", "[]")
     node.declare_parameter("skill_blocked_json", "[]")

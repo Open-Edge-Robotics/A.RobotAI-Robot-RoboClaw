@@ -51,6 +51,11 @@ class MoveItManipulationRuntime:
                 from .stretch_backend import StretchDriverBackend
 
                 self._backend = StretchDriverBackend(self._node, self.config)
+            elif self.config.backend == "agx":
+                # lazy import: agx_backend 는 rclpy/sensor_msgs/geometry_msgs 의존.
+                from .agx_backend import AgxDriverBackend
+
+                self._backend = AgxDriverBackend(self._node, self.config)
             else:
                 self._backend = MoveItPyBackend(self._node, self.config)
 

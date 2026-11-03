@@ -43,6 +43,17 @@ class ManipulationConfig:
     default_approach_distance_m: float = 0.1
     default_retreat_distance_m: float = 0.1
     cmd_vel_topic: str = ""
+    # AGX(agx_arm_ctrl) 드라이버 토픽 기반 백엔드 설정.
+    # MoveIt 없이 표준 메시지 토픽만 사용한다(배포판 혼용 환경용).
+    agx_move_joint_topic: str = "control/move_j"
+    agx_move_pose_topic: str = "control/move_p"
+    agx_move_linear_topic: str = "control/move_l"
+    agx_joint_state_topic: str = "feedback/joint_states"
+    agx_tcp_pose_topic: str = "feedback/tcp_pose"
+    agx_joint_tolerance_rad: float = 0.02
+    agx_pose_tolerance_m: float = 0.01
+    agx_motion_timeout_sec: float = 30.0
+    agx_feedback_timeout_sec: float = 5.0
 
 
 class ManipulationBackend(Protocol):

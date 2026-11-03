@@ -185,4 +185,31 @@ def load_manipulation_config(node: Any) -> ManipulationConfig:
             node, "manipulation_default_retreat_distance_m", 0.1
         ),
         cmd_vel_topic=_read_string(node, "manipulation_cmd_vel_topic", ""),
+        agx_move_joint_topic=_read_string(
+            node, "manipulation_agx_move_joint_topic", "control/move_j"
+        ),
+        agx_move_pose_topic=_read_string(
+            node, "manipulation_agx_move_pose_topic", "control/move_p"
+        ),
+        agx_move_linear_topic=_read_string(
+            node, "manipulation_agx_move_linear_topic", "control/move_l"
+        ),
+        agx_joint_state_topic=_read_string(
+            node, "manipulation_agx_joint_state_topic", "feedback/joint_states"
+        ),
+        agx_tcp_pose_topic=_read_string(
+            node, "manipulation_agx_tcp_pose_topic", "feedback/tcp_pose"
+        ),
+        agx_joint_tolerance_rad=_read_float(
+            node, "manipulation_agx_joint_tolerance_rad", 0.02
+        ),
+        agx_pose_tolerance_m=_read_float(
+            node, "manipulation_agx_pose_tolerance_m", 0.01
+        ),
+        agx_motion_timeout_sec=_read_float(
+            node, "manipulation_agx_motion_timeout_sec", 30.0
+        ),
+        agx_feedback_timeout_sec=_read_float(
+            node, "manipulation_agx_feedback_timeout_sec", 5.0
+        ),
     )
