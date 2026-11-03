@@ -77,6 +77,10 @@ class DashboardService:
         """현재 로드된 시나리오 또는 새로 고침된 시나리오를 반환한다."""
         return self._scenario_runner.get_scenario(refresh=refresh)
 
+    def sync_scenario(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """대시보드에서 입력한 AI Config 서버 설정으로 시나리오를 동기화한다."""
+        return self._scenario_runner.sync_scenario(payload)
+
     def start_scenario_run(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         """시나리오 테스트 실행을 요청한다."""
         return self._scenario_runner.start_run(payload)

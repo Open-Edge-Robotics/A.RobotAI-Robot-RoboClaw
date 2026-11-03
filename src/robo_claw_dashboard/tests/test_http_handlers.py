@@ -36,6 +36,9 @@ class FakeService:
     def get_scenario(self, refresh=False):
         return {"source": "default", "refresh": refresh}
 
+    def sync_scenario(self, payload=None):
+        return {"source": "remote", "config": {"environment": "kon47"}}
+
     def start_scenario_run(self, payload=None):
         return {"accepted": True, "status_code": 202}
 
@@ -389,6 +392,32 @@ class TestScenarioEndpointsAuth:
         )
         assert denied.status == 401
         assert allowed.status == 202
+
+    def test_scenarios_sync_requires_readonly(self, web_root):
+        security = _policy(readonly="r-secret")
+        body = b'{"config_server_url": "http://10.0.0.5:30180", "robot_name": "f", "environment": "kon47"}'
+        denied = handle_request(
+            "POST",
+            "/api/scenarios/sync",
+            client_ip="127.0.0.1",
+            headers={},
+            body=body,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        allowed = handle_request(
+            "POST",
+            "/api/scenarios/sync",
+            client_ip="127.0.0.1",
+            headers={"Authorization": "Bearer r-secret"},
+            body=body,
+            service=FakeService(),
+            static_root=web_root,
+            security=security,
+        )
+        assert denied.status == 401
+        assert allowed.status == 200
 
     def test_scenarios_cancel_requires_control(self, web_root):
         security = _policy(readonly="r-secret", control="c-secret")

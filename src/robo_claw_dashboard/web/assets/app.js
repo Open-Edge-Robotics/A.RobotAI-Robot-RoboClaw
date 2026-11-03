@@ -9,6 +9,7 @@
   const LOG_LIMIT = 200;
   const READONLY_KEY = "rc.dash.readonly";
   const CONTROL_KEY = "rc.dash.control";
+  const SCENARIO_CONFIG_KEY = "rc.scenario.config";
   const HEADER_TOKEN = "X-RoboClaw-Token";
   const UNKNOWN_CELL = 255;
 
@@ -685,27 +686,134 @@
 
   async function loadScenario(refresh) {
     const token = getReadToken();
+    const config = readScenarioConfigInputs();
+    saveScenarioConfig(config);
+
+    if (refresh && !isScenarioConfigComplete(config)) {
+      setScenarioWarning("AI Config 서버 URL·로봇 이름·환경을 먼저 입력하세요. (서버 설정)");
+      return;
+    }
+
+    const refreshBtn = el("scenario-refresh");
+    if (refreshBtn) refreshBtn.disabled = true;
     try {
-      const url = "/api/scenarios" + (refresh ? "?refresh=1" : "");
-      const { ok, status, data } = await fetchJson(url, token);
+      let url = "/api/scenarios" + (refresh ? "?refresh=1" : "");
+      const options = {};
+      if (refresh) {
+        // 디바이스 토큰이 본문에 실리므로 쿼리가 아닌 POST body 로만 전송한다.
+        url = "/api/scenarios/sync";
+        options.method = "POST";
+        options.body = JSON.stringify({
+          config_server_url: config.url,
+          robot_name: config.robot,
+          environment: config.environment,
+          device_token: config.token,
+        });
+      }
+      const { ok, status, data } = await fetchJson(url, token, options);
       if (!ok) {
-        setText("scenario-source", "(로드 실패)");
-        setText("scenario-desc", "시나리오를 가져오지 못했습니다. (" + status + ")");
+        setScenarioWarning(
+          "시나리오를 가져오지 못했습니다 (" + status + "): " + (data.error || "요청 거부됨")
+        );
         return;
       }
-      state.currentScenario = data.scenario || data;
-      const source = data.source || state.currentScenario.source || "기본 내장";
-      setText("scenario-source", "(" + source + ")");
-      setText(
-        "scenario-title",
-        state.currentScenario.title || state.currentScenario.name || "테스트 시나리오"
-      );
-      setText("scenario-desc", state.currentScenario.description || "등록된 설명이 없습니다.");
-      renderScenarioTable(state.currentScenario.test_cases || []);
+      renderScenario(data);
     } catch (err) {
-      setText("scenario-source", "(연결 대기)");
-      setText("scenario-desc", "시나리오 서비스 연결 대기 중: " + err.message);
+      setScenarioWarning("시나리오 동기화 실패: " + err.message);
+    } finally {
+      if (refreshBtn) refreshBtn.disabled = false;
     }
+  }
+
+  function renderScenario(data) {
+    state.currentScenario = data.scenario || data;
+    const source = data.source || state.currentScenario.source || "기본 내장";
+    const sourceLabel =
+      {
+        remote: "AI Config 서버",
+        cache: "로컬 캐시",
+        file: "시나리오 파일",
+        default: "내장 기본값",
+        custom: "커스텀 JSON",
+      }[source] || source;
+    const stamp = new Date().toLocaleTimeString("ko-KR", { hour12: false });
+    setText("scenario-source", "(" + sourceLabel + " · " + stamp + ")");
+    setText(
+      "scenario-title",
+      state.currentScenario.title || state.currentScenario.name || "테스트 시나리오"
+    );
+    setText("scenario-desc", state.currentScenario.description || "등록된 설명이 없습니다.");
+    setScenarioWarning(data.warning || "");
+    renderScenarioTable(state.currentScenario.test_cases || []);
+  }
+
+  function setScenarioWarning(message) {
+    const node = el("scenario-warning");
+    if (!node) return;
+    if (!message) {
+      node.classList.add("d-none");
+      node.textContent = "";
+      return;
+    }
+    node.classList.remove("d-none");
+    node.textContent = message;
+  }
+
+  // ---- AI Config 서버 설정 입력 (브라우저에만 저장) ------------------------
+
+  function readScenarioConfigInputs() {
+    const value = (id) => (el(id) ? String(el(id).value || "").trim() : "");
+    return {
+      url: value("scenario-config-url"),
+      robot: value("scenario-config-robot"),
+      environment: value("scenario-config-env"),
+      token: value("scenario-config-token"),
+    };
+  }
+
+  function isScenarioConfigComplete(config) {
+    return Boolean(config.url && config.robot && config.environment);
+  }
+
+  function loadScenarioConfig() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SCENARIO_CONFIG_KEY) || "{}");
+      return {
+        url: String(parsed.url || ""),
+        robot: String(parsed.robot || ""),
+        environment: String(parsed.environment || ""),
+        token: String(parsed.token || ""),
+      };
+    } catch (_err) {
+      return { url: "", robot: "", environment: "", token: "" };
+    }
+  }
+
+  function saveScenarioConfig(config) {
+    try {
+      localStorage.setItem(SCENARIO_CONFIG_KEY, JSON.stringify(config));
+    } catch (_err) {
+      // 저장 불가(사생활 보호 모드 등) 상태에서도 화면 동작은 유지한다.
+    }
+  }
+
+  function applyScenarioConfigToInputs(config) {
+    const assign = (id, value) => {
+      if (el(id)) el(id).value = value;
+    };
+    assign("scenario-config-url", config.url);
+    assign("scenario-config-robot", config.robot);
+    assign("scenario-config-env", config.environment);
+    assign("scenario-config-token", config.token);
+  }
+
+  function toggleScenarioConfigPanel(forceOpen) {
+    const panel = el("scenario-config-panel");
+    const toggle = el("scenario-config-toggle");
+    if (!panel) return;
+    const open = forceOpen !== undefined ? forceOpen : panel.classList.contains("d-none");
+    panel.classList.toggle("d-none", !open);
+    if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
   function renderScenarioTable(testCases) {
@@ -914,6 +1022,28 @@
   }
 
   function setupScenarios() {
+    const storedConfig = loadScenarioConfig();
+    applyScenarioConfigToInputs(storedConfig);
+    if (!isScenarioConfigComplete(storedConfig)) toggleScenarioConfigPanel(true);
+
+    const configToggle = el("scenario-config-toggle");
+    if (configToggle) {
+      configToggle.addEventListener("click", () => toggleScenarioConfigPanel());
+    }
+
+    [
+      "scenario-config-url",
+      "scenario-config-robot",
+      "scenario-config-env",
+      "scenario-config-token",
+    ].forEach((id) => {
+      const input = el(id);
+      if (!input) return;
+      input.addEventListener("change", () => {
+        saveScenarioConfig(readScenarioConfigInputs());
+      });
+    });
+
     const refreshBtn = el("scenario-refresh");
     if (refreshBtn) {
       refreshBtn.addEventListener("click", async () => {
@@ -940,6 +1070,7 @@
               state.currentScenario.title || state.currentScenario.name || file.name
             );
             setText("scenario-desc", state.currentScenario.description || "사용자 로컬 JSON 시나리오");
+            setScenarioWarning("");
             renderScenarioTable(state.currentScenario.test_cases || []);
           } catch (err) {
             alert("JSON 파싱 실패: " + err.message);
@@ -1069,7 +1200,9 @@
     setupMapInteraction();
     setupLogPanel();
     setupScenarios();
-    loadScenario();
+    // 저장된 서버 설정이 온전하면 첫 로드부터 원격 시나리오를 가져오고,
+    // 아니면 내장 기본값을 보여준 뒤 설정 누락 사유를 경고로 안내한다.
+    loadScenario(isScenarioConfigComplete(readScenarioConfigInputs()));
     refreshScenarioStatus();
     startPolling();
     loadConfig().then(() => {

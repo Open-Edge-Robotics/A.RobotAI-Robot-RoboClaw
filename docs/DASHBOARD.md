@@ -134,6 +134,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/chat`   | `POST` | control                 | 자연어 메시지를 에이전트에 전달 (`ExecuteTask`) |
 | `/api/initial_pose` | `POST` | control           | AMCL 초기 위치 설정 (`/initialpose` 발행)     |
 | `/api/scenarios` | `GET` | auth 활성 시 readonly 이상 | 활성 테스트 시나리오 조회 (`?refresh=1` 동기화) |
+| `/api/scenarios/sync` | `POST` | auth 활성 시 readonly 이상 | 웹에서 입력한 AI Config 서버 설정으로 시나리오 동기화 (디바이스 토큰은 JSON 본문) |
 | `/api/scenarios/run` | `POST` | control | 테스트 시나리오 비동기 실행 |
 | `/api/scenarios/cancel` | `POST` | control | 실행 중인 시나리오 중단 |
 | `/api/scenarios/status` | `GET` | auth 활성 시 readonly 이상 | 시나리오 실행 진행률 및 스텝별 결과 조회 |
@@ -153,9 +154,9 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `http_allowed_cidrs_json`  | `["127.0.0.1/32","::1/128"]`   | 허용 클라이언트 CIDR                          |
 | `http_rate_limit_per_minute` | `60`                          | 분당 요청 제한                                |
 | `http_blocked_skills_json` | `["delete_file","emergency_stop",...]` | 차단 위험 스킬                        |
-| `config_environment`       | `""`                            | 시나리오 대상 환경 (`RC_ENVIRONMENT` 연동)    |
-| `config_server_url`        | `""`                            | AI Config Server 주소                         |
-| `config_device_token`      | `""`                            | AI Config Server 인증 디바이스 토큰           |
+| `config_environment`       | `""`                            | 시나리오 대상 환경 기본값 (`RC_ENVIRONMENT`). 비우면 웹 UI 입력값을 사용 |
+| `config_server_url`        | `""`                            | AI Config Server 주소 기본값. 비우면 웹 UI 입력값을 사용 |
+| `config_device_token`      | `""`                            | AI Config Server 인증 디바이스 토큰 기본값 |
 | `scenario_file`            | `""`                            | 로컬 커스텀 시나리오 JSON 파일 경로           |
 | `robot_config`             | `""`                            | 대상 로봇 설정 이름                           |
 | `robot_soul_file`          | `""`                            | 페르소나 검증용 `ROBOT.md` 파일 경로          |
@@ -370,9 +371,36 @@ curl -X POST http://127.0.0.1:9090/api/chat \
 
 대시보드 웹 UI의 "테스트 시나리오 검증" 카드 또는 HTTP API를 통해 시나리오를 불러오고, 비동기로 실행하며, 실시간 진행 상태 확인 및 결과 보고서를 다운로드합니다.
 
-- 시나리오 로드 우선순위: `scenario_file`(로컬 파일) → AI Config Server(`/api/v1/scenarios/active`) → 로컬 캐시(`~/.robo_claw/config_cache/<robot>_<env>/scenario.json`) → 내장 13단계 기본 시나리오
+- 시나리오 로드 우선순위: `scenario_file`(로컬 파일) → AI Config Server(`/api/v1/scenarios/active`) → 로컬 캐시(`~/.robo_claw/config_cache/<robot>_<env>/scenario.json`) → 내장 11개 기본 시나리오
 - 브라우저에서 로컬 `.json` 파일을 직접 선택해 일회성 시나리오로 실행할 수도 있습니다.
 - 실행 완료 후 `.md`(Markdown) 및 `.json`(JSON) 보고서를 브라우저로 바로 다운로드할 수 있습니다.
+
+### AI Config 서버 설정 입력
+
+Docker 로 기동한 대시보드 컨테이너는 호스트의 CLI 설정(`~/.config/robo_claw_cli/config.yaml`)도 CLI 캐시 디렉토리도 볼 수 없습니다. 그래서 `rclaw former kon47` 같은 실행 인자에 의존하지 않고, 웹 UI의 **서버 설정** 패널에서 다음 값을 직접 입력합니다.
+
+| 입력 항목 | 예 | 설명 |
+| --------- | -- | ---- |
+| 서버 URL | `http://192.168.50.47:30180` | `http(s)://host[:port]` 만 허용 (그 외 스킴/경로/쿼리는 400) |
+| 로봇 이름 | `former` | `rclaw <robot> <environment>` 의 첫 인자 |
+| 환경 | `kon47` | `rclaw <robot> <environment>` 의 두 번째 인자 |
+| 디바이스 토큰 | (선택) | AI Config Server 디바이스 토큰. 인증은 `Authorization: Bearer` 로 전송합니다. |
+
+- 값은 브라우저 `localStorage`(`rc.scenario.config`)에만 저장되며 서버 프로세스는 보관하지 않습니다.
+- 로봇 이름·환경을 비우면 로컬 캐시 경로(`~/.robo_claw/config_cache/<robot>_<env>`)도 계산되지 않으므로 둘 다 입력해야 합니다.
+- 입력값은 `POST /api/scenarios/sync` 로 전송되고, 서버는 해당 조합으로 활성 시나리오를 조회한 뒤 `~/.robo_claw/config_cache/<robot>_<env>/scenario.json` 에 캐시합니다. 컨테이너 안에서는 이 경로가 휘발성입니다.
+- AI Config Server 는 디바이스 엔드포인트에서 **디바이스 토큰 또는 어드민 토큰**을 모두 허용합니다. 어드민 토큰은 설정 쓰기 권한까지 가지므로 브라우저 저장소에 남는 이 입력란에는 권한이 좁은 디바이스 토큰을 사용합니다.
+- 동기화 결과는 제목 옆 라벨에 `(AI Config 서버 · 14:03:21)`, `(로컬 캐시 · …)`, `(내장 기본값 · …)` 처럼 출처와 시각으로 표시되고, 실패 사유는 패널 상단 경고 박스에 표시됩니다.
+- 인증 실패(`HTTP 401/403`)는 디바이스 토큰, 활성 시나리오 없음(`HTTP 404`)은 AI Config Server 대시보드의 활성화 여부를 각각 경고 박스에서 안내합니다.
+- 서버 URL·로봇·환경을 비워 둔 채 "AI Config 서버에서 불러오기" 를 누르면 요청을 보내지 않고 누락된 항목을 안내합니다.
+
+```bash
+# 웹 UI 와 같은 동기화 요청 (디바이스 토큰은 본문)
+curl -s -X POST http://127.0.0.1:9090/api/scenarios/sync \
+  -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"config_server_url":"http://192.168.50.47:30180","robot_name":"former","environment":"kon47","device_token":"<device-token>"}'
+```
 
 ```bash
 # 시나리오 동기화 조회

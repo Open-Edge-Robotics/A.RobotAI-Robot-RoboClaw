@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..domain.scenario_evaluator import (
     evaluate_custom_response,
@@ -40,6 +41,69 @@ from ..domain.scenario_report import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: 대시보드 UI 에서 입력받는 AI Config 서버 설정 키
+USER_CONFIG_KEYS: tuple[str, ...] = (
+    "config_server_url",
+    "robot_name",
+    "environment",
+    "device_token",
+)
+
+_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+_CONFIG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def parse_user_server_config(payload: dict[str, Any]) -> tuple[dict[str, str], str]:
+    """대시보드가 입력받은 AI Config 서버 설정을 검증·정규화한다.
+
+    (정규화된 값, 오류 메시지) 를 반환한다. 오류가 있으면 값은 빈 딕셔너리다.
+    URL 은 http(s)://host[:port] 만 허용해 file:// 같은 스킴 주입을 막는다.
+    """
+
+    def _text(key: str) -> str:
+        raw = payload.get(key)
+        return "" if raw is None else str(raw).strip()
+
+    url = _text("config_server_url")
+    robot = _text("robot_name")
+    environment = _text("environment")
+    token = _text("device_token")
+
+    if not url:
+        return {}, "AI Config 서버 URL을 입력하세요. (예: http://10.0.0.5:30180)"
+    if _CONTROL_CHARS_RE.search(url) or not _URL_RE.match(url):
+        return {}, "AI Config 서버 URL은 http(s)://host[:port] 형식이어야 합니다."
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        return {}, "AI Config 서버 URL은 http(s)://host[:port] 형식이어야 합니다."
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        return (
+            {},
+            "AI Config 서버 URL에는 경로/쿼리를 넣을 수 없습니다. host[:port] 까지만 입력하세요.",
+        )
+
+    if not robot:
+        return {}, "로봇 이름을 입력하세요."
+    if not _CONFIG_NAME_RE.match(robot):
+        return {}, "로봇 이름은 영문/숫자/._- 만 사용할 수 있습니다."
+    if not environment:
+        return {}, "환경(environment)을 입력하세요."
+    if not _CONFIG_NAME_RE.match(environment):
+        return {}, "환경(environment)은 영문/숫자/._- 만 사용할 수 있습니다."
+    if _CONTROL_CHARS_RE.search(token) or len(token) > 4096:
+        return {}, "디바이스 토큰 형식이 올바르지 않습니다."
+
+    return (
+        {
+            "config_server_url": f"{parts.scheme.lower()}://{parts.netloc}",
+            "robot_name": robot,
+            "environment": environment,
+            "device_token": token,
+        },
+        "",
+    )
 
 
 @dataclass
@@ -165,6 +229,21 @@ def _default_http_fetcher(
         return err.code, err.read()
 
 
+def _remote_status_warning(status_code: int) -> str:
+    """원격 응답 상태 코드를 운영자가 바로 조치할 수 있는 문장으로 바꿔준다."""
+    if status_code in (401, 403):
+        return (
+            f"AI Config 서버 인증에 실패했습니다 (HTTP {status_code}). "
+            "디바이스 토큰을 확인해 다시 입력하세요."
+        )
+    if status_code == 404:
+        return (
+            "해당 로봇/환경에 활성화된 테스트 시나리오가 없습니다 (HTTP 404). "
+            "AI Config Server 대시보드에서 시나리오를 활성화하세요."
+        )
+    return f"원격 시나리오 조회 실패 (HTTP {status_code})"
+
+
 class ScenarioRunnerService:
     """시나리오 테스트 관리 및 실행 서비스."""
 
@@ -190,47 +269,135 @@ class ScenarioRunnerService:
         self._current_scenario: Scenario | None = None
         self._last_report_md: str = ""
         self._last_load_warning: str = ""
+        #: 대시보드 UI 에서 입력한 AI Config 서버 설정 (없으면 startup 설정 사용)
+        self._user_config: dict[str, str] | None = None
 
-    def _format_scenario_response(self, scenario: Scenario, warning: str = "") -> dict[str, Any]:
+    def _effective_config(self) -> ScenarioConfig:
+        """startup 설정에 대시보드 입력값을 덮어쓴 유효 설정을 반환한다.
+
+        URL/robot/environment 가 바뀌면 캐시 디렉터리도 그 조합으로 다시 계산해야
+        하므로 ``cache_dir`` 은 비워 둔 뒤 dataclass 초기화에서 다시 채운다.
+        """
+        base = self._config
+        user = self._user_config
+        if not user:
+            return base
+        return ScenarioConfig(
+            robot_name=user.get("robot_name", ""),
+            environment=user.get("environment", ""),
+            config_server_url=user.get("config_server_url", ""),
+            device_token=user.get("device_token", ""),
+            scenario_file=base.scenario_file,
+            cache_dir="",
+            robot_soul_file=base.robot_soul_file,
+            robot_limits_file=base.robot_limits_file,
+            agent_workspace_dir=base.agent_workspace_dir,
+            llm_info=base.llm_info,
+        )
+
+    @staticmethod
+    def _missing_config_warning(cfg: ScenarioConfig) -> str:
+        """원격 조회를 건너뛴 이유를 사용자에게 설명하는 문구를 만든다."""
+        missing: list[str] = []
+        if not cfg.config_server_url:
+            missing.append("AI Config 서버 URL")
+        if not cfg.robot_name:
+            missing.append("로봇 이름(robot_name)")
+        if not cfg.environment:
+            missing.append("환경(environment)")
+        if not missing:
+            return ""
+        return (
+            ", ".join(missing) + " 설정이 없어 원격 시나리오를 조회하지 않았습니다. "
+            "대시보드의 '서버 설정'에서 입력한 뒤 다시 불러오세요."
+        )
+
+    def _identity(self) -> tuple[str, str]:
+        """보고서/결과 라벨에 쓰는 (robot_name, environment) 를 반환한다."""
+        cfg = self._effective_config()
+        return cfg.robot_name or "default", cfg.environment or "default"
+
+    def config_summary(self) -> dict[str, Any]:
+        """현재 유효한 AI Config 서버 설정을 토큰 없이 요약한다."""
+        cfg = self._effective_config()
+        return {
+            "config_server_url": cfg.config_server_url,
+            "robot_name": cfg.robot_name,
+            "environment": cfg.environment,
+            "device_token_set": bool(cfg.device_token),
+            "cache_dir": cfg.cache_dir,
+            "missing_warning": self._missing_config_warning(cfg),
+        }
+
+    def sync_scenario(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """대시보드에서 입력한 서버 설정으로 시나리오를 동기화한다.
+
+        검증에 실패하면 400 과 함께 오류 메시지를 반환하고, 기존 설정은 유지한다.
+        디바이스 토큰은 응답에 포함하지 않는다.
+        """
+        values, error = parse_user_server_config(payload or {})
+        if error:
+            return {"error": error, "status_code": 400}
+        with self._lock:
+            self._user_config = values
+        return self.get_scenario(refresh=True)
+
+    def _format_scenario_response(
+        self,
+        scenario: Scenario,
+        warning: str = "",
+        *,
+        cfg: ScenarioConfig | None = None,
+    ) -> dict[str, Any]:
+        effective = cfg or self._effective_config()
         return {
             "scenario": scenario.to_dict(),
             "source": scenario.source,
-            "robot_name": self._config.robot_name or "default",
-            "environment": self._config.environment or "default",
+            "robot_name": effective.robot_name or "default",
+            "environment": effective.environment or "default",
+            "config": {
+                "config_server_url": effective.config_server_url,
+                "robot_name": effective.robot_name,
+                "environment": effective.environment,
+                "device_token_set": bool(effective.device_token),
+                "cache_dir": effective.cache_dir,
+            },
             "warning": warning,
         }
 
     def get_scenario(self, *, refresh: bool = False) -> dict[str, Any]:
         """시나리오를 우선순위(파일 -> 원격 서버 -> 로컬 캐시 -> 기본)에 따라 조회한다."""
         with self._lock:
+            cfg = self._effective_config()
+
             if not refresh and self._current_scenario is not None:
                 return self._format_scenario_response(
-                    self._current_scenario, warning=self._last_load_warning
+                    self._current_scenario, warning=self._last_load_warning, cfg=cfg
                 )
 
             # a. config.scenario_file 지정 시 파일 우선
-            if self._config.scenario_file and os.path.isfile(self._config.scenario_file):
+            if cfg.scenario_file and os.path.isfile(cfg.scenario_file):
                 try:
-                    raw_content = Path(self._config.scenario_file).read_bytes()
+                    raw_content = Path(cfg.scenario_file).read_bytes()
                     sc, err = parse_scenario_json(raw_content, source="file")
                     if sc is not None:
                         self._current_scenario = sc
                         self._last_load_warning = ""
-                        return self._format_scenario_response(sc, warning="")
+                        return self._format_scenario_response(sc, warning="", cfg=cfg)
                     self._last_load_warning = f"시나리오 파일 파싱 오류: {err}"
                 except Exception as exc:
                     self._last_load_warning = f"시나리오 파일 읽기 실패: {exc}"
 
             # b. 원격 설정 서버 조회
-            cfg_url = self._config.config_server_url
-            robot = self._config.robot_name
-            env = self._config.environment
+            cfg_url = cfg.config_server_url
+            robot = cfg.robot_name
+            env = cfg.environment
             if cfg_url and robot and env:
                 base_url = cfg_url.rstrip("/")
                 url = f"{base_url}/api/v1/scenarios/active?robot_name={robot}&environment={env}"
                 headers: dict[str, str] = {}
-                if self._config.device_token:
-                    headers["Authorization"] = f"Bearer {self._config.device_token}"
+                if cfg.device_token:
+                    headers["Authorization"] = f"Bearer {cfg.device_token}"
 
                 try:
                     status_code, body_bytes = self._http_fetcher(url, headers, 10.0)
@@ -239,26 +406,24 @@ class ScenarioRunnerService:
                         if sc is not None:
                             self._current_scenario = sc
                             self._last_load_warning = ""
-                            if self._config.cache_dir:
+                            if cfg.cache_dir:
                                 try:
-                                    os.makedirs(self._config.cache_dir, exist_ok=True)
-                                    cache_file = os.path.join(
-                                        self._config.cache_dir, "scenario.json"
-                                    )
+                                    os.makedirs(cfg.cache_dir, exist_ok=True)
+                                    cache_file = os.path.join(cfg.cache_dir, "scenario.json")
                                     with open(cache_file, "wb") as f:
                                         f.write(body_bytes)
                                 except Exception as cache_err:
                                     logger.debug("시나리오 캐시 저장 실패: %s", cache_err)
-                            return self._format_scenario_response(sc, warning="")
+                            return self._format_scenario_response(sc, warning="", cfg=cfg)
                         self._last_load_warning = f"원격 시나리오 파싱 실패: {err}"
                     else:
-                        self._last_load_warning = f"원격 시나리오 조회 실패 (HTTP {status_code})"
+                        self._last_load_warning = _remote_status_warning(status_code)
                 except Exception as exc:
                     self._last_load_warning = f"원격 시나리오 서버 연결 실패: {exc}"
 
             # c. 로컬 캐시 파일
-            if self._config.cache_dir:
-                cache_file = os.path.join(self._config.cache_dir, "scenario.json")
+            if cfg.cache_dir:
+                cache_file = os.path.join(cfg.cache_dir, "scenario.json")
                 if os.path.isfile(cache_file):
                     try:
                         cached_bytes = Path(cache_file).read_bytes()
@@ -266,7 +431,7 @@ class ScenarioRunnerService:
                         if sc is not None:
                             self._current_scenario = sc
                             return self._format_scenario_response(
-                                sc, warning=self._last_load_warning
+                                sc, warning=self._last_load_warning, cfg=cfg
                             )
                         if not self._last_load_warning:
                             self._last_load_warning = f"캐시 시나리오 파싱 실패: {err}"
@@ -278,7 +443,8 @@ class ScenarioRunnerService:
             sc = get_default_scenario()
             sc.source = "default"
             self._current_scenario = sc
-            return self._format_scenario_response(sc, warning=self._last_load_warning)
+            warning = self._last_load_warning or self._missing_config_warning(cfg)
+            return self._format_scenario_response(sc, warning=warning, cfg=cfg)
 
     def start_run(
         self,
@@ -413,10 +579,11 @@ class ScenarioRunnerService:
                     s.detail = "사용자 요청으로 중단됨"
             self._finished_at = datetime.now(timezone.utc).isoformat()
             self._current_step_id = ""
+            robot_label, env_label = self._identity()
             self._last_report_md = build_markdown_report(
                 scenario_name=self._run_scenario_name,
-                robot_name=self._config.robot_name or "default",
-                environment=self._config.environment or "default",
+                robot_name=robot_label,
+                environment=env_label,
                 run_id=self._run_id,
                 started_at=self._started_at,
                 finished_at=self._finished_at,
@@ -455,7 +622,7 @@ class ScenarioRunnerService:
         with self._lock:
             if not self._last_report_md:
                 return {"found": False, "status_code": 404, "error": "생성된 보고서가 없습니다."}
-            prefix = f"test_report_{self._config.robot_name or 'robot'}_{self._config.environment or 'env'}_{self._run_id}"
+            prefix = f"test_report_{self._identity()[0]}_{self._identity()[1]}_{self._run_id}"
             if fmt == "json":
                 return {
                     "found": True,
@@ -510,10 +677,11 @@ class ScenarioRunnerService:
 
             self._finished_at = datetime.now(timezone.utc).isoformat()
             self._current_step_id = ""
+            robot_label, env_label = self._identity()
             self._last_report_md = build_markdown_report(
                 scenario_name=self._run_scenario_name,
-                robot_name=self._config.robot_name or "default",
-                environment=self._config.environment or "default",
+                robot_name=robot_label,
+                environment=env_label,
                 run_id=self._run_id,
                 started_at=self._started_at,
                 finished_at=self._finished_at,
@@ -603,7 +771,7 @@ class ScenarioRunnerService:
             except Exception:
                 state_obj = None
 
-        robot_name = self._config.robot_name
+        robot_name = self._effective_config().robot_name
         if state_obj is not None or robot_name:
             desc = f"로봇명: {robot_name or '알 수 없음'}"
             if isinstance(state_obj, dict):

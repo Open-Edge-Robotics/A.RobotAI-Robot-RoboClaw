@@ -3,6 +3,18 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-04 — 대시보드에서 AI Config 서버 접속 정보를 직접 입력해 시나리오 동기화
+
+- **배경**: `rclaw former kon47` 처럼 CLI 로 실행하면 환경(`kon47`)이 CLI 내부에만 존재하고 dashboard 노드의 `config_environment` 인자로 전달되지 않았습니다. 그 결과 `config_environment`·`config_server_url` 이 빈 값이 되어 `scenario_runner` 가 원격 조회와 로컬 캐시 조회를 모두 건너뛰었고, 웹에서 "AI Config 서버에서 불러오기" 를 눌러도 내장 기본 시나리오만 다시 그려져 무반응처럼 보였습니다. Docker 로 기동한 대시보드는 호스트의 CLI 설정 파일과 캐시 디렉토리도 볼 수 없어 환경변수 주입만으로는 해결되지 않습니다.
+- **조치**:
+  - 시나리오 패널에 **서버 설정** 입력(서버 URL·로봇 이름·환경·디바이스 토큰)을 추가하고 브라우저 `localStorage`(`rc.scenario.config`)에만 저장하도록 했습니다. CLI·launch 에는 값을 넣지 않습니다.
+  - `POST /api/scenarios/sync` 를 추가해 입력값을 JSON 본문으로 받습니다. 디바이스 토큰이 쿼리·접근 로그에 남지 않도록 본문으로만 전달하고, URL 은 `http(s)://host[:port]` 만 허용하며 로봇/환경은 `[A-Za-z0-9._-]` 로 제한합니다. 권한은 `readonly` 이상입니다.
+  - 동기화 값은 `ScenarioConfig` 를 덮어써 이후 `GET /api/scenarios?refresh=1` 과 실행/보고서 라벨에도 유지되며, 캐시 경로는 `<robot>_<environment>` 조합으로 다시 계산합니다. 응답에는 토큰을 포함하지 않고 `device_token_set` 만 노출합니다.
+  - 원격 조회를 건너뛰었거나 실패한 경우 사유를 `warning` 으로 반환하고(누락 항목, 인증 실패 `HTTP 401/403`, 활성 시나리오 없음 `HTTP 404` 구분), 웹 UI 는 경고 박스와 출처·시각 라벨(`(AI Config 서버 · 14:03:21)` 등)로 결과를 표시합니다. 설정 없이 버튼을 누르면 요청 없이 누락 항목을 안내합니다.
+  - `docs/DASHBOARD.md` 를 갱신하고 내장 기본 시나리오 단계 수 표기(13→11)를 실제 코드와 맞췄습니다.
+  - 디바이스 토큰 파일 `.device_token` 을 `.gitignore` 에 추가해 실수로 커밋되지 않게 했습니다.
+- **검증**: `pytest src/robo_claw_dashboard/tests` 355건 통과(신규 `tests/test_scenario_sync.py` 16건 포함), `task unit-test` 1985건 통과, `ruff check`/`ruff format --check` 통과, `node --check web/assets/app.js` 통과. 실제 AI Config Server(`http://192.168.50.47:30180`)에 대해 실제 HTTP 계층(`handle_request` → route → service → runner)으로 `former/factory` 동기화 시 `source=remote`·11건 수신·캐시 파일 생성, 시나리오가 없는 `former/kon47` 에서는 `404` 안내 경고와 내장 기본값 대체를 확인했습니다. 같은 경로를 실제 디바이스 토큰으로 재검증해 원격 11건 수신·캐시 생성·잘못된 토큰의 `401` 안내·대시보드 토큰 없는 요청의 `401` 거부를 확인했고, 디바이스 토큰은 어드민 엔드포인트에서 `401` 로 거부되는 것도 확인했습니다. 등록된 활성 시나리오는 `butler/office`, `former/factory`, `default/default` 세 조합입니다.
+
 ## 2026-11-03 — 대시보드 시나리오 테스트 실행·보고서 다운로드 및 Docker 빌드 보완
 
 - **배경**: 로봇에서 시스템 서비스로 기동 중인 RoboClaw를 중지하지 않고도 AI Config Server의 테스트 시나리오를 받아 실행하고 결과 보고서를 내려받을 수 있도록 웹 대시보드(`robo_claw_dashboard`)에 시나리오 검증 기능을 통합했습니다. 또한 Docker 이미지 빌드 시 `robo_claw_dashboard` manifest 복사 및 vendored 메시지 CMake 경로가 빠져 있던 문제를 함께 수정했습니다.

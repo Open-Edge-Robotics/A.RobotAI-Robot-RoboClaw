@@ -204,6 +204,7 @@
           테스트 시나리오 검증 <small id="scenario-source" class="text-body-secondary fw-normal">(로딩 중…)</small>
         </h2>
         <div class="d-flex align-items-center gap-2 flex-wrap">
+          <button id="scenario-config-toggle" type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="false" aria-controls="scenario-config-panel">서버 설정</button>
           <button id="scenario-refresh" type="button" class="btn btn-outline-secondary btn-sm">AI Config 서버에서 불러오기</button>
           <label class="btn btn-outline-secondary btn-sm mb-0" for="scenario-file-input">
             커스텀 JSON 불러오기
@@ -212,6 +213,31 @@
         </div>
       </div>
       <div class="card-body">
+        <div class="rc-scenario-config border rounded p-3 mb-3 d-none" id="scenario-config-panel">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <span class="small fw-semibold">AI Config 서버 설정</span>
+            <span class="small text-body-secondary">값은 이 브라우저에만 저장되며 서버에 보관하지 않습니다.</span>
+          </div>
+          <div class="row g-2">
+            <div class="col-12 col-lg-4">
+              <label class="form-label small mb-1" for="scenario-config-url">서버 URL</label>
+              <input type="url" class="form-control form-control-sm" id="scenario-config-url" placeholder="http://<config-server-host>:30180" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="col-6 col-lg-2">
+              <label class="form-label small mb-1" for="scenario-config-robot">로봇 이름</label>
+              <input type="text" class="form-control form-control-sm" id="scenario-config-robot" placeholder="former" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="col-6 col-lg-2">
+              <label class="form-label small mb-1" for="scenario-config-env">환경</label>
+              <input type="text" class="form-control form-control-sm" id="scenario-config-env" placeholder="kon47" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="col-12 col-lg-4">
+              <label class="form-label small mb-1" for="scenario-config-token">디바이스 토큰</label>
+              <input type="password" class="form-control form-control-sm" id="scenario-config-token" placeholder="AI Config Server device token" autocomplete="off">
+            </div>
+          </div>
+        </div>
+        <div id="scenario-warning" class="alert alert-warning py-2 small d-none" role="alert"></div>
         <div class="mb-3">
           <div class="fw-semibold small" id="scenario-title">–</div>
           <div class="small text-body-secondary" id="scenario-desc">–</div>

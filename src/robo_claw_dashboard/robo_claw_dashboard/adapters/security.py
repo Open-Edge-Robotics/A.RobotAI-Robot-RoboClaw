@@ -43,9 +43,15 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
         }
     )
 
+    #: readonly 이상이면 되는 POST 경로. 로봇을 움직이지 않는 조회성 동작
+    #: (AI Config 서버 시나리오 동기화)만 여기에 둔다.
+    READONLY_POST_PATHS = frozenset({"/api/scenarios/sync"})
+
     def _required_role(self, *, method: str, path: str) -> str:
         if method == "POST" and path in self.CONTROL_POST_PATHS:
             return "control"
+        if method == "POST" and path in self.READONLY_POST_PATHS:
+            return "readonly" if self.auth_enabled else "public"
         if method == "GET" and path in self.READONLY_GET_PATHS:
             return "readonly" if self.auth_enabled else "public"
         return "public"

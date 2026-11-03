@@ -134,6 +134,21 @@ def _handle_scenario_run(body: Any, service: Any) -> HttpResponse:
     return _json(res, status=status_code)
 
 
+def _handle_scenario_sync(body: Any, service: Any) -> HttpResponse:
+    """POST /api/scenarios/sync - 대시보드 입력값으로 AI Config 서버 시나리오를 동기화한다.
+
+    디바이스 토큰이 본문에 포함되므로 쿼리 문자열이 아닌 JSON body 로만 받는다
+    (URL 은 접근·오류 로그에 남기 때문).
+    """
+    ok, raw = _parse_body(body)
+    if not ok or not isinstance(raw, dict):
+        return _json({"error": "서버 설정 JSON 본문이 필요합니다."}, 400)
+
+    res = service.sync_scenario(raw)
+    status_code = int(res.pop("status_code", 200))
+    return _json(res, status=status_code)
+
+
 def _handle_scenario_report(query: dict[str, str], service: Any) -> HttpResponse:
     """GET /api/scenarios/report - 보고서 다운로드."""
     fmt = (query.get("format") or "md").lower()
@@ -189,6 +204,8 @@ def route_http(
     if method == "GET" and path == "/api/scenarios":
         refresh = (query.get("refresh") or "0").lower() in ("1", "true", "yes")
         return _json(service.get_scenario(refresh=refresh))
+    if method == "POST" and path == "/api/scenarios/sync":
+        return _handle_scenario_sync(body, service)
     if method == "POST" and path == "/api/scenarios/run":
         return _handle_scenario_run(body, service)
     if method == "POST" and path == "/api/scenarios/cancel":

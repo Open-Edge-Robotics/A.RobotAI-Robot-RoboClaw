@@ -119,7 +119,9 @@ class TestGetScenario:
         data = runner.get_scenario()
         assert data["source"] == "default"
         assert len(data["scenario"]["test_cases"]) == 11
-        assert data["warning"] == ""
+        # 설정이 없으면 왜 원격 조회를 건너뛰었는지 사용자에게 알려야 한다.
+        assert "URL" in data["warning"]
+        assert "environment" in data["warning"]
 
     def test_load_from_scenario_file_valid(self, tmp_path):
         backend = FakeDashboardBackend()

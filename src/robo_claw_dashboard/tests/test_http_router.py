@@ -18,6 +18,7 @@ class FakeService:
         self.log_export_calls: list[dict] = []
         self._initial_pose_result = {"success": True, "message": "초기 위치를 설정했습니다"}
         self.run_payloads: list[dict] = []
+        self.sync_payloads: list[dict] = []
         self.cancelled: bool = False
 
     def status(self):
@@ -49,6 +50,22 @@ class FakeService:
 
     def get_scenario(self, refresh=False):
         return {"source": "default", "refresh": refresh, "scenario": {"name": "Test"}}
+
+    def sync_scenario(self, payload=None):
+        payload = payload or {}
+        self.sync_payloads.append(payload)
+        if payload.get("config_server_url") == "file:///etc/passwd":
+            return {"error": "http(s) URL 이어야 합니다", "status_code": 400}
+        return {
+            "source": "remote",
+            "scenario": {"name": "Remote"},
+            "config": {
+                "config_server_url": payload.get("config_server_url"),
+                "robot_name": payload.get("robot_name"),
+                "environment": payload.get("environment"),
+                "device_token_set": bool(payload.get("device_token")),
+            },
+        }
 
     def start_scenario_run(self, payload=None):
         self.run_payloads.append(payload or {})
@@ -306,6 +323,53 @@ class TestScenarioEndpoints:
         assert resp.status == 200
         data = json.loads(resp.body)
         assert data["refresh"] is True
+
+    def test_post_scenarios_sync_valid_json(self, web_root):
+        svc = FakeService()
+        body = (
+            b'{"config_server_url": "http://10.0.0.5:30180", "robot_name": "former",'
+            b' "environment": "kon47", "device_token": "t"}'
+        )
+        resp = route_http(
+            "POST", "/api/scenarios/sync", static_root=web_root, body=body, service=svc
+        )
+        assert resp.status == 200
+        data = json.loads(resp.body)
+        assert data["source"] == "remote"
+        assert data["config"]["environment"] == "kon47"
+        assert svc.sync_payloads == [
+            {
+                "config_server_url": "http://10.0.0.5:30180",
+                "robot_name": "former",
+                "environment": "kon47",
+                "device_token": "t",
+            }
+        ]
+
+    def test_post_scenarios_sync_invalid_json(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "POST", "/api/scenarios/sync", static_root=web_root, body=b"{not json", service=svc
+        )
+        assert resp.status == 400
+        assert svc.sync_payloads == []
+
+    def test_post_scenarios_sync_empty_body(self, web_root):
+        svc = FakeService()
+        resp = route_http(
+            "POST", "/api/scenarios/sync", static_root=web_root, body=None, service=svc
+        )
+        assert resp.status == 400
+        assert svc.sync_payloads == []
+
+    def test_post_scenarios_sync_validation_error(self, web_root):
+        svc = FakeService()
+        body = b'{"config_server_url": "file:///etc/passwd"}'
+        resp = route_http(
+            "POST", "/api/scenarios/sync", static_root=web_root, body=body, service=svc
+        )
+        assert resp.status == 400
+        assert "error" in json.loads(resp.body)
 
     def test_post_scenarios_run_empty_body(self, web_root):
         svc = FakeService()
