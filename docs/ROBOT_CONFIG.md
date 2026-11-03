@@ -97,6 +97,23 @@ ros2 launch robo_claw_bringup robo_claw.launch.py
 > 소울 파일은 개성·말투·가치관만 담고, 어떤 스킬을 쓸지·무엇을 할 수 없는지 같은 기능 규칙은
 > SKILLS 가이드와 ROBOT_LIMITS 로 분리해 둔니다([CLOiD_GUIDE.md](CLOiD_GUIDE.md) 의 개체별 가이드 선택 참고).
 
+### 로봇 프로필(`<robot_config>_config.yaml`) 선택
+
+`robot_config` 값은 `src/robo_claw_bringup/config/<robot_config>_config.yaml` 을 선택하고,
+같은 값으로 `SKILLS.<robot_config>.md` 와 `ROBOT_LIMITS.<robot_config>.json` 기본값을 찾습니다.
+
+| `robot_config` | 설정 파일 | 대상 |
+| :--- | :--- | :--- |
+| `former` | `former_config.yaml` | 팔이 없는 Former (주행·관측 전용, `manipulation_enabled: false`) |
+| `former_arm` | `former_arm_config.yaml` | Former0045 + AgileX Nero 7-DOF 팔 (`manipulation_enabled: true`) |
+| `cloid` | `cloid_config.yaml` | CLOiD 개체 |
+| `stretch3` | `stretch3_config.yaml` | Stretch3 (`stretch` 백엔드) |
+| `butler` | `butler_config.yaml` | Butler |
+
+팔이 장착된 개체는 `former_arm` 을 사용합니다. 팔 PC 의 CAN·ROS 그래프·MoveIt 연결 조건과
+프레임 정리는 [MANIPULATION.md](MANIPULATION.md) 의 "AgileX Nero 팔(agx_arm_ros) 연동" 절을
+참고합니다.
+
 ---
 
 ## 2. 물리 제약 스펙 (`ROBOT_LIMITS.json`)

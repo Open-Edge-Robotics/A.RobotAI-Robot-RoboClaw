@@ -1,0 +1,82 @@
+# Former0045 + AgileX Nero(7-DOF) 팔 프로필.
+# 기동: --robot-config former_arm (launch 인자 robot_config:=former_arm)
+#
+# 전제 조건 — 팔 제어 PC(nero-arm, 192.168.50.202, ROS 2 jazzy):
+#   1) CAN 활성화: `ip -br link show can0` 이 UP, bitrate 1000000
+#      (agx_arm_ros/scripts/can_activate.sh, 부팅 자동화는 아직 없음)
+#   2) RoboClaw 컨테이너와 같은 ROS 그래프로 연결:
+#      ROS_DOMAIN_ID=4, RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+#   3) 팔 PC에서 agx_arm_ctrl 드라이버와 MoveIt arm group(move_group) 기동
+#   4) TF: 팔 URDF 루트 링크(base_link)를 로봇 base_link 의 static transform 으로
+#      붙인다. 팔 URDF 의 world_to_base_link 체인은 그대로 사용하지 않는다.
+#      프레임 이름을 바꿀 때는 아래 manipulation_base_frame 도 함께 수정한다.
+robo_claw_core_node:
+  ros__parameters:
+    loop_rate_hz: 50.0
+    agent_id: "former_arm_agent"
+
+    # 센서 목록
+    sensor_names:
+      - "lidar"
+      - "imu"
+      - "realsense_camera"
+      - "realsense_depth"
+      - "realsense_camera_info"
+      - "realsense_points"
+
+    # 센서 토픽 매핑 (sensor_topics.<sensor_name>)
+    # depth/camera_info/points 는 RealSense 드라이버가 align_depth.enable:=true,
+    # pointcloud.enable:=true 로 실행 중이어야 발행됨 (robo_claw가 직접 launch하지 않음).
+    sensor_topics:
+      lidar: "/scan"
+      imu: "/imu_raw"
+      realsense_camera: "/former0045/camera/color/image_raw"
+      realsense_depth: "/former0045/camera/aligned_depth_to_color/image_raw"
+      realsense_camera_info: "/former0045/camera/aligned_depth_to_color/camera_info"
+      realsense_points: "/former0045/camera/depth/color/points"
+
+    # 제어 명령 매핑 (팔은 이 노드가 아니라 manipulation 백엔드가 담당)
+    cmd_vel_topic: "/base_controller/cmd_vel_unstamped"
+    odom_topic: "/base_controller/odom"
+
+robo_claw_agent_node:
+  ros__parameters:
+    # 자가진단용 센서 토픽 (core_node sensor_topics와 일치)
+    lidar_topic: "/scan"
+    imu_topic: "/imu_raw"
+
+    # manipulation — 팔(AgileX Nero)이 장착된 개체만 활성화한다.
+    # 팔이 없는 Former(former_config.yaml)는 manipulation_enabled: false 를 유지한다.
+    manipulation_enabled: true
+
+    # 팔 백엔드. 현재 구현된 MoveIt 경로는 robo_claw_core 의 manipulator_node 로
+    # service(/robo_claw_manipulator_node/execute_manipulator)를 호출한다.
+    manipulation_backend: "moveit"
+
+    # MoveIt SRDF 그룹 이름 (agx_arm_moveit: group "arm", joint1..joint7)
+    manipulation_arm_group: "arm"
+
+    # gripper 그룹은 팔 PC의 effector_type 이 none 이 아닐 때만 SRDF에 생성된다.
+    # agx_gripper 는 group "gripper", revo2 계열은 group "hand" 이므로,
+    # 실제 장착 엔드이펙터에 맞춰 값을 지정하고 gripper presets 도 함께 채운다.
+    # 그룹이 없으면 open_gripper/close_gripper 는 실행 단계에서 실패하는 것이 정상이다.
+    # (빈 문자열을 넣으면 코드 기본값 "gripper" 로 대체된다)
+    manipulation_gripper_group: "gripper"
+
+    # 팔 끝 링크: nero 기본 URDF 는 link7, 플랜지 조립품은 flange_link.
+    manipulation_end_effector_link: "link7"
+    manipulation_base_frame: "base_link"
+    manipulation_tool_frame: "link7"
+
+    # SRDF group_state 이름만 사용한다. 조인트 값을 직접 정의한 사전 자세는
+    # 실기 검증 전까지 추가하지 않는다.
+    manipulation_named_poses_json: '{"home": "home"}'
+    manipulation_gripper_presets_json: '{}'
+
+    # 실기 초기 검증 구간: 속도/가속 스케일을 낮게 유지한다.
+    # 팔 PC 의 driver speed_percent(0 = SDK 기본) 와 함께 동작한다.
+    manipulation_velocity_scaling: 0.1
+    manipulation_acceleration_scaling: 0.1
+    manipulation_cartesian_step: 0.005
+    manipulation_default_approach_distance_m: 0.08
+    manipulation_default_retreat_distance_m: 0.08
