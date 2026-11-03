@@ -14,6 +14,21 @@ import (
 	"github.com/wkqco33/wcli/rich"
 )
 
+// dockerDDSEnvArgs 는 RC_CYCLONEDDS_URI 가 설정된 경우 컨테이너의 CYCLONEDDS_URI
+// 기본값(이미지 ENV)을 덮어쓰는 docker run 인자를 만든다.
+//
+// 이미지에는 `<CycloneDDS>...MaxMessageSize/FragmentSize...` 만 설정되어 있어
+// 인터페이스를 지정할 수 없다. 다중 NIC 로봇(예: Former0045 + AGX 팔 제어 PC)에서는
+// discovery 가 엉뚱한 NIC 로 나가 팔 토픽이 보이지 않으므로, 호스트에서
+// RC_CYCLONEDDS_URI 로 인터페이스/Peer 를 지정할 수 있어야 한다.
+func dockerDDSEnvArgs(getenv func(string) string) []string {
+	uri := strings.TrimSpace(getenv("RC_CYCLONEDDS_URI"))
+	if uri == "" {
+		return nil
+	}
+	return []string{"-e", "CYCLONEDDS_URI=" + uri}
+}
+
 // RunDockerMode Docker 컨테이너 기반으로 RoboClaw 시스템을 기동합니다.
 func RunDockerMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	logging.Info("Docker 모드 기동 준비 시작...")
@@ -83,6 +98,10 @@ func RunDockerMode(ctx *wcli.Context, lctx *LaunchContext) error {
 	}
 	dockerRunArgs = append(dockerRunArgs, buildDockerVolumes(lctx)...)
 	dockerRunArgs = append(dockerRunArgs, "--env-file", lctx.EnvFilePath)
+	// DDS 인터페이스 고정: 이미지 Dockerfile 이 ENV 로 CYCLONEDDS_URI 를 고정하고 있어
+	// 다중 NIC 환경(무선 + 유선)에서 discovery 가 엉뚱한 NIC 로 나간다. 호스트 환경변수로
+	// 덮어쓸 수 있게 `-e` 를 --env-file 뒤에 주입한다(설정 동기화가 캐시 .env 를 덮어쓰므로).
+	dockerRunArgs = append(dockerRunArgs, dockerDDSEnvArgs(os.Getenv)...)
 	dockerRunArgs = append(dockerRunArgs, image)
 	dockerRunArgs = append(dockerRunArgs, buildContainerCmd(lctx)...)
 

@@ -150,3 +150,25 @@ func TestBuildDockerVolumesSkipsMissingBringupLaunchDir(t *testing.T) {
 		t.Fatalf("launch 디렉토리 부재 시 마운트하면 안 됨: got=%d args=%v", got, args)
 	}
 }
+
+func TestDockerDDSEnvArgsOverridesImageDefault(t *testing.T) {
+	args := dockerDDSEnvArgs(func(key string) string {
+		if key == "RC_CYCLONEDDS_URI" {
+			return "  <CycloneDDS><Domain/></CycloneDDS>  "
+		}
+		return ""
+	})
+
+	if len(args) != 2 || args[0] != "-e" {
+		t.Fatalf("예상치 못한 docker run 인자: %#v", args)
+	}
+	if args[1] != "CYCLONEDDS_URI=<CycloneDDS><Domain/></CycloneDDS>" {
+		t.Fatalf("CYCLONEDDS_URI 값이 트림되지 않았거나 형식이 다릅니다: %q", args[1])
+	}
+}
+
+func TestDockerDDSEnvArgsIsNoopWhenUnset(t *testing.T) {
+	if args := dockerDDSEnvArgs(func(string) string { return "   " }); args != nil {
+		t.Fatalf("미설정 시 인자를 만들면 안 됩니다: %#v", args)
+	}
+}
