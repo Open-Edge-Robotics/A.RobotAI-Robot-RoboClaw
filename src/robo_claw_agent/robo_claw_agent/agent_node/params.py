@@ -236,6 +236,7 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("manipulation_agx_pose_tolerance_m", 0.01)
     node.declare_parameter("manipulation_agx_motion_timeout_sec", 30.0)
     node.declare_parameter("manipulation_agx_feedback_timeout_sec", 5.0)
+    node.declare_parameter("manipulation_agx_home_service", "move_home")
 
     # 공통 스킬 정책
     node.declare_parameter("skill_allowed_json", "[]")

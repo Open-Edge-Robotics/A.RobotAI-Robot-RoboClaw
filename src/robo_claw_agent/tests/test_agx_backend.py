@@ -11,6 +11,7 @@ from robo_claw_agent.manipulation_runtime.agx_backend import AgxDriverBackend
 from robo_claw_agent.manipulation_runtime.exceptions import (
     ManipulationConfigError,
     ManipulationError,
+    ManipulationRuntimeUnavailableError,
 )
 from robo_claw_agent.manipulation_runtime.types import ManipulationConfig, PoseGoal
 from sensor_msgs.msg import JointState
@@ -26,12 +27,46 @@ class _RecordingPublisher:
         self.messages.append(msg)
 
 
-class _FakeNode:
-    """create_publisher/create_subscription 만 제공하는 최소 노드 대역."""
+class _DoneFuture:
+    def done(self) -> bool:
+        return True
 
-    def __init__(self) -> None:
+    def result(self) -> None:
+        return None
+
+    def cancel(self) -> None:
+        return None
+
+
+class _FakeClient:
+    def __init__(self, service_available: bool = True) -> None:
+        self.service_available = service_available
+        self.calls = 0
+
+    def wait_for_service(self, timeout_sec: float) -> bool:
+        del timeout_sec
+        return self.service_available
+
+    def call_async(self, request: object) -> _DoneFuture:
+        del request
+        self.calls += 1
+        return _DoneFuture()
+
+
+class _FakeNode:
+    """create_publisher/create_subscription/create_client 만 제공하는 최소 노드 대역."""
+
+    def __init__(self, service_available: bool = True) -> None:
         self.publishers: dict[str, list[_RecordingPublisher]] = {}
         self.subscriptions: dict[str, object] = {}
+        self.clients: dict[str, _FakeClient] = {}
+        self._service_available = service_available
+
+    def create_client(self, srv_type: object, name: str) -> _FakeClient:
+        del srv_type
+        client = _FakeClient(self._service_available)
+        self.clients[name] = client
+        return client
 
     def create_publisher(self, msg_type: object, topic: str, qos: int) -> _RecordingPublisher:
         del msg_type, qos
@@ -145,9 +180,29 @@ def test_move_to_named_pose_uses_configured_joint_map() -> None:
     assert list(published[0].name) == ["joint1", "joint2"]
 
 
+def test_move_to_named_pose_home_calls_driver_service() -> None:
+    node = _FakeNode()
+    config = _config(named_pose_joint_values={})
+    backend = AgxDriverBackend(node, config)
+
+    backend.move_to_named_pose("arm", "home")
+
+    client = node.clients[config.agx_home_service]
+    assert client.calls == 1
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+def test_move_to_named_pose_home_reports_missing_service() -> None:
+    node = _FakeNode(service_available=False)
+    backend = AgxDriverBackend(node, _config(named_pose_joint_values={}))
+
+    with pytest.raises(ManipulationRuntimeUnavailableError, match="move_home"):
+        backend.move_to_named_pose("arm", "home")
+
+
 def test_move_to_named_pose_without_joint_map_is_rejected() -> None:
     node = _FakeNode()
-    backend = AgxDriverBackend(node, _config())
+    backend = AgxDriverBackend(node, _config(named_pose_joint_values={}))
 
     with pytest.raises(ManipulationConfigError, match="조인트 값을 알 수 없습니다"):
         backend.move_to_named_pose("arm", "ready")

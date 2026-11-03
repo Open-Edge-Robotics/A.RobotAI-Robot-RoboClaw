@@ -25,7 +25,9 @@ from typing import Any
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
+from std_srvs.srv import Empty
 
+from ._ros_sync import wait_for_future_sync
 from .exceptions import (
     ManipulationConfigError,
     ManipulationError,
@@ -45,6 +47,7 @@ class AgxDriverBackend:
         self._latest_tcp_pose: PoseStamped | None = None
         self._joint_feedback_seen = False
         self._tcp_feedback_seen = False
+        self._home_client = None
 
         try:
             self._move_joint_pub = node.create_publisher(
@@ -146,12 +149,49 @@ class AgxDriverBackend:
 
     def move_to_named_pose(self, group_name: str, target_name: str) -> None:
         joint_map = self._config.named_pose_joint_values.get(str(target_name).strip())
-        if not joint_map:
-            raise ManipulationConfigError(
-                f"AGX 백엔드는 named pose '{target_name}' 의 조인트 값을 알 수 없습니다. "
-                "SRDF group_state 대신 manipulation_named_poses_json 에 조인트 맵을 정의하세요."
+        if joint_map:
+            self.move_to_joint_target(group_name, joint_map)
+            return
+
+        # 드라이버가 제공하는 home 루틴을 사용한다. SRDF group_state 를 흉내내기 위해
+        # 조인트 값을 임의로 만들지 않는다(실기 자세 보장 불가).
+        if str(target_name).strip() == "home":
+            self.call_home_service()
+            return
+
+        raise ManipulationConfigError(
+            f"AGX 백엔드는 named pose '{target_name}' 의 조인트 값을 알 수 없습니다. "
+            "manipulation_named_poses_json 에 조인트 맵을 정의하거나 home 을 사용하세요."
+        )
+
+    def call_home_service(self) -> None:
+        """드라이버의 home 서비스(std_srvs/Empty)를 호출한다."""
+        service_name = str(self._config.agx_home_service or "move_home").strip()
+        if not service_name:
+            raise ManipulationConfigError("manipulation_agx_home_service 가 비어 있습니다.")
+
+        try:
+            if self._home_client is None:
+                self._home_client = self._node.create_client(Empty, service_name)
+        except Exception as exc:  # noqa: BLE001 - 서비스 클라이언트 생성 실패
+            raise ManipulationRuntimeUnavailableError(
+                f"AGX home 서비스 클라이언트 생성 실패({service_name}): {exc}"
+            ) from exc
+
+        if not self._home_client.wait_for_service(timeout_sec=5.0):
+            raise ManipulationRuntimeUnavailableError(
+                f"AGX home 서비스({service_name})가 활성화되어 있지 않습니다. "
+                "팔 드라이버 기동 상태를 확인하세요."
             )
-        self.move_to_joint_target(group_name, joint_map)
+
+        future = self._home_client.call_async(Empty.Request())
+        wait_for_future_sync(
+            self._node,
+            future,
+            float(self._config.agx_motion_timeout_sec),
+            f"home 서비스 호출 타임아웃 ({float(self._config.agx_motion_timeout_sec):.1f}초)",
+            error_cls=ManipulationError,
+        )
 
     def move_to_joint_target(self, group_name: str, joint_values: Mapping[str, float]) -> None:
         del group_name  # 드라이버는 MoveIt planning group 개념이 없다

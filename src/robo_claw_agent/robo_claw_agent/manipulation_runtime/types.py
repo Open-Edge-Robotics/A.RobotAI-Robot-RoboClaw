@@ -54,6 +54,7 @@ class ManipulationConfig:
     agx_pose_tolerance_m: float = 0.01
     agx_motion_timeout_sec: float = 30.0
     agx_feedback_timeout_sec: float = 5.0
+    agx_home_service: str = "move_home"
 
 
 class ManipulationBackend(Protocol):

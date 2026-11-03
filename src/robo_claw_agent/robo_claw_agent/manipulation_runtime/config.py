@@ -212,4 +212,7 @@ def load_manipulation_config(node: Any) -> ManipulationConfig:
         agx_feedback_timeout_sec=_read_float(
             node, "manipulation_agx_feedback_timeout_sec", 5.0
         ),
+        agx_home_service=_read_string(
+            node, "manipulation_agx_home_service", "move_home"
+        ),
     )
