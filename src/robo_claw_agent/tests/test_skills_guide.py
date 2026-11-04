@@ -54,7 +54,6 @@ def test_build_system_prompt_integration():
             self._script_skills_guide = "Script Guide Details"
             self._robot_limits = "Robot Limits Details"
             self._troubleshooting_guide = "Troubleshooting Guide Details"
-            self._startup_knowledge_ctx = "Startup RAG Data"
             self._robot_soul = "I am a helpful robot"
             self._skills = MagicMock()
             self._skills.list_skills.return_value = [{"name": "move", "description": "move robot"}]
@@ -81,8 +80,6 @@ def test_build_system_prompt_integration():
             if self._troubleshooting_guide:
                 base = base + f"\n\n[장애 조치 가이드 (TROUBLESHOOTING)]\n{self._troubleshooting_guide}"
 
-            if self._startup_knowledge_ctx:
-                base = base + f"\n\n{self._startup_knowledge_ctx}"
             if self._robot_soul:
                 return f"{self._robot_soul}\n\n---\n\n{base}"
             return base
@@ -97,5 +94,4 @@ def test_build_system_prompt_integration():
     assert "[스크립트 세부 가이드]\nScript Guide Details" in prompt
     assert "[로봇 구동 한계 스펙 (ROBOT_LIMITS)]\nRobot Limits Details" in prompt
     assert "[장애 조치 가이드 (TROUBLESHOOTING)]\nTroubleshooting Guide Details" in prompt
-    assert "Startup RAG Data" in prompt
 

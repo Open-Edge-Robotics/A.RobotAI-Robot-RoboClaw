@@ -65,7 +65,6 @@ class _FakeNode:
         self._robot_limits = ""
         self._troubleshooting_guide = ""
         self._agent_workspace_dir = ""
-        self._startup_knowledge_ctx = ""
         self._robot_soul = "Soul"
 
     def get_parameter(self, _name):
@@ -137,3 +136,14 @@ def test_prompt_compact_mode_omits_raw_schema():
     detailed_prompt = assemble_static_prompt_base(detailed_node)
     assert "MCP 입력 JSON Schema" in detailed_prompt
     assert len(prompt) < len(detailed_prompt)
+
+
+def test_full_startup_knowledge_is_excluded_from_both_prompt_modes():
+    for tool_mode in (False, True):
+        node = _FakeNode()
+        node._startup_knowledge_ctx = "[시작 시 로드된 지식 목록 (529건)]\nUNRELATED_HISTORY"
+        prompt = assemble_system_prompt(node, tool_mode=tool_mode)
+        assert "UNRELATED_HISTORY" not in prompt
+        assert "시작 시 로드된 지식 목록" not in prompt
+        assert "Guide" in prompt
+        assert "[학습된 스킬 교훈]" in prompt

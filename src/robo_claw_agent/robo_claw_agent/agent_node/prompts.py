@@ -670,8 +670,6 @@ def _append_shared_sections(node, base: str) -> str:
             "- 이 디렉토리 내에서 자유롭게 파일을 쓰고, 읽고, 수정하며, 스크립트를 작성하여 run_script 스킬로 실행할 수 있습니다."
         )
 
-    if node._startup_knowledge_ctx:
-        base = base + f"\n\n{node._startup_knowledge_ctx}"
     return base
 
 

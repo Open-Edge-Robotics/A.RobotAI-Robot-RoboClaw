@@ -69,7 +69,6 @@ class _PromptNode:
         self._robot_limits = ""
         self._troubleshooting_guide = ""
         self._agent_workspace_dir = ""
-        self._startup_knowledge_ctx = ""
         self._skills = MagicMock()
         self._skills.list_skills.return_value = []
         self._backend = backend
