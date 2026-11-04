@@ -28,7 +28,7 @@ from robo_claw_msgs.srv import (
 
 from ..llm_bridge import create_llm_bridge
 from ..memory_manager import MemoryManager
-from ..tracing import init_tracing
+from ..tracing import init_tracing, suppress_call_logging
 from ..vector_store import DualVectorStore, QdrantVectorStore
 from .params import AgentParams
 
@@ -192,7 +192,8 @@ def setup_llm(node, p: AgentParams, qdrant_primary: QdrantVectorStore | None) ->
                 )
 
                 # RAG 시작 시점에 임베딩/벡터 차원을 검증
-                probe_vec = node._embedder_bridge.embed("robo_claw_rag_healthcheck")
+                with suppress_call_logging():
+                    probe_vec = node._embedder_bridge.embed("robo_claw_rag_healthcheck")
                 node.get_logger().info(
                     f"RAG embedder configured: provider={emb_provider}, model={emb_model}, dim={len(probe_vec)}"
                 )

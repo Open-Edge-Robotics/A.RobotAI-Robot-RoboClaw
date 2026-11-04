@@ -40,6 +40,8 @@ import functools
 import logging
 import os
 from collections.abc import Callable
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import asdict, is_dataclass
 from typing import Any, TypeVar
 
@@ -49,6 +51,30 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 # 환경변수를 "참"으로 해석할 값들
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+_CALL_LOGGING_SUPPRESSED = ContextVar("call_logging_suppressed", default=False)
+
+
+def call_logging_suppressed() -> bool:
+    """현재 실행 문맥의 API 호출 로그 제외 여부를 반환합니다."""
+    return _CALL_LOGGING_SUPPRESSED.get()
+
+
+@contextmanager
+def suppress_call_logging():
+    """내부 점검 동안 호출 로그와 SDK 하위 트레이싱을 제외합니다."""
+    token = _CALL_LOGGING_SUPPRESSED.set(True)
+    try:
+        try:
+            from langsmith import tracing_context
+        except ImportError:
+            context = nullcontext()
+        else:
+            context = tracing_context(enabled=False)
+        with context:
+            yield
+    finally:
+        _CALL_LOGGING_SUPPRESSED.reset(token)
 
 
 def is_tracing_env_enabled() -> bool:
@@ -121,7 +147,7 @@ def traceable(*d_args: Any, **d_kwargs: Any) -> Callable[[_F], _F]:
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            if not is_active():
+            if call_logging_suppressed() or not is_active():
                 return func(*args, **kwargs)
             traced = cache.get("fn")
             if traced is None:

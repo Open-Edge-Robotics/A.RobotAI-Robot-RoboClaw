@@ -4,6 +4,10 @@ robo_claw의 모든 LLM 동작(계획 수립, RAG 쿼리 재작성, 임베딩, �
 [LangSmith](https://smith.langchain.com)에서 추적·모니터링할 수 있는 **선택적(optional) 트레이싱 계층**을
 제공합니다. 구현은 `src/robo_claw_agent/robo_claw_agent/tracing.py`입니다.
 
+시작 시 RAG 임베딩 차원을 검증하는 `robo_claw_rag_healthcheck` 호출은 LangSmith
+트레이싱과 `chat_history/` JSON 호출 로그에서 제외합니다. 점검 결과와 오류를
+알리는 운영 로그는 유지합니다.
+
 ## 설계 원칙
 
 - **완전 선택적**: `langsmith` 패키지가 없거나 트레이싱 환경변수가 꺼져 있으면 모든
