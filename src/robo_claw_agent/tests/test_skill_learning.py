@@ -38,11 +38,7 @@ def _make_manager(tmp_path, *, embedder=_DEFAULT, sample_rate=0.1):
 
 
 def _episodes(mgr):
-    return [
-        e
-        for e in mgr._vector_store.list_entries()
-        if e.get("metadata", {}).get("type") == "skill_episode"
-    ]
+    return mgr.get_skill_episodes()
 
 
 def test_failure_always_recorded(tmp_path):
@@ -77,9 +73,7 @@ def test_success_sampling_zero_skips(tmp_path):
 
 def test_success_sampling_one_records(tmp_path):
     mgr = _make_manager(tmp_path, sample_rate=1.0)
-    stored = mgr.record_skill_episode(
-        "navigate_to", success=True, params={"verbose": True}
-    )
+    stored = mgr.record_skill_episode("navigate_to", success=True, params={"verbose": True})
     assert stored is True
     eps = _episodes(mgr)
     assert len(eps) == 1
@@ -102,11 +96,11 @@ def test_params_summary_omits_bulky_and_truncates(tmp_path):
     assert len(brief) <= 203  # 200 + "..."
 
 
-def test_no_embedder_is_noop(tmp_path):
+def test_episode_storage_does_not_require_embedder(tmp_path):
     mgr = _make_manager(tmp_path, embedder=None, sample_rate=1.0)
-    # 임베더 부재 시 예외 없이 False 반환
-    assert mgr.record_skill_episode("rotate", success=False, error="boom") is False
-    assert _episodes(mgr) == []
+    # 구조화 실행 경험은 임베더 없이 SQL에 저장합니다.
+    assert mgr.record_skill_episode("rotate", success=False, error="boom") is True
+    assert len(_episodes(mgr)) == 1
 
 
 def test_empty_skill_name_skipped(tmp_path):
@@ -225,9 +219,7 @@ def test_render_lessons_empty(tmp_path):
 def test_render_lessons_includes_stored(tmp_path):
     mgr = _make_manager(tmp_path, sample_rate=1.0)
     _seed_failures(mgr, "navigate_to", 4)
-    mgr.reflect_skill(
-        "navigate_to", FakeLLM("상대 이동에는 move_relative를 쓰라."), min_episodes=4
-    )
+    mgr.reflect_skill("navigate_to", FakeLLM("상대 이동에는 move_relative를 쓰라."), min_episodes=4)
 
     section = mgr.render_skill_lessons()
     assert "[학습된 스킬 교훈]" in section
@@ -269,15 +261,10 @@ def test_recovered_success_always_stored(tmp_path, monkeypatch):
     monkeypatch.setattr(sl.random, "random", lambda: 0.99)  # 샘플 탈락 고정
 
     # 평범한 성공은 탈락
-    assert (
-        mgr.record_skill_episode("navigate_to", success=True, duration_sec=10.0)
-        is False
-    )
+    assert mgr.record_skill_episode("navigate_to", success=True, duration_sec=10.0) is False
     # 위기 극복 성공은 저장
     assert (
-        mgr.record_skill_episode(
-            "navigate_to", success=True, duration_sec=10.0, recovered=True
-        )
+        mgr.record_skill_episode("navigate_to", success=True, duration_sec=10.0, recovered=True)
         is True
     )
     rec = [e for e in _episodes(mgr) if e["metadata"].get("recovered")]
@@ -293,13 +280,8 @@ def test_fast_success_always_stored(tmp_path, monkeypatch):
     monkeypatch.setattr(sl.random, "random", lambda: 0.99)
 
     # 평균(10초)의 0.7배 미만 → 빠른 수행으로 저장
-    assert (
-        mgr.record_skill_episode("navigate_to", success=True, duration_sec=1.0)
-        is True
-    )
-    fast = [
-        e for e in _episodes(mgr) if e["metadata"].get("value_reason") == "fast"
-    ]
+    assert mgr.record_skill_episode("navigate_to", success=True, duration_sec=1.0) is True
+    fast = [e for e in _episodes(mgr) if e["metadata"].get("value_reason") == "fast"]
     assert len(fast) == 1
 
 
@@ -311,19 +293,14 @@ def test_ordinary_success_sampled_out(tmp_path, monkeypatch):
     mgr._skill_learning_success_sample_rate = 0.0001
     monkeypatch.setattr(sl.random, "random", lambda: 0.99)
 
-    assert (
-        mgr.record_skill_episode("navigate_to", success=True, duration_sec=10.0)
-        is False
-    )
+    assert mgr.record_skill_episode("navigate_to", success=True, duration_sec=10.0) is False
     assert len(mgr.get_skill_episodes("navigate_to")) == before
 
 
 def test_rate_zero_disables_success_learning(tmp_path):
     """rate<=0은 성공 학습 비활성으로 보고 고가치(recovered)도 저장하지 않는다."""
     mgr = _make_manager(tmp_path, sample_rate=0.0)
-    assert (
-        mgr.record_skill_episode("navigate_to", success=True, recovered=True) is False
-    )
+    assert mgr.record_skill_episode("navigate_to", success=True, recovered=True) is False
     assert _episodes(mgr) == []
 
 
@@ -354,9 +331,7 @@ def test_relevant_lessons_filters_by_query(tmp_path):
 def test_relevant_lessons_excludes_episodes(tmp_path):
     """skill_lesson 타입만 인출하므로 episode는 결과에 섞이지 않는다."""
     mgr = _make_keyword_manager(tmp_path, threshold=0.0)
-    mgr.record_skill_episode(
-        "navigate_to", success=False, error="이동 실패", instruction="이동"
-    )
+    mgr.record_skill_episode("navigate_to", success=False, error="이동 실패", instruction="이동")
     assert mgr.render_relevant_skill_lessons("이동", top_k=5) == ""
 
 

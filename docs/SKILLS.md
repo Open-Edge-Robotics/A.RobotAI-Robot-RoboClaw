@@ -106,7 +106,7 @@
 | Collaboration | `stop_autonomous_cooperate` | Public | action | 공통 | 자율 협동 백그라운드 루프 중단 |
 | System/RAG | `emergency_stop` | Public | dangerous | 공통 | 모든 동작 중단 및 비상정지 래치 |
 | System/RAG | `get_datetime` | Public | read | 공통 | 현재 날짜·시간 조회 |
-| System/RAG | `get_location` | Public | read | 공통 | 장소명에서 좌표 조회 |
+| System/RAG | `get_location` | Public | read | 공통 | SQL에서 장소명·별칭으로 좌표 정확 조회 |
 | System/RAG | `get_status` | Public | read | 공통 | 배터리·pose·텔레메트리 조회 |
 | System/RAG | `identify_location` | Public | read | 공통 | 현재 좌표에서 기억된 장소명 역조회 |
 | System/RAG | `list_topics` | Public | read | 공통 | ROS 그래프 토픽 목록·메시지 타입 조회 (전체 또는 카메라 범주 필터) |
@@ -114,7 +114,7 @@
 | System/RAG | `rag_add` | Public | action | 공통 | 지식 항목 추가 |
 | System/RAG | `rag_add_file` | Public | action | 공통 | 파일 청크를 지식 베이스에 적재 |
 | System/RAG | `rag_delete` | Public | action | 공통 | 지식 항목 삭제 |
-| System/RAG | `rag_list` | Public | read | 공통 | 지식 항목 목록 조회 |
+| System/RAG | `rag_list` | Public | read | 공통 | SQL 구조화 데이터와 의미 검색 지식 목록 조회 |
 | System/RAG | `rag_reindex` | Public | action | 공통 | RAG 인덱스 재구성 |
 | System/RAG | `rag_search` | Public | read | 공통 | 지식 베이스 의미 검색 |
 | System/RAG | `rag_status` | Public | read | 공통 | RAG backend 상태 조회 |

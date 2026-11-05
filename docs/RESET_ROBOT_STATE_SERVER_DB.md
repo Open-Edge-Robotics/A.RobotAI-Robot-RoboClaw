@@ -28,7 +28,7 @@ Qdrant 컬렉션까지)를 **하나로 합친** 스크립트입니다. 호스트
 | :--------------------- | :------------------------------------------------------------------------------------ |
 | config 캐시            | 다음 `launch` 때 config 서버에서 프로파일(soul/skill/limits/troubleshooting) 재-fetch |
 | `memory.kb.json`       | 로컬 벡터 미러 초기화                                                                 |
-| `memory.semantic.json` | 시맨틱 맵(이름→좌표) 초기화                                                           |
+| `memory.kb.structured.db` 및 namespace별 구조화 DB | 장소·별칭·좌표·스킬 실행 경험 초기화                                                           |
 | `memory.cold.db`       | 콜드 아카이브(만료된 관찰 기록) 초기화                                                |
 | Qdrant 컬렉션          | 원격 벡터 DB 초기화. 첫 저장 시 임베더 차원으로 자동 재생성                           |
 

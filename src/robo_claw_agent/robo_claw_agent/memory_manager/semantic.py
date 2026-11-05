@@ -1,8 +1,5 @@
 import logging
-import math
 import re
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -313,13 +310,13 @@ def _best_location_for_targets(
 ) -> tuple[str, float, float, str, str | None] | None:
     """대상 장소명들의 좌표를 찾는다. 우선순위: 시맨틱맵 > type=location > navigated_coordinate > 기타.
 
-    반환: (표시이름, x, y, source, qdrant_id) 또는 None.
+    반환: (표시이름, x, y, source, record_id) 또는 None.
     """
     if not targets:
         return None
     best: tuple[int, str, float, float, str, str | None] | None = None
 
-    if hasattr(memory, "get_all_objects"):
+    if not hasattr(type(memory), "find_location_entries") and hasattr(memory, "get_all_objects"):
         for obj in memory.get_all_objects():
             meta = obj.get("metadata", {})
             if isinstance(meta, dict) and meta.get("alias_of"):
@@ -338,7 +335,10 @@ def _best_location_for_targets(
     store = getattr(memory, "_vector_store", None)
     if store is not None and hasattr(store, "list_entries"):
         try:
-            entries = store.list_entries()
+            if hasattr(type(memory), "find_location_entries"):
+                entries = list(reversed(memory.find_location_entries(targets)))
+            else:
+                entries = store.list_entries()
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[best_location] 위치 좌표 조회용 RAG 스캔 실패 — 시맨틱 맵 근거만 사용합니다: %s",
@@ -372,13 +372,7 @@ def _best_location_for_targets(
 
 
 class SemanticMixin:
-    """시맨틱 매핑 (이름 기반 O(1) 객체 위치 조회) 전담"""
-
-    _semantic_map: dict[str, dict[str, Any]]
-    _semantic_path: Path
-
-    # StorageMixin에서 제공될 메서드
-    def _save_data(self, path: Path, data: Any) -> None: ...
+    """SQL 기반 장소·별칭·좌표 조회를 담당합니다."""
 
     def add_object_location(
         self,
@@ -388,7 +382,7 @@ class SemanticMixin:
         metadata: dict[str, Any] | None = None,
         aliases: list[str] | None = None,
     ) -> None:
-        """객체의 위치 정보를 시맨틱 맵에 저장/업데이트 (O(1)).
+        """객체의 위치 정보를 SQLite에 저장하거나 갱신합니다.
 
         좌표(x, y)는 map 프레임 기준이어야 한다. 호출부는 좌표 출처를 명확히 하기 위해
         metadata에 frame_id(예: "map")를 넣는 것을 권장한다(navigate_to가 동일 기준을 가정).
@@ -397,51 +391,27 @@ class SemanticMixin:
         if _is_self_location_name(name):
             logger.info("Semantic map registration skipped (not a place name): %r", name)
             return
-        aliases = aliases or []
-        entry = {
-            "name": name,
-            "position": {"x": x, "y": y},
-            "last_seen": datetime.now().isoformat(),
-            "metadata": metadata or {},
-        }
-        self._semantic_map[name] = entry
-
-        for alias in aliases:
-            normalized = str(alias).strip()
-            if not normalized or normalized == name:
-                continue
-
-            self._semantic_map[normalized] = {
-                "name": normalized,
-                "position": {"x": x, "y": y},
-                "last_seen": entry["last_seen"],
-                "metadata": {
-                    **(metadata or {}),
-                    "alias_of": name,
-                },
-            }
-
-        # 저장 시에는 리스트 형태로 변환하여 호환성 유지
-        self._save_data(self._semantic_path, list(self._semantic_map.values()))
-        logger.info("Semantic map updated: %s at (%.2f, %.2f)", name, x, y)
+        stored = self._structured_store.add(
+            f"{name}의 위치는 x: {x}, y: {y} 입니다.",
+            {
+                **(metadata or {}),
+                "type": "location",
+                "location_name": name,
+                "x": x,
+                "y": y,
+                "aliases": aliases or [],
+            },
+        )
+        if not stored:
+            raise ValueError("장소를 저장하지 못했습니다.")
 
     def get_object_location(self, name: str) -> dict[str, Any] | None:
         """이름으로 객체 위치 조회.
 
-        정확 일치(O(1))를 먼저 시도하고, 실패하면 대소문자·공백을 무시한
-        정규화 매칭으로 폴백한다(예: "거 실"→"거실", "Kitchen"→"kitchen").
+        대소문자·공백을 정규화한 이름과 별칭을 SQL 인덱스로 조회합니다.
+        예를 들어 "거 실"→"거실", "Kitchen"→"kitchen"으로 비교합니다.
         """
-        entry = self._semantic_map.get(name)
-        if entry is not None:
-            return entry
-
-        normalized = _normalize_location_name(name)
-        if not normalized:
-            return None
-        for key, value in self._semantic_map.items():
-            if _normalize_location_name(key) == normalized:
-                return value
-        return None
+        return self._structured_store.location(name)
 
     def get_nearest_object(
         self, x: float, y: float, radius_m: float | None = None
@@ -451,32 +421,7 @@ class SemanticMixin:
         alias 항목은 제외하고 표준 이름만 후보로 본다. radius_m이 주어지면 그 반경
         밖의 위치는 무시한다. 반환 dict에는 최근접 거리를 담은 distance_m를 추가한다.
         """
-        try:
-            px, py = float(x), float(y)
-        except (TypeError, ValueError):
-            return None
-
-        best: dict[str, Any] | None = None
-        best_dist = float("inf")
-        for entry in self._semantic_map.values():
-            meta = entry.get("metadata", {})
-            if isinstance(meta, dict) and meta.get("alias_of"):
-                continue
-            pos = entry.get("position") or {}
-            try:
-                ex, ey = float(pos["x"]), float(pos["y"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            dist = math.hypot(px - ex, py - ey)
-            if dist < best_dist:
-                best_dist = dist
-                best = entry
-
-        if best is None:
-            return None
-        if radius_m is not None and best_dist > float(radius_m):
-            return None
-        return {**best, "distance_m": round(best_dist, 3)}
+        return self._structured_store.nearest(x, y, radius_m)
 
     def get_all_objects(self) -> list[dict[str, Any]]:
-        return list(self._semantic_map.values())
+        return self._structured_store.locations()

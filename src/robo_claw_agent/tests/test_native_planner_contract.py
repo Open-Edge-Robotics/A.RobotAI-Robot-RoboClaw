@@ -185,3 +185,18 @@ async def test_cancelled_native_request_does_not_call_model_or_tools():
     assert not node.requests
     assert not node.executed
     assert "취소" in result
+
+
+@pytest.mark.parametrize("mock_robot", [False, True])
+async def test_mock_manager_does_not_record_experience_without_payload_marker(mock_robot):
+    from unittest.mock import Mock
+
+    node = Node(
+        [ToolTurn(tool_calls=[ToolCall(name="get_status")]), ToolTurn(content="상태 확인 완료")]
+    )
+    node._enable_skill_learning = True
+    node._memory = SimpleNamespace(record_skill_episode=Mock())
+    node._skills.mock_robot = mock_robot
+    node._skills.execute = lambda name, params, timeout: SkillResult(name, True, "완료", 0.01, {})
+    await run(node, "상태 확인")
+    assert node._memory.record_skill_episode.call_count == (0 if mock_robot else 1)

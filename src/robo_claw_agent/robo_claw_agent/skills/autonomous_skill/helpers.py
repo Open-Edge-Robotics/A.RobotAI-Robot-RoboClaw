@@ -190,7 +190,9 @@ def _remembered_place_candidates(
 def _extract_rag_location_candidates(memory: Any, limit: int = 5) -> list[dict[str, Any]]:
     entries = []
     try:
-        if hasattr(memory, "_vector_store") and hasattr(memory._vector_store, "list_entries"):
+        if hasattr(type(memory), "list_knowledge_entries"):
+            entries = memory.list_knowledge_entries(entry_type="location")
+        elif hasattr(memory, "_vector_store") and hasattr(memory._vector_store, "list_entries"):
             entries = list(memory._vector_store.list_entries())
         elif hasattr(memory, "search_knowledge"):
             entries = list(memory.search_knowledge("장소 위치 좌표 이동 목적지", top_k=limit))

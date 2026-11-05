@@ -932,8 +932,10 @@ class LLMPlanner:
 
             skill_results.append(res)
 
-            if getattr(self.node, "_enable_skill_learning", False) and not res.result_data.get(
-                "mocked"
+            if (
+                getattr(self.node, "_enable_skill_learning", False)
+                and not res.result_data.get("mocked")
+                and getattr(self.node._skills, "mock_robot", False) is not True
             ):
                 try:
                     await self.node._run_blocking(

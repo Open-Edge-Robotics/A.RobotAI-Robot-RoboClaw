@@ -13,6 +13,7 @@ from robo_claw_agent.tracing import call_logging_suppressed
 from robo_claw_agent.vector_store import VectorStore
 
 from .base import Embedder
+from .structured import STRUCTURED_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,14 @@ class RAGMixin:
         self._embedder = embedder
 
     def add_knowledge(self, text: str, metadata: dict[str, Any] | None = None) -> bool:
+        if metadata and metadata.get("mocked"):
+            return False
+        if metadata and metadata.get("type") in STRUCTURED_TYPES:
+            try:
+                return self._structured_store.add(text, metadata)
+            except (ValueError, sqlite3.Error) as exc:
+                logger.error("Failed to store structured knowledge: %s", exc)
+                return False
         if not self._embedder:
             return False
         start = time.monotonic()
@@ -210,12 +219,20 @@ class RAGMixin:
             }
 
         start = time.monotonic()
+        deleted_count = 0
         try:
-            deleted_count = self._vector_store.delete_entries(
+            deleted_count = self._structured_store.delete(
                 ids=[record_id] if record_id else None,
                 source_path=source_path,
                 text_exact=text_exact,
             )
+            # SQL 소유 ID의 정확 삭제는 벡터 백엔드 상태에 의존하지 않습니다.
+            if not (record_id and not source_path and not text_exact and deleted_count):
+                deleted_count += self._vector_store.delete_entries(
+                    ids=[record_id] if record_id else None,
+                    source_path=source_path,
+                    text_exact=text_exact,
+                )
         except Exception as exc:
             self._metrics.record(
                 "delete_knowledge",
@@ -226,7 +243,7 @@ class RAGMixin:
             return {
                 "success": False,
                 "message": f"지식 삭제 실패: {exc}",
-                "deleted_count": 0,
+                "deleted_count": deleted_count,
             }
 
         self._metrics.record(
@@ -286,6 +303,11 @@ class RAGMixin:
                 filters["x_max"] = cx + radius_m
                 filters["y_min"] = cy - radius_m
                 filters["y_max"] = cy + radius_m
+
+            if hasattr(self, "_structured_store"):
+                filters["type_exclude"] = sorted(
+                    set(filters.get("type_exclude", [])) | STRUCTURED_TYPES
+                )
 
             # 검색은 쿼리 전용 임베딩(비대칭). instruction-tuned 임베더는 지시문을
             # 부착하고, 그 외(또는 embed_query 미구현 임베더)에는 대칭 임베딩으로 폴백한다.
@@ -366,6 +388,8 @@ class RAGMixin:
             "score_threshold": self._rag_score_threshold,
             "embedder_ready": self._embedder is not None,
             "vector_store": store_status,
+            "structured_count": self._structured_store.count(),
+            "structured_path": str(self._structured_store.path),
             "metrics": self._metrics.snapshot(),
         }
 

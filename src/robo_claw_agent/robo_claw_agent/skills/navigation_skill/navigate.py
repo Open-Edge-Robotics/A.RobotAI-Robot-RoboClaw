@@ -274,7 +274,15 @@ class NavigateToSkill(BaseSkill):
                     rag_kind = "blocked"
                 self.node._memory.add_knowledge(  # type: ignore
                     rag_text,
-                    {"type": rag_type, "kind": rag_kind, "x": x, "y": y, "source": "navigate_to"},
+                    {
+                        "type": rag_type,
+                        "kind": rag_kind,
+                        "x": x,
+                        "y": y,
+                        "source": "navigate_to",
+                        "target_name": target_name or "",
+                        "frame_id": frame,
+                    },
                 )
                 logger.info("[navigate_to] RAG save complete (%s)", rag_type)
             except Exception as _rag_e:

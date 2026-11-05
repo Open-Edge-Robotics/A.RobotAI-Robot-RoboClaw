@@ -14,6 +14,7 @@ from .rag import RAGMixin
 from .semantic import SemanticMixin
 from .skill_learning import SkillLearningMixin
 from .storage import StorageMixin
+from .structured import STRUCTURED_TYPES, StructuredMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,8 @@ class MemoryManager(StorageMixin, EpisodicMixin, RAGMixin, SemanticMixin, SkillL
     """
     에이전트 메모리 및 지식/공간 관리자.
     - 에피소드 메모리: 최근 이벤트 및 대화 히스토리
-    - 지식 베이스(RAG): 임베딩 기반 유사 경험 검색
-    - 시맨틱 맵: 객체 명칭 기반의 위치 좌표 관리
+    - 지식 베이스(RAG): 교훈·장면 본문의 의미 검색
+    - 구조화 메모리(SQLite): 장소·별칭·좌표·스킬 실행 경험 관리
     """
 
     def __init__(
@@ -57,7 +58,6 @@ class MemoryManager(StorageMixin, EpisodicMixin, RAGMixin, SemanticMixin, SkillL
             self._event_path if self._event_path.suffix else self._event_path.with_suffix(".data")
         )
         self._kb_path = self._resolve_kb_path(local_rag_namespace)
-        self._semantic_path = self._artifact_base.with_suffix(".semantic.json")
 
         self._long_term = self._load_json(self._event_path) if self._backend == "json" else []
         self._vector_store = vector_store or LocalVectorStore(
@@ -68,12 +68,29 @@ class MemoryManager(StorageMixin, EpisodicMixin, RAGMixin, SemanticMixin, SkillL
         if self._backend == "sqlite":
             self._init_sqlite()
 
-        # 시맨틱 맵: 이름 기반 O(1) 조회를 위해 딕셔너리로 관리
-        loaded_semantic = self._load_json(self._semantic_path)
-        if isinstance(loaded_semantic, list):
-            self._semantic_map = {obj["name"]: obj for obj in loaded_semantic}
-        else:
-            self._semantic_map = loaded_semantic
+        # JSON 이벤트 백엔드에서도 구조화 데이터는 namespace별 SQLite로 관리합니다.
+        self._structured_store = StructuredMemoryStore(self._kb_path.with_suffix(".structured.db"))
+
+    def list_knowledge_entries(self, *, entry_type=None, skill_name="", success=None, limit=None):
+        structured = self._structured_store.records(
+            entry_type=entry_type, skill_name=skill_name, success=success, limit=limit
+        )
+        if entry_type in STRUCTURED_TYPES:
+            return structured
+        vectors = [
+            e
+            for e in self._vector_store.list_entries()
+            if e.get("metadata", {}).get("type") not in STRUCTURED_TYPES
+            and (not entry_type or e.get("metadata", {}).get("type") == entry_type)
+        ]
+        return structured + vectors
+
+    def find_location_entries(self, names):
+        return [
+            e
+            for e in self._structured_store.records(names=names)
+            if e["metadata"]["type"] in ("location", "navigated_coordinate")
+        ]
 
     def _resolve_kb_path(self, namespace: str) -> Path:
         """로컬 RAG를 선택적 namespace별 파일로 분리한다.
@@ -108,22 +125,21 @@ class MemoryManager(StorageMixin, EpisodicMixin, RAGMixin, SemanticMixin, SkillL
                 conn.execute("DELETE FROM events")
                 conn.commit()
         self._vector_store.clear()
-        self._semantic_map.clear()
-        self._save_data(self._semantic_path, [])
+        self._structured_store.clear()
 
     def summary(self) -> dict[str, Any]:
         persisted_count = len(self._long_term) if self._backend == "json" else self._count_sqlite()
-        knowledge_count = self._vector_store.count()
+        knowledge_count = self._vector_store.count() + self._structured_store.count()
         return {
             "backend": self._backend,
             "short_term": len(self._short_term),
             "long_term": persisted_count,
             "knowledge": knowledge_count,
-            "semantic_objects": len(self._semantic_map),
+            "semantic_objects": len(self.get_all_objects()),
             # 하위 호환용 별칭 (test_memory_manager 등 기존 코드 호환)
             "short_term_count": len(self._short_term),
             "long_term_count": persisted_count,
             "knowledge_count": knowledge_count,
-            "semantic_object_count": len(self._semantic_map),
+            "semantic_object_count": len(self.get_all_objects()),
             "rag": self.rag_status(),
         }
