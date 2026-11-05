@@ -3,6 +3,7 @@
 import json
 import threading
 from typing import Any
+from uuid import uuid4
 
 from ...answer import looks_like_json
 from ...llm_bridge.base import ToolTurn
@@ -55,15 +56,15 @@ def _with_tool_call_ids(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     OpenAI 호환 서버(Azure 포함)는 대화 이력의 ``tool_calls[].id`` 가 문자열이
     아니면 요청 전체를 400으로 거부한다(``Invalid type ... expected a string,
     but got null``). provider가 id를 주지 않거나 브릿지가 유실한 경우에도
-    이력이 깨지지 않도록 누락된 id를 보정한다. 같은 목록을 assistant 메시지와
+    이력이 깨지지 않도록 누락된 id를 라운드마다 고유한 값으로 보정한다. 같은 목록을 assistant 메시지와
     tool 결과 메시지가 공유하므로 양쪽 id가 자동으로 일치한다.
     """
     normalized: list[dict[str, Any]] = []
-    for index, call in enumerate(calls):
+    for call in calls:
         item = dict(call)
         call_id = item.get("id")
         if not isinstance(call_id, str) or not call_id.strip():
-            item["id"] = f"call_{index}"
+            item["id"] = f"call_{uuid4().hex}"
         normalized.append(item)
     return normalized
 
@@ -324,7 +325,7 @@ class LLMPlanner:
 
     async def _request_plan(
         self, messages: list[dict[str, str]], timeout: float
-    ) -> tuple[LLMPlanResult, str]:
+    ) -> tuple[LLMPlanResult, str | ToolTurn, list[dict[str, Any]]]:
         """LLM 에게 계획을 요청하고 정규화된 계획과 원문 응답을 돌려준다.
 
         툴 호출 모드에서는 스킬을 LLM API 의 ``tools`` 로 등록해 도구 호출
@@ -367,7 +368,7 @@ class LLMPlanner:
             resolved = self._resolve_tool_skill_name(call.name)
             if resolved is None:
                 unknown.append(call.name)
-                continue
+                resolved = call.name
             skills.append(SkillChainItem(skill=resolved, params=dict(call.arguments or {})))
             if call.id:
                 tool_call_ids.append(call.id)
@@ -384,7 +385,7 @@ class LLMPlanner:
             )
         if unknown:
             self.node.get_logger().warning(
-                "LLM requested unknown tool(s) %s — dropped. "
+                "LLM requested unknown tool(s) %s — execution will be rejected. "
                 "Only tools registered in the tool list are executable.",
                 ", ".join(unknown),
             )
@@ -450,6 +451,90 @@ class LLMPlanner:
         process_inputs=trace_summary_inputs,
         process_outputs=trace_process_outputs,
     )
+    async def _run_native_tool_loop(self, goal_handle, instruction, messages, timeout, send_fb):
+        """네이티브 호출의 도구·결과 대응을 유지하고 모델의 최종 답변을 반환합니다."""
+        skill_results = []
+        pending_send_events = []
+        recovered_pending = False
+        last_success = True
+        for round_index in range(5):
+            if getattr(goal_handle, "is_cancel_requested", False) is True:
+                return "요청이 취소되었습니다.", skill_results, False, pending_send_events
+            send_fb(f"계획 수립 중 (라운드 {round_index + 1})", 15 + round_index * 5)
+            self.node._set_state(AgentState.THINKING, "", "계획 분석 중")
+            try:
+                plan, turn, calls = await self._request_plan(messages, timeout)
+            except Exception as exc:
+                self.node.get_logger().error(f"Failed to obtain LLM plan: {exc}")
+                return f"해석 오류: {exc}", skill_results, False, pending_send_events
+            if not calls:
+                if plan.response and plan.response.strip():
+                    return plan.response, skill_results, last_success, pending_send_events
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": "도구 결과를 근거로 최종 답변하거나 제공된 도구를 호출하세요. 빈 응답은 반환하지 마세요.",
+                    }
+                )
+                continue
+            if turn.content.strip():
+                send_fb(f"assistant: {turn.content.strip()}", 15 + round_index * 5)
+            chain = [{"skill": item.skill, "params": item.params} for item in plan.skills]
+            unknown = [
+                item["skill"]
+                for item in chain
+                if self._resolve_tool_skill_name(item["skill"]) is None
+            ]
+            error = (
+                f"등록되지 않은 도구: {', '.join(unknown)}"
+                if unknown
+                else self.node._validate_skill_chain(chain)
+            )
+            if not error:
+                protected = ensure_navigation_safety(
+                    chain, self.node._skills, self.node.get_logger(), self.node
+                )
+                if protected != chain:
+                    error = f"주행 안전 준비가 필요합니다. 준비 도구를 먼저 호출한 뒤 다시 요청하세요: {protected}"
+            if error:
+                calls = _with_tool_call_ids(calls)
+                assistant = dict(turn.assistant_message or {})
+                assistant.update(role="assistant", content=turn.content, tool_calls=calls)
+                messages.append(assistant)
+                for call in calls:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_name": call["function"]["name"],
+                            "tool_call_id": call["id"],
+                            "content": json.dumps(
+                                {
+                                    "success": False,
+                                    "error_type": "PlanValidationError",
+                                    "message": error,
+                                    "executed": False,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+                    )
+                last_success = False
+                continue
+            last_success, recovered_pending = await self.execute_skill_chain(
+                chain,
+                messages,
+                instruction,
+                timeout,
+                skill_results,
+                pending_send_events,
+                recovered_pending,
+                send_fb,
+                native_tool_calls=calls,
+                assistant_message=turn.assistant_message,
+                llm_resp_content=turn.content,
+            )
+        return "재플래닝 횟수 초과 (결과 분석 실패)", skill_results, False, pending_send_events
+
     async def run_llm_planning_loop(
         self,
         goal_handle: Any,
@@ -460,6 +545,10 @@ class LLMPlanner:
         send_fb: Any,
     ) -> tuple[str, list[Any], bool, list[threading.Event]]:
         """LLM 계획 수립 → 스킬 체인 실행을 최대 max_rounds회 반복한다."""
+        if self._tool_mode_enabled():
+            return await self._run_native_tool_loop(
+                goal_handle, instruction, messages, timeout, send_fb
+            )
         max_rounds = 5
         current_round = 0
         # 응답 형식 교정 재시도는 계획 라운드와 별도 예산으로 관리한다.
@@ -691,23 +780,6 @@ class LLMPlanner:
             )
 
             if chain_success:
-                # 네이티브 tool calling 모드에서는 체인 실행 후 **항상 다음 LLM 라운드로**
-                # 넘어가 tool 결과를 LLM이 보고 다음 행동(추가 tool call 또는 최종 답변)을
-                # 결정하게 한다. JSON 모드에서만 "action 스킬이면 즉시 종료" 로직을 유지.
-                if self._tool_mode_enabled():
-                    # LLM이 이미 최종 답변을 냈으면(final=True, skills=[]) 종료
-                    if plan.final and not plan.skills:
-                        last_result = skill_results[-1] if skill_results else None
-                        result_msg = (
-                            (last_result.message if last_result else "")
-                            or _compose_result_answer(skill_results)
-                            or plan.response
-                            or "완료"
-                        )
-                        break
-                    # 그렇지 않으면 tool 결과가 messages에 이미 들어갔으므로 다음 라운드 진행
-                    continue
-
                 # JSON 모드: 기존 로직 유지 (action 스킬 있으면 즉시 종료)
                 if (
                     not plan.final
@@ -771,10 +843,10 @@ class LLMPlanner:
         # llm_resp_content가 있으면 content로 추가 (JSON 모드용)
         if native_tool_calls:
             messages.append(
-                assistant_message
-                or {
+                {
+                    **(assistant_message or {}),
                     "role": "assistant",
-                    "content": llm_resp_content or "",
+                    "content": (assistant_message or {}).get("content", llm_resp_content or ""),
                     "tool_calls": native_tool_calls,
                 }
             )
@@ -816,6 +888,7 @@ class LLMPlanner:
                         "message": "대화형 요청이라 물리 동작 스킬은 차단됩니다.",
                     },
                 )
+                chain_success = False
                 continue
 
             self.node.get_logger().info(f"Attempting skill execution: {name} (params={params})")
