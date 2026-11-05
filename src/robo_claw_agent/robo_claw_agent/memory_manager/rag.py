@@ -1,16 +1,38 @@
 import json
 import logging
+import os
 import sqlite3
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+from robo_claw_agent.tracing import call_logging_suppressed
 from robo_claw_agent.vector_store import VectorStore
 
 from .base import Embedder
 
 logger = logging.getLogger(__name__)
+
+
+_SEARCH_DUMP_DIR = Path(__file__).resolve().parents[4] / "chat_history"
+_SEARCH_DUMP_ENABLED = "pytest" not in sys.modules
+
+
+def _dump_search(record: dict[str, Any]) -> None:
+    """검색 진단을 JSON으로 저장하며 저장 실패는 검색 결과에 영향을 주지 않습니다."""
+    if not _SEARCH_DUMP_ENABLED or call_logging_suppressed():
+        return
+    try:
+        _SEARCH_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"rag_search_{record['search_kind']}_{datetime.now():%Y%m%d-%H%M%S-%f}_{os.getpid()}_{uuid4().hex}.json"
+        (_SEARCH_DUMP_DIR / filename).write_text(
+            json.dumps(record, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+    except Exception as exc:
+        logger.warning("Failed to dump RAG search: %s", exc)
 
 
 class RAGMixin:
@@ -25,9 +47,7 @@ class RAGMixin:
     def set_embedder(self, embedder: Embedder | None) -> None:
         self._embedder = embedder
 
-    def add_knowledge(
-        self, text: str, metadata: dict[str, Any] | None = None
-    ) -> bool:
+    def add_knowledge(self, text: str, metadata: dict[str, Any] | None = None) -> bool:
         if not self._embedder:
             return False
         start = time.monotonic()
@@ -229,10 +249,35 @@ class RAGMixin:
         current_pose: tuple[float, float] | None = None,
         radius_m: float | None = None,
     ) -> list[dict[str, Any]]:
-        if not self._embedder or self._vector_store.count() == 0:
-            return []
         start = time.monotonic()
+        record = {
+            "kind": "rag_search",
+            "timestamp": datetime.now().isoformat(),
+            "pid": os.getpid(),
+            "search_kind": "skill_lessons"
+            if (filter_metadata or {}).get("type") == "skill_lesson"
+            else "knowledge",
+            "request": {
+                "query": query,
+                "top_k": top_k,
+                "score_threshold": self._rag_score_threshold
+                if score_threshold is None
+                else score_threshold,
+                "filter_metadata": filter_metadata,
+                "current_pose": current_pose,
+                "radius_m": radius_m,
+            },
+            "status": "success",
+            "results": [],
+            "result_count": 0,
+        }
         try:
+            if not self._embedder:
+                record.update(status="skipped", reason="no_embedder")
+                return []
+            if self._vector_store.count() == 0:
+                record.update(status="skipped", reason="empty_store")
+                return []
             # 공간 필터 정보가 제공된 경우 메타데이터 필터로 치환
             filters = dict(filter_metadata) if filter_metadata else {}
             if current_pose and radius_m is not None and radius_m > 0:
@@ -250,9 +295,7 @@ class RAGMixin:
                 query_vector=query_vec,
                 top_k=top_k,
                 score_threshold=(
-                    self._rag_score_threshold
-                    if score_threshold is None
-                    else score_threshold
+                    self._rag_score_threshold if score_threshold is None else score_threshold
                 ),
                 filter_metadata=filters if filters else None,
             )
@@ -290,6 +333,7 @@ class RAGMixin:
                     score_threshold if score_threshold is not None else self._rag_score_threshold,
                     backend,
                 )
+            record.update(results=results, result_count=len(results), backend=backend)
             return results
         except Exception as e:
             self._metrics.record(
@@ -298,8 +342,12 @@ class RAGMixin:
                 duration_sec=time.monotonic() - start,
                 error=str(e),
             )
+            record.update(status="error", error=f"{type(e).__name__}: {e}")
             logger.error("Failed to search knowledge: %s", e)
             return []
+        finally:
+            record["duration_sec"] = time.monotonic() - start
+            _dump_search(record)
 
     def rag_status(self) -> dict[str, Any]:
         try:
@@ -370,8 +418,7 @@ class RAGMixin:
                     {
                         "text": entry.get("text", ""),
                         "metadata": entry.get("metadata", {}),
-                        "timestamp": entry.get("timestamp")
-                        or datetime.now().isoformat(),
+                        "timestamp": entry.get("timestamp") or datetime.now().isoformat(),
                         "vector": vector,
                     }
                 )
@@ -460,7 +507,11 @@ class RAGMixin:
             # 3. 만료 대상 확인
             entries = self._vector_store.list_entries()
             if not entries:
-                return {"success": True, "message": "만료 대상 지식이 없습니다.", "evicted_count": 0}
+                return {
+                    "success": True,
+                    "message": "만료 대상 지식이 없습니다.",
+                    "evicted_count": 0,
+                }
 
             now = datetime.now()
             threshold_date = now - timedelta(days=ttl_days)
@@ -484,7 +535,11 @@ class RAGMixin:
                         evict_entries.append(entry)
 
             if not evict_ids:
-                return {"success": True, "message": "만료 대상 관찰 지식이 없습니다.", "evicted_count": 0}
+                return {
+                    "success": True,
+                    "message": "만료 대상 관찰 지식이 없습니다.",
+                    "evicted_count": 0,
+                }
 
             # 4. SQLite 콜드 아카이브에 백업
             archived_at_str = datetime.now().isoformat()
@@ -500,8 +555,8 @@ class RAGMixin:
                             entry["text"],
                             json.dumps(entry.get("metadata", {}), ensure_ascii=False),
                             entry.get("timestamp", ""),
-                            archived_at_str
-                        )
+                            archived_at_str,
+                        ),
                     )
                 conn.commit()
 
@@ -509,29 +564,23 @@ class RAGMixin:
             deleted = self._vector_store.delete_entries(ids=evict_ids)
 
             self._metrics.record(
-                "consolidate_and_evict",
-                success=True,
-                duration_sec=time.monotonic() - start
+                "consolidate_and_evict", success=True, duration_sec=time.monotonic() - start
             )
             return {
                 "success": True,
                 "message": f"오래된 관찰 지식 {deleted}건을 콜드 스토리지에 아카이빙하고 액티브 인덱스에서 제거했습니다.",
                 "evicted_count": deleted,
-                "cold_db_path": cold_db_path
+                "cold_db_path": cold_db_path,
             }
         except Exception as e:
             self._metrics.record(
                 "consolidate_and_evict",
                 success=False,
                 duration_sec=time.monotonic() - start,
-                error=str(e)
+                error=str(e),
             )
             logger.error("Failed to expire and archive knowledge: %s", e)
-            return {
-                "success": False,
-                "message": f"아카이빙 중 오류 발생: {e}",
-                "evicted_count": 0
-            }
+            return {"success": False, "message": f"아카이빙 중 오류 발생: {e}", "evicted_count": 0}
 
     def _split_text(self, text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
         if len(text) <= chunk_size:

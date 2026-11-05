@@ -19,6 +19,15 @@ robo_claw_agent_node:
 RAG 검색 결과는 `rag_top_k`와 `rag_score_threshold`에 따라 선별하여 제공합니다.
 학습된 스킬 교훈은 별도 경로로 반영합니다.
 
+### 검색 결과 JSON 로그
+
+검색 진단을 위해 `chat_history/rag_search_*.json`에 검색어, 필터, 적용 임계값,
+반환 항목의 본문·점수·메타데이터와 소요 시간을 저장합니다. `search_kind`는 일반 지식
+검색에서 `knowledge`, 스킬 교훈 검색에서 `skill_lessons`입니다. `status`는 정상 검색의
+`success`, 오류의 `error`, 임베더 미설정·빈 저장소의 `skipped`를 구분합니다.
+정상 검색에서 결과가 없으면 `result_count`는 0이며, 오류는 `error`, 생략 사유는
+`reason`에 기록합니다. JSON 저장 실패는 검색 결과에 영향을 주지 않습니다.
+
 ### 검색 쿼리 재작성
 
 RAG 검색 전에는 최근 대화 내역과 현재 명령을 LLM에 전달하여 검색 쿼리를 재작성합니다.
