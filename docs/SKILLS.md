@@ -87,9 +87,9 @@
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |
 | Autonomous | `stop_autonomous` | Public | action | 공통 | 자율 행동 루프 중단 |
 | Autonomous | `stop_explore` | Public | action | 공통 | 탐험 루프 중단 |
-| Motion | `execute_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 실행(선행 동작은 확인된 요청에서 10초 간격으로 순차 요청) |
+| Motion | `execute_cloid_motion` | Public | dangerous | CLOiD | 확인된 CLOi 모션 실행(선행 동작은 확인된 요청에서 10초 간격으로 순차 요청) |
 | Motion | `list_cloid_motions` | Public | read | CLOiD | CLOi ScenarioManager 모션 카탈로그 조회 |
-| Motion | `stop_cloid_motion` | Public | action | CLOiD | 확인된 CLOi 모션 정지 요청 |
+| Motion | `stop_cloid_motion` | Public | dangerous | CLOiD | 확인된 CLOi 모션 정지 요청 |
 | Motion | `set_cloid_packing_pose` | Public | dangerous | CLOiD | 포장용 최소 부피 boxing 자세 실행 요청(정지 상태, confirm 필요). 주행 전에는 prelude 스킬이 자동 수행 |
 | Motion | `cloid_navigation_pose` | Internal | dangerous | CLOiD | 주행 전 boxing 자세 prelude(게이트가 베이스 이동 직전 자동 삽입, confirm 없음, cloid_navigation_pose_enabled 필요) |
 | Motion | `cloid_express` | Internal | action | CLOiD | 상황별 표현 모션 자동 재생(태스크당 1회, 주행 태스크·boxing 자세 직후 제외) |
@@ -120,7 +120,7 @@
 | System/RAG | `rag_status` | Public | read | 공통 | RAG backend 상태 조회 |
 | System/RAG | `reflect_skills` | Public | action | 공통 | 스킬 실행 경험에서 교훈 추출 |
 | System/RAG | `reset_emergency_stop` | Public | dangerous | 공통 | 확인 후 비상정지 래치 해제 |
-| System/RAG | `ros_command` | Public | write | 공통 | ROS2 CLI 및 시스템 명령 실행 |
+| System/RAG | `ros_command` | Public | write | 공통 | 허용된 읽기 전용 ROS2 CLI 실행(위험도 write) |
 | File | `analyze_stored_file` | Public | action | 공통 | 저장 파일 내용·이미지 분석 |
 | File | `delete_file` | Public | action | 공통 | 작업 공간 파일 삭제 |
 | File | `edit_text_file` | Public | action | 공통 | 텍스트 파일 부분 수정 |
@@ -132,4 +132,4 @@
 | Butler | `run_butler_script` | Public | dangerous | 공통 | 허용된 Butler 스크립트 실행 |
 | HRI | `send_message` | Public | action | 공통 | 텍스트·파일 메시지 전송 |
 
-읽기 전용 스킬은 [태스크 큐](OPERATIONS.md#태스크-큐-순차-실행)를 우회해 즉시 실행될 수 있습니다. 위험 스킬은 HTTP API에서 기본 차단되며 `skill_allowed_json`과 `skill_blocked_json`으로 조정합니다. 상세 파라미터와 안전 조건은 시스템 프롬프트의 schema 요약, 각 기능 문서, 그리고 실제 `input_schema`를 기준으로 합니다.
+읽기 전용 스킬은 [태스크 큐](OPERATIONS.md#태스크-큐-순차-실행)를 우회해 즉시 실행될 수 있습니다. 기본 차단 목록은 launch 인자 `http_allowed_skills_json`·`http_blocked_skills_json`으로 조정합니다. 표준 launch는 이를 HTTP 채널과 에이전트 공통 정책(`skill_allowed_json`·`skill_blocked_json`)에 함께 적용합니다. 상세 파라미터와 안전 조건은 시스템 프롬프트의 schema 요약, 각 기능 문서, 그리고 실제 `input_schema`를 기준으로 합니다.

@@ -10,6 +10,7 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 2.  **토큰 복사**: 생성 완료 시 제공되는 `HTTP API Token`을 복사합니다.
 3.  **.env 설정**:
     ```bash
+    ENABLE_TELEGRAM=true
     TELEGRAM_BOT_TOKEN=123456789:ABCDefgh-IJKLmnop...
     ```
 4.  **사용**: 텔레그램에서 봇에게 말을 걸면 에이전트가 답변합니다.
@@ -30,8 +31,9 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 5.  **토큰 설치**: `Settings` -> `Install App`을 진행하여 `xoxb-`로 시작하는 **Bot User OAuth Token**을 복사합니다.
 6.  **.env 설정**:
     ```bash
-    SLACK_APP_TOKEN=xapp-1-... (App Level Token)
-    SLACK_BOT_TOKEN=xoxb-... (Bot User OAuth Token)
+    ENABLE_SLACK=true
+    SLACK_APP_TOKEN=xapp-1-...
+    SLACK_BOT_TOKEN=xoxb-...
     ```
 
 ---
@@ -47,6 +49,7 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 4.  **초기 설치**: `OAuth2` -> `URL Generator`에서 `bot` 체크 후, `Send Messages`, `Read Message History` 권한을 선택해 생성된 링크로 본인의 서버에 봇을 초대합니다.
 5.  **.env 설정**:
     ```bash
+    ENABLE_DISCORD=true
     DISCORD_BOT_TOKEN=OTk5...
     ```
 
@@ -56,7 +59,9 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 
 ## 🚀 실행
 
-모든 토큰이 설정되었다면 채널 노드가 자동으로 활성화됩니다.
+`./rclaw run`은 채널 노드를 기본 활성화하지만 각 메신저는 `ENABLE_TELEGRAM`,
+`ENABLE_SLACK`, `ENABLE_DISCORD`가 `true`이고 필요한 토큰이 있어야 연결합니다.
+로컬 `run/sim`에서 세 메신저의 기본 활성화 값은 모두 `false`입니다.
 
 ```bash
 # 권장: .env 설정 기반 실행

@@ -17,8 +17,11 @@
 
 `robo_claw.launch.py`에 `use_dashboard` 인자를 활성화합니다. 외부 노출을 원하면 `dashboard_host`, 그리고 인증을 위해 `http_*` 토큰/CIDR을 함께 설정합니다.
 
-```bash
-export RC_USE_DASHBOARD=true               # .env 또는 rclaw run 에서 사용하는 값
+프로젝트 루트 `.env`에 다음 값을 넣고 `./rclaw run`을 실행합니다.
+셸의 `export`만으로는 `run`의 dashboard launch 매핑에 전달되지 않습니다.
+
+```dotenv
+RC_USE_DASHBOARD=true
 ```
 
 ```bash
@@ -223,7 +226,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
   상단 요약에 `기본값 N개(흐림)`으로 개수를 함께 보여 줍니다.
 - 긴 문자열(160자 초과)과 배열(20개 초과)은 화면 표시용으로 줄입니다.
 - 기본값 판정은 다음 두 출처를 병합해 비교합니다(뒤가 우선).
-  1. `contracts/runtime-contract.json`의 `default` (계약 기본값, 44개 파라미터)
+  1. `contracts/runtime-contract.json`의 `default` (계약 기본값)
   2. launch가 실제로 쓰는 파라미터 파일 `robo_claw_bringup/config/agent.yaml` +
      에이전트 `robot_config` 값에 해당하는 `<robot>_config.yaml`
 - 두 출처에 없는 파라미터(노드 내부 값 등)는 `source: unknown`으로 두고 흐리게 표시하지
@@ -377,13 +380,13 @@ curl -X POST http://127.0.0.1:9090/api/chat \
 
 ### AI Config 서버 설정 입력
 
-Docker 로 기동한 대시보드 컨테이너는 호스트의 CLI 설정(`~/.config/robo_claw_cli/config.yaml`)도 CLI 캐시 디렉토리도 볼 수 없습니다. 그래서 `rclaw former kon47` 같은 실행 인자에 의존하지 않고, 웹 UI의 **서버 설정** 패널에서 다음 값을 직접 입력합니다.
+Docker 로 기동한 대시보드 컨테이너는 호스트의 CLI 설정(`~/.config/robo_claw_cli/config.yaml`)도 CLI 캐시 디렉토리도 볼 수 없습니다. 그래서 `rclaw launch former kon47` 같은 실행 인자에 의존하지 않고, 웹 UI의 **서버 설정** 패널에서 다음 값을 직접 입력합니다.
 
 | 입력 항목 | 예 | 설명 |
 | --------- | -- | ---- |
 | 서버 URL | `http://192.168.50.47:30180` | `http(s)://host[:port]` 만 허용 (그 외 스킴/경로/쿼리는 400) |
-| 로봇 이름 | `former` | `rclaw <robot> <environment>` 의 첫 인자 |
-| 환경 | `kon47` | `rclaw <robot> <environment>` 의 두 번째 인자 |
+| 로봇 이름 | `former` | `rclaw launch <robot> <environment>` 의 첫 인자 |
+| 환경 | `kon47` | `rclaw launch <robot> <environment>` 의 두 번째 인자 |
 | 디바이스 토큰 | (선택) | AI Config Server 디바이스 토큰. 인증은 `Authorization: Bearer` 로 전송합니다. |
 
 - 값은 브라우저 `localStorage`(`rc.scenario.config`)에만 저장되며 서버 프로세스는 보관하지 않습니다.
@@ -420,7 +423,7 @@ curl -OJ "http://127.0.0.1:9090/api/scenarios/report?format=md" \
 
 ## 안전 관련
 
-- `/api/chat`은 전체 에이전트 실행 경로이므로 기본적으로 `control` 권한이 필요합니다. `emergency_stop` 등 위험 스킬은 `http_blocked_skills_json` 기본값으로 차단됩니다.
+- `/api/chat`은 인증 활성화 시 `control` 권한이 필요합니다. 대시보드의 HTTP 보안 객체는 자연어 명령 내부의 스킬을 검사하지 않습니다. 표준 launch가 에이전트에 전달하는 공통 스킬 정책으로 차단하며, 대시보드와 에이전트를 별도 실행하면 에이전트 정책도 직접 설정합니다.
 - `/api/initial_pose`도 `control` 권한이 필요합니다. 지도 미수신, 좌표 범위 초과, 비유한 값은 발행 전에 거부합니다.
 - 자연어 명령이 차단 스킬을 간접 유발하지 않도록 에이전트 폴리시 설정과 함께 운영 시 검증합니다.
 - 외부 웹 노출 전에는 시뮬레이션에서 토큰 무단 접근 차단, CIDR 차단, rate-limit, 경로 traversal 거부를 확인하세요.

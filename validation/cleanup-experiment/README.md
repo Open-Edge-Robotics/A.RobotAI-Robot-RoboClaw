@@ -49,8 +49,9 @@ python3 validation/cleanup-experiment/run_cleanup_experiment.py \
 - 조건 파일에 `cycle: true` 와 `cycles: N` 이 있으면 phases 를 한 주기로 묶어 N회 반복합니다.
   `cycle4` 는 4개 장소를 1주기로 보므로 `--repeat 1` 은 파일럿 1주기(4회), `--repeat 10` 은
   40회입니다.
-- `--run-log` 는 에이전트가 보는 경로입니다. 컨테이너로 띄운 경우 마운트된 경로(예:
-  `/ros2_ws/agent_workspace/cleanup_runs.jsonl`)를 주고, 같은 파일을 호스트에서 읽습니다.
+- `--run-log`는 러너 프로세스가 읽을 수 있는 경로입니다. 호스트에서 러너를 실행하면
+  컨테이너 내부 경로가 아니라 해당 bind mount의 호스트 경로를 지정합니다. 에이전트의
+  `RC_CLEANUP_RUN_LOG_PATH`는 같은 파일의 컨테이너 내부 경로를 사용합니다.
 
 ## 리포트
 
@@ -84,6 +85,6 @@ python3 scripts/cleanup_run_report.py "$RC_CLEANUP_RUN_LOG_PATH" \
 - 위임 성공은 `cleanup_delegate` 레코드의 성공 여부입니다. 수신 로봇이 "정리를 완료했다"가
   아닌 거부 문장을 돌려주면서 성공 플래그를 주는 경우가 있으므로, 리포트의 회차 상세에서
   응답과 장소 status 를 함께 확인합니다. 시연 모션의 물리 완료는 확인되지 않습니다.
-- 러너는 로봇 상태를 변경하지 않습니다. 컨테이너 중지·재기동과 피어 설정 변경은 사람이
+- 러너는 자연어 명령을 전송하므로 로봇의 이동·시연을 유발합니다. 컨테이너나 피어 설정을 자동 변경하지 않습니다. 컨테이너 중지·재기동과 피어 설정 변경은 사람이
   수행하고, `--dry-run` 으로 무엇을 준비해야 하는지 먼저 확인합니다.
 - 재계획 성공률은 `--agent-log` 를 준 경우에만 계산합니다. 주지 않으면 `n/a` 로 남습니다.

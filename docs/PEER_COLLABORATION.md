@@ -97,16 +97,16 @@ ros2 launch robo_claw_bringup robo_claw.launch.py \
   target_peers_json='[{"host":"FORMER_IP","port":50052,"agent_name":"Former0047"}]'
 ```
 
-`./rclaw run`을 사용할 때는 다음 환경 변수를 설정합니다.
+`./rclaw run`을 사용할 때는 각 로봇의 프로젝트 루트 `.env`에 다음 값을 설정합니다.
 
 ```bash
 # Former 로봇
-export RC_AGENT_ID=Former0047
-export GRPC_TARGET_PEERS_JSON='[{"host":"STRETCH_IP","port":50052,"agent_name":"Stretch3"}]'
+RC_AGENT_ID=Former0047
+GRPC_TARGET_PEERS_JSON='[{"host":"STRETCH_IP","port":50052,"agent_name":"Stretch3"}]'
 
 # Stretch 로봇
-export RC_AGENT_ID=Stretch3
-export GRPC_TARGET_PEERS_JSON='[{"host":"FORMER_IP","port":50052,"agent_name":"Former0047"}]'
+RC_AGENT_ID=Stretch3
+GRPC_TARGET_PEERS_JSON='[{"host":"FORMER_IP","port":50052,"agent_name":"Former0047"}]'
 ```
 
 실제 하위 스킬 실행까지 테스트하려면 자동 참여한 로봇도 `allow_remote_task_execution=true`로 시작해야 합니다. 자동 참여는 보안상 이 권한을 원격 메시지로 임의 활성화하지 않습니다.

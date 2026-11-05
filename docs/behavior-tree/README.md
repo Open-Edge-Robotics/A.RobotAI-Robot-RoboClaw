@@ -46,7 +46,7 @@ flowchart TB
 
     ReAct --> SM
     BT --> SM
-    SM["SkillManager (skill_manager.py)\n90+ 스킬 플러그인 실행 엔진"]
+    SM["SkillManager (skills/manager.py)\n90+ 스킬 플러그인 실행 엔진"]
     SM --> ROS["ROS 2 / Nav2 / MoveIt / VLM / RAG"]
 ```
 
@@ -158,7 +158,7 @@ flowchart TB
     Root --> A4["④ SleepBetweenCycles\n(cycle_interval_sec, 기본 3s)"]
 
     A2 --> B1["CheckBatterySufficient\n(min_battery_pct, 기본 20%)"]
-    A2 --> B2["EmergencyLowBattery\n(경고 후 루프 종료)"]
+    A2 --> B2["EmergencyLowBattery\n(기본 경고 유지, check_only=False면 종료)"]
 
     A3 --> C1["SEQ · PerCycleWork"]
     A3 --> C2["CycleDone (항상 SUCCESS)"]

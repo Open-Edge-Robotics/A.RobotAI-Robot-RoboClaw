@@ -150,7 +150,7 @@ for c in cols:
 ```bash
 ssh former@10.159.172.69 'docker start robo_claw_container'
 # 또는 프로파일을 새로 받으며 기동
-robo_claw_cli launch former <env> --docker --image-tag <태그> --use-grpc
+./rclaw launch former <env> --docker --image-tag <태그> --use-grpc
 ```
 
 기동 로그에서 초기화가 반영됐는지 확인:
@@ -173,8 +173,9 @@ robo_claw_cli launch former <env> --docker --image-tag <태그> --use-grpc
 
 ## 참고: 파이썬 코드 변경은 이 스크립트로 반영되지 않습니다
 
-로봇은 **호스트 소스 트리를 컨테이너 install 공간에 bind mount** 합니다. 따라서 에이전트
-파이썬 코드를 바꿨다면 이 초기화가 아니라 아래가 필요합니다(이미지 재빌드도 불필요):
+**호스트 소스를 bind mount하는 개발 배포**에서는 아래처럼 소스를 갱신하고
+필요한 build 후 컨테이너를 재시작합니다. 이미지 내 소스를 쓰는 배포는 이미지 재빌드·재배포가
+필요합니다. `docker inspect`의 Mounts로 실제 실행 경로를 먼저 확인합니다.
 
 ```bash
 ssh former@10.159.172.69 'cd ~/workspace/robo-claw/robo-claw && git pull'

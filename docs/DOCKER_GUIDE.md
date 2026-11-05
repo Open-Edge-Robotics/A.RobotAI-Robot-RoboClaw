@@ -24,7 +24,7 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 
 | 옵션명                            | 값 타입   | 설명                                                                                                     | 기본값                                    |
 | :-------------------------------- | :-------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------- |
-| `--robot-config`                  | `string`  | 로봇 설정 프로필을 지정합니다. (`stretch3` \| `former` \| `butler` \| `cloid` \| `sim`)                | `sim`                                     |
+| `--robot-config`                  | `string`  | 로봇 설정 프로필을 지정합니다. (`stretch3` \| `former` \| `butler` \| `cloid` \| `sim`)                | `.env`의 `RC_ROBOT_CONFIG`; 미설정 시 launch 기본 `stretch3` |
 | `--camera-topic`                  | `string`  | 카메라 이미지 토픽을 수동으로 재정의(override)합니다.                                                    | 로봇 프로필 기본값                        |
 | `--soul` / `--soul-file`          | `path`    | 로봇 에이전트의 개성·핵심 지침이 담긴 마크다운 파일 경로를 지정합니다.                                   | `.env` 설정 또는 기본 파일                |
 | `--skills-guide` / `--guide-file` | `path`    | 로봇 에이전트의 스킬 동작 가이드 마크다운 파일 경로를 지정합니다.                                        | `.env` 설정 또는 기본 파일                |
@@ -34,7 +34,7 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 | `--agent-workspace`               | `path`    | 에이전트 전용 작업 공간 폴더의 호스트 경로를 지정합니다. (컨테이너 내 `/ros2_ws/agent_workspace`로 연동) | `.env` 설정 또는 `$(pwd)/agent_workspace` |
 | `--config-dir`                    | `path`    | `robo_claw_bringup` 설정 폴더의 호스트 경로를 지정합니다.                                                | `src/robo_claw_bringup/config`            |
 | `--grpc` / `--use-grpc`           | 없음      | gRPC 제어 노드(`robo_claw_grpc_node`)를 함께 실행합니다.                                                 | `false`                                   |
-| `--vision` / `--use-vision`       | 없음      | ONNX 기반 객체 감지 비전 노드(`object_detector_node`)를 함께 실행합니다.                                 | `false`                                   |
+| `--vision` / `--use-vision`       | 없음      | ONNX 기반 객체 감지 비전 노드(`object_detector_node`)를 함께 실행합니다.                                 | `true` (`USE_VISION` 또는 `RC_USE_VISION`으로 변경) |
 | `--`                              | 복수 인자 | `--` 이후의 모든 명령은 도커 컨테이너 내부 셸에서 직접 위임 실행됩니다.                                  | ROS 2 기본 런치                           |
 
 ---
@@ -154,10 +154,10 @@ task deps-check
 
 ## 7. 빌드 + push
 
-`task docker-build`는 현재 git 커밋 해시를 기본 `TAG`으로 사용합니다. 불변 태그 권장(`:latest` 캐시 함정 방지 — `TAG=20260807 task docker-build TAG=$TAG`처럼 덮어쓸 수 있습니다).
+`task docker-build`는 현재 git 커밋 해시를 기본 `TAG`으로 사용합니다. 불변 태그 권장(`:latest` 캐시 함정 방지 — `task docker-build TAG=20260807`처럼 덮어쓸 수 있습니다).
 
 ```bash
-TAG=20260807 task docker-build TAG=$TAG
+task docker-build TAG=20260807
 ```
 
 실행되는 실제 명령:
@@ -222,7 +222,7 @@ task docker-buildx-recreate
 
    ```bash
    # 로봇에 최신 소스 동기화 후, Dockerfile이 있는 저장소 루트에서
-   TAG=<tag> task docker-build-native TAG=$TAG
+   task docker-build-native TAG=<tag>
    ```
 
    네이티브 빌드도 `:latest`와 `<hash>`를 함께 태그하므로, 이후 `./rclaw launch <robot> <env> --docker`(기본 태그 `latest`)를 그대로 실행할 수 있습니다.

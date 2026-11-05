@@ -60,7 +60,9 @@ cd <robo-claw>
 
 ### 1) 에이전트 이미지 빌드·배포 (개선 반영이 안 돼 있을 때만)
 
-`SKILLS.*.md`·에이전트 코드는 **이미지에 구워지므로**, 수정본을 반영하려면 재빌드·재배포가 필요합니다.
+이미지 내 소스를 사용하는 배포는 수정본 반영 시 이미지를 재빌드·재배포합니다.
+호스트 소스를 bind mount하는 개발 배포는 해당 소스와 build/install 상태를 확인한 뒤
+프로세스를 재시작합니다. AI Config Server가 내려준 `SKILLS.md`는 서버 프로필을 갱신합니다.
 (`:latest`는 캐시 함정이 있으니 **불변 태그** 권장.)
 
 ```bash
@@ -97,7 +99,7 @@ ssh former@10.159.172.69 'docker exec robo_claw_container cat /etc/robo_claw_ver
 ```bash
 ssh former@10.159.172.69
 docker stop robo_claw_container 2>/dev/null; docker rm robo_claw_container 2>/dev/null
-robo_claw_cli launch former w2_2f_2 --docker \
+./rclaw launch former w2_2f_2 --docker \
   --image-tag 20260804-p1p5 --pull --use-grpc
 # 컨테이너 로그가 포그라운드로 계속 출력됨 → 이 창은 그대로 둠
 ```
@@ -114,13 +116,13 @@ robo_claw_cli launch former w2_2f_2 --docker \
 ssh former@10.159.172.69
 cd <robo-claw>/validation
 CLI=<robo_claw_cli 경로> ./run_scenario_test.sh
-# 원격 PC에서 로봇 IP로:  HOST=10.159.172.69 CLI=./robo_claw_cli ./run_scenario_test.sh
+# 원격 PC에서 로봇 IP로:  HOST=10.159.172.69 CLI=../rclaw ./run_scenario_test.sh
 ```
 
 **직접 실행** (동등):
 
 ```bash
-./robo_claw_cli test -r former -e w2_2f_2 \
+../rclaw test -r former -e w2_2f_2 \
   --host localhost --port 50052 \
   --scenario-file <로봇에 복사한 경로>/first-use-scenario-auto.json \
   --output ./test-report.md
@@ -132,7 +134,7 @@ CLI=<robo_claw_cli 경로> ./run_scenario_test.sh
 
 | 스텝                            | 기대     | 의미                                            |
 | :------------------------------ | :------- | :---------------------------------------------- |
-| tc00 (ping)                     | (무시)   | 50052엔 RosGrpc 없음 → FAIL 정상. 무시          |
+| tc00 (ping)                     | (무시)   | RosGrpc 미지원 시 Messenger Ping으로 폴백합니다. FAIL이면 연결·인증을 확인합니다.          |
 | tc03/04/07/10/11/12 (위치 질의) | **PASS** | 이름+좌표 응답, `[스킬` 누수 없음 → 개선 반영됨 |
 | tc13/15 (이름 기반 이동)        | **PASS** | 실제 주행 완료                                  |
 | tc16/17 (현재 위치 이름)        | **PASS** | `현재 위치는 '키친'입니다` (좌표→이름)          |

@@ -225,7 +225,7 @@ NERO 팔 카메라를 0045 로 받아야 한다면, 인터페이스를 늘리는
 1. `use_composition:=False` — 노드별 개별 프로세스(크래시 국소화 + 범인 노드 식별)
 2. `navigation_launch.py` 패치 바인드마운트 — `cmd_vel_smoothed → /base_controller/cmd_vel_unstamped`
 3. `bringup_launch.py` 패치 바인드마운트 + `/opt/rc/scan_restamp.py` — 스캔 재스탬프 노드 실행
-4. `~/konjiam/former/params/nav2_params.yaml` — `track_unknown_space: false`, `inflation_radius: 0.35`, `scan_topic: scan_restamped`, costmap 관측 토픽 `/scan_restamped`
+4. `~/konjiam/former/params/nav2_params.yaml` — `track_unknown_space: false`, `inflation_radius: 0.30`, `scan_topic: scan_restamped`, costmap 관측 토픽 `/scan_restamped`
 5. 같은 파일의 amcl — `recovery_alpha_fast: 0.0`, `recovery_alpha_slow: 0.0` (3.5절). 백업은 `nav2_params.yaml.bak_20261023-recovery_alpha` 입니다. former0045, former0047 모두 적용했습니다.
 
 검증된 정상 상태 지표(재기동 직후 1~2분):

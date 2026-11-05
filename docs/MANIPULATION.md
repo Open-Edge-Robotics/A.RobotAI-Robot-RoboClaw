@@ -65,7 +65,7 @@ Former0045 에 AgileX Nero(7-DOF) 팔과 AgileX 그리퍼(`agx_gripper`)가 장�
 
 ```bash
 # RoboClaw 컨테이너(ROS 2 humble, ROS_DOMAIN_ID=4, rmw_cyclonedds_cpp) 기준
-./rclaw run --robot-config former_arm
+./rclaw run robot_config:=former_arm
 ```
 
 | 파일 | 내용 |
@@ -128,9 +128,12 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 - **팔 관절 제어**: 드라이버의 생략 관절 0.0 보정(리셋) 버그를 방지하기 위해, 지정되지 않은 관절은 최신 수신된 피드백(`_latest_joint_state`) 값으로 자동 보존하여 발행합니다.
 - **물리 검증 완료**: 실기 그리퍼 열기(`open_gripper`, 0.05m 도달) 및 닫기(`close_gripper`, 0.00038m 도달) 물리적 동작이 검증되었습니다.
 
-### 3. 후속 에이전트를 위한 인수인계 및 디버깅 포인트
+### 3. 그리퍼 도달 피드백 타임아웃 진단
 
-현재 드라이버와 물리 구동은 정상이나, RoboClaw 에이전트(`robo_claw_container`)의 HTTP 스킬 실행 파이프라인에서 다음 이슈가 확인되어 인수인계합니다.
+목표에 실제 도달했는데 타임아웃을 반환하면 피드백 수신과 실행 스레드를 함께 확인합니다.
+현재 `AgxDriverBackend`는 별도의 `ReentrantCallbackGroup`을 생성해 피드백 구독과
+서비스 클라이언트에 적용합니다. 아래 증상만으로 현재 배포에 콜백 그룹이 없다고
+판단하지 않습니다.
 
 - **증상**: 
   - `curl -X POST http://localhost:8080/skill -d '{"skill_name": "open_gripper", "params": {}}'` 호출 시 물리 하드웨어는 정상 작동하여 `gripper: 0.0498m`에 도달함.
@@ -140,7 +143,7 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
   - `AgentNode` 내부에서 스킬 실행 스레드가 `_wait_until` 루프를 도는 동안, `_on_joint_state` 콜백이 최신 값을 갱신하지 못하고 오래된 캐시값(`0.000384`)에 갇혀 있음(콜백 starvation 현상).
 - **해결 가이드**:
   1. `AgentNode`의 `MultiThreadedExecutor`에서 manipulation 백엔드의 콜백 그룹(`cb_group = ReentrantCallbackGroup()`)이 정상 스케줄링되는지 확인합니다.
-  2. `_on_joint_state` 서브스크립션 생성 시 SensorDataQoS(`rclpy.qos.qos_profile_sensor_data` 또는 `best_effort`)를 명시하여 큐 적체 없이 항상 최신 샘플을 가져오도록 수정합니다.
+  2. 현재 피드백 구독은 depth 10의 기본 QoS를 사용합니다. `ros2 topic info -v /feedback/joint_states`로 드라이버와 QoS 호환성을 확인한 뒤 필요할 때만 변경합니다.
   3. `_wait_until` 루프 내에서 불필요한 락이나 sleep 차단이 없는지 점검합니다.
 
 ## 현재 구현의 한계

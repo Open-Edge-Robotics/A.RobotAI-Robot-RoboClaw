@@ -29,7 +29,7 @@ User ── Channel Gateway ── Roboclaw_core (PI Agent) ──┬── LLM 
 
 ## 2. Skill Manager
 
-robo-claw 소스의 스킬 정의(공개 스킬 95개)를 기준으로 그림의 6개 박스에 나눈 주요 스킬입니다.
+robo-claw 소스의 스킬 정의(전체 스킬 106개, 공개 범위는 `SKILLS.md` 참조)를 기준으로 그림의 6개 박스에 나눈 주요 스킬입니다.
 
 | 박스 | 주요 스킬 |
 |---|---|
@@ -38,7 +38,7 @@ robo-claw 소스의 스킬 정의(공개 스킬 95개)를 기준으로 그림의
 | Map | `capture_map`, `analyze_map`, `get_map_visual`, `annotate_map`, `find_reachable_places`(갈 수 있는 장소 등록), `explore`(SLAM 탐험) |
 | System/HRI | `get_status`(배터리·좌표), `get_datetime`, `identify_location` / `get_location`(장소 이름·좌표), `rag_search` / `rag_add`(지식 검색·저장), `emergency_stop`(비상 정지), `send_message`(메신저 보고) |
 | Cooperate/File | 협업: `list_peer_robots`, `call_peer_robot`, `delegate_task`, `coordinate_peer_task`, `autonomous_cooperate` / 파일: `read_text_file`, `write_text_file`, `run_script` |
-| Robo_claw_discovery | ROS 그래프 자동 탐색(토픽·서비스·액션·노드), 네트워크 내 동료 에이전트 탐색, `list_topics`, `ros_command`(읽기 전용 ROS 2 CLI) |
+| Robo_claw_discovery | ROS 그래프 자동 탐색(토픽·서비스·액션·노드), 네트워크 내 동료 에이전트 탐색, `list_topics`, `ros_command`(위험도는 write로 분류하지만 허용된 읽기 전용 ROS 2 CLI만 실행) |
 
 ### 2.1 추가 권장 박스
 

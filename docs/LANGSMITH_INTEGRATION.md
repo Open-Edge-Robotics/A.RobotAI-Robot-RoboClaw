@@ -40,7 +40,7 @@ task setup-deps   # 또는: uv sync
 | `ros2 launch` 직접 실행 | 셸에서 `export`합니다. |
 
 서버 프로필이 제공하는 항목은 `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`,
-`LANGSMITH_ENDPOINT`입니다. `LANGSMITH_TRACING_SAMPLING_RATE`, `LANGSMITH_HIDE_INPUTS` 같은 그 밖의
+`LANGSMITH_ENDPOINT`, `LANGSMITH_WORKSPACE_ID`입니다. `LANGSMITH_TRACING_SAMPLING_RATE`, `LANGSMITH_HIDE_INPUTS` 같은 그 밖의
 SDK 변수는 `./rclaw launch`(로컬)에서는 셸 `export`로, Docker에서는 `scripts/run_robo_claw_docker.sh`의
 `.env`로 지정합니다.
 
@@ -147,7 +147,7 @@ LangSmith 실행 그래프는 자동으로 Python call graph나 ROS graph를 만
 
 ### 1. 모든 trace를 수집하도록 환경변수 설정
 
-실행 방식별 위치("활성화 방법 > 2. 환경변수 설정")에 다음 값을 설정합니다. `./rclaw launch --docker`는 서버 프로필의 네 항목(`TRACING`/`API_KEY`/`PROJECT`/`ENDPOINT`)만 전달하므로, sampling·hide 값까지 쓰려면 `scripts/run_robo_claw_docker.sh`와 `.env`를 사용합니다.
+실행 방식별 위치("활성화 방법 > 2. 환경변수 설정")에 다음 값을 설정합니다. `./rclaw launch --docker`는 서버 프로필의 다섯 항목(`TRACING`/`API_KEY`/`PROJECT`/`ENDPOINT`/`WORKSPACE_ID`)을 포함한 캐시 `.env`를 전달합니다. 서버 프로필에 없는 sampling·hide 값까지 쓰려면 `scripts/run_robo_claw_docker.sh`와 `.env`를 사용합니다.
 
 ```dotenv
 LANGSMITH_TRACING=true
@@ -223,7 +223,7 @@ LangSmith의 `robo-claw-detailed` project에서 `run_llm_planning_loop` trace를
 ### 4. Skill 실행을 그래프의 child node로 표시
 
 Skill 실행은 중앙 실행 경계인
-`src/robo_claw_agent/robo_claw_agent/skill_manager.py`의 `SkillManager.execute`에
+`src/robo_claw_agent/robo_claw_agent/skills/manager.py`의 `SkillManager.execute`에
 `traceable(run_type="tool")`가 적용되어 있습니다. 각 개별 skill 파일을 모두 감싸는 대신 중앙
 경계를 계측해 누락과 중복 trace를 줄입니다.
 
@@ -278,14 +278,15 @@ def execute(self, skill_name, params=None, timeout_sec=30.0):
 
 ### 5. Safety, retry, ROS action을 별도 node로 표시
 
-Policy, precondition, schema validation과 skill attempt는 현재 별도 child run으로 계측됩니다.
+Policy·precondition·schema validation은 `SkillManager.execute` 내부에서 검사하며
+독립 child run을 만들지 않습니다. skill attempt는 별도로 계측합니다.
 ROS action 세부 단계는 필요할 경우 아래 권장 경계를 추가 계측합니다.
 
 | 계측 위치 | 권장 run name | run type | 표시할 정보 |
 | --- | --- | --- | --- |
-| `_check_skill_policy` | `skill_policy_check` | `chain` | 적용됨: allow/deny와 실패 이유 |
-| `check_preconditions` | `skill_preconditions` | `chain` | 적용됨: 조건 통과 여부와 실패 이유 |
-| `validate_input_schema` | `skill_schema_validation` | `chain` | 적용됨: schema 통과 여부와 오류 |
+| `_check_skill_policy` | `skill_policy_check` | `chain` | `SkillManager.execute` 결과에 기록 |
+| `check_preconditions` | `skill_preconditions` | `chain` | `SkillManager.execute` 결과에 기록 |
+| `validate_input_schema` | `skill_schema_validation` | `chain` | `SkillManager.execute` 결과에 기록 |
 | `_execute_direct`, `_execute_with_timeout` | `skill_attempt_*` | `tool` | 적용됨: attempt, timeout, duration, result |
 | navigation goal 전송 | `ros_navigation_goal` | `tool` | goal ID, map/frame, target |
 | action feedback 처리 | `ros_action_feedback` | `chain` | progress, current pose |

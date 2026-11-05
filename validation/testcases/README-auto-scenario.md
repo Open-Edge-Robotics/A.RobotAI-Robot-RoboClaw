@@ -44,10 +44,12 @@ ssh former@10.159.172.69 'cd ~/workspace/robo-claw && \
 
 ```bash
 cd ~/workspace-roboclaw/robo-claw/robo_claw_cli   # (빌드 머신 기준)
-go build -o robo_claw_cli .        # 또는: task build
+go build -o ../rclaw .
+cd ..   # 저장소 루트로 이동합니다.
 ```
 
-`config.yaml` 의 server 가 `10.159.172.74:30180` 인지 확인(다르면 아래 --host/--port 사용).
+`config.yaml`의 `server.host`·`server.port`로 설정 서버 주소를 지정합니다.
+`test --host`·`--port`는 설정 서버가 아니라 로봇 gRPC 접속 대상입니다.
 
 ## 2단계 — 로봇 준비 (회원님)
 
@@ -58,10 +60,10 @@ go build -o robo_claw_cli .        # 또는: task build
 ## 3단계 — 시나리오 실행
 
 ```bash
-./robo_claw_cli test -r former -e w2_2f_2 \
+./rclaw test -r former -e w2_2f_2 \
   --scenario-file /path/to/first-use-scenario-auto.json \
   --output ./report_first_use.md
-# 서버가 config.yaml과 다르면:  --host 10.159.172.74 --port 30180
+# 로봇 gRPC 대상 지정: --host <로봇 IP> --port 50052
 ```
 
 - 각 스텝 PASS/FAIL 가 콘솔에 출력되고, `--output` 으로 Markdown 보고서가 저장된다.

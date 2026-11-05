@@ -53,7 +53,7 @@ BT 트리를 구성하는 모든 노드의 목록, 노드 간 통신 매개체�
 | `ResolveCleanupHandoff` | 장면의 정리 대상(폐기물·수건·쿠션)을 확인해 로컬 시연 또는 동료 위임을 코드로 확정. LLM 재계획으로 덮어쓰지 않음                        | `cleanup_handoff_*`  |
 | `ExecuteDecidedAction`  | `task_queue` 우선 소비, 없으면 `decided_skill` 실행. 반복 실패 카운트 추적                                                              | 항상 SUCCESS 반환    |
 | `SleepBetweenCycles`    | `cycle_interval_sec` 대기. `_SLEEP_WAKE`로 즉시 깨움                                                                                    | 사이클 간격          |
-| `CheckGoalAchieved`     | (goal 모드) `task_queue` 비면 목표 달성 처리 후 루프 종료                                                                               | —                    |
+| `CheckGoalAchieved`     | (goal 모드) 실행 실패와 명시적 `goal_achieved`를 확인해 성공·재계획·중단 판정                                                                               | —                    |
 
 > `RunExploreOnce`는 `InitializeMapStatus`·`CheckMapCoverage`·`CheckHasMap`과 함께 지도 준비
 > 게이트가 순찰 루프에서 빠진 뒤 트리에 연결되지 않습니다. 지도 탐험이 필요하면 `explore`
@@ -188,7 +188,7 @@ flowchart TB
   중에도 다른 명령을 받을 수 있습니다.
 - **단일 실행 보장**: `_AUTONOMOUS_ACTIVE`가 자율/반응형 스킬 전체의 상호 배제 락 역할.
 - **우아한 종료**: 세션 종료는 오직 루트 SEQ의 ①`CheckAutonomousActive` 또는 ②`SafetyGate`
-  FAILURE, 혹은 `max_cycles` 도달로만 발생. 그 외 모든 하위 실패는 Fallback 방어막으로 흡수.
+  FAILURE, `max_cycles` 도달, 순찰 한 바퀴 완료 또는 goal 모드 종료 판정으로 발생합니다. 그 외 모든 하위 실패는 Fallback 방어막으로 흡수.
 - **즉각 중단**: `stop_autonomous`는 플래그 clear + sleep wake + Nav2 취소를 동시에 수행.
 
 ---

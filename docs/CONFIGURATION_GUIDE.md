@@ -1,4 +1,4 @@
-# RoboClaw Configuration Guide
+# 런타임 설정 가이드
 
 이 문서는 RoboClaw 설정을 어디에서 지정하고, 어떤 실행 방식으로 적용하며,
 최종적으로 어떤 값이 ROS 2 노드에 전달되는지 설명합니다.
@@ -90,7 +90,9 @@ ROBO_CLAW_GRPC_PORT=50052
   > rclaw 기본값
 ```
 
-`.env`는 shell 문법으로 source되므로 신뢰할 수 있는 파일만 사용하세요.
+`./rclaw run`과 `./rclaw sim`은 Go CLI의 `ParseEnvFile`로 `.env`를 읽습니다.
+shell의 `source`를 실행하지 않으므로 명령 치환이나 shell 표현식 평가에 의존하지 않습니다.
+HTTP 토큰 등 매핑 테이블의 값은 `.env`에서 읽으며, 셸의 `export`만으로 launch 인수에 반영되지 않습니다.
 
 ### 2. 중앙 설정: RoboClaw CLI (`rclaw`)
 
@@ -376,7 +378,7 @@ ls -1t ~/.robo_claw/config_cache/<robot>_<env>/logs | head
 새 중앙 설정을 추가하기 전에 공통 contract release와 vendored lock을 확인합니다.
 
 ```bash
-./robo_claw_cli contract check
+./rclaw contract check
 ```
 
 공통 contract 원본은 다음 저장소의 파일입니다.
@@ -397,7 +399,8 @@ scripts/generated_runtime_env.sh
 ```
 
 생성 파일은 직접 수정하지 않습니다. 공통 contract release를 갱신한 뒤
-`contract-update`와 `generate`를 실행합니다.
+`./rclaw contract update --from /path/to/release-bundle`을 실행합니다.
+이 명령이 contract와 lock을 갱신하고 소비자 코드를 자동 생성합니다.
 Go contract 파일은 CLI가 사용할 canonical field metadata를 담고 있습니다.
 launch contract와 shell mapping은 다음 단계의 runtime wiring에서 사용할
 generated metadata입니다. `rclaw`(launch/run/sim)와 CLI의 gRPC port mapping은 이미 이 generated
@@ -414,16 +417,16 @@ source of truth는 `rcf-config-contract/contract/runtime-config.yaml`이며, 공
 
 ```bash
 # 로컬 릴리즈 번들 경로에서 갱신 및 코드 자동 생성:
-./robo_claw_cli contract update --from /path/to/release-bundle
+./rclaw contract update --from /path/to/release-bundle
 
 # 또는 공개 GitLab Release 직접 갱신:
-./robo_claw_cli contract update --version v2.0.1
+./rclaw contract update --version v2.0.1
 ```
 
 업데이트 후 일괄 검증을 수행합니다.
 
 ```bash
-./robo_claw_cli contract check
+./rclaw contract check
 ```
 
 새 설정은 먼저 어느 계층의 소유인지 결정해야 합니다. 같은 값을 여러 계층에
@@ -433,49 +436,22 @@ source of truth는 `rcf-config-contract/contract/runtime-config.yaml`이며, 공
 
 AI Config Server UI에서 설정하고 CLI로 배포할 값은 다음 순서로 수정합니다.
 
-1. **영속 모델**
-   - `ai-config-server/database/models/roboclaw_config.go`
-   - JSON field name, Go type, DB default를 추가합니다.
-2. **입력 검증**
-   - `ai-config-server/handler/roboclaw_config.go`
-   - enum, 범위, 의존성, JSON shape를 추가합니다.
-3. **생성 artifact**
-   - `ai-config-server/handler/config_files.go`
-   - RoboClaw `.env` key 또는 runtime file mapping을 추가합니다.
-4. **v2 schema**
-   - `ai-config-server/schemas/robo-claw-runtime-config-v2.schema.json`
-   - type, required condition, enum, minimum/maximum을 추가합니다.
-5. **프론트엔드 model**
-   - `ai-config-server/frontend/lib/models/config_model.dart`
-   - constructor, `fromJson`, `toJson`, default를 추가합니다.
-6. **프론트엔드 form**
-   - `ai-config-server/frontend/lib/screens/config_tab.dart`
-   - controller/state, load, save를 추가합니다.
-   - 관련 section widget에도 입력 필드를 추가합니다.
-7. **RoboClaw CLI DTO**
-   - `robo_claw/robo_claw_cli/cmd/types.go`
-   - `robo_claw/robo_claw_cli/launcher/types.go`
-   - 두 DTO의 field/tag를 동일하게 유지합니다.
-8. **launch mapping**
-   - `robo_claw/robo_claw_cli/launcher/args.go`
-   - `.env` 또는 v2 config를 ROS launch argument로 변환합니다.
-9. **ROS launch 선언과 소비**
-   - 공통 설정이면 `robo_claw/src/robo_claw_bringup/launch/_common_launch_args.py`
-   - 실제 wiring은 `robo_claw.launch.py`
-   - simulation도 지원하면 `robo_claw_sim.launch.py` forwarding을 함께 수정합니다.
-10. **local 실행 mapping**
-    - `robo_claw_cli/cmd/run.go`
-    - local `.env` key를 launch argument로 변환합니다.
-11. **예시와 문서**
-    - `robo_claw/.env.example`
-    - 이 문서와 `ai-config-server/docs/CONFIGURATION_GUIDE.md`
+1. `rcf-config-contract`에서 필드·타입·기본값·환경변수·API/launch/ROS 매핑을 정의하고 release합니다.
+2. 이 저장소에서 `./rclaw contract update --from /path/to/release-bundle` 또는 `--version`으로 갱신합니다.
+3. 생성 metadata를 사용하는 CLI·launch·shell consumer를 확인합니다. 설정별로 `robo_claw_cli/cmd/types.go`,
+   `robo_claw_cli/launcher/types.go`, `launcher/args.go`, `cmd/run.go`와 실제 노드 소비 코드를 검토합니다.
+4. 공통 launch 선언은 `src/robo_claw_bringup/launch/_common_launch_args.py`, 배선은
+   `robo_claw.launch.py`와 `robo_claw_sim.launch.py`에서 확인합니다.
+5. AI Config Server의 UI·schema·배포 artifact는 해당 저장소의 vendored contract와 generator로 갱신합니다.
+   이 저장소에서 sibling 서버의 DB·Flutter 파일 경로나 구현 언어를 가정하지 않습니다.
+6. `.env.example`·설정 문서·mapping 테스트를 갱신하고 `task contract-check`, `task unit-test`를 실행합니다.
 
 ### 로봇 profile YAML 설정
 
 특정 로봇의 topic, URDF, hardware, manipulation tuning처럼 중앙 서버에서
 공통으로 관리하지 않을 값은 다음만 수정합니다.
 
-1. `robo_claw/src/robo_claw_bringup/config/<robot>_config.yaml`
+1. `src/robo_claw_bringup/config/<robot>_config.yaml`
 2. 필요하면 `agent.yaml`의 공통 agent parameter
 3. launch에서 해당 YAML을 읽고 override하는지 확인
 4. `ROBOT_LIMITS.<robot>.json`과 관련 문서 동기화

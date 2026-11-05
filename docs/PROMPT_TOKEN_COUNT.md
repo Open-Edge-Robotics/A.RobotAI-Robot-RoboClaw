@@ -22,10 +22,10 @@ SKILLS 가이드·스킬 목록 일부가 모델에 전달되지 않고, 라우�
 ```bash
 # 1) 실제 주입되는 조각들을 이어붙여 측정 (SKILLS / soul / troubleshooting / limits)
 python3 scripts/count_prompt_tokens.py \
-  ../roboclaw_config_server/database/seeds/SKILLS.former.md \
-  ../roboclaw_config_server/database/seeds/ROBOT.md \
-  ../roboclaw_config_server/database/seeds/TROUBLESHOOTING.md \
-  ../roboclaw_config_server/database/seeds/ROBOT_LIMITS.json
+  src/robo_claw_bringup/config/SKILLS.former.md \
+  src/robo_claw_bringup/config/ROBOT.md \
+  src/robo_claw_bringup/config/TROUBLESHOOTING.md \
+  src/robo_claw_bringup/config/ROBOT_LIMITS.json
 
 # 2) Ollama 주소/모델 지정
 OLLAMA_URL=http://10.159.172.75:11434 \
@@ -63,8 +63,10 @@ prompt_eval_count(토큰): 3110
 ### 주의 — 이건 "부분" 측정입니다
 
 스크립트는 **넣어준 파일만** 잽니다. 실제 시스템 프롬프트에는 이 외에도
-**자동생성 스킬 목록**과 **정적 기본 프롬프트**가 포함됩니다. 전체를 정확히 재려면 로봇에서
-**실제 조립된 시스템 프롬프트를 덤프**해 `-`(표준입력)로 넘기세요.
+**JSON 계획 경로의 자동생성 스킬 목록(네이티브 도구 호출은 API `tools` 정의)**과 **정적 기본 프롬프트**가 포함됩니다. 시스템 프롬프트 본문은 실제 조립된 값을 덤프해 `-`로 전달합니다.
+이 스크립트는 `/api/generate`의 `prompt`만 측정하므로 네이티브 채팅의 `tools` 정의,
+메시지 템플릿·이력 전체를 포함한 토큰 수와는 다릅니다. 전체 요청 비교에는
+`scripts/eval_tool_calling.py`의 `prompt_eval_count`를 사용합니다.
 
 > 과거 실측(한글 시스템 프롬프트, 스킬 목록 포함) 기준 시스템 프롬프트만 ≈12k 토큰,
 > 대화 이력·RAG 결과·응답까지 포함하면 총 ≈17k~21k 토큰이 필요했다. 이 기준으로

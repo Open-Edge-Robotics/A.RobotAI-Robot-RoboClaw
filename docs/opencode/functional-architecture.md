@@ -1,4 +1,7 @@
-# RoboClaw Functional Architecture
+# 기능별 책임과 실행 경계
+
+이 문서는 입력·문맥·계획·스킬·메모리의 책임을 정리합니다.
+기본 네이티브 도구 호출과 선택적인 JSON 계획 경로를 함께 다룹니다.
 
 ## 기능 관점 요약
 
@@ -15,7 +18,7 @@ RoboClaw를 기능 관점에서 보면 "입력 수집 -> 문맥 형성 -> 계획
 | 상태/문맥 수집 | 경험 검색(RAG) | `MemoryManager.search_knowledge` |
 | 상태/문맥 수집 | 로봇 상태 요약 수집 | `GetStatusSkill.get_robot_summary` |
 | 계획 수립 | LLM 호출 | `create_llm_bridge`, `BaseLLMBridge.chat` |
-| 계획 수립 | JSON 계획 해석 | `AgentNode._parse_llm_response` |
+| 계획 수립 | 네이티브 도구 호출 또는 JSON 계획 | `LLMPlanner.run_llm_planning_loop` |
 | 실행 관리 | 스킬 로드 | `SkillManager.load_from_module` |
 | 실행 관리 | 스킬 실행 | `SkillManager.execute` |
 | 이동 기능 | 좌표/시맨틱 목적지 이동 | `NavigateToSkill` |
@@ -27,8 +30,8 @@ RoboClaw를 기능 관점에서 보면 "입력 수집 -> 문맥 형성 -> 계획
 | 시스템 기능 | 제한된 ROS CLI 실행 | `RosCommandSkill` |
 | 협업 기능 | 타 에이전트 위임 | `DelegateTaskSkill` |
 | 전달 기능 | 메시지/파일 사용자 전송 | `SendMessageSkill`, `ChannelNode._handle_send_message` |
-| 기억 축적 | 경험 저장 | `MemoryManager.add_knowledge` |
-| 시맨틱 기억 | 장소/객체 위치 저장 | `MemoryManager.add_object_location` |
+| 기억 축적 | 구조화 실행 경험·벡터 교훈 저장 | `memory_manager/skill_learning.py` |
+| 시맨틱 기억 | SQLite 장소·별칭·좌표 저장 | `memory_manager/semantic.py` |
 | 하드웨어 제어 | 조인트 상태 수집 | `HardwareInterface.on_joint_states` |
 | 하드웨어 제어 | 베이스 속도 발행 | `HardwareInterface.write` |
 | 배포 조립 | 실기/시뮬레이션 런치 | `robo_claw_bringup` |

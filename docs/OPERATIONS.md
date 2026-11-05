@@ -36,20 +36,23 @@ launch 인자 `discovery_log_interval_sec`(노드 파라미터 `log_interval_sec
 
 다음 launch 파라미터는 운영 안전성과 직결됩니다.
 
-모두 `.env`(`RC_*`) 또는 `./rclaw run <파라미터>:=<값>` launch 인자로 오버라이드할 수 있습니다(둘 다 비어 있으면 코드 기본값 사용).
+표의 launch 인자는 `.env` 매핑 또는 `./rclaw run <파라미터>:=<값>`으로 지정합니다.
+비어 있는 override는 YAML·노드 기본값을 사용합니다. 공통 스킬 정책의 launch 인자는
+`http_allowed_skills_json`·`http_blocked_skills_json`이며, 에이전트 노드에서는 각각
+`skill_allowed_json`·`skill_blocked_json`으로 소비합니다.
 
 | 파라미터                                 | 기본값                                   | `.env` 변수                                 | 설명                                                                                                                                                                                   |
 | ---------------------------------------- | ---------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `llm_fail_fast`                          | `false`                                  | `RC_LLM_FAIL_FAST`                          | 시작 시 LLM 설정 검증 및 헬스체크 실패 시 기동 중단. 운영 배포 시 `true` 권장.                                                                                                         |
 | `strict_config`                          | `false`                                  | `RC_STRICT_CONFIG`                          | 필수 설정 파일(ROBOT_LIMITS.json, ROBOT.md 등) 누락 시 기동 중단. 운영 배포 시 `true` 권장.                                                                                            |
-| `skill_allowed_json`                     | `[]`                                     | `RC_HTTP_ALLOWED_SKILLS_JSON`               | 허용할 스킬 이름 JSON 리스트. 빈 리스트면 전체 허용.                                                                                                                                   |
-| `skill_blocked_json`                     | `["delete_file", "emergency_stop", ...]` | `RC_HTTP_BLOCKED_SKILLS_JSON`               | 차단할 스킬 이름 JSON 리스트. 모든 실행 경로(HTTP /task, /skill, gRPC, 메신저, ROS service)에 공통 적용.                                                                               |
+| `http_allowed_skills_json`                     | `[]`                                     | `RC_HTTP_ALLOWED_SKILLS_JSON`               | 허용할 스킬 이름 JSON 리스트. 빈 리스트면 전체 허용.                                                                                                                                   |
+| `http_blocked_skills_json`                     | `["delete_file", "emergency_stop", ...]` | `RC_HTTP_BLOCKED_SKILLS_JSON`               | 차단할 스킬 이름 JSON 리스트. 모든 실행 경로(HTTP /task, /skill, gRPC, 메신저, ROS service)에 공통 적용.                                                                               |
 | `task_queue_max_size`                    | `8`                                      | `RC_TASK_QUEUE_MAX_SIZE`                    | 태스크 큐 최대 대기열 크기. `0`이면 큐 비활성화(병렬 실행). 연달은 요청을 순차 처리하려면 `1` 이상 설정.                                                                               |
 | `llm_tool_calling`                       | `true`                                   | `RC_LLM_TOOL_CALLING`                       | 스킬을 LLM API의 `tools`로 등록해 호출하는 방식. `true`면 복합 명령도 하나의 도구 대화에서 LLM이 단계를 이어가고, `false`면 JSON 응답을 강제하며 복합 명령을 `TaskDecomposer`가 분해합니다. provider가 도구 호출을 지원하지 않으면 자동으로 JSON 경로로 폴백합니다. |
 | `enable_task_decomposition`              | `true`                                   | `RC_ENABLE_TASK_DECOMPOSITION`              | 복합 명령("A로 이동해 B하고 C해") 자동 분해 활성화. 하위 지시문으로 나눠 순차 실행해 SLM이 여러 절을 한 번에 처리하지 못하는 문제를 보완합니다. 단순 명령은 영향 없음(기존 경로 그대로). `llm_tool_calling`이 켜진 경로에서는 분해기를 사용하지 않으므로 실행 동작에 영향이 없습니다. |
 | `task_decomposition_max_steps`           | `6`                                      | `RC_TASK_DECOMPOSITION_MAX_STEPS`           | 복합 명령 분해 시 허용하는 최대 하위 단계 수.                                                                                                                                          |
 | `task_step_max_retries`                  | `1`                                      | `RC_TASK_STEP_MAX_RETRIES`                  | 분해된 하위 단계 실패 시 동일 단계를 재시도하는 횟수. 재시도 후에도 실패하면 남은 단계를 중단하고 보고합니다.                                                                            |
-| `task_decomposition_wait_margin_cap_sec` | `1800.0`                                 | `RC_TASK_DECOMPOSITION_WAIT_MARGIN_CAP_SEC` | `ExecuteTask` 액션이 결과를 기다리는 여유 시간의 상한(초). 복합 명령은 단계 수 × 재시도 횟수에 비례해 여유를 늘리되 이 값을 넘지 않는다. 단순 명령은 영향 없음(기존 300초 마진 유지).  |
+| `task_decomposition_wait_margin_cap_sec` | `1800.0`                                 | `RC_TASK_DECOMPOSITION_WAIT_MARGIN_CAP_SEC` | `ExecuteTask` 액션이 결과를 기다리는 여유 시간의 상한(초). 복합 명령은 단계 수 × 재시도 횟수에 비례해 여유를 늘리되 이 값을 넘지 않습니다. 단순 명령은 영향 없음(기존 300초 마진 유지).  |
 
 ## 태스크 큐 (순차 실행)
 
