@@ -92,3 +92,34 @@ def test_disabled_rag_does_not_refine_query(node):
 
     node._llm.chat.assert_not_called()
     node._memory.search_knowledge.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "회전할 때 angle_deg를 어떻게 설정해야 해?",
+        "",
+        TimeoutError("timeout"),
+        RuntimeError("offline"),
+    ],
+)
+def test_knowledge_and_lessons_share_one_refinement(node, response):
+    instruction = "그 동작 할 때 angle_deg를 어떻게 설정해야 해?"
+    node._enable_skill_learning = True
+    node._memory.render_relevant_skill_lessons = Mock(return_value="[학습된 스킬 교훈]\n회전 지침")
+    if isinstance(response, Exception):
+        node._llm.chat.side_effect = response
+    else:
+        node._llm.chat.return_value = response
+    node._memory.get_conversation_history.return_value = [
+        {"role": "user", "content": "회전 설정을 알려줘."}
+    ]
+
+    messages = collect(node, instruction)
+
+    expected = response if isinstance(response, str) and response else instruction
+    node._llm.chat.assert_called_once()
+    assert node._memory.search_knowledge.call_args.args[0] == expected
+    node._memory.render_relevant_skill_lessons.assert_called_once_with(expected, current_pose=None)
+    assert messages[-1] == {"role": "user", "content": instruction}
+    assert messages[0]["content"].startswith("[학습된 스킬 교훈]")
