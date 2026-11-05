@@ -121,5 +121,52 @@ def test_knowledge_and_lessons_share_one_refinement(node, response):
     node._llm.chat.assert_called_once()
     assert node._memory.search_knowledge.call_args.args[0] == expected
     node._memory.render_relevant_skill_lessons.assert_called_once_with(expected, current_pose=None)
-    assert messages[-1] == {"role": "user", "content": instruction}
-    assert messages[0]["content"].startswith("[학습된 스킬 교훈]")
+    assert messages[-1]["role"] == "user"
+    assert messages[-1]["content"].startswith(instruction)
+    assert "[학습된 스킬 교훈]" in messages[-1]["content"]
+    assert not any("[학습된 스킬 교훈]" in m.get("content", "") for m in messages[:-1])
+
+
+@pytest.mark.parametrize("current_in_history", [False, True])
+def test_retrieval_is_attached_only_to_current_request_without_mutating_history(
+    node, current_in_history
+):
+    instruction = "거실 위치를 알려줘."
+    history = [
+        {"role": "user", "content": "이전 질문"},
+        {"role": "assistant", "content": "이전 답변"},
+    ]
+    if current_in_history:
+        history.append({"role": "user", "content": instruction})
+    original = deepcopy(history)
+    node._memory.get_conversation_history.return_value = history
+    node._enable_skill_learning = True
+    node._memory.search_knowledge.return_value = [
+        {
+            "text": "거실",
+            "metadata": {"type": "location", "location_name": "거실", "x": 1.79, "y": -0.7},
+        }
+    ]
+    node._memory.render_relevant_skill_lessons = Mock(return_value="회전 지침 테스트")
+
+    messages = collect(node, instruction)
+
+    assert messages[-1]["role"] == "user"
+    assert messages[-1]["content"].startswith(instruction)
+    assert "회전 지침 테스트" in messages[-1]["content"]
+    assert "1.79" in messages[-1]["content"]
+    assert not any("회전 지침 테스트" in m.get("content", "") for m in messages[:-1])
+    assert history == original
+    assert node._llm.chat.call_args.args[0][-1]["content"] == instruction
+
+    # 다음 사용자 요청은 저장된 원문 이력에서 새로 구성합니다.
+    history[:] = original[:2] + [
+        {"role": "user", "content": instruction},
+        {"role": "assistant", "content": "거실 안내"},
+    ]
+    node._memory.search_knowledge.return_value = []
+    node._memory.render_relevant_skill_lessons.return_value = ""
+    followup = collect(node, "고마워")
+    assert {"role": "user", "content": instruction} in followup
+    assert not any("회전 지침 테스트" in m.get("content", "") for m in followup)
+    assert followup[-1] == {"role": "user", "content": "고마워"}

@@ -254,8 +254,9 @@ class LLMPlanner:
                     "content": f"[로봇 현재 상태]\n{json.dumps(robot_summary, ensure_ascii=False)}\n\n[로봇 자가진단 상태 (Health State)]\n{json.dumps(health_state, ensure_ascii=False)}",
                 },
             )
+            retrieval = {}
             if knowledge_ctx:
-                messages.insert(0, {"role": "system", "content": knowledge_ctx})
+                retrieval["knowledge"] = knowledge_ctx
 
             # 상황 인지형 스킬 교훈 인출
             if getattr(self.node, "_enable_skill_learning", False) and getattr(
@@ -273,9 +274,18 @@ class LLMPlanner:
                         current_pose=current_pose,
                     )
                     if lessons_ctx:
-                        messages.insert(0, {"role": "system", "content": lessons_ctx})
+                        retrieval["skill_lessons"] = lessons_ctx
                 except Exception as e:
                     self.node.get_logger().warning(f"Failed to retrieve relevant lessons: {e}")
+
+            if retrieval:
+                # 마지막 메시지만 교체하여 원본 이력과 refinement 입력은 보존합니다.
+                # 이 문맥은 현재 태스크의 tool 왕복 동안만 사용합니다.
+                context = json.dumps(retrieval, ensure_ascii=False)
+                messages[-1] = {
+                    **messages[-1],
+                    "content": f"{instruction}\n\n<retrieved_context>\n{context}\n</retrieved_context>",
+                }
 
             if goal_handle.request.context_json:
                 messages.insert(
