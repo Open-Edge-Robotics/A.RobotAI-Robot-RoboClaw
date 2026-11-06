@@ -113,3 +113,56 @@ def test_repromote_places_reports_conflicts_without_stopping(tmp_path):
     assert stats["inserted"] == 1
     assert stats["conflicts"] == 1
     assert store.location("창고") is not None
+
+
+def test_repromote_places_keeps_existing_names_when_overwrite_disabled(tmp_path):
+    """레거시 값이 현재 값보다 오래된 경우가 많으므로 기존 이름은 유지한다."""
+    store = _store(tmp_path)
+    store.add("현재 안방", {"type": "location", "location_name": "안방", "x": 6.46, "y": -1.9})
+    entries = [{"text": "안방의 좌표는 x: 6.45, y: -2.1 입니다.", "metadata": {}}]
+
+    stats = repromote_places(store, entries, overwrite=False)
+
+    assert stats["kept"] == 1
+    assert stats["inserted"] == 0
+    assert store.location("안방")["position"] == {"x": 6.46, "y": -1.9}
+
+
+def test_repromote_places_excludes_robot_labels(tmp_path):
+    """`Former`, `Former 현재 위치` 같은 로봇 라벨·지시어는 장소가 아니다."""
+    store = _store(tmp_path)
+    entries = [
+        {
+            "text": "Former 위치는 x: 6.27, y: -2.8 입니다.",
+            "metadata": {"type": "location", "location_name": "Former", "x": 6.27, "y": -2.8},
+        },
+        {
+            "text": "Former 현재 위치: x: 3.79, y: 1.83",
+            "metadata": {
+                "type": "location",
+                "location_name": "Former 현재 위치",
+                "x": 3.79,
+                "y": 1.83,
+            },
+        },
+        {"text": "거실: x=2.93, y=-0.38", "metadata": {}},
+    ]
+
+    stats = repromote_places(store, entries, exclude_names={"former"})
+
+    assert stats["inserted"] == 1
+    assert store.location("Former") is None
+    assert store.location("Former 현재 위치") is None
+    assert store.location("거실") is not None
+
+
+def test_newest_entry_wins_for_same_name(tmp_path):
+    store = _store(tmp_path)
+    entries = [
+        {"text": "안방: x=6.45, y=-2.1", "metadata": {}, "timestamp": "2026-10-29T17:26:01"},
+        {"text": "안방: x=6.46, y=-1.9", "metadata": {}, "timestamp": "2026-11-06T15:57:22"},
+    ]
+
+    repromote_places(store, entries)
+
+    assert store.location("안방")["position"] == {"x": 6.46, "y": -1.9}

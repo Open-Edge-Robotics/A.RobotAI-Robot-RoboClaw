@@ -63,10 +63,18 @@ python3 scripts/repromote_places.py
 python3 scripts/repromote_places.py --memory-dir /ros2_ws/agent_workspace/memory
 ```
 
-스크립트는 namespace별 지식 파일을 읽어 ① `type=location`/`navigated_coordinate`이면서
-좌표가 있는 항목과 ② metadata 없이 저장된 "장소처럼 보이는 텍스트"를 모두 구조화
-저장소로 옮깁니다. 다른 장소가 이미 쓰는 이름·별칭과 충돌하는 항목은 건너뛰고
-`conflicts`로 보고합니다.
+스크립트는 namespace별 지식 파일을 모두 읽어 ① `type=location`/`navigated_coordinate`이면서
+좌표가 있는 항목과 ② metadata 없이 저장된 "장소처럼 보이는 텍스트"를 구조화 저장소로
+옮깁니다. 기본 동작은 다음과 같습니다.
+
+- 같은 이름은 **최신 항목**이 이깁니다(파일을 오래된 순으로 합치므로).
+- **기존 값은 유지**합니다(`--overwrite` 로 변경). 레거시 좌표가 현재보다 오래된 경우가
+  많아 이동 목적지가 과거 좌표로 되돌아가는 것을 막습니다.
+- 대상 namespace는 가장 최근에 갱신된 구조화 DB의 namespace이며(`--target-namespace`),
+  namespace가 바뀐 로봇(예: `former_0045_konjiam` → `former_arm_konjiam`)의 과거 장소도
+  현재 namespace로 옮길 수 있습니다.
+- 로봇 라벨(`Former` 등)과 `현재 위치` 같은 지시어 이름은 이관하지 않습니다.
+- 다른 장소가 이미 쓰는 이름·별칭과 충돌하면 건너뛰고 `conflicts`로 보고합니다.
 장소 갱신은 동일 이름을 덮어쓰고 이전 별칭을 제거하며 다른 장소의 별칭 충돌은 거절합니다.
 좌표가 잘못되었거나 유한하지 않으면 기존 값을 유지하고 저장을 거절합니다.
 

@@ -13,10 +13,14 @@
     python3 scripts/repromote_places.py --memory-dir /ros2_ws/agent_workspace/memory
 
 동작:
-- `<memory-dir>/memory.json.kb.collections/*.json`(또는 `*.kb.json`)을 namespace 별로 읽고,
+- `<memory-dir>/memory.json.kb.collections/*.json`(또는 `*.kb.json`)을 읽고,
   `place_migration.repromote_places`로 장소 후보를 SQLite(`*.structured.db`)에 기록한다.
-- 이미 SQLite에 있는 항목은 이름 키 UPSERT로 갱신된다. 다른 장소가 쓰는 이름/별칭과
-  충돌하면 건너뛰고 충돌 수를 보고한다.
+- namespace가 바뀐 로봇은 모든 파일을 한 번에 모아 오래된 것부터 처리한다(같은 이름은
+  최신 항목이 이긴다). 대상 namespace는 가장 최근에 갱신된 구조화 DB의 namespace이며
+  `--target-namespace`로 바꿀 수 있다.
+- 기본값은 **기존 값 유지**다(`overwrite=False`). 레거시 좌표가 현재 값보다 오래된
+  경우가 많아 이동 목적지가 과거 좌표로 되돌아가는 것을 막는다. 필요하면 `--overwrite`.
+- 로봇 라벨(`Former` 등)과 `현재 위치` 같은 지시어 이름은 이관하지 않는다.
 - 파일을 삭제하지 않는다. JSON 지식 베이스는 그대로 두고 장소만 구조화 저장소로 복사한다.
 """
 
@@ -47,20 +51,26 @@ def _kb_files(memory_dir: Path) -> list[Path]:
     return sorted(p for p in memory_dir.glob("*.kb.json") if p.is_file())
 
 
-def _namespace_from(path: Path) -> str:
-    """`former_arm_konjiam--75d7e90c17a0.json` → `former_arm_konjiam`."""
-    stem = path.name
-    for suffix in (".kb.json", ".json"):
-        if stem.endswith(suffix):
-            stem = stem[: -len(suffix)]
-            break
-    return stem.split("--", 1)[0] if "--" in stem else ""
-
-
 def _load_entries(path: Path) -> list[dict]:
     data = json.loads(path.read_text(encoding="utf-8"))
     entries = data.get("entries", data) if isinstance(data, dict) else data
     return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+
+
+def _active_namespace(memory_dir: Path) -> str:
+    """가장 최근에 갱신된 구조화 DB의 namespace(=지금 쓰는 namespace)를 고른다."""
+    dbs = sorted(
+        (memory_dir / "memory.json.kb.collections").glob("*.structured.db"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return dbs[0].name.split("--", 1)[0] if dbs else ""
+
+
+def _robot_labels(namespace: str) -> set[str]:
+    """namespace에서 로봇 라벨을 얻는다(`former_0047_konjiam` → {former, konjiam})."""
+    tokens = namespace.replace("-", "_").replace("--", "_").split("_")
+    return {t.lower() for t in tokens if t and not t.isdigit()}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,6 +86,15 @@ def main(argv: list[str] | None = None) -> int:
         "--kb",
         help="특정 지식 베이스 JSON 파일만 처리",
     )
+    parser.add_argument(
+        "--target-namespace",
+        help="모든 후보를 기록할 namespace (기본: 가장 최근 구조화 DB의 namespace)",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="이미 저장된 이름도 레거시 값으로 갱신 (기본: 기존 값 유지)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="기록하지 않고 대상 수만 보고")
     args = parser.parse_args(argv)
 
@@ -89,27 +108,39 @@ def main(argv: list[str] | None = None) -> int:
         print(f"지식 베이스 JSON 을 찾지 못했습니다: {memory_dir}", file=sys.stderr)
         return 1
 
-    total = {"planned": 0, "inserted": 0, "conflicts": 0, "invalid": 0}
-    for path in files:
-        namespace = _namespace_from(path)
-        entries = _load_entries(path)
-        memory = MemoryManager(
-            storage_path=str(memory_dir / "memory.json"),
-            backend="json",
-            local_rag_namespace=namespace,
-        )
-        stats = repromote_places(memory._structured_store, entries, dry_run=args.dry_run)
-        for key in total:
-            total[key] += stats[key]
+    target = args.target_namespace or _active_namespace(memory_dir)
+    if not target:
         print(
-            f"[{namespace or '(root)'}] entries={len(entries)} "
-            f"planned={stats['planned']} inserted={stats['inserted']} "
-            f"conflicts={stats['conflicts']} invalid={stats['invalid']}"
-            f"{' (dry-run)' if args.dry_run else ''}"
+            "대상 namespace 를 알 수 없습니다. --target-namespace 로 지정하세요.", file=sys.stderr
         )
+        return 2
+
+    # namespace가 바뀐 로봇(예: former_0045_konjiam → former_arm_konjiam)은 과거 파일에만
+    # 장소가 남아 있다. 모든 파일을 한 번에 모아 오래된 것부터 처리하고, 같은 이름은
+    # 최신 항목이 이기게 한다.
+    entries: list[dict] = []
+    for path in files:
+        entries.extend(_load_entries(path))
+    entries.sort(key=lambda e: str(e.get("timestamp") or ""))
+
+    memory = MemoryManager(
+        storage_path=str(memory_dir / "memory.json"),
+        backend="json",
+        local_rag_namespace=target,
+    )
+    stats = repromote_places(
+        memory._structured_store,
+        entries,
+        dry_run=args.dry_run,
+        overwrite=args.overwrite,
+        exclude_names=_robot_labels(target),
+    )
     print(
-        f"합계: planned={total['planned']} inserted={total['inserted']} "
-        f"conflicts={total['conflicts']} invalid={total['invalid']}"
+        f"files={len(files)} entries={len(entries)} target={target} "
+        f"labels={sorted(_robot_labels(target))}\n"
+        f"planned={stats['planned']} inserted={stats['inserted']} kept={stats['kept']} "
+        f"conflicts={stats['conflicts']} invalid={stats['invalid']}"
+        f"{' (dry-run)' if args.dry_run else ''}"
     )
     return 0
 

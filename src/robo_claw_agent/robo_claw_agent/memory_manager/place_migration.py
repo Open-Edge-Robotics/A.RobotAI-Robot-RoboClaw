@@ -23,6 +23,22 @@ from .semantic import (
 _NAMED_TYPES = frozenset({"location", "navigated_coordinate"})
 _MAX_NAME_LEN = 40
 
+# 이름 어절 단위로 배제할 단어. `Former 현재 위치` 처럼 로봇 라벨·지시어가 붙은
+# 항목이 장소로 등록되는 것을 막는다(전체 이름 비교로는 걸러지지 않음).
+_NAME_REJECT_WORDS = frozenset({"현재", "위치", "좌표", "로봇", "robot", "self", "last", "pose"})
+
+
+def _is_rejected_name(name: str, excluded_keys: set[str]) -> bool:
+    """장소로 보지 않을 이름(로봇 라벨·지시어 포함)인지 판정한다."""
+    if not name or _is_self_location_name(name):
+        return True
+    words = [w for w in name.replace("(", " ").replace(")", " ").split() if w]
+    for word in words:
+        key = _normalize_location_name(word)
+        if key in excluded_keys or key in _NAME_REJECT_WORDS:
+            return True
+    return False
+
 
 def _coords(metadata: dict[str, Any]) -> tuple[float, float] | None:
     try:
@@ -45,15 +61,19 @@ def _legacy_name(metadata: dict[str, Any], text: str) -> str:
     return _location_name_from_text(text)
 
 
-def iter_place_candidates(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def iter_place_candidates(
+    entries: list[dict[str, Any]], *, exclude_names: Any = ()
+) -> list[dict[str, Any]]:
     """지식 베이스 항목 목록에서 장소로 승격·이관할 후보를 만든다.
 
     - 이미 `type=location`/`navigated_coordinate`이고 좌표가 있는 항목은 그대로 이관한다.
     - 타입이 없거나 다른 항목이라도 텍스트에서 장소명과 좌표를 모두 얻으면 `location`으로
       승격한다(전환 직후 metadata 없이 저장된 실기 데이터).
     - 이름이나 좌표를 얻지 못한 항목은 건너뛴다. 이름이 없으면 이동 목적지로 쓸 수 없다.
+    - `exclude_names`(로봇 라벨 등)에 해당하는 이름은 제외한다.
     같은 이름이 여러 번 나오면 나중 항목(최신)이 이긴다.
     """
+    excluded = {_normalize_location_name(name) for name in exclude_names}
     best: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for entry in entries:
@@ -91,6 +111,8 @@ def iter_place_candidates(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         )
         metadata.setdefault("aliases", [])
         key = _normalize_location_name(name)
+        if _is_rejected_name(name, excluded):
+            continue
         if key not in best:
             order.append(key)
         best[key] = {
@@ -101,14 +123,27 @@ def iter_place_candidates(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def repromote_places(
-    store: Any, entries: list[dict[str, Any]], *, dry_run: bool = False
+    store: Any,
+    entries: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
+    overwrite: bool = True,
+    exclude_names: Any = (),
 ) -> dict[str, int]:
-    """후보 항목을 구조화 저장소에 기록하고 결과 통계를 돌려준다."""
-    candidates = iter_place_candidates(entries)
-    stats = {"planned": len(candidates), "inserted": 0, "conflicts": 0, "invalid": 0}
+    """후보 항목을 구조화 저장소에 기록하고 결과 통계를 돌려준다.
+
+    ``overwrite=False`` 면 이미 저장된 이름은 건너뛰고 ``kept``로 센다. 레거시 데이터가
+    현재 값보다 오래된 경우가 많으므로, 실기 이관에서는 기본적으로 이 모드를 쓴다.
+    """
+    candidates = iter_place_candidates(entries, exclude_names=exclude_names)
+    stats = {"planned": len(candidates), "inserted": 0, "kept": 0, "conflicts": 0, "invalid": 0}
     if dry_run:
         return stats
     for candidate in candidates:
+        name = str(candidate["metadata"]["location_name"])
+        if not overwrite and store.location(name) is not None:
+            stats["kept"] += 1
+            continue
         try:
             stored = store.add(candidate["text"], candidate["metadata"])
         except ValueError:
