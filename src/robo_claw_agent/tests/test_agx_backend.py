@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from geometry_msgs.msg import PoseStamped
+from robo_claw_agent.manipulation_runtime import agx_backend
 from robo_claw_agent.manipulation_runtime.agx_backend import AgxDriverBackend
 from robo_claw_agent.manipulation_runtime.exceptions import (
     ManipulationConfigError,
@@ -348,3 +351,43 @@ def test_move_to_joint_target_publishes_only_gripper_when_targets_is_gripper_onl
     assert isinstance(msg, JointState)
     assert list(msg.name) == ["gripper"]
     assert list(msg.position) == [pytest.approx(0.05)]
+
+
+class _FakeClock:
+    """time 모듈 대역. monotonic/sleep 만 제공한다."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def test_joint_state_feedback_logging_is_throttled(monkeypatch, caplog) -> None:
+    """피드백 콜백마다 INFO 를 남기지 않고 일정 간격으로만 남긴다."""
+    node = _FakeNode()
+    config = _config()
+    AgxDriverBackend(node, config)
+    callback = node.subscriptions[config.agx_joint_state_topic]
+
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+
+    with caplog.at_level(logging.INFO, logger=agx_backend.__name__):
+        # 드라이버가 100Hz 로 발행하는 상황을 모사한다.
+        for _ in range(100):
+            callback(_joint_state(["gripper", "joint1"], [0.02, 0.01]))
+            clock.now += 0.01
+
+        clock.now += agx_backend._FEEDBACK_LOG_INTERVAL_SEC
+        callback(_joint_state(["gripper", "joint1"], [0.03, 0.02]))
+
+    feedback_logs = [
+        record.message for record in caplog.records if "AGX feedback" in record.message
+    ]
+    assert len(feedback_logs) == 2
+    assert "gripper=0.020000" in feedback_logs[0]
+    assert "gripper=0.030000" in feedback_logs[1]

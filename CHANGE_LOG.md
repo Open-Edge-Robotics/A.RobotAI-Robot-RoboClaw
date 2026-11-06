@@ -14,6 +14,16 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   - `docs/OPERATIONS.md`의 FleetControl capability 설명을 갱신했습니다.
 - **검증**: `pytest src/robo_claw_grpc/tests/test_fleet_connector.py` 12건 통과(신규 7건), `src/robo_claw_grpc/tests` 36건 통과·2건은 로컬 환경의 `cv2` 부재로 실패(`test_services.py`, 변경과 무관), `go test ./...`·`go vet ./launcher/` 통과(신규 `TestBuildMergedEnvResolvesSkillsGuideForFleetConnector` 5개 케이스), `ruff check src/robo_claw_grpc` 통과. 기존 `docs/SKILLS.md` 파싱 결과는 변경 전과 동일(106개)함을 확인했습니다. `call_query_state`는 ROS 2 환경이 없어 실기 검증이 필요합니다.
 
+## 2026-11-06 — discovery 노드가 RMW 그래프 질의 실패로 스캔을 멈추지 않도록 보완
+
+- **배경**: Former0045에서 `robo_claw_discovery_node`가 10초마다 `RCLError: Failed to get node names: empty node name returned by the RMW layer`로 스캔 스레드를 죽이고 있었습니다. `ROS_DOMAIN_ID=4` 도메인에 CycloneDDS가 이름을 해석하지 못하는 participant(Fast DDS 기본값을 쓰는 컨테이너·Jazzy 프로세스)가 섞여 빈 노드 이름이 반환되면 `rcl`이 예외를 발생시키고, `_scan_worker`가 예외를 잡지 않아 그 회차 `robot_capabilities` 퍼블리시가 통째로 사라졌습니다. 결과적으로 기동 직후 한 번 이후 발견 정보가 갱신되지 않았습니다.
+- **조치**:
+  - `_scan_worker` 전체를 예외 안전하게 감싸고, 실제 수집·퍼블리시 로직을 `_publish_capabilities`로 분리했습니다.
+  - `graph_query.call_with_retry` 헬퍼를 추가해 `get_node_names()`를 재시도(기본 2회, 0.2초 간격)로 감싸고, 끝까지 실패하면 빈 노드 목록으로 대체해 topics/services/actions는 계속 퍼블리시하도록 했습니다.
+  - 실패 로그는 `log_interval_sec`(기본 600초)와 같은 간격으로만 남기도록 억제했습니다.
+- **검증**: `pytest src/robo_claw_discovery/tests` 12건 통과(신규 `test_graph_query.py` 5건, `test_discovery_scan_recovery.py` 2건 포함), `colcon build`/`colcon test --packages-select robo_claw_discovery` 15건 실패 없음, `ruff check`/`ruff format --check` 통과.
+- **남은 작업(환경)**: 근본 원인은 도메인의 RMW 혼용입니다. `former_robot`, `former0045_nav`, `realsense_docker`(Humble 기본 `rmw_fastrtps_cpp`)와 nero-arm의 Jazzy `realsense2_camera`에도 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`를 지정하거나 별도 도메인으로 분리해야 합니다.
+
 ## 2026-11-03 — Former0045 AgileX Nero 팔 Humble 드라이버 도커 연동 및 조작 백엔드 보완
 
 - **배경**: Former0045에 장착된 AgileX Nero(7-DOF) 팔 및 그리퍼(`agx_gripper`)가 구동되지 않는 문제를 해결하기 위해, 팔 제어 PC(`nero-arm`, `192.168.50.202`)에서 `nero_humble:1.0` Docker 컨테이너를 기동하여 Humble ROS 2 환경을 일치시키고, RoboClaw `AgxDriverBackend`를 보완하여 실기 하드웨어 움직임을 검증했습니다.

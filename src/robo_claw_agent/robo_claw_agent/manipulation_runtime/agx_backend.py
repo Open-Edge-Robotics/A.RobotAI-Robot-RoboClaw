@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 _POSITION_KEYS = ("x", "y", "z")
 _REPUBLISH_INTERVAL_SEC = 0.5
+#: joint_states 피드백 로그 간격. 드라이버는 수십~수백 Hz 로 피드백을 발행하므로
+#: 콜백마다 INFO 를 남기면 로그가 폭주한다.
+_FEEDBACK_LOG_INTERVAL_SEC = 10.0
 
 
 class AgxDriverBackend:
@@ -54,6 +57,7 @@ class AgxDriverBackend:
         self._enable_client = None
         self._control_enable_client = None
         self._driver_ready = False
+        self._last_feedback_log_time: float | None = None
 
         cb_group = None
         try:
@@ -184,6 +188,15 @@ class AgxDriverBackend:
         joint_map = dict(zip(msg.name, msg.position, strict=False))
         g_val = float(joint_map.get("gripper") or 0.0)
         j1_val = float(joint_map.get("joint1") or 0.0)
+        self._log_feedback_sample(g_val, j1_val)
+
+    def _log_feedback_sample(self, g_val: float, j1_val: float) -> None:
+        """피드백 샘플을 일정 간격으로만 남긴다."""
+        now = time.monotonic()
+        last = self._last_feedback_log_time
+        if last is not None and now - last < _FEEDBACK_LOG_INTERVAL_SEC:
+            return
+        self._last_feedback_log_time = now
         self._log_info(f"AGX feedback: gripper={g_val:.6f}, joint1={j1_val:.3f}")
 
     def _on_tcp_pose(self, msg: PoseStamped) -> None:

@@ -13,6 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from .graph_query import call_with_retry
 from .log_throttle import DEFAULT_LOG_INTERVAL_SEC, should_log_summary
 
 
@@ -30,14 +31,13 @@ class DiscoveryNode(Node):
         super().__init__("robo_claw_discovery_node")
 
         self.declare_parameter("scan_interval_sec", scan_interval_sec)
-        interval = (
-            self.get_parameter("scan_interval_sec").get_parameter_value().double_value
-        )
+        interval = self.get_parameter("scan_interval_sec").get_parameter_value().double_value
         # 요약 로그 간격. 스캔 주기와 독립적이며 기본 600초로 다른 로그를 가리지 않게 한다.
         self.declare_parameter("log_interval_sec", log_interval_sec)
         log_interval = self.get_parameter("log_interval_sec").get_parameter_value().double_value
         self._log_interval_sec = max(0.0, log_interval)
         self._last_summary_log_time: float | None = None
+        self._last_node_name_error_log_time: float | None = None
         self._last_capability_signature = None
 
         qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE)
@@ -70,8 +70,21 @@ class DiscoveryNode(Node):
 
     def _scan_worker(self) -> None:
         """ROS2 그래프 탐색 후 결과를 JSON으로 퍼블리시"""
+        try:
+            self._publish_capabilities()
+        except Exception as e:  # noqa: BLE001 - 스캔 스레드는 어떤 예외로도 죽지 않아야 한다
+            self.get_logger().error(f"Discovery scan failed: {e}")
+
+    def _publish_capabilities(self) -> None:
+        """현재 그래프 상태를 JSON 으로 퍼블리시한다.
+
+        노드 이름 조회가 실패해도 topics/services/actions 는 계속 퍼블리시해
+        부분 결과라도 에이전트에 전달한다.
+        """
         # Node API를 사용해 내부적으로 탐색 (subprocess 지양)
-        nodes = self.get_node_names()
+        nodes, node_error = self._get_node_names_api()
+        if node_error is not None:
+            self._warn_node_name_failure(node_error)
         # Phase 13: 다른 RoboClaw 에이전트 식별
         agents = [n for n in nodes if "robo_claw_agent_node" in n]
 
@@ -106,6 +119,28 @@ class DiscoveryNode(Node):
             )
 
     # ── 탐색 헬퍼 (Node API 사용) ─────────────────────────────────────────────
+
+    def _get_node_names_api(self) -> tuple[list[str], str | None]:
+        """노드 이름 목록과 실패 사유를 돌려준다.
+
+        도메인에 다른 RMW 구현(Fast DDS 등)의 participant 가 섞이면 rmw 계층이
+        빈 노드 이름을 반환하고 rcl 이 ``RCLError`` 를 던진다. 스캔 주기마다
+        스레드가 죽지 않도록 재시도 후 빈 목록으로 대체한다.
+        """
+        names, error = call_with_retry(self.get_node_names)
+        if error is not None:
+            return [], str(error)
+        return names or [], None
+
+    def _warn_node_name_failure(self, reason: str) -> None:
+        """노드 이름 조회 실패를 요약 로그와 같은 간격으로만 남긴다."""
+        now = time.monotonic()
+        if not should_log_summary(self._last_node_name_error_log_time, now, self._log_interval_sec):
+            return
+        self._last_node_name_error_log_time = now
+        self.get_logger().warn(
+            f"Node name discovery failed, publishing without node list: {reason}"
+        )
 
     def _get_topics_api(self) -> list[dict[str, Any]]:
         try:
