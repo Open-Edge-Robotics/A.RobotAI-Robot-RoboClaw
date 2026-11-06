@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-06 — CLOiD 도구 호출 경로에서 주행 전 boxing prelude 교착 해소
+
+- **배경**: CLOiD 2호기에서 "주방으로 이동해줘" 같은 이동 요청이 항상 실패하고 "박싱자세 해줘"만 동작했습니다. 로그에는 `Inserting cloid_navigation_pose before CLOiD base motion skill 'navigate_to'` 직후 `cloid_navigation_pose 준비 도구가 도구 목록에 없다`는 답변이 남았습니다. `llm_tool_calling=true` 배포의 네이티브 도구 호출 루프(`_run_native_tool_loop`)가 주행 안전 게이트가 삽입한 prelude를 실행하지 않고 "준비 도구를 먼저 호출하세요"로 되돌렸는데, `cloid_navigation_pose`는 `is_internal=true`라 도구 목록에 없어 모델이 영구히 만족시킬 수 없는 교착이었습니다. JSON 응답 경로와 직접 라우팅 경로는 prelude를 그대로 실행해 정상 동작했습니다.
+- **조치**:
+  - 네이티브 도구 호출 루프에서 삽입된 prelude가 도구 목록에 없으면 게이트가 대신 실행하고, 실행 사실을 뒤따르는 도구 결과의 `navigation_safety_prelude` 필드로 모델에 보고합니다. 모델이 직접 호출할 수 있는 공개 스킬(`stow_for_navigation`)은 기존처럼 "먼저 호출하세요"로 되돌립니다.
+  - `execute_skill_chain`이 정책 prelude를 도구 호출 결과 인덱스에서 제외하도록 수정했습니다. prelude가 tool_call을 소모하면 이후 결과가 한 칸씩 밀려 엉뚱한 호출에 붙는 문제가 있습니다. prelude 실패 시 남은 호출은 `NotExecuted`로 보고합니다.
+  - `docs/CLOiD_GUIDE.md`의 주행 전 boxing 자세 절에 도구 호출 경로 동작을 추가했습니다.
+- **검증**: `task unit-test` 2074 passed(신규 `test_native_planner_contract.py` 3건 포함), `uv run ruff check` · `ruff format --check` 통과.
+- **남은 작업**: CLOiD 2호기에서 `llm_tool_calling=true` 상태로 이동 요청 → boxing 자세 실행 → 주행 순서가 실제로 이어지는지 실기 확인이 필요합니다.
+
 ## 2026-11-06 — 에이전트 executor 정지 감지·복구(하트비트 워치독) 및 중첩 spin 제거
 
 - **배경**: Former0045에서 `arm_pose` 스킬 대기 이후 에이전트가 "먹통"이 되는 증상이 두 번(15:16, 15:30) 재현됐습니다. py-spy로 보면 `MultiThreadedExecutor`의 wait set이 비어(`nodes_to_use=[]`, `subscriptions=[]`, `timers=[]`) 상태 퍼블리시(1초), joint_states, 액션/서비스 응답이 모두 멈춘 상태였습니다. 팔 서비스 future가 완료되지 않는 상황에서 `_ros_sync.wait_for_future_sync()`가 스킬 콜백 안에서 `rclpy.spin_once()`로 같은 노드를 다시 spin 한 것이 방아쇠였습니다.

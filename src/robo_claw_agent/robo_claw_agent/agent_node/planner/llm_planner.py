@@ -15,7 +15,7 @@ from ...tracing import (
     traceable,
 )
 from ...types import AgentState, LLMPlanResult, SkillChainItem
-from ..nav_safety import ensure_navigation_safety
+from ..nav_safety import POLICY_PRELUDE_FLAG, ensure_navigation_safety
 from ..utils import _omit_base64_data, tool_calling_enabled
 from .answers import _MAX_ANSWER_ROUNDS, _compose_result_answer
 from .classify import (
@@ -514,7 +514,25 @@ class LLMPlanner:
                     chain, self.node._skills, self.node.get_logger(), self.node
                 )
                 if protected != chain:
-                    error = f"주행 안전 준비가 필요합니다. 준비 도구를 먼저 호출한 뒤 다시 요청하세요: {protected}"
+                    # 게이트가 삽입한 prelude 중 LLM 도구 목록에 없는 스킬(내부 안전
+                    # 스킬)은 모델이 스스로 호출할 방법이 없다. 이때 "먼저 호출하세요"
+                    # 로 되돌리면 매 라운드가 같은 거부로 끝나 이동이 영구히 막힌다
+                    # (CLOiD ``cloid_navigation_pose`` 사례). 이 경우만 게이트가 대신
+                    # 실행하고, 실행 사실은 뒤따르는 도구 결과에 함께 보고한다.
+                    internal_preludes = [
+                        item
+                        for item in protected
+                        if item.get(POLICY_PRELUDE_FLAG)
+                        and self._resolve_tool_skill_name(str(item.get("skill") or "")) is None
+                    ]
+                    if internal_preludes:
+                        chain = protected
+                        error = self.node._validate_skill_chain(chain)
+                    else:
+                        error = (
+                            "주행 안전 준비가 필요합니다. "
+                            f"준비 도구를 먼저 호출한 뒤 다시 요청하세요: {protected}"
+                        )
             if error:
                 calls = _with_tool_call_ids(calls)
                 assistant = dict(turn.assistant_message or {})
@@ -872,8 +890,9 @@ class LLMPlanner:
         elif llm_resp_content is not None:
             messages.append({"role": "assistant", "content": llm_resp_content})
 
-        def append_tool_result(index: int, data: Any) -> None:
-            if not native_tool_calls or index >= len(native_tool_calls):
+        def append_tool_result(index: int | None, data: Any) -> None:
+            # index=None 은 LLM 이 호출하지 않은 정책 prelude 항목이다.
+            if not native_tool_calls or index is None or index >= len(native_tool_calls):
                 return
             call = native_tool_calls[index]
             message = {
@@ -885,10 +904,19 @@ class LLMPlanner:
             message["tool_call_id"] = call["id"]
             messages.append(message)
 
-        for call_index, item in enumerate(chain):
+        # 주행 안전 게이트가 삽입한 prelude 는 LLM tool_call 이 아니므로 tool 결과
+        # 대응 인덱스를 소모하지 않는다. 인덱스를 그대로 쓰면 prelude 이후 결과가 한 칸씩
+        # 밀려 엉뚱한 호출에 붙는다.
+        tool_index = 0
+        executed_preludes: list[dict[str, Any]] = []
+        for item in chain:
             name, params = item.get("skill"), item.get("params", {})
             if not name:
                 continue
+            call_index: int | None = None
+            if not item.get(POLICY_PRELUDE_FLAG):
+                call_index = tool_index
+                tool_index += 1
 
             # 대화형 쿼리에서 action 스킬이 선택된 경우 안전하게 건너뛴다.
             # (재요구 예산을 소진하고도 LLM이 물리 동작을 고집한 경우의 최종 방어선)
@@ -962,7 +990,9 @@ class LLMPlanner:
                         "result_data": clean_result_data,
                     },
                 )
-                for pending_index in range(call_index + 1, len(native_tool_calls or [])):
+                # prelude 실패(call_index is None)면 아직 실행하지 않은 호출은 전부 남은 것이다.
+                next_pending = tool_index if call_index is None else call_index + 1
+                for pending_index in range(next_pending, len(native_tool_calls or [])):
                     append_tool_result(
                         pending_index,
                         {
@@ -1032,10 +1062,25 @@ class LLMPlanner:
             else:
                 recovered_pending = False
                 self.node.get_logger().info(f"Skill '{name}' executed successfully")
+                is_policy_prelude = call_index is None
+                label = f"'{name}'(주행 안전 준비)" if is_policy_prelude else f"'{name}'"
                 executed_reports.append(
-                    f"- '{name}': 성공. 결과: {json.dumps(clean_result_data, ensure_ascii=False)}"
+                    f"- {label}: 성공. 결과: {json.dumps(clean_result_data, ensure_ascii=False)}"
                 )
 
+                if is_policy_prelude:
+                    executed_preludes.append(
+                        {"skill": name, "success": True, "message": res.message}
+                    )
+                    continue
+
+                if executed_preludes and isinstance(clean_result_data, dict):
+                    # 모델이 요청하지 않은 안전 prelude 실행 사실을 결과와 함께 알린다.
+                    clean_result_data = {
+                        **clean_result_data,
+                        "navigation_safety_prelude": executed_preludes,
+                    }
+                executed_preludes = []
                 append_tool_result(call_index, clean_result_data)
 
         if chain_success:

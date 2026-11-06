@@ -1,3 +1,4 @@
+import json
 import logging
 from copy import deepcopy
 from types import SimpleNamespace
@@ -200,3 +201,126 @@ async def test_mock_manager_does_not_record_experience_without_payload_marker(mo
     node._skills.execute = lambda name, params, timeout: SkillResult(name, True, "완료", 0.01, {})
     await run(node, "상태 확인")
     assert node._memory.record_skill_episode.call_count == (0 if mock_robot else 1)
+
+
+# ── 정책 prelude(내부 안전 스킬) 실행 ─────────────────────────────────────────
+
+
+def _internal_prelude_before(chain, *args):
+    """CLOiD 주행 전 자세처럼 LLM 도구 목록에 없는 prelude 를 삽입한다."""
+    from robo_claw_agent.agent_node.nav_safety import POLICY_PRELUDE_FLAG
+
+    return [
+        {"skill": "cloid_navigation_pose", "params": {}, POLICY_PRELUDE_FLAG: True},
+        *chain,
+    ]
+
+
+async def test_internal_prelude_is_executed_instead_of_deadlocking(monkeypatch):
+    """LLM 이 호출할 수 없는 내부 안전 스킬은 게이트가 대신 실행해야 한다.
+
+    도구 목록에 없는 prelude 를 "먼저 호출하세요" 로 되돌리면 모델은 영원히
+    만족시킬 수 없고, 이동 요청이 매번 실패한다(CLOiD 2호기 주방 이동 사례).
+    """
+    from robo_claw_agent.agent_node.planner import llm_planner
+
+    node = Node(
+        [
+            ToolTurn(
+                tool_calls=[
+                    ToolCall(name="navigate_to", arguments={"target_name": "주방"}, id="nav")
+                ]
+            ),
+            ToolTurn(content="주방으로 이동했습니다."),
+        ]
+    )
+    monkeypatch.setattr(llm_planner, "ensure_navigation_safety", _internal_prelude_before)
+
+    result, _, success, _ = await run(node, "주방으로 이동해")
+
+    assert success is True
+    assert node.executed == [
+        ("cloid_navigation_pose", {}),
+        ("navigate_to", {"target_name": "주방"}),
+    ]
+    assert result == "주방으로 이동했습니다."
+    tool_messages = [m for m in node.requests[1] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in tool_messages] == ["nav"]
+    payload = json.loads(tool_messages[0]["content"])
+    assert payload["navigation_safety_prelude"] == [
+        {
+            "skill": "cloid_navigation_pose",
+            "success": True,
+            "message": "[MOCK] cloid_navigation_pose",
+        }
+    ]
+
+
+async def test_prelude_does_not_shift_tool_call_result_mapping(monkeypatch):
+    """prelude 는 tool_call 을 소모하지 않으므로 결과가 한 칸씩 밀리면 안 된다."""
+    from robo_claw_agent.agent_node.nav_safety import POLICY_PRELUDE_FLAG
+    from robo_claw_agent.agent_node.planner import llm_planner
+
+    def insert_only_before_navigation(chain, *args):
+        protected = []
+        for item in chain:
+            if item.get("skill") == "navigate_to":
+                protected.append(
+                    {"skill": "cloid_navigation_pose", "params": {}, POLICY_PRELUDE_FLAG: True}
+                )
+            protected.append(item)
+        return protected
+
+    node = Node(
+        [
+            ToolTurn(
+                tool_calls=[
+                    ToolCall(name="get_status", id="status"),
+                    ToolCall(name="navigate_to", arguments={"target_name": "주방"}, id="nav"),
+                ]
+            ),
+            ToolTurn(content="이동했습니다."),
+        ]
+    )
+    monkeypatch.setattr(llm_planner, "ensure_navigation_safety", insert_only_before_navigation)
+
+    _, _, success, _ = await run(node, "주방으로 이동해")
+
+    assert success is True
+    tool_messages = [m for m in node.requests[1] if m["role"] == "tool"]
+    assert [(m["tool_call_id"], m["tool_name"]) for m in tool_messages] == [
+        ("status", "get_status"),
+        ("nav", "navigate_to"),
+    ]
+
+
+async def test_internal_prelude_failure_blocks_execution_and_reports_reason(monkeypatch):
+    """prelude 가 실패하면 요청한 이동은 실행하지 않고, 남은 도구 호출도 실패로 보고한다."""
+    from robo_claw_agent.agent_node.planner import llm_planner
+
+    node = Node(
+        [
+            ToolTurn(
+                tool_calls=[
+                    ToolCall(name="navigate_to", arguments={"target_name": "주방"}, id="nav")
+                ]
+            ),
+            ToolTurn(content="주행 전 자세 준비가 실패해 이동하지 못했습니다."),
+        ]
+    )
+
+    def execute(name, params, timeout):
+        node.executed.append((name, params))
+        return SkillResult(name, False, "script_runner 응답 없음", 0.01, {"mocked": True})
+
+    node._skills.execute = execute
+    monkeypatch.setattr(llm_planner, "ensure_navigation_safety", _internal_prelude_before)
+
+    result, _, success, _ = await run(node, "주방으로 이동해")
+
+    assert success is False
+    assert node.executed == [("cloid_navigation_pose", {})]
+    tool_messages = [m for m in node.requests[1] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in tool_messages] == ["nav"]
+    assert json.loads(tool_messages[0]["content"])["error_type"] == "NotExecuted"
+    assert "cloid_navigation_pose" in node.requests[1][-1]["content"]

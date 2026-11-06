@@ -223,6 +223,13 @@ CLOiD 는 모션이나 조작을 마친 뒤 상체 자세가 바뀌어 팔이 �
 - **직접 호출 경로**: HTTP/gRPC/메신저로 베이스 스킬을 곧바로 호출하면 체인 삽입이
   없으므로, `NavigationSafetyGate` 가 준비 상태를 확인해 준비 전이면 이동을
   거부합니다.
+- **도구 호출(tool calling) 경로**: `llm_tool_calling=true` 배포에서 모델이
+  `navigate_to` 같은 이동 도구를 직접 호출하면, 플래너가 삽입한 prelude 가 도구 목록에
+  없는 내부 스킬인지 확인합니다. 내부 스킬은 모델이 스스로 호출할 수 없으므로 게이트가
+  대신 실행하고, 실행 결과는 뒤따르는 도구 결과의 `navigation_safety_prelude` 필드로
+  모델에 보고합니다. prelude 는 도구 호출이 아니므로 tool_call 결과 대응 인덱스를
+  소모하지 않습니다. 모델이 직접 호출할 수 있는 공개 스킬(`stow_for_navigation` 등)은
+  기존처럼 "먼저 실행하세요" 로 되돌려 모델이 직접 호출하게 합니다.
 - **confirm 없음**: 런타임 안전 절차이므로 confirm 을 요구하지 않습니다. 공개 스킬
   `set_cloid_packing_pose` 의 confirm 게이트는 그대로 유지됩니다.
 - **스위치**: contract `agent.cloid_navigation_pose_enabled`(env
