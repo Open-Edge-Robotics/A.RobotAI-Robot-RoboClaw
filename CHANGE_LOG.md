@@ -13,7 +13,8 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   - 전방 위치 조회 스킵 타입(`_FWD_SKIP_TYPES`)에 `object_location`을 추가했습니다.
   - `place_migration.demote_object_locations()`를 추가해 과거 `type=location` 객체 행을 멱등하게 `object_location`으로 내립니다.
   - `docs/RAG_AND_LEARNING.md`에 장소/객체 분리 규칙과 경로별 포함 여부를 표로 정리했습니다.
-- **검증**: `task unit-test` 2110 passed(신규 `test_object_vs_place_memory.py` 5건 포함), `ruff check`/`format --check` 통과. 실기(cloid1) 데이터 정리는 로봇 pull 후 `demote_object_locations()`로 수행합니다.
+- **검증**: `task unit-test` 2110 passed(신규 `test_object_vs_place_memory.py` 5건 포함), `ruff check`/`format --check` 통과.
+- **실기 적용**: cloid1 31건·cloid2 0건·former0047 6건을 `demote_object_locations()`로 정리했습니다. cloid1 장소는 21건→6건(거실·복도·안방·안쪽·주방·충전대)으로 줄었고 `person`/`table` 이동 해석이 None이 되는 것을 확인했습니다. cloid1/2는 재기동해 새 기록 경로가 적용됐고, former0047은 데이터만 정리(에이전트 재기동은 필요), former0045는 네트워크 접속 불가로 미적용입니다.
 
 ## 2026-11-06 — CLOiD 장소 기억 유실(컨테이너 재생성) 원인 확인 및 영속화
 
