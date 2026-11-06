@@ -3,6 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-06 — FleetControl capability를 에이전트 등록 스킬 기준으로 보고
+
+- **배경**: Maestro 관제 화면에서 CLOiD 1·2호의 capability가 비어 있었습니다. CLOiD는 컨테이너 안에서 `rclaw launch`를 local 모드로 실행하는데, AI Config Server 기본값 `RC_SKILLS_GUIDE_FILE=config/SKILLS.md`가 docker 모드(`/ros2_ws`) 기준 상대 경로라 작업 디렉터리 `/ws`에서 파일을 찾지 못했고, connector는 경고 없이 빈 manifest를 보냈습니다. 또한 로봇별 `SKILLS.md`는 표가 없는 사용 가이드여서, 표가 없을 때 본문 코드 표기를 모두 수집하던 기존 파서는 사용 불가로 명시된 스킬(`grasp`, `stow_for_navigation` 등)과 `joint1`·`base_link` 같은 비스킬 이름까지 capability로 보고했습니다(Former 카드에서 확인).
+- **조치**:
+  - `robo_claw_grpc` 노드에 `/robo_claw_agent_node/query_state` 클라이언트(`call_query_state`, timeout 포함)를 추가하고, `RoboClawCommandHandlers.list_skills()`로 등록 스킬 목록을 읽습니다.
+  - `FleetConnector.refresh_capabilities()`가 매 연결의 registration 직전에 에이전트 등록 스킬로 manifest를 만듭니다. 내부 스킬은 제외하고 위험도와 input schema를 포함합니다. 에이전트가 응답하지 않으면 최대 60초(2초 간격) 재조회 후 `SKILLS.md` manifest로 대체하고 경고를 남깁니다.
+  - `build_capabilities()`는 머리글의 `스킬`/`skill` 열만 사용하고, 스킬 열이 없는 표(파라미터·프레임·관절 표)는 건너뜁니다. 표가 없는 문서에서 코드 표기를 전부 수집하던 대체 규칙을 제거했고, 파일이 없거나 카탈로그 표가 없으면 경고를 남깁니다. 머리글 없는 표는 기존처럼 첫 코드 표기를 사용합니다.
+  - `rclaw` local 모드가 `RC_SKILLS_GUIDE_FILE`을 실제 존재하는 절대 경로로 보정합니다(존재하는 절대 경로 유지 → ProjectRoot 기준 상대 경로 → 캐시 `SKILLS.md`). 에이전트의 `skills_guide_file` 인자와 같은 파일을 가리킵니다.
+  - `docs/OPERATIONS.md`의 FleetControl capability 설명을 갱신했습니다.
+- **검증**: `pytest src/robo_claw_grpc/tests/test_fleet_connector.py` 12건 통과(신규 7건), `src/robo_claw_grpc/tests` 36건 통과·2건은 로컬 환경의 `cv2` 부재로 실패(`test_services.py`, 변경과 무관), `go test ./...`·`go vet ./launcher/` 통과(신규 `TestBuildMergedEnvResolvesSkillsGuideForFleetConnector` 5개 케이스), `ruff check src/robo_claw_grpc` 통과. 기존 `docs/SKILLS.md` 파싱 결과는 변경 전과 동일(106개)함을 확인했습니다. `call_query_state`는 ROS 2 환경이 없어 실기 검증이 필요합니다.
+
 ## 2026-11-03 — Former0045 AgileX Nero 팔 Humble 드라이버 도커 연동 및 조작 백엔드 보완
 
 - **배경**: Former0045에 장착된 AgileX Nero(7-DOF) 팔 및 그리퍼(`agx_gripper`)가 구동되지 않는 문제를 해결하기 위해, 팔 제어 PC(`nero-arm`, `192.168.50.202`)에서 `nero_humble:1.0` Docker 컨테이너를 기동하여 Humble ROS 2 환경을 일치시키고, RoboClaw `AgxDriverBackend`를 보완하여 실기 하드웨어 움직임을 검증했습니다.

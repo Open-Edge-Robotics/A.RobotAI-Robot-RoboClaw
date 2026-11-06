@@ -186,11 +186,46 @@ func buildMergedEnv(ctx *wcli.Context, lctx *LaunchContext) []string {
 	}
 	logging.Debug("LangSmith 트레이싱 환경변수 주입 완료 (tracing=%t, project=%s)", lctx.ActiveConfig.LangsmithTracing, lctx.ActiveConfig.LangsmithProject)
 
+	// robo_claw_grpc FleetControl connector는 launch 인자가 아닌 RC_SKILLS_GUIDE_FILE 환경변수로
+	// capability manifest를 만든다. 서버 기본값(config/SKILLS.md)은 docker 모드의 /ros2_ws 기준
+	// 상대 경로라 local 모드에서는 깨지므로, 에이전트의 skills_guide_file과 같은 파일을 가리키게 한다.
+	if skillsFile, ok := resolveSkillsGuideFile(lctx); ok {
+		env = append(env, "RC_SKILLS_GUIDE_FILE="+skillsFile)
+		logging.Debug("RC_SKILLS_GUIDE_FILE 보정: %s", skillsFile)
+	}
+
 	if lctx.Sim {
 		env = applySimEnv(ctx, lctx, env)
 	}
 
 	return env
+}
+
+// resolveSkillsGuideFile 은 RC_SKILLS_GUIDE_FILE을 실제로 존재하는 절대 경로로 보정할 값을 반환합니다.
+// 존재하는 절대 경로는 그대로 두고(false), 상대 경로는 ProjectRoot 기준으로 찾은 뒤,
+// 찾지 못하면 캐시된 SKILLS.md를 사용합니다. 보정할 파일이 없으면 false를 반환합니다.
+func resolveSkillsGuideFile(lctx *LaunchContext) (string, bool) {
+	value := strings.TrimSpace(lctx.EnvMap["RC_SKILLS_GUIDE_FILE"])
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv("RC_SKILLS_GUIDE_FILE"))
+	}
+	if value != "" {
+		if filepath.IsAbs(value) {
+			if PathExists(value) {
+				return "", false
+			}
+		} else if lctx.ProjectRoot != "" {
+			if candidate := filepath.Join(lctx.ProjectRoot, value); PathExists(candidate) {
+				return candidate, true
+			}
+		}
+	}
+	if lctx.CacheDir != "" {
+		if cached := filepath.Join(lctx.CacheDir, "SKILLS.md"); PathExists(cached) {
+			return cached, true
+		}
+	}
+	return "", false
 }
 
 // applyVenv .venv 가상환경의 PATH 및 PYTHONPATH를 환경변수에 주입합니다.

@@ -15,7 +15,7 @@ import grpc
 from robo_claw_grpc import fleet_control_pb2 as pb2
 from robo_claw_grpc import fleet_control_pb2_grpc as pb2_grpc
 
-from .capabilities import CapabilityManifest
+from .capabilities import CapabilityManifest, capabilities_from_skills
 from .config import DisconnectPolicy, FleetConnectorConfig
 from .journal import CommandJournal, JournalResult
 
@@ -41,6 +41,8 @@ class FleetConnector:
         telemetry_provider,
         *,
         sleep=asyncio.sleep,
+        capability_wait_sec: float = 60.0,
+        capability_poll_sec: float = 2.0,
     ) -> None:
         self.config = config
         self.handlers = handlers
@@ -48,6 +50,8 @@ class FleetConnector:
         self.telemetry_provider = telemetry_provider
         self.journal = CommandJournal(config.journal_path)
         self._sleep = sleep
+        self._capability_wait_sec = capability_wait_sec
+        self._capability_poll_sec = capability_poll_sec
         self._outbound: asyncio.Queue = asyncio.Queue(maxsize=128)
         self._running = False
         self._active_commands: set[asyncio.Task] = set()
@@ -87,7 +91,36 @@ class FleetConnector:
         await self._apply_disconnect_policy()
         self.journal.close()
 
+    async def refresh_capabilities(self) -> str:
+        """Replace the manifest with the agent's registered skills when available.
+
+        The agent node may start after this connector, so poll for a bounded time
+        before falling back to the SKILLS.md manifest. Returns "runtime" or "file".
+        """
+        list_skills = getattr(self.handlers, "list_skills", None)
+        if list_skills is None:
+            return "file"
+        attempts = max(1, int(self._capability_wait_sec / self._capability_poll_sec) + 1)
+        for attempt in range(attempts):
+            skills = await list_skills()
+            if skills:
+                self.capabilities = capabilities_from_skills(skills)
+                logger.info(
+                    "FleetControl capabilities from agent query_state: %d skills",
+                    len(self.capabilities),
+                )
+                return "runtime"
+            if attempt < attempts - 1:
+                await self._sleep(self._capability_poll_sec)
+        logger.warning(
+            "Agent query_state unavailable after %.0fs; using SKILLS.md manifest (%d capabilities)",
+            self._capability_wait_sec,
+            len(self.capabilities),
+        )
+        return "file"
+
     async def _connect_once(self) -> None:
+        await self.refresh_capabilities()
         channel = self._channel()
         producer = asyncio.create_task(self._telemetry_loop())
         try:

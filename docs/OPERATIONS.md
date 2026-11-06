@@ -94,7 +94,9 @@ FLEET_COMMAND_JOURNAL_PATH=/tmp/robo_claw_fleet_commands.sqlite3
 - `MAESTRO_IP`가 비어 있으면 connector는 비활성화됩니다.
 - 개발 단계의 insecure 연결은 신뢰할 수 있는 LAN에서만 사용합니다.
 - `ROBOT_ID`는 배포 동안 유지하고 `session_id`는 process 재시작마다 바뀝니다.
-- capability는 `SKILLS.md`에서 구조화해 registration 시 전송합니다.
+- capability는 registration 직전에 에이전트 `/robo_claw_agent_node/query_state`가 반환하는 등록 스킬 목록으로 만듭니다. 내부 스킬은 제외하고 위험도(`read`/`dangerous`, 이동 스킬은 `motion`)와 input schema를 함께 전송합니다.
+- 에이전트가 기동 중이면 최대 60초 동안 2초 간격으로 다시 조회합니다. 끝내 응답하지 않으면 `RC_SKILLS_GUIDE_FILE`의 스킬 카탈로그 표(`스킬`/`skill` 열)로 대체하고 경고 로그를 남깁니다. 표가 없는 로봇별 사용 가이드나 파라미터 표는 capability로 쓰지 않습니다.
+- local 모드(`rclaw launch` without `--docker`, 예: CLOiD 컨테이너)에서는 `rclaw`가 `RC_SKILLS_GUIDE_FILE`의 상대 경로(서버 기본값 `config/SKILLS.md`)를 캐시된 `SKILLS.md` 절대 경로로 보정합니다.
 - command idempotency와 완료 결과는 SQLite journal에 저장됩니다.
 - 기본 disconnect 정책 `complete`는 현재 명령을 마친 뒤 reconnect합니다.
 - `stop`은 로컬 stop skill을 실행하고 active command를 취소합니다.

@@ -1,9 +1,14 @@
 import asyncio
 from pathlib import Path
 
-from robo_claw_grpc.fleet_connector.capabilities import build_capabilities
+from robo_claw_grpc.fleet_connector.capabilities import (
+    CapabilityManifest,
+    build_capabilities,
+    capabilities_from_skills,
+)
 from robo_claw_grpc.fleet_connector.client import FleetConnector
 from robo_claw_grpc.fleet_connector.config import DisconnectPolicy, FleetConnectorConfig
+from robo_claw_grpc.fleet_connector.handlers import RoboClawCommandHandlers
 from robo_claw_grpc.fleet_connector.journal import CommandJournal
 
 from robo_claw_grpc import fleet_control_pb2 as pb2
@@ -72,6 +77,168 @@ def test_capabilities_are_intersected_with_runtime_skills(tmp_path):
         ("get_status", "read"),
         ("navigate_to", "motion"),
     ]
+
+
+def test_capabilities_use_only_the_skill_column_of_skill_tables(tmp_path):
+    skills = tmp_path / "SKILLS.md"
+    skills.write_text(
+        "| 카테고리 | 스킬 | 공개 범위 | 위험도 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| Navigation | `navigate_to` | Public | action |\n"
+        "| System | `get_status` | Public | informational |\n"
+        "\n"
+        "## arm_pose 파라미터\n"
+        "\n"
+        "| 파라미터 | 값 | 설명 |\n"
+        "| --- | --- | --- |\n"
+        "| `pose_name` | `home` | 이름 있는 자세 |\n"
+        "\n"
+        "| 프레임 | 관절 |\n"
+        "|:---|---:|\n"
+        "| `base_link` | `joint1` |\n",
+        encoding="utf-8",
+    )
+
+    manifest = build_capabilities(str(skills))
+
+    assert [(item.name, item.risk_level) for item in manifest] == [
+        ("get_status", "read"),
+        ("navigate_to", "motion"),
+    ]
+
+
+def test_missing_skills_file_warns_and_reports_no_capabilities(tmp_path, caplog):
+    missing = tmp_path / "config" / "SKILLS.md"
+
+    with caplog.at_level("WARNING"):
+        manifest = build_capabilities(str(missing))
+
+    assert manifest == []
+    assert str(missing) in caplog.text
+    assert "capabilities" in caplog.text
+
+
+def test_prose_skills_guide_without_tables_reports_no_capabilities(tmp_path):
+    guide = tmp_path / "SKILLS.md"
+    guide.write_text(
+        "# CLOiD 2호 스킬 가이드\n\n"
+        "`move_joints`, `grasp` 같은 일반 조작 스킬은 실행 단계에서 거부됩니다.\n"
+        "`stow_for_navigation`은 카탈로그에서 제외됩니다.\n",
+        encoding="utf-8",
+    )
+
+    assert build_capabilities(str(guide)) == []
+
+
+def test_runtime_skills_become_capabilities_with_schema_and_risk():
+    skills = [
+        {"name": "get_status", "risk_level": "read", "input_schema": {"type": "object"}},
+        {"name": "navigate_to", "risk_level": "action"},
+        {"name": "tidy_home", "risk_level": "action"},
+        {"name": "write_text_file", "risk_level": "write"},
+        {"name": "run_butler_script", "risk_level": "dangerous"},
+        {"name": "internal_helper", "risk_level": "action", "is_internal": True},
+        {"name": "Bad Name", "risk_level": "action"},
+    ]
+
+    manifest = capabilities_from_skills(skills)
+
+    assert [(item.name, item.risk_level) for item in manifest] == [
+        ("get_status", "read"),
+        ("navigate_to", "motion"),
+        ("run_butler_script", "dangerous"),
+        ("tidy_home", "normal"),
+        ("write_text_file", "normal"),
+    ]
+    assert manifest[0].input_schema_json == '{"type": "object"}'
+    assert manifest[1].input_schema_json == "{}"
+
+
+class SkillListingHandlers(FakeHandlers):
+    def __init__(self, responses):
+        super().__init__()
+        self.responses = list(responses)
+        self.list_calls = 0
+
+    async def list_skills(self):
+        self.list_calls += 1
+        return self.responses.pop(0) if self.responses else None
+
+
+async def no_sleep(_seconds):
+    return None
+
+
+def test_connector_prefers_runtime_skills_once_agent_is_ready(tmp_path):
+    async def scenario():
+        handlers = SkillListingHandlers([None, [{"name": "get_status", "risk_level": "read"}]])
+        connector = FleetConnector(
+            config(tmp_path),
+            handlers,
+            [CapabilityManifest(name="stale_from_file")],
+            lambda: {},
+            sleep=no_sleep,
+        )
+
+        source = await connector.refresh_capabilities()
+
+        assert source == "runtime"
+        assert handlers.list_calls == 2
+        assert [item.name for item in connector.capabilities] == ["get_status"]
+        connector.journal.close()
+
+    asyncio.run(scenario())
+
+
+def test_connector_keeps_file_manifest_when_agent_never_answers(tmp_path, caplog):
+    async def scenario():
+        handlers = SkillListingHandlers([])
+        connector = FleetConnector(
+            config(tmp_path),
+            handlers,
+            [CapabilityManifest(name="from_file")],
+            lambda: {},
+            sleep=no_sleep,
+            capability_wait_sec=4.0,
+        )
+
+        with caplog.at_level("WARNING"):
+            source = await connector.refresh_capabilities()
+
+        assert source == "file"
+        assert handlers.list_calls >= 2
+        assert [item.name for item in connector.capabilities] == ["from_file"]
+        assert "query_state" in caplog.text
+        connector.journal.close()
+
+    asyncio.run(scenario())
+
+
+class FakeQueryNode:
+    def __init__(self, response):
+        self.response = response
+
+    async def call_query_state(self, timeout_sec=5.0):
+        return self.response
+
+
+class FakeQueryResponse:
+    def __init__(self, success, state_json):
+        self.success = success
+        self.state_json = state_json
+
+
+def test_handlers_read_skill_list_from_agent_query_state():
+    ok = RoboClawCommandHandlers(
+        FakeQueryNode(FakeQueryResponse(True, '{"skills": [{"name": "get_status"}]}'))
+    )
+    failed = RoboClawCommandHandlers(FakeQueryNode(FakeQueryResponse(False, "")))
+    garbage = RoboClawCommandHandlers(FakeQueryNode(FakeQueryResponse(True, "not json")))
+    unavailable = RoboClawCommandHandlers(FakeQueryNode(None))
+
+    assert asyncio.run(ok.list_skills()) == [{"name": "get_status"}]
+    for handlers in (failed, garbage, unavailable):
+        assert asyncio.run(handlers.list_skills()) is None
 
 
 def test_command_journal_blocks_duplicates_after_restart(tmp_path):

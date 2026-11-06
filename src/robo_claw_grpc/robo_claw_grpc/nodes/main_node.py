@@ -6,7 +6,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from robo_claw_msgs.action import ExecuteTask
-from robo_claw_msgs.srv import ExecuteSkill
+from robo_claw_msgs.srv import ExecuteSkill, QueryState
 
 
 class RoboClawGrpcNode(Node):
@@ -26,6 +26,13 @@ class RoboClawGrpcNode(Node):
             # robo_claw_agent_node의 execute_skill 서비스 클라이언트 생성
             self.exec_skill_client = self.create_client(
                 ExecuteSkill, "/robo_claw_agent_node/execute_skill"
+            )
+
+            # robo_claw_agent_node의 query_state 서비스 클라이언트 생성
+            # FleetControl connector가 실제 등록된 스킬 목록(위험도·input schema 포함)을
+            # capability로 보고하기 위해 사용합니다.
+            self.query_state_client = self.create_client(
+                QueryState, "/robo_claw_agent_node/query_state"
             )
 
             # robo_claw_agent_node의 execute_task 액션 클라이언트 생성
@@ -58,6 +65,28 @@ class RoboClawGrpcNode(Node):
         future = self.exec_skill_client.call_async(req)
 
         while not future.done():
+            await asyncio.sleep(0.05)
+
+        return future.result()
+
+    async def call_query_state(self, timeout_sec: float = 5.0) -> Any:
+        """robo_claw_agent의 query_state 서비스를 비동기 호출합니다.
+
+        서비스가 준비되지 않았거나 timeout_sec 안에 응답이 없으면 None을 반환합니다.
+        """
+        import asyncio
+
+        if not self.query_state_client.service_is_ready():
+            return None
+
+        future = self.query_state_client.call_async(QueryState.Request())
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_sec
+        while not future.done():
+            if loop.time() >= deadline:
+                future.cancel()
+                self.get_logger().warning("QueryState service timed out.")
+                return None
             await asyncio.sleep(0.05)
 
         return future.result()

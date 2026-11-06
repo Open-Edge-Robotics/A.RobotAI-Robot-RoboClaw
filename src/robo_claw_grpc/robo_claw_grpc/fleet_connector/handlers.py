@@ -38,6 +38,20 @@ class RoboClawCommandHandlers:
             "result": detail,
         }
 
+    async def list_skills(self) -> list[dict[str, Any]] | None:
+        """Return the agent's registered skills, or None when the agent is not reachable."""
+        response = await self.grpc_node.call_query_state()
+        if response is None or not getattr(response, "success", False):
+            return None
+        try:
+            state = json.loads(getattr(response, "state_json", "") or "")
+        except json.JSONDecodeError:
+            return None
+        skills = state.get("skills") if isinstance(state, dict) else None
+        if not isinstance(skills, list):
+            return None
+        return [item for item in skills if isinstance(item, dict)]
+
     async def emergency_stop(self, reason: str) -> dict[str, Any]:
         result = await self.execute_skill("stop", {}, 10.0)
         if reason:
