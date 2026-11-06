@@ -47,6 +47,12 @@ SQL 데이터와 의미 검색 데이터를 함께 관리합니다.
 `metadata.type`이 `location`이 아닌 항목은 `get_location`·`navigate_to`에서 보이지 않습니다.
 결과의 `saved_as` 값(`location`/`knowledge`)으로 실제 저장 경로를 확인할 수 있습니다.
 
+장소·경험은 원격 백업이 없는 **로컬 SQLite 파일**에만 저장되므로, 운영 배포는 메모리
+디렉터리(`~/.robo_claw`)를 컨테이너 외부에 영속화해야 합니다. `rclaw` docker 모드는
+`RC_MEMORY_DIR`(기본 `<project>/agent_workspace/memory`)를 `/ros2_ws/memory`로
+마운트합니다. CLOiD처럼 docker compose로 직접 기동하는 배포는 `/root/.robo_claw`를
+named volume으로 마운트합니다(볼륨이 없으면 컨테이너 재생성 시 장소가 사라집니다).
+
 ### 레거시 장소 이관
 
 SQLite 전환 이전에 JSON 지식 베이스에만 저장된 장소는 이동 해석에 사용되지 않습니다.

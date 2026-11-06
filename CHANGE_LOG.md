@@ -3,6 +3,13 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-06 — CLOiD 장소 기억 유실(컨테이너 재생성) 원인 확인 및 영속화
+
+- **배경**: cloid1에서 장소를 저장해도 조회되지 않았습니다. 구조화 DB(`/root/.robo_claw/memory.json.kb.collections/cloi01_azure--*.structured.db`)가 **0건**이었고, 장소 6건은 JSON 지식 미러(Qdrant 복원분)에만 남아 있었습니다. `/root/.robo_claw`가 볼륨이 아닌 컨테이너 파일시스템이라 컨테이너 재생성(18:23) 시 SQLite가 비었고, RAG 미러는 Qdrant에서 복원되지만 구조화 데이터는 복원되지 않습니다.
+- **조치**: 지식 미러에서 장소 6건(거실·주방·복도·안방·안쪽·충전대)을 이관해 복구했습니다. 재발 방지를 위해 CLOiD 배포 compose(`cloi_entropos` 저장소 `docker/compose/robo-claw.yml`)에 named volume `robo-claw-memory`를 `/root/.robo_claw`에 마운트하도록 변경하고, `DEVICE_DEPLOYMENT_GUIDE.md`에 백업·복원 절차와 재이관 방법을 문서화했습니다(별도 저장소 커밋 `99f25012`).
+- **검증**: 이관 후 배포 코드로 `resolve()`가 6개 장소 모두 좌표를 반환하는 것을 확인했습니다. compose 변경은 `docker compose config` 렌더로 `robo-claw-memory -> /root/.robo_claw` 마운트를 확인했습니다. 로봇 적용(컨테이너 재생성)은 미실시.
+- **남은 작업**: cloid1/cloid2 호스트에서 `cloi_entropos` pull 후 메모리 백업 → 볼륨 시딩 → 컨테이너 재생성 순서로 적용해야 합니다. `rclaw` docker 모드(former 계열)는 이미 `/ros2_ws/memory`를 영속 마운트하므로 영향이 없습니다.
+
 ## 2026-11-06 — 장소 기억 저장 실패(metadata 없는 rag_add) 수정과 레거시 장소 이관
 
 - **배경**: former0045·0047에서 "현재 좌표를 확인해서 안방으로 기억해줘" 요청이 이동에 쓰이지 않았습니다. LLM은 `rag_add`를 `text`만으로 호출했고(예 `현재 좌표 (x: 6.46, y: -1.9)는 안방입니다`, `안방의 좌표는 x: …`, `데스크: x=…`), 이름 추출기가 `…의 위치`·`위치는 X입니다`·`X로 기억`·`X (…)` 네 문형만 알아 이름을 얻지 못했습니다. 이름이 없으면 `type=location` 승격이 안 되고, metadata가 빈 채로 벡터 지식에만 저장되어 장소 조회(`get_location`/`navigate_to`)에서 보이지 않았습니다. 그런데도 `rag_add`는 "지식 1건을 저장했습니다"로 **성공을 반환해 유실이 가려졌습니다**. 실기 DB 확인 결과 former0045는 장소 3건만, former0047은 VLM 객체 라벨(door/wall/shoes)만 SQLite에 있고 실제 장소는 레거시 JSON에만 있었습니다.
