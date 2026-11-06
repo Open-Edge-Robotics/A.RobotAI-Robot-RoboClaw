@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..tracing import traceable
+from ..tracing import call_logging_suppressed, traceable
 from .base import BaseLLMBridge, ToolCall, ToolTurn, parse_tool_arguments
 
 logger = logging.getLogger(__name__)
@@ -199,6 +199,8 @@ class OllamaBridge(BaseLLMBridge):
         호출이 예외로 끝나면 request 와 에러만 기록하고 예외는 그대로
         전파한다 (기존 동작 유지).
         """
+        if call_logging_suppressed():
+            return call()
         try:
             response = call()
         except Exception as e:

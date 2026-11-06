@@ -518,7 +518,7 @@ def _resolve_target_coordinates(memory: Any, target_name: str) -> dict[str, Any]
         )
 
     # 3. RAG 자연어 지식 검색 시도 (자연어 임베딩 폴백)
-    if hasattr(memory, "search_knowledge"):
+    if not hasattr(type(memory), "find_location_entries") and hasattr(memory, "search_knowledge"):
         try:
             results = memory.search_knowledge(normalized, top_k=5, score_threshold=0.35)
             # location 타입 우선 매칭
@@ -539,7 +539,11 @@ def _resolve_target_coordinates(memory: Any, target_name: str) -> dict[str, Any]
             logger.warning("Error occurred while looking up target coordinates via RAG: %s", e)
 
     # 4. RAG 전체 리스트 풀스캔 백업 (키워드 100% 매칭 보장)
-    if hasattr(memory, "_vector_store") and hasattr(memory._vector_store, "list_entries"):
+    if (
+        not hasattr(type(memory), "find_location_entries")
+        and hasattr(memory, "_vector_store")
+        and hasattr(memory._vector_store, "list_entries")
+    ):
         try:
             all_entries = memory._vector_store.list_entries()
             for candidate in candidates:

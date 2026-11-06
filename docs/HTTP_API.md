@@ -1,18 +1,20 @@
-# RoboClaw HTTP API
+# HTTP 채널 API
 
-RoboClaw HTTP 채널은 기본적으로 `127.0.0.1:8080`에 바인딩됩니다. 외부 노출이 필요하면 바인드 주소, 허용 CIDR, 토큰을 명시적으로 설정하세요.
+RoboClaw HTTP 채널은 기본적으로 `127.0.0.1:8080`에 바인딩됩니다. 외부 노출이 필요하면 바인드 주소, 허용 CIDR, 토큰을 명시적으로 설정합니다.
 
 ## 실행 예시
 
-```bash
-export RC_HTTP_HOST="0.0.0.0"
-export RC_HTTP_PORT="8080"
-export RC_HTTP_READONLY_TOKEN="robo-read-token"
-export RC_HTTP_CONTROL_TOKEN="robo-write-token"
-export RC_HTTP_ALLOWED_CIDRS_JSON='["127.0.0.1/32","192.168.0.0/24"]'
-export RC_HTTP_RATE_LIMIT_PER_MINUTE="60"
-export RC_HTTP_ALLOWED_SKILLS_JSON='["get_status","analyze_scene","get_map_visual"]'
-./rclaw run
+프로젝트 루트 `.env`에 다음 값을 설정한 뒤 `./rclaw run`을 실행합니다.
+`run`의 HTTP 설정 매핑은 셸에서 export한 값이 아니라 `.env`를 읽습니다.
+
+```dotenv
+RC_HTTP_HOST="0.0.0.0"
+RC_HTTP_PORT="8080"
+RC_HTTP_READONLY_TOKEN="robo-read-token"
+RC_HTTP_CONTROL_TOKEN="robo-write-token"
+RC_HTTP_ALLOWED_CIDRS_JSON='["127.0.0.1/32","192.168.0.0/24"]'
+RC_HTTP_RATE_LIMIT_PER_MINUTE="60"
+RC_HTTP_ALLOWED_SKILLS_JSON='["get_status","analyze_scene","get_map_visual"]'
 ```
 
 ## 인증 규칙
@@ -23,6 +25,11 @@ export RC_HTTP_ALLOWED_SKILLS_JSON='["get_status","analyze_scene","get_map_visua
 | `/status` | `GET`  | 읽기 전용 또는 제어 토큰 |
 | `/task`   | `POST` | 제어 토큰                |
 | `/skill`  | `POST` | 제어 토큰                |
+
+위 표는 읽기 전용 또는 제어 토큰이 하나 이상 설정된 경우에 적용합니다.
+두 토큰이 모두 비어 있으면 인증을 생략하여 `/status`, `/task`, `/skill`도 토큰 없이 접근할 수 있습니다.
+읽기 전용 토큰만 설정하면 제어 요청을 인증할 수 없으므로 제어 호출에는 제어 토큰을 설정합니다.
+`/health`를 포함한 모든 요청에 CIDR 검사와 요청 제한을 적용합니다.
 
 토큰은 아래 둘 중 하나로 보낼 수 있습니다.
 
@@ -44,6 +51,14 @@ X-RoboClaw-Token: <token>
 | `RC_HTTP_ALLOWED_SKILLS_JSON`   | `http_allowed_skills_json`   | HTTP로 허용할 스킬 JSON 리스트. 비어 있으면 allowlist 미사용 |
 | `RC_HTTP_BLOCKED_SKILLS_JSON`   | `http_blocked_skills_json`   | HTTP에서 차단할 스킬 JSON 리스트                             |
 
+CIDR 목록의 기본값은 `["127.0.0.1/32", "::1/128"]`이며, 빈 목록은 모든 IP를 허용합니다.
+요청 제한은 기본 60회이며 토큰이 있으면 토큰별, 없으면 IP별로 최근 60초를 계산합니다.
+0 이하 값은 요청 제한을 비활성화합니다. 차단 목록은 허용 목록보다 우선합니다.
+HTTP 핸들러는 `/skill` 직접 호출에서 목록을 검사합니다. 표준 `robo_claw.launch.py`는
+같은 launch 값을 에이전트의 `skill_allowed_json`·`skill_blocked_json`에도 전달하므로,
+`/task`·gRPC·메신저·ROS service를 통한 스킬 실행에도 공통 정책으로 적용합니다.
+채널과 에이전트를 별도 실행하면 각 노드의 정책을 따로 설정합니다.
+
 기본 차단 스킬:
 
 - `delete_file`
@@ -57,6 +72,7 @@ X-RoboClaw-Token: <token>
 ### `GET /health`
 
 채널 노드와 ROS 클라이언트 readiness, HTTP 보안 설정, 최근 RPC 메트릭을 반환합니다.
+`status`는 `ok`로 고정되므로 실제 ROS 준비 여부는 `clients`의 각 값을 확인합니다.
 
 ```bash
 curl http://127.0.0.1:8080/health
@@ -96,7 +112,7 @@ curl http://127.0.0.1:8080/health
 에이전트 `QueryState` 서비스 결과를 JSON으로 반환합니다.
 
 ```bash
-curl -H "Authorization: Bearer ${RC_HTTP_READONLY_TOKEN}" \
+curl -H "Authorization: Bearer robo-read-token" \
   http://127.0.0.1:8080/status
 ```
 
@@ -106,7 +122,7 @@ curl -H "Authorization: Bearer ${RC_HTTP_READONLY_TOKEN}" \
 
 ```bash
 curl -X POST http://127.0.0.1:8080/task \
-  -H "Authorization: Bearer ${RC_HTTP_CONTROL_TOKEN}" \
+  -H "Authorization: Bearer robo-write-token" \
   -H "Content-Type: application/json" \
   -d '{
     "instruction": "현재 배터리 상태 알려줘",
@@ -127,7 +143,7 @@ curl -X POST http://127.0.0.1:8080/task \
 
 ```bash
 curl -X POST http://127.0.0.1:8080/skill \
-  -H "Authorization: Bearer ${RC_HTTP_CONTROL_TOKEN}" \
+  -H "Authorization: Bearer robo-write-token" \
   -H "Content-Type: application/json" \
   -d '{
     "skill_name": "get_status",
@@ -154,6 +170,6 @@ curl -X POST http://127.0.0.1:8080/skill \
 
 ## 운영 권장값
 
-1. 외부망에 열 때는 `RC_HTTP_HOST=0.0.0.0`와 함께 반드시 `RC_HTTP_ALLOWED_CIDRS_JSON`을 설정
-2. `/task`는 전체 에이전트 실행 경로이므로 신뢰된 네트워크와 제어 토큰에서만 사용
-3. 자동화 스크립트는 `/skill` + allowlist 조합으로 좁게 열기
+1. 외부망에 열 때는 `RC_HTTP_HOST=0.0.0.0`와 함께 `RC_HTTP_ALLOWED_CIDRS_JSON`과 제어 토큰을 설정합니다.
+2. `/task`는 전체 에이전트 실행 경로이므로 신뢰된 네트워크와 제어 토큰에서만 사용합니다.
+3. 자동화 스크립트는 `/skill`과 allowlist 조합으로 호출 범위를 제한합니다.

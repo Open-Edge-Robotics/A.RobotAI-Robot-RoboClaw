@@ -1,12 +1,12 @@
-# 📋 RoboClaw 테스트 시나리오 작성 가이드
+# 테스트 시나리오 작성 가이드
 
-이 문서는 `robo_claw_cli` 자동화 테스트 커맨드([test.go](file:///home/seoyc/Workspace/ros/robo_claw/robo_claw_cli/cmd/test.go)) 실행 시 사용할 수 있는 사용자 정의 테스트 시나리오 JSON 파일의 작성 및 구동 가이드입니다.
+이 문서는 `robo_claw_cli` 자동화 테스트 커맨드([test.go](cmd/test.go)) 실행 시 사용할 수 있는 사용자 정의 테스트 시나리오 JSON 파일의 작성 및 구동 가이드입니다.
 
 ---
 
 ## 1. 시나리오 파일 구조
 
-시나리오 파일은 JSON 형식으로 작성하며, 전체 시나리오를 설명하는 메타데이터와 개별 테스트 케이스의 배열로 구성됩니다. 기본 템플릿은 [default_scenario.json](file:///home/seoyc/Workspace/ros/robo_claw/robo_claw_cli/default_scenario.json) 파일을 참고하십시오.
+시나리오 파일은 JSON 형식으로 작성하며, 전체 시나리오를 설명하는 메타데이터와 개별 테스트 케이스의 배열로 구성됩니다. 기본 템플릿은 [default_scenario.json](default_scenario.json) 파일을 참고하십시오.
 
 ```json
 {
@@ -16,7 +16,7 @@
     {
       "id": "tc_01",
       "name": "테스트 케이스 이름",
-      "phase": "대단계 분류 (예: Phase 1)",
+      "step": "Step 1",
       "type": "테스트 유형",
       "timeout_ms": 5000,
       "enabled": true,
@@ -29,13 +29,13 @@
 ```
 
 ### 1.1. 테스트 케이스 주요 필드 설명
-자세한 Go 데이터 구조 정의는 [types.go](file:///home/seoyc/Workspace/ros/robo_claw/robo_claw_cli/tester/types.go#L20-L28) 파일을 참고하십시오.
+자세한 Go 데이터 구조 정의는 [types.go](tester/types.go) 파일을 참고하십시오.
 
 | 필드명 | 타입 | 설명 |
 | :--- | :--- | :--- |
 | `id` | string | 테스트 케이스 고유 식별자 |
 | `name` | string | 콘솔 및 보고서에 표시될 테스트 항목 이름 |
-| `phase` | string | 테스트 대단계 구분 (예: `Phase 1`, `Phase 2` 등) |
+| `step` | string | 테스트 대단계 구분 (예: `Phase 1`, `Phase 2` 등) |
 | `type` | string | 실행할 테스트 핸들러 유형 (**지원되는 Type** 절 참고) |
 | `timeout_ms`| int | 개별 gRPC 호출 타임아웃 (밀리초 단위) |
 | `enabled` | bool | 해당 테스트 케이스의 실행 여부 (`false`인 경우 SKIP 처리됨) |
@@ -45,7 +45,7 @@
 
 ## 2. 지원되는 테스트 유형 (Type) 및 매개변수 (Params)
 
-테스트 유형별 구체적인 실행 코드는 [handlers.go](file:///home/seoyc/Workspace/ros/robo_claw/robo_claw_cli/tester/handlers.go) 파일에서 처리하고 있습니다.
+테스트 유형별 구체적인 실행 코드는 [handlers.go](tester/handlers.go) 파일에서 처리하고 있습니다.
 
 ### 2.1. `ping`
 * **설명**: 로봇 gRPC Ping 연결성 테스트 (실패 시 메신저 채널 SendCommand 대체 통신)
@@ -107,6 +107,6 @@
 작성 완료한 시나리오 JSON 파일을 사용해 테스트를 기동하려면 `--scenario-file` 플래그에 파일 경로를 설정하여 전달합니다.
 
 ```bash
-# 커스텀 시나리오 구동 예제 (robo_claw_cli가 빌드되어 있는 경로에서 실행)
-./robo_claw_cli test -r butler -e office --scenario-file ./my_custom_scenario.json
+# 커스텀 시나리오 구동 예제 (프로젝트 루트에서 실행)
+./rclaw test -r butler -e office --scenario-file ./my_custom_scenario.json
 ```

@@ -153,9 +153,6 @@ class AgentNode(Node, ExecutionMixin):
         self._task_step_max_retries = p.task_step_max_retries
         self._task_decomposition_wait_margin_cap_sec = p.task_decomposition_wait_margin_cap_sec
 
-        # 시작 시 벡터 DB 지식 목록 로드
-        self._startup_knowledge_ctx = self._load_startup_knowledge()
-
         load_skills(self, p)
         # 주행 전 상체 자세 준비 상태는 팔을 움직인 스킬이 성공하면 무효화된다.
         # 스킬 계층이 주행 안전 규칙을 알지 않도록 nav_safety 훅을 주입한다.
@@ -260,33 +257,6 @@ class AgentNode(Node, ExecutionMixin):
                 self._reflecting = False
 
         threading.Thread(target=_work, daemon=True).start()
-
-    def _load_startup_knowledge(self) -> str:
-        """시작 시 벡터 DB에 저장된 지식 목록을 읽어 시스템 프롬프트 컨텍스트를 구성한다."""
-        if not self._enable_rag:
-            return ""
-        try:
-            entries = self._memory._vector_store.list_entries()
-            if not entries:
-                self.get_logger().info("No knowledge stored in vector DB")
-                return ""
-            lines = []
-            for e in entries:
-                text = str(e.get("text", "")).strip()
-                preview = text[:120].replace("\n", " ")
-                if len(text) > 120:
-                    preview += "..."
-                meta = e.get("metadata", {})
-                tag = meta.get("type", "") or meta.get("source_name", "")
-                lines.append(f"- [{tag}] {preview}" if tag else f"- {preview}")
-            ctx = "[시작 시 로드된 지식 목록 ({count}건)]\n{items}".format(
-                count=len(lines), items="\n".join(lines)
-            )
-            self.get_logger().info(f"Loaded {len(lines)} knowledge item(s) at startup")
-            return ctx
-        except Exception as e:
-            self.get_logger().warning(f"Failed to load startup knowledge: {e}")
-            return ""
 
     def mark_skill_lessons_dirty(self) -> None:
         """교훈 갱신 후 프롬프트 캐시를 무효화한다."""

@@ -5,11 +5,7 @@ from types import SimpleNamespace
 from robo_claw_agent.memory_manager import MemoryManager
 
 _RAG_MODULE_PATH = (
-    Path(__file__).parents[1]
-    / "robo_claw_agent"
-    / "skills"
-    / "system_skill"
-    / "rag.py"
+    Path(__file__).parents[1] / "robo_claw_agent" / "skills" / "system_skill" / "rag.py"
 )
 _RAG_SPEC = importlib.util.spec_from_file_location("test_system_skill_rag", _RAG_MODULE_PATH)
 assert _RAG_SPEC and _RAG_SPEC.loader
@@ -44,16 +40,16 @@ def test_get_location_from_semantic_map(tmp_path):
 
     assert result["success"] is True
     assert result["position"] == {"x": -0.14, "y": -0.1}
-    assert result["source"] == "semantic_map"
+    assert result["source"] == "sql"
 
 
-def test_get_location_from_rag_fallback(tmp_path):
+def test_get_location_from_structured_knowledge(tmp_path):
     memory = MemoryManager(
         storage_path=str(tmp_path / "mem.json"),
         embedder=DummyEmbedder(),
         rag_score_threshold=0.1,
     )
-    # 시맨틱 맵에는 없고 RAG에만 저장된 경우 (metadata에 x/y 누락 등)
+    # 지식 등록 API로 저장해도 구조화 위치는 SQL에서 정확히 조회합니다.
     memory.add_knowledge(
         "충전대의 위치는 x: -0.14, y: -0.1 입니다.",
         {"location_name": "충전대", "x": -0.14, "y": -0.1, "type": "location"},
@@ -64,7 +60,7 @@ def test_get_location_from_rag_fallback(tmp_path):
 
     assert result["success"] is True
     assert result["position"] == {"x": -0.14, "y": -0.1}
-    assert result["source"] == "rag"
+    assert result["source"] == "sql"
 
 
 def test_get_location_not_found(tmp_path):

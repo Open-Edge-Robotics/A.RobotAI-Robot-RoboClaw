@@ -44,6 +44,9 @@ def _sync_location_to_semantic_map(memory: Any, metadata: dict[str, Any]) -> boo
     except (TypeError, ValueError):
         return False
 
+    if hasattr(type(memory), "find_location_entries"):
+        return memory.get_object_location(name) is not None
+
     aliases = metadata.get("aliases", [])
     if not isinstance(aliases, list):
         aliases = []
@@ -202,6 +205,8 @@ def _dedup_prior_locations(memory: Any, metadata: dict[str, Any]) -> int:
     location_type/category·텍스트에서 뽑은 이름까지 비교해, 좌표 없이 저장됐던 옛
     항목도 정리한다(로그 타입은 제외). 이름 비교는 대소문자·공백 무관 정규화. 반환: 삭제 수.
     """
+    if hasattr(type(memory), "find_location_entries"):
+        return 0  # SQLite의 장소 키 UPSERT가 중복을 방지합니다.
     if not isinstance(metadata, dict) or metadata.get("type") != "location":
         return 0
     name = _location_name_from_metadata(metadata)
@@ -248,7 +253,10 @@ def _nearest_named_location_from_rag(
     if store is None or not hasattr(store, "list_entries"):
         return None
     try:
-        entries = store.list_entries()
+        if hasattr(type(memory), "list_knowledge_entries"):
+            entries = memory.list_knowledge_entries(entry_type="location")
+        else:
+            entries = store.list_entries()
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[identify_location] RAG 스캔 실패 — 좌표→이름 폴백을 쓸 수 없습니다: %s", exc
@@ -579,7 +587,7 @@ class RAGSearchSkill(BaseSkill):
         name, x, y, source, entry_id = found
         msg = f"'{name}'의 위치는 x: {x:.2f}, y: {y:.2f} 입니다."
         logger.info(
-            "[rag_search] 정방향 위치조회 '%s' → (%.2f, %.2f) [근거:%s] qdrant_id=%s",
+            "[rag_search] 정방향 위치조회 '%s' → (%.2f, %.2f) [근거:%s] record_id=%s",
             name,
             x,
             y,
@@ -720,7 +728,10 @@ class RAGListSkill(BaseSkill):
         if self.node is None or not hasattr(self.node, "_memory"):
             return {"success": False, "message": "메모리 시스템에 접근할 수 없습니다."}
         try:
-            entries = self.node._memory._vector_store.list_entries()
+            if hasattr(type(self.node._memory), "list_knowledge_entries"):
+                entries = self.node._memory.list_knowledge_entries()
+            else:
+                entries = self.node._memory._vector_store.list_entries()
         except Exception as e:
             return {"success": False, "message": f"목록 조회 실패: {e}", "count": 0}
         return {
@@ -916,7 +927,7 @@ class GetLocationSkill(BaseSkill):
     description = (
         "기억된 장소(거실·키친·충전대 등)의 이름으로 좌표(x, y)를 조회합니다. "
         "'~의 좌표 알려줘', '~가 어디 있어?', '~ 위치가 어디야?'류 질문에 사용하세요. "
-        "시맨틱 맵과 RAG 지식 베이스에서 기억된 위치를 찾아 좌표를 반환합니다. "
+        "구조화된 SQL 저장소에서 장소명·별칭을 정확히 조회해 좌표를 반환합니다. "
         "파라미터: location_name(str, 필수)."
     )
 
@@ -947,7 +958,7 @@ class GetLocationSkill(BaseSkill):
         if found:
             name, x, y, source, entry_id = found
             logger.info(
-                "[get_location] '%s' → (%.2f, %.2f) [근거:%s] qdrant_id=%s",
+                "[get_location] '%s' → (%.2f, %.2f) [근거:%s] record_id=%s",
                 name,
                 x,
                 y,
@@ -961,7 +972,9 @@ class GetLocationSkill(BaseSkill):
                 "position": {"x": round(x, 2), "y": round(y, 2)},
                 # `source` 는 origin/main 이 정한 안정 식별자를 유지한다(소비자/테스트 계약).
                 # 공용 함수의 한글 라벨은 사람이 읽는 상세 근거이므로 별도 필드로 노출한다.
-                "source": "semantic_map" if source == "시맨틱 맵" else "rag",
+                "source": "sql"
+                if hasattr(type(memory), "find_location_entries")
+                else ("semantic_map" if source == "시맨틱 맵" else "rag"),
                 "source_detail": source,
                 "id": entry_id,
             }

@@ -43,7 +43,7 @@ fi
 echo "==============================================================="
 echo " RoboClaw 메모리 초기화"
 echo "  container  : $CONTAINER"
-echo "  memory dir : $MEMORY_DIR   (memory.kb.json / .semantic.json / .cold.db)"
+echo "  memory dir : $MEMORY_DIR   (memory.kb.json / .structured.db / .semantic.json / .cold.db)"
 echo "  qdrant     : $QDRANT_URL"
 echo "  collection : $COLLECTION"
 echo "==============================================================="
@@ -62,9 +62,17 @@ docker stop "$CONTAINER" >/dev/null 2>&1 && echo "      정지됨" || echo "    
 echo "[2/3] 로컬 메모리 파일 삭제: $MEMORY_DIR"
 if [[ -d "$MEMORY_DIR" ]]; then
   removed=0
-  for f in memory.kb.json memory.semantic.json memory.cold.db; do
+  for f in memory.kb.json memory.semantic.json memory.cold.db memory.kb.structured.db memory.kb.structured.db-wal memory.kb.structured.db-shm; do
     if [[ -e "$MEMORY_DIR/$f" ]]; then
       rm -f "$MEMORY_DIR/$f" && echo "      - $f 삭제" && removed=1
+    fi
+  done
+  for namespace_dir in memory.json.kb.collections memory.db.kb.collections memory.data.kb.collections; do
+    if [[ -d "$MEMORY_DIR/$namespace_dir" ]]; then
+      find "$MEMORY_DIR/$namespace_dir" -maxdepth 1 -type f \
+        \( -name '*.json' -o -name '*.structured.db' -o -name '*.structured.db-wal' -o -name '*.structured.db-shm' \) -delete
+      removed=1
+      echo "      - $namespace_dir 미러·구조화 DB 삭제"
     fi
   done
   [[ "$removed" -eq 0 ]] && echo "      (삭제할 memory.* 파일 없음)"

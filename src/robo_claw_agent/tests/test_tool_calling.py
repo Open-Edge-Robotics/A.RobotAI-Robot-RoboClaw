@@ -213,7 +213,6 @@ class _FakeNode:
         self._robot_limits = ""
         self._troubleshooting_guide = ""
         self._agent_workspace_dir = ""
-        self._startup_knowledge_ctx = ""
         self._robot_soul = ""
 
     def get_parameter(self, _name):

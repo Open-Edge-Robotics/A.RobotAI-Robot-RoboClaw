@@ -59,7 +59,6 @@ def test_build_system_prompt_integration_limits_and_troubleshooting():
             self._troubleshooting_guide = "Troubleshoot navigation issues here."
             self._skills_guide = ""
             self._script_skills_guide = ""
-            self._startup_knowledge_ctx = ""
             self._robot_soul = ""
             self._skills = MagicMock()
             self._skills.list_skills.return_value = [{"name": "move", "description": "move robot"}]
@@ -85,8 +84,6 @@ def test_build_system_prompt_integration_limits_and_troubleshooting():
             if self._troubleshooting_guide:
                 base = base + f"\n\n[장애 조치 가이드 (TROUBLESHOOTING)]\n{self._troubleshooting_guide}"
 
-            if self._startup_knowledge_ctx:
-                base = base + f"\n\n{self._startup_knowledge_ctx}"
             if self._robot_soul:
                 return f"{self._robot_soul}\n\n---\n\n{base}"
             return base

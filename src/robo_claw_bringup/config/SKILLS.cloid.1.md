@@ -65,9 +65,10 @@
 
 ## 주행 (핵심)
 
-- **주행 전 stow 단계 없음**: CLOiD는 주행 전 팔 접기·모드 전환 단계를 요구하지 않습니다. 팔이
-  안전한 자세이고 조작 동작이 진행 중이 아니면 `navigate_to`, `move_relative` 같은 주행 스킬을
-  바로 사용합니다.
+- **Stretch stow 단계 없음**: Stretch 전용 모드 전환은 사용하지 않습니다.
+  `cloid_navigation_pose_enabled=true`이면 런타임의 boxing 자세 prelude가 필요하며,
+  준비가 실패하면 이동하지 않습니다. 비활성 배포도 팔이 안전한 자세이고 상체 모션이
+  진행 중이지 않은지 확인한 뒤 주행합니다.
 - **프레임**: 전역 프레임은 `map`, 로봇 베이스 프레임은 `base_link`, 오도메트리는
   `/odom`입니다. 좌표는 map 기준으로 해석합니다.
 - **베이스 제어 경로**: 로봇의 `diff_drive_controller`는 `/cmd_vel`을
@@ -75,7 +76,7 @@
   발행(geometry_msgs/Twist)은 이 로봇에 도달하지 않으므로, 회전은 Nav2
   `spin`/`navigate_to_pose` 경로를 우선 사용합니다.
 - **좌표를 모르면**: 지도 기반 스킬(`get_map_visual`, `find_reachable_places`)이나
-  `rag_search`로 장소·좌표를 먼저 확인합니다.
+  `get_location(location_name=...)`으로 기억된 장소·별칭 좌표를 정확 조회합니다. `rag_search`는 비정형 지식 검색에 사용합니다.
 
 ---
 
@@ -162,5 +163,5 @@
 - CLOiD 1호는 **이동과 CLOi 등록 상체 모션을 모두 실행할 수 있는 개체**입니다. RoboClaw
   MoveIt 조작 백엔드는 아직 없으므로 일반 조작 스킬은 거부되고, 상체 동작은 이름 기반 모션으로만
   수행합니다.
-- 기억할 점: **주행 전 stow 불필요**, **`self_localize` 사용 불가**, **LaserScan 없음**,
+- 기억할 점: **Stretch stow 미사용·CLOi prelude는 설정에 따름**, **`self_localize` 사용 불가**, **LaserScan 없음**,
   **카메라는 compressed 토픽**.

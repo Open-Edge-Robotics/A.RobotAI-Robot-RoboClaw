@@ -206,3 +206,52 @@ def test_context_output_summary_preserves_exception_completion():
     from robo_claw_agent.tracing import trace_context_outputs
 
     assert trace_context_outputs(None) is None
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_healthcheck_logging_suppression_restores_normal_calls(recorded_spans, monkeypatch, fail):
+    import contextlib
+    import sys
+
+    from robo_claw_agent.llm_bridge.ollama import OllamaBridge
+    from robo_claw_agent.tracing import suppress_call_logging
+
+    sdk_enabled = []
+    contexts = []
+
+    @contextlib.contextmanager
+    def tracing_context(**kwargs):
+        contexts.append(kwargs)
+        sdk_enabled.append(kwargs["enabled"])
+        try:
+            yield
+        finally:
+            sdk_enabled.pop()
+
+    monkeypatch.setattr(sys.modules["langsmith"], "tracing_context", tracing_context, raising=False)
+    bridge = OllamaBridge(model="test")
+    dumps = []
+    monkeypatch.setattr(bridge, "_dump_call", lambda *a, **kw: dumps.append((a, kw)))
+
+    class Client:
+        def embeddings(self, **kwargs):
+            if fail and kwargs["prompt"] == "robo_claw_rag_healthcheck":
+                raise TimeoutError("probe failed")
+            return {"embedding": [0.1, 0.2]}
+
+    bridge._client = Client()
+    with suppress_call_logging():
+        with suppress_call_logging():
+            assert sdk_enabled == [False, False]
+            if fail:
+                with pytest.raises(TimeoutError, match="probe failed"):
+                    bridge.embed("robo_claw_rag_healthcheck")
+            else:
+                assert bridge.embed("robo_claw_rag_healthcheck") == [0.1, 0.2]
+        assert sdk_enabled == [False]
+    assert recorded_spans == []
+    assert dumps == []
+    assert contexts == [{"enabled": False}, {"enabled": False}]
+    assert bridge.embed("normal query") == [0.1, 0.2]
+    assert recorded_spans == ["OllamaBridge.embed"]
+    assert len(dumps) == 1

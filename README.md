@@ -8,10 +8,10 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 - **멀티 LLM 지원**: Ollama(로컬), OpenAI, Azure OpenAI, Anthropic 등 다양한 모델 지원.
 - **실시간 센서 연동**: 라이다, 카메라, 배터리, 위치(Odom) 등 실제 ROS2 토픽 기반 상황 판단.
 - **실시간 객체 인식**: ONNX Runtime + YOLOv8로 카메라 이미지에서 COCO 80종 물체를 실시간 탐지. 기본 활성화(`use_vision:=true`), 구독자 게이팅 + Hz 상한으로 저사양 로봇에서도 부담이 적음.
-- **자율 행동 (Behavior Tree)**: "스스로 행동해" 명령으로 BT 기반 자율 탐험·분석·행동 루프 시작. 배터리/탐사율 안전 조건은 BT가, 의미적 판단은 LLM이 수행.
+- **자율 행동 (Behavior Tree)**: "스스로 행동해" 명령으로 BT 기반으로 기억된 장소를 한 바퀴 순찰·관찰합니다. 프론티어 탐험은 별도 `explore` 스킬이며, 배터리 조건과 의미적 판단을 구분합니다.
 - **지능형 플래닝**: 복잡한 명령을 하위 스킬로 분해하고, 실패 시 스스로 대안 계획(Re-planning) 수립.
-- **RAG 메모리 확장**: 로컬 JSON 기반 지식 검색과 **Qdrant 벡터 DB 연동**을 모두 지원하며, 스킬 실행 경험을 스스로 교훈으로 압축해 프롬프트를 개선하는 자가 학습 루프 포함. 위치 지식은 사실(`type=location`)/관찰/스킬 로그를 구분해 저장·검색하고, 좌표→이름 역방향 조회(`identify_location`)를 제공합니다(상세: [CHANGE_LOG.md](CHANGE_LOG.md) 부록 "RAG 위치 지식 개선").
-- **음성 인터페이스(HRI)**: TTS(Piper/gTTS)를 통한 음성 응답 및 STT 연동 지원.
+- **RAG 메모리 확장**: 장소·별칭·좌표·실행 경험의 SQLite 저장과 로컬·**Qdrant 벡터 검색**을 모두 지원하며, 스킬 실행 경험을 스스로 교훈으로 압축해 프롬프트를 개선하는 자가 학습 루프 포함. 위치 지식은 사실(`type=location`)/관찰/스킬 로그를 구분해 저장·검색하고, 좌표→이름 역방향 조회(`identify_location`)를 제공합니다(상세: [CHANGE_LOG.md](CHANGE_LOG.md) 부록 "RAG 위치 지식 개선").
+- **사용자 메시지 전달(HRI)**: `send_message`로 활성 메신저에 텍스트·파일을 전송합니다. 현재 스킬 카탈로그에는 TTS/STT 스킬이 포함되어 있지 않습니다.
 - **물리적 안전 가드레일**: 조인트 속도 강제 제한 및 비상 정지(Emergency Stop) 기능.
 - **로봇 신뢰성 향상 및 자가진단**: 물리 제약 스펙(`ROBOT_LIMITS.json`), 장애 조치 가이드(`TROUBLESHOOTING.md`) 및 실시간 자가진단 상태(`RobotHealthState`) 피드백을 통해 LLM 에이전트가 오차 한계와 하드웨어 에러 상태를 스스로 평가하고 안전하게 조치하도록 구성.
 - **멀티 에이전트 협업**: 같은 ROS 네트워크의 다른 에이전트에게 작업을 위임하거나, gRPC로 연결된 원격 동료 로봇(폐쇄망 포함)과 상태를 주고받고 협업. **자율협동**(`autonomous_cooperate`)으로 동료와 지속적 자연어 대화를 주고받으며 도움 요청/지시/판단. 같은 장소를 동시에 목표로 잡으면 **자리 양보 협상**(`request_yield_slot`)으로 장소 이름만 주고받아 한 대가 비켜섭니다([PEER_COLLABORATION.md](docs/PEER_COLLABORATION.md)).
@@ -24,7 +24,7 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 
 | 패키지                | 언어       | 역할                                                                                                                                                             |
 | --------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `robo_claw_msgs`      | IDL        | msg/srv/action 및 **gRPC(.proto)** 정의                                                                                                                          |
+| `robo_claw_msgs`      | IDL        | ROS msg/srv/action 정의. gRPC proto는 `robo_claw_channel/proto`와 `robo_claw_grpc/proto`에서 관리합니다.                                                                                                                          |
 | `robo_claw_core`      | **C++**    | 실시간 HW 인터페이스, 속도 제한 가드레일, 50Hz 제어 루프                                                                                                         |
 | `robo_claw_agent`     | **Python** | LLM 브릿지, 스킬 매니저, RAG 기반 메모리 관리, 플래너                                                                                                            |
 | `robo_claw_discovery` | **Python** | ROS2 그래프 및 네트워크 내 타 에이전트 자동 탐색                                                                                                                 |
@@ -226,24 +226,30 @@ ROS 배포판에 따라 최적화된 시뮬레이션 엔진을 자동으로 선�
 
 기본 HTTP 채널은 `127.0.0.1:8080`에 바인딩됩니다. 외부에서 접근하려면 `RC_HTTP_HOST`, `RC_HTTP_ALLOWED_CIDRS_JSON`, 토큰을 명시적으로 설정하세요.
 
+프로젝트 루트 `.env`에 토큰을 설정합니다.
+
+```dotenv
+RC_HTTP_READONLY_TOKEN=robo-read-token
+RC_HTTP_CONTROL_TOKEN=robo-write-token
+```
+
 ```bash
-export RC_HTTP_READONLY_TOKEN="robo-read-token"
-export RC_HTTP_CONTROL_TOKEN="robo-write-token"
 ./rclaw run
 
-curl -H "Authorization: Bearer ${RC_HTTP_READONLY_TOKEN}" \
+curl -H "Authorization: Bearer robo-read-token" \
   http://127.0.0.1:8080/status
 
 curl -X POST http://127.0.0.1:8080/skill \
-  -H "Authorization: Bearer ${RC_HTTP_CONTROL_TOKEN}" \
+  -H "Authorization: Bearer robo-write-token" \
   -H "Content-Type: application/json" \
   -d '{"skill_name":"get_status","params":{}}'
 ```
 
 - `GET /health`: 기본 헬스 체크
-- `GET /status`: 읽기 전용 토큰 필요
-- `POST /task`, `POST /skill`: 제어 토큰 필요
-- 위험 스킬은 기본 차단되며 `skill_blocked_json` / `skill_allowed_json`으로 조정 (자세히: [docs/OPERATIONS.md](docs/OPERATIONS.md))
+- `GET /status`: 인증 활성화 시 읽기 전용 또는 제어 토큰이 필요합니다.
+- `POST /task`, `POST /skill`: 인증 활성화 시 제어 토큰이 필요합니다.
+- 두 HTTP 토큰이 모두 비어 있으면 인증을 생략합니다. CIDR과 요청 제한은 계속 적용합니다.
+- 위험 스킬은 기본 차단되며 `http_blocked_skills_json` / `http_allowed_skills_json`으로 조정 (자세히: [docs/OPERATIONS.md](docs/OPERATIONS.md))
 - 자세한 사양: [docs/HTTP_API.md](docs/HTTP_API.md)
 
 ## 🧠 System 1 Fast Router (Laya, 선택)
@@ -421,6 +427,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 
 | 문서                                                                         | 내용                                                                      |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [docs/opencode/README.md](docs/opencode/README.md) | 패키지 책임, 요청 처리 경로, 메모리·제어 경계 |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md)                                     | 운영 파라미터, 태스크 큐(순차 실행), MCP 서버 연동                        |
 | [docs/SKILLS.md](docs/SKILLS.md)                                             | 전체 스킬 레퍼런스                                                        |
 | [docs/SKILL_MANAGER_AND_TOOLS.md](docs/SKILL_MANAGER_AND_TOOLS.md)           | 아키텍처 Skill Manager(내장 스킬)·Tool(MCP 외부 도구) 구성                |

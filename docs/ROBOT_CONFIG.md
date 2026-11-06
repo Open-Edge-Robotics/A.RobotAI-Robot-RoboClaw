@@ -89,9 +89,9 @@ launch 가 `ROBOT.cloid.md` 를 먼저 찾고 없으면 `ROBOT.cloid.1.md` 를 �
 경로를 명시합니다.
 
 ```bash
-RC_ROBOT_CONFIG=cloid \
-RC_ROBOT_SOUL_FILE=$(pwd)/src/robo_claw_bringup/config/ROBOT.cloid.2.md \
-ros2 launch robo_claw_bringup robo_claw.launch.py
+ros2 launch robo_claw_bringup robo_claw.launch.py \
+  robot_config:=cloid \
+  robot_soul_file:="$(pwd)/src/robo_claw_bringup/config/ROBOT.cloid.2.md"
 ```
 
 > 소울 파일은 개성·말투·가치관만 담고, 어떤 스킬을 쓸지·무엇을 할 수 없는지 같은 기능 규칙은

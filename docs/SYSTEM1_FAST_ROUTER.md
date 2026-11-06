@@ -21,14 +21,15 @@
 ```
 
 - 기본값은 `SYSTEM1_ROUTER=rule`입니다. 환경변수를 하나도 추가하지 않으면 기존 동작과 같습니다.
-- LLM 출력 교정(`_force_navigation_if_misrouted`, `_route_location_query`)과 가드(`_extract_save_place`, `nav_safety`, `sensor_health`)는 라우터 모드와 무관하게 항상 동작합니다.
+- LLM 출력 교정(`_force_navigation_if_misrouted`, `_route_location_query`)은 JSON 계획 경로에 적용합니다. 네이티브 도구 호출 경로는 모델의 도구 선택을 강제로 교체하지 않으며, 두 경로 모두 입력 검증·정책·주행 안전 검사를 유지합니다.
+- 복합 요청이 System 2로 넘어가면 기본 네이티브 도구 호출 경로는 원문을 하나의 대화로 처리합니다. JSON 경로에서만 `TaskDecomposer`와 하위 단계 Eligibility Gate를 사용합니다.
 - `laya` 모드에서는 규칙 라우터의 지름길이 동작하지 않습니다. "앞으로 2미터"(`move_relative`), 컵 집기, 카메라/지도 캡처 직접 실행이 해당합니다. 이 요청들은 LLM planner가 처리합니다. Laya가 숫자나 자유 텍스트 인자를 추출하지 못하기 때문입니다.
 
 ## 2. 사전 준비
 
 | 항목 | 요구사항 |
 |---|---|
-| robo-claw 코드 | System 1 라우터가 포함된 브랜치(`jev-laya`)를 빌드합니다(`task build`). |
+| robo-claw 코드 | 현재 체크아웃에 `agent_node/system1_router.py`가 있는지 확인하고 빌드합니다(`task build`). |
 | Laya 서버 | Python 3.10 이상, `torch>=2.0`, `transformers>=5.0`. GPU 권장(모델 카드 기준 T4에서 질문 1개 약 33~40ms). CPU에서도 동작하지만 느립니다. 메모리는 multilingual 체크포인트 기준 약 650MB입니다. |
 | 네트워크 | robo-claw에서 Laya 서버 포트(기본 8000)로 HTTP 접속이 가능해야 합니다. 모델은 첫 기동 때 Hugging Face에서 내려받으므로, 폐쇄망이면 미리 받아 둡니다(3.5절). |
 | 평가 데이터 | `validation/system1/router_cases.jsonl`(시드 32건)을 그대로 쓰거나 현장 명령을 추가합니다. |
@@ -298,7 +299,6 @@ SYSTEM1_ROUTER=rule
 | 실행 방식 | `.env`에 넣으면 | 넣는 방법 |
 |---|---|---|
 | `scripts/run_robo_claw_docker.sh` | **전달됨** | 저장소 루트 `.env`(또는 `RC_ENV_FILE`로 지정한 파일)에 추가합니다. `--env-file`로 컨테이너에 전달됩니다. |
-| 워크스페이스 `run_robo_claw_docker.sh` | **전달됨** | 실행하는 디렉터리의 `.env`에 추가합니다. |
 | `./rclaw launch <robot> <env>` (로컬) | 서버 프로필로 전달 | AI Config Server 웹 설정의 **System 1 Fast Router** 섹션에 입력합니다. 서버가 캐시 `.env`(`~/.robo_claw/config_cache/<robot>_<env>/.env`)로 내려주며, 이 파일은 동기화 때마다 다시 생성되므로 직접 수정하지 않습니다. 웹 설정에 없는 항목(예: `SYSTEM1_LOCAL_*`)은 셸에서 `export`합니다. |
 | `./rclaw launch <robot> <env> --docker` | 서버 프로필로 전달 | 웹 설정의 System 1 섹션 값이 캐시 `.env`(`--env-file`)로 컨테이너에 전달됩니다. 웹 설정에 없는 항목은 전달할 방법이 없으므로 `scripts/run_robo_claw_docker.sh`를 사용합니다. GPU 옵션도 아직 지원하지 않습니다. |
 | `./rclaw run` / `./rclaw sim` | 전달 안 됨 | 실행 전에 셸에서 `export`합니다. `./rclaw run`은 `.env`를 launch 인자를 만드는 데만 쓰고 프로세스 환경변수로 넘기지 않습니다. |

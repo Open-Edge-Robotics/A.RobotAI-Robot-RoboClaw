@@ -27,7 +27,7 @@
 | --- | --- |
 | `./rclaw run` / `ros2 launch` 직접 실행 | 셸에서 `export RC_CLEANUP_RUN_LOG_PATH=...` |
 | `scripts/run_robo_claw_docker.sh` | 저장소 루트 `.env`(`--env-file` 로 전달) |
-| `./rclaw launch <robot> <env>` | AI Config Server 프로필에 대응 항목이 없으므로 전달되지 않습니다. 실험은 위 두 방식으로 실행합니다 |
+| `./rclaw launch <robot> <env>` | 서버 프로필의 `cleanup_run_log_path`를 설정합니다. contract `agent.cleanup_run_log_path`가 캐시 `.env`의 `RC_CLEANUP_RUN_LOG_PATH`로 전달되며, 네이티브는 병합 환경으로, Docker는 `--env-file`로 주입합니다 |
 
 컨테이너에서는 마운트된 경로를 지정합니다.
 
@@ -40,7 +40,7 @@ export RC_CLEANUP_RUN_LOG_PATH=/workspace/log/cleanup_runs.jsonl
 
 한 줄에 JSON 1건을 append 합니다. `run_id` 가 실행 1회를 묶는 키입니다.
 
-```json
+```jsonl
 {"event": "cleanup_handoff", "run_id": "former0047-20261026T165827-0c99c6", "place": "안방", "handoff_kind": "cleanup_demo", "target": "수건", "peer": "cloid2", "transport": "grpc", "send_path": "call_peer_robot", "blocked": false, "candidates": [{"peer": "cloid2", "capabilities": ["cleanup_demo"], "selected": true}], "discovery_ms": 812.4}
 {"event": "cleanup_delegate", "run_id": "former0047-20261026T165827-0c99c6", "place": "안방", "peer": "cloid2", "send_path": "call_peer_robot", "success": true, "message": "에이전트 [cloid2] 응답: 정리 시연 모션 실행을 요청했습니다.", "duration_ms": 41220.0}
 {"event": "cleanup_run", "run_id": "former0047-20261026T165827-0c99c6", "place_count": 1, "results": [{"place": "안방", "status": "delegated_demo", "partial_observation": false}], "outcomes": {"delegated_demo": 1}, "handled": true, "success": true, "phase_ms": {"navigate": 18210.5, "observe": 9410.2, "discovery": 812.4, "delegate": 41220.0, "handle": 51442.6}, "elapsed_ms": 79065.3, "error": ""}

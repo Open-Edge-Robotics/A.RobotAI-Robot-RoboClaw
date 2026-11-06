@@ -2,6 +2,10 @@
 
 이 문서는 복합 명령을 분해한 각 하위 단계가 사전 라우터(Rule / System 1)로 가도 되는지 판정하는 Eligibility Gate의 역할, 판정 기준, 동작 모드, 확인 방법을 설명합니다. 사전 라우터 자체의 동작과 환경변수는 [SYSTEM1_FAST_ROUTER.md](SYSTEM1_FAST_ROUTER.md)를 참고합니다.
 
+이 관문은 JSON 계획 경로에서 `TaskDecomposer`가 실제 실행될 때만 적용합니다.
+기본값인 네이티브 도구 호출이 활성화되고 provider가 이를 지원하면 복합 요청도
+하나의 도구 대화로 처리하므로 분해기와 하위 단계 관문을 거치지 않습니다.
+
 ## 1. 역할
 
 Eligibility Gate는 TaskDecomposer가 나눈 각 Single Task가 **혼자서 완결되는지** 판정하는 관문입니다.

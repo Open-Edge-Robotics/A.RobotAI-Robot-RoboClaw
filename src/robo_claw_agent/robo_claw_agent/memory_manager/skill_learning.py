@@ -47,18 +47,14 @@ _NON_LEARNABLE_SKILLS = frozenset(
 
 
 class _ChatLLM(Protocol):
-    def chat(
-        self, messages: list[dict[str, str]], system_prompt: str | None = None
-    ) -> str: ...
+    def chat(self, messages: list[dict[str, str]], system_prompt: str | None = None) -> str: ...
 
 
 class SkillLearningMixin:
     """스킬 실행 경험 수집 및 교훈 추출 전담 (RAGMixin 위에서 동작)."""
 
     # RAGMixin에서 제공
-    def add_knowledge(
-        self, text: str, metadata: dict[str, Any] | None = None
-    ) -> bool: ...
+    def add_knowledge(self, text: str, metadata: dict[str, Any] | None = None) -> bool: ...
 
     def search_knowledge(
         self,
@@ -85,6 +81,7 @@ class SkillLearningMixin:
         instruction: str = "",
         replanned: bool = False,
         recovered: bool = False,
+        mocked: bool = False,
     ) -> bool:
         """스킬 실행 1건을 학습 경험으로 저장한다.
 
@@ -93,10 +90,10 @@ class SkillLearningMixin:
         그 외 평범한 성공만 success_sample_rate 확률로 샘플링한다.
 
         Returns:
-            저장 여부 (샘플링 제외/임베더 부재 시 False)
+            저장 여부 (샘플링 제외 또는 mock 실행이면 False)
         """
         skill_name = str(skill_name or "").strip()
-        if not skill_name:
+        if mocked or not skill_name:
             return False
 
         # 조회·자기참조 스킬은 학습 경험으로 저장하지 않는다 (사실 검색 오염 방지).
@@ -106,9 +103,7 @@ class SkillLearningMixin:
         # 성공 선별: 실패는 항상 저장, 성공은 가치 기반 우선 + 잔여 확률 샘플링
         value_reason = ""
         if success:
-            keep, value_reason = self._evaluate_success_value(
-                skill_name, duration_sec, recovered
-            )
+            keep, value_reason = self._evaluate_success_value(skill_name, duration_sec, recovered)
             if not keep:
                 return False
 
@@ -168,17 +163,13 @@ class SkillLearningMixin:
 
         # 희소(첫 성공 포함): 성공 표본이 부족하면 무조건 보존
         successes = [
-            e
-            for e in self.get_skill_episodes(skill_name)
-            if e.get("metadata", {}).get("success")
+            e for e in self.get_skill_episodes(skill_name) if e.get("metadata", {}).get("success")
         ]
         if len(successes) < _DEFAULT_MIN_EPISODES:
             return True, "sparse"
 
         # 모범(빠른 수행): 기존 성공 평균 대비 현저히 빠르면 무조건 보존
-        durations = [
-            float(e.get("metadata", {}).get("duration_sec") or 0.0) for e in successes
-        ]
+        durations = [float(e.get("metadata", {}).get("duration_sec") or 0.0) for e in successes]
         durations = [d for d in durations if d > 0.0]
         if durations and duration_sec > 0.0:
             avg = sum(durations) / len(durations)
@@ -220,32 +211,22 @@ class SkillLearningMixin:
         return [
             e
             for e in entries
-            if isinstance(e.get("metadata"), dict)
-            and e["metadata"].get("type") == type_value
+            if isinstance(e.get("metadata"), dict) and e["metadata"].get("type") == type_value
         ]
 
     def get_skill_episodes(
-        self, skill_name: str = ""
+        self, skill_name: str = "", *, success=None, limit=None
     ) -> list[dict[str, Any]]:
-        """수집된 스킬 경험(skill_episode) 항목을 반환한다."""
-        episodes = self._entries_by_type("skill_episode")
-        if skill_name:
-            episodes = [
-                e
-                for e in episodes
-                if e.get("metadata", {}).get("skill_name") == skill_name
-            ]
-        return episodes
+        """스킬명·성공 여부로 실행 경험을 SQL 조회합니다."""
+        return self._structured_store.records(
+            entry_type="skill_episode", skill_name=skill_name, success=success, limit=limit
+        )
 
     def get_skill_lessons(self, skill_name: str = "") -> list[dict[str, Any]]:
         """추출된 스킬 교훈(skill_lesson) 항목을 반환한다. (3단계 주입용)"""
         lessons = self._entries_by_type("skill_lesson")
         if skill_name:
-            lessons = [
-                e
-                for e in lessons
-                if e.get("metadata", {}).get("skill_name") == skill_name
-            ]
+            lessons = [e for e in lessons if e.get("metadata", {}).get("skill_name") == skill_name]
         return lessons
 
     @staticmethod
@@ -263,8 +244,7 @@ class SkillLearningMixin:
         return (
             "[학습된 스킬 교훈]\n"
             "아래는 과거 스킬 실행 경험에서 스스로 도출한 교훈입니다. "
-            "동일한 실수를 반복하지 말고 우선 참고하세요.\n"
-            + "\n".join(lines)
+            "동일한 실수를 반복하지 말고 우선 참고하세요.\n" + "\n".join(lines)
         )
 
     def render_skill_lessons(self, max_items: int = 20) -> str:
@@ -316,9 +296,7 @@ class SkillLearningMixin:
         for ep in self.get_skill_episodes():
             meta = ep.get("metadata", {})
             name = str(meta.get("skill_name", "")) or "(unknown)"
-            stat = overview.setdefault(
-                name, {"count": 0, "success": 0, "failure": 0}
-            )
+            stat = overview.setdefault(name, {"count": 0, "success": 0, "failure": 0})
             stat["count"] += 1
             if meta.get("success"):
                 stat["success"] += 1
@@ -349,9 +327,7 @@ class SkillLearningMixin:
 
         # 기존 동일 스킬 교훈 제거
         stale_ids = [
-            str(e.get("id"))
-            for e in self.get_skill_lessons(skill_name)
-            if e.get("id") is not None
+            str(e.get("id")) for e in self.get_skill_lessons(skill_name) if e.get("id") is not None
         ]
         if stale_ids:
             try:
@@ -400,9 +376,7 @@ class SkillLearningMixin:
         failures = [e for e in episodes if not e.get("metadata", {}).get("success")]
         successes = [e for e in episodes if e.get("metadata", {}).get("success")]
         sample = (failures + successes)[:max_examples]
-        example_lines = "\n".join(
-            f"- {str(e.get('text', '')).strip()}" for e in sample
-        )
+        example_lines = "\n".join(f"- {str(e.get('text', '')).strip()}" for e in sample)
 
         prompt = (
             f"다음은 로봇 스킬 '{skill_name}'의 실행 경험 기록이다 "

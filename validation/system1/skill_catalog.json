@@ -691,7 +691,7 @@
       "properties": [
         "location_name"
       ],
-      "description": "기억된 장소(거실·키친·충전대 등)의 이름으로 좌표(x, y)를 조회합니다. '~의 좌표 알려줘', '~가 어디 있어?', '~ 위치가 어디야?'류 질문에 사용하세요. 시맨틱 맵과 RAG 지식 베이스에서 기억된 위치를 찾아 좌표를 반환합니다. 파라미터: location_name(str, 필수).",
+      "description": "기억된 장소(거실·키친·충전대 등)의 이름으로 좌표(x, y)를 조회합니다. '~의 좌표 알려줘', '~가 어디 있어?', '~ 위치가 어디야?'류 질문에 사용하세요. 구조화된 SQL 저장소에서 장소명·별칭을 정확히 조회해 좌표를 반환합니다. 파라미터: location_name(str, 필수).",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/system_skill/rag.py"
     },
     {

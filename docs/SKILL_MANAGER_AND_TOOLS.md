@@ -15,9 +15,21 @@ User ── Channel Gateway ── Roboclaw_core (PI Agent) ──┬── LLM 
 | Skill Manager | RoboClaw 내부(`robo_claw_agent/skills`, `robo_claw_discovery`) | 에이전트가 계획한 스킬을 `SkillManager`가 실행합니다. 정책·사전조건·입력 스키마 검사를 거칩니다. |
 | Tool | RoboClaw 외부의 MCP 서버 | MCP 서버가 제공하는 도구를 스킬처럼 등록해 호출합니다. |
 
+### 네이티브 도구 호출 루프
+
+도구 호출을 지원하고 `llm_tool_calling`이 활성화된 경우, 모델이 반환한 도구명과 인자를
+검증하여 실행하고 각 호출 ID에 대응하는 `tool` 결과를 다음 모델 요청에 전달합니다.
+도구 호출이 없는 최종 답변은 그대로 반환하며, 위치·이동 키워드에 따른 강제 실행과
+도구 교체는 기존 JSON 계획 경로에만 적용합니다.
+
+등록되지 않은 도구·체인 정책 위반·누락된 주행 안전 준비는 실행하지 않고 호출별 오류
+결과를 반환합니다. 모델은 오류를 보고 준비 도구를 먼저 호출하거나 계획을 수정합니다.
+스킬의 입력 스키마·사전조건·안전 정책 검증은 유지합니다. 계획 루프는 최대 5회로
+제한하며 취소·모델 호출 오류·예산 소진은 실패로 보고하고 이미 실행한 결과를 보존합니다.
+
 ## 2. Skill Manager
 
-robo-claw 소스의 스킬 정의(공개 스킬 95개)를 기준으로 그림의 6개 박스에 나눈 주요 스킬입니다.
+robo-claw 소스의 스킬 정의(전체 스킬 106개, 공개 범위는 `SKILLS.md` 참조)를 기준으로 그림의 6개 박스에 나눈 주요 스킬입니다.
 
 | 박스 | 주요 스킬 |
 |---|---|
@@ -26,7 +38,7 @@ robo-claw 소스의 스킬 정의(공개 스킬 95개)를 기준으로 그림의
 | Map | `capture_map`, `analyze_map`, `get_map_visual`, `annotate_map`, `find_reachable_places`(갈 수 있는 장소 등록), `explore`(SLAM 탐험) |
 | System/HRI | `get_status`(배터리·좌표), `get_datetime`, `identify_location` / `get_location`(장소 이름·좌표), `rag_search` / `rag_add`(지식 검색·저장), `emergency_stop`(비상 정지), `send_message`(메신저 보고) |
 | Cooperate/File | 협업: `list_peer_robots`, `call_peer_robot`, `delegate_task`, `coordinate_peer_task`, `autonomous_cooperate` / 파일: `read_text_file`, `write_text_file`, `run_script` |
-| Robo_claw_discovery | ROS 그래프 자동 탐색(토픽·서비스·액션·노드), 네트워크 내 동료 에이전트 탐색, `list_topics`, `ros_command`(읽기 전용 ROS 2 CLI) |
+| Robo_claw_discovery | ROS 그래프 자동 탐색(토픽·서비스·액션·노드), 네트워크 내 동료 에이전트 탐색, `list_topics`, `ros_command`(위험도는 write로 분류하지만 허용된 읽기 전용 ROS 2 CLI만 실행) |
 
 ### 2.1 추가 권장 박스
 

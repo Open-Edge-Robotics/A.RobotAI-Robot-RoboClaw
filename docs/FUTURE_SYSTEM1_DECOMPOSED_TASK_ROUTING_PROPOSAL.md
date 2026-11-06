@@ -1,4 +1,10 @@
 # 분해된 Task의 System 1 재라우팅 구현 제안 : 20261009
+
+> 이 문서는 과거 미구현 제안의 기록입니다. `RC_ROUTE_DECOMPOSED_STEPS_WITH_SYSTEM1`,
+> `RC_SYSTEM1_STEP_ROUTING_MODE`, `RC_SYSTEM1_STEP_ROUTING_TIMEOUT_MS`는 현행 설정이 아닙니다.
+> 구현된 관문은 [SYSTEM1_ELIGIBILITY_GATE.md](SYSTEM1_ELIGIBILITY_GATE.md)의
+> `SYSTEM1_STEP_ROUTING`을 사용합니다. 기본 네이티브 도구 호출은 분해기·관문을 우회합니다.
+
 - 상태: 검토 제안(미구현)
 - 목적: 복합 명령을 분해한 후, System 1이 처리할 수 있는 단일 Task는 System 2 planner 호출 없이 실행하여 지연시간을 줄입니다.
 - 전제: 기존 안전 정책과 System 2 fallback을 유지합니다.

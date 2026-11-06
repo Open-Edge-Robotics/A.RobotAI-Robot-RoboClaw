@@ -36,29 +36,29 @@ task --version
 
 ## 빌드
 
-프로젝트 루트의 `Taskfile.yml`에 정의된 태스크로 빌드하는 것을 권장합니다(의존성 정리 `go mod tidy` 자동 포함).
+저장소 루트에서는 CLI 전용 빌드와 전체 ROS 빌드를 구분합니다.
 
 ```bash
-# 프로젝트 루트에서:
-task build              # 호스트 아키텍처용 최적화 바이너리(./rclaw) 빌드
-task build-all          # linux/amd64 + linux/arm64 바이너리를 bin/ 에 빌드
-task test               # 전체 유닛 테스트 실행
-task contract-check     # 설정 컨트랙트 lock 및 drift 일괄 검증
-task fmt                # go fmt 전체 적용
-task vet                # go vet 정적 분석
-task clean              # 빌드 산출물(./rclaw, bin/) 삭제
-task --list-all         # 사용 가능한 전체 태스크 목록 확인
+task build-cli          # 루트 ./rclaw 생성
+task build              # proto·CLI·전체 ROS 워크스페이스 빌드
+task build-all          # linux/amd64 + linux/arm64 CLI를 루트 bin/에 생성
+task unit-test          # 빠른 Python 검사
+task test               # colcon 테스트
+task contract-check     # CLI 빌드 후 contract 검증
+task --list-all
 ```
 
-| 태스크           | 설명                                                                      |
-| ---------------- | ------------------------------------------------------------------------- |
-| `build` (기본)   | 호스트 아키텍처용 최적화 빌드 (`-ldflags="-s -w"`), 루트에 `./rclaw` 생성 |
-| `build-all`      | `build-linux-amd64` + `build-linux-arm64` 동시 실행 (`bin/`에 저장)       |
-| `test`           | `go test -v ./...` 실행                                                   |
-| `contract-check` | `./rclaw contract check` 실행                                             |
-| `fmt`            | `go fmt ./...`                                                            |
-| `vet`            | `go vet ./...`                                                            |
-| `clean`          | `rclaw` 바이너리 및 `bin/` 삭제                                           |
+Go만 검사할 때는 CLI 디렉터리에서 실행합니다. 이 디렉터리의 별도 `Taskfile.yml`은
+`task build`로 `robo_claw_cli/rclaw`를 생성하며, 루트의 `task build`와 다릅니다.
+
+```bash
+cd robo_claw_cli
+go test ./...
+go vet ./...
+```
+
+루트 `task clean`은 ROS build/install/log와 가상환경도 삭제하므로 CLI 바이너리 정리 용도로
+사용하지 않습니다. CLI 디렉터리의 `task clean`은 그 디렉터리의 바이너리·bin/을 정리합니다.
 
 Task 없이 직접 빌드하려면:
 
@@ -222,9 +222,15 @@ AI config의 `agent_id`는 `agent_id:=...` launch 인자로 전달되고, `grpc_
 
 `test` 명령어 기동 시 `--scenario-file` 플래그를 통해 로컬 파일을 명시하지 않는 경우, 아래의 동적 폴백 흐름으로 테스트를 수행합니다.
 
-1. **서버 동기화**: 설정 서버 API(`/api/v1/scenarios/active`)를 호출하여 해당 로봇/환경에 배포 활성화된 테스트 시나리오 JSON을 가져와 캐싱 및 사용합니다.
-2. **로컬 캐시 재사용**: 네트워크 에러 등으로 서버 통신이 실패할 경우, 이전에 캐싱해 둔 로컬 캐시 폴더 내 `scenario.json` 파일을 찾아 실행합니다.
-3. **내장 디폴트 시나리오**: 로컬 캐시 파일마저 없는 첫 구동 시, 소스 내에 기본 내장된 디폴트 검증 시나리오로 폴백하여 안정적으로 실행을 이어나갑니다.
+1. **로컬 캐시**: 읽을 수 있는 `scenario.json`이 있으면 먼저 사용합니다.
+2. **서버 동기화**: 캐시가 없거나 잘못되었으면 원격 동기화 후 다시 읽습니다.
+3. **내장 시나리오**: 사용할 시나리오가 없으면 내장 기본값을 사용합니다.
+
+`--fetch-latest` 또는 설정 캐시 자체가 없는 경우에는 테스트 준비 단계에서 먼저 설정을
+동기화합니다. `test --host`·`--port`는 로봇 gRPC 대상이며 설정 서버 주소가 아닙니다.
+현재 Go 러너는 케이스 FAIL을 보고서에 기록한 뒤 정상 반환하므로 종료 코드만으로
+케이스 성공을 판정하지 않습니다. 인증이 설정된 RoboMessenger에 대한 독립 클라이언트는
+[Python talk 가이드](../validation/talk/README.md)를 참고합니다.
 
 ### 5. 로컬 설정 확인/관리 (`config`)
 

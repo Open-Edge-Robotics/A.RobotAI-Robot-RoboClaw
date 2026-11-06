@@ -1,8 +1,9 @@
 # AI Config 하이퍼파라미터 조회 (show_ai_config.py)
 
 config 서버(`roboclaw_config_server`)에 저장된 **활성 설정**의 LLM·임베딩 하이퍼파라미터를
-읽어 보기 좋게 출력합니다. 로봇이 실제로 쓰는 값(모델·num_ctx·temperature·RAG threshold 등)을
-한눈에 확인해 튜닝/디버깅에 사용합니다.
+읽어 보기 좋게 출력합니다. 서버에 저장된 값(모델·num_ctx·temperature·RAG threshold 등)을 확인해 튜닝에 사용합니다.
+실행 중인 노드나 로컬 override를 조회하지 않으므로 실제 적용값은 대시보드의 실행 설정
+또는 `./rclaw config-effective <robot> <env>`와 함께 확인합니다.
 
 ## 요구사항
 

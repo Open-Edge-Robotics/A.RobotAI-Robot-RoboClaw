@@ -228,7 +228,7 @@ RC_EXTRA_VOLUMES="-v $PWD/patch/bringup_launch.py:/root/dev_ws/install/former_na
 - 로봇 개발사 소스/이미지 Dockerfile 이 없어도, 현재 이미지를 베이스로 한 파생 이미지(`FROM former_docker:1.0` + `COPY` 로 launch/파라미터 교체)로 수정본을 구울 수 있습니다.
 - 또는 `map_server` 를 컴포넌트에서 분리해 별도 프로세스로 띄워 크래시 영향을 국소화합니다.
 - 운영 중에는 컨테이너 생존을 주기적으로 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
-- 참고: 이 이미지 안에서는 `apt-get update` 가 실패합니다(dpkg DB 비어 있음, ROS apt 키 만료). 분석 전용 파생 이미지에 gdb 를 넣고 core dump 로 백트레이스를 얻는 절차는 저장소 루트의 `NAVI_ISSUE.md` 6절을 참고합니다.
+- 참고: 이 이미지 안에서는 `apt-get update` 가 실패합니다(dpkg DB 비어 있음, ROS apt 키 만료). 분석 전용 파생 이미지에 gdb 를 넣고 core dump 로 백트레이스를 얻는 절차는 [내비게이션 장애 기록](../docs/NAVI_ISSUE.md) 6절을 참고합니다.
 
 ## 9. Nav2 기동/구동 이슈 (실기 적용값)
 
@@ -266,7 +266,7 @@ global_costmap:
 
 ### 9.3 남은 항목
 
-- `controller_server.progress_checker.movement_time_allowance` 는 nav2 에 없는 파라미터명입니다(정식: `movement_timeout`). 현재는 기본값(10 s)로 동작하므로, 장시간 정지 허용이 필요하면 이름을 바로잡아야 합니다.
+- `SimpleProgressChecker`의 정식 키는 `progress_checker.movement_time_allowance`이며 기본값은 10초입니다. `movement_timeout`으로 바꾸지 않습니다. 배포의 plugin ID와 실제 적용값은 `ros2 param get /controller_server progress_checker.movement_time_allowance`로 확인합니다([Nav2 공식 구현](https://api.nav2.org/nav2-humble/html/simple__progress__checker_8cpp_source.html)).
 - `robo_claw_container`(에이전트)가 0047 에서 `/former0045/camera/...` 토픽을 구독하는 것이 확인되었습니다. 로봇 프로필 설정을 확인하세요.
 
 ### 9.4 스캔 재스탬프 (AMCL 크래시 대응)
@@ -306,7 +306,7 @@ amcl:
     recovery_alpha_slow: 0.0
 ```
 
-위치를 크게 잃은 경우의 자동 복구는 꺼지므로 RViz 에서 initial pose 를 다시 지정합니다. 상세 분석은 저장소 루트의 `NAVI_ISSUE.md` 3.5절을 참고합니다.
+위치를 크게 잃은 경우의 자동 복구는 꺼지므로 RViz 에서 initial pose 를 다시 지정합니다. 상세 분석은 [내비게이션 장애 기록](../docs/NAVI_ISSUE.md) 3.5절을 참고합니다.
 
 ### 9.6 좁은 문 통과 실패 — costmap 기하/인플레이션 (실기 적용값)
 
