@@ -180,6 +180,8 @@ _FWD_SKIP_TYPES = frozenset(
         # 마지막 위치 스냅샷. 텍스트가 "마지막 위치: x=…" 형태라 장소명 추출기에
         # "마지막"이 장소로 잡히고, 위치 라우팅이 초기 위치 설정을 장소 이동으로 오인한다.
         "last_pose",
+        # VLM/스캔이 기록한 객체 관측은 이동 목적지가 아니다(조작 조회 전용).
+        "object_location",
     }
 )
 
@@ -425,21 +427,28 @@ class SemanticMixin:
         y: float,
         metadata: dict[str, Any] | None = None,
         aliases: list[str] | None = None,
+        *,
+        as_object: bool = False,
     ) -> None:
         """객체의 위치 정보를 SQLite에 저장하거나 갱신합니다.
 
         좌표(x, y)는 map 프레임 기준이어야 한다. 호출부는 좌표 출처를 명확히 하기 위해
         metadata에 frame_id(예: "map")를 넣는 것을 권장한다(navigate_to가 동일 기준을 가정).
         로봇 자신의 위치를 가리키는 이름("현재 위치" 등)은 장소가 아니므로 등록하지 않는다.
+
+        ``as_object=True`` 는 VLM·스캔이 감지한 **객체** 관측이다. 객체는 이름으로 조회해
+        조작(grasp/place)에만 쓰고, 이동 목적지·순회 장소 목록에서는 제외한다
+        (`object_location` 타입으로 저장).
         """
         if _is_self_location_name(name):
             logger.info("Semantic map registration skipped (not a place name): %r", name)
             return
+        entry_type = "object_location" if as_object else "location"
         stored = self._structured_store.add(
             f"{name}의 위치는 x: {x}, y: {y} 입니다.",
             {
                 **(metadata or {}),
-                "type": "location",
+                "type": entry_type,
                 "location_name": name,
                 "x": x,
                 "y": y,
@@ -449,13 +458,17 @@ class SemanticMixin:
         if not stored:
             raise ValueError("장소를 저장하지 못했습니다.")
 
-    def get_object_location(self, name: str) -> dict[str, Any] | None:
+    def get_object_location(
+        self, name: str, *, include_objects: bool = False
+    ) -> dict[str, Any] | None:
         """이름으로 객체 위치 조회.
 
         대소문자·공백을 정규화한 이름과 별칭을 SQL 인덱스로 조회합니다.
         예를 들어 "거 실"→"거실", "Kitchen"→"kitchen"으로 비교합니다.
+        기본값은 장소만 보며, 조작처럼 객체 관측까지 필요한 경우
+        ``include_objects=True`` 를 준다(이동 목적지 해석은 기본값 유지).
         """
-        return self._structured_store.location(name)
+        return self._structured_store.location(name, include_objects=include_objects)
 
     def get_nearest_object(
         self, x: float, y: float, radius_m: float | None = None
@@ -467,8 +480,13 @@ class SemanticMixin:
         """
         return self._structured_store.nearest(x, y, radius_m)
 
-    def get_all_objects(self) -> list[dict[str, Any]]:
-        return self._structured_store.locations()
+    def get_all_objects(self, *, include_objects: bool = False) -> list[dict[str, Any]]:
+        """장소 목록(시맨틱 맵).
+
+        기본값은 장소만 반환한다. 순회(tidy/patrol)와 좌표→이름 역조회가 객체 관측을
+        방처럼 순회하지 않도록, 객체가 필요하면 ``include_objects=True`` 를 준다.
+        """
+        return self._structured_store.locations(include_objects=include_objects)
 
 
 # ── 위치 metadata 표준화 (저장 경로·이관 도구 공용) ──────────────────

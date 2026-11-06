@@ -355,6 +355,7 @@ class FindObjectSkill(BaseSkill):
                         world_y,
                         metadata=metadata,
                         aliases=[target],
+                        as_object=True,
                     )
                     registered = True
                 except Exception as exc:
@@ -485,6 +486,7 @@ class FindObjectSkill(BaseSkill):
                         world_y,
                         metadata=metadata,
                         aliases=[target],
+                        as_object=True,
                     )
                     registered = True
                 except Exception as exc:  # noqa: BLE001

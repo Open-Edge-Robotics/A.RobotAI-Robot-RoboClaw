@@ -53,6 +53,21 @@ SQL 데이터와 의미 검색 데이터를 함께 관리합니다.
 마운트합니다. CLOiD처럼 docker compose로 직접 기동하는 배포는 `/root/.robo_claw`를
 named volume으로 마운트합니다(볼륨이 없으면 컨테이너 재생성 시 장소가 사라집니다).
 
+### 장소와 객체 관측의 분리
+
+VLM/스캔이 감지한 객체(`analyze_scene`, `find_object`, `scan_room`)는 `object_location`
+타입으로 저장합니다. 이름으로 조회해 조작(grasp/place)에만 쓰고, 다음 경로에서는
+제외됩니다.
+
+| 경로 | 객체 관측 |
+| --- | --- |
+| `get_location`, `navigate_to`, `set_initial_pose` | 제외 |
+| 순회 목록(`autonomous_act`, `tidy_home`)과 시맨틱 맵 장소 목록 | 제외 |
+| 조작(`grasp`/`place`의 object_name 조회) | 포함(`include_objects=True`) |
+
+과거에 `type=location`으로 저장된 객체 항목은 `place_migration.demote_object_locations()`
+로 `object_location`으로 내릴 수 있습니다(멱등).
+
 ### 레거시 장소 이관
 
 SQLite 전환 이전에 JSON 지식 베이스에만 저장된 장소는 이동 해석에 사용되지 않습니다.

@@ -9,8 +9,15 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 STRUCTURED_TYPES = frozenset(
-    {"location", "navigated_coordinate", "blocked_coordinate", "skill_episode"}
+    {"location", "object_location", "navigated_coordinate", "blocked_coordinate", "skill_episode"}
 )
+
+# 좌표가 필수인 종류(장소·객체 관측·이동/차단 좌표).
+_COORD_TYPES = frozenset(
+    {"location", "object_location", "navigated_coordinate", "blocked_coordinate"}
+)
+# 이름이 필수인 종류.
+_NAMED_TYPES = frozenset({"location", "object_location"})
 
 
 def name_key(value):
@@ -67,7 +74,7 @@ class StructuredMemoryStore:
         if metadata.get("mocked"):
             return False
         x, y = metadata.get("x"), metadata.get("y")
-        if kind in ("location", "navigated_coordinate", "blocked_coordinate"):
+        if kind in _COORD_TYPES:
             try:
                 if isinstance(x, bool) or isinstance(y, bool):
                     raise ValueError("좌표에 bool을 사용할 수 없습니다.")
@@ -83,18 +90,20 @@ class StructuredMemoryStore:
             or metadata.get("target_name")
             or ""
         ).strip()
-        if kind == "location" and not canonical:
+        if kind in _NAMED_TYPES and not canonical:
             raise ValueError("장소 이름이 필요합니다.")
         names = [canonical] if canonical else []
         aliases = metadata.get("aliases", [])
         if not isinstance(aliases, list) or any(not isinstance(a, str) for a in aliases):
             raise ValueError("aliases는 문자열 목록이어야 합니다.")
         names += [a.strip() for a in aliases if a.strip()]
-        record_id = (
-            str(uuid5(NAMESPACE_URL, "place:" + name_key(canonical)))
-            if kind == "location"
-            else str(uuid4())
-        )
+        if kind == "location":
+            record_id = str(uuid5(NAMESPACE_URL, "place:" + name_key(canonical)))
+        elif kind == "object_location":
+            # 객체 관측은 같은 이름이면 최신 관측으로 갱신한다(장소 레코드와 키 공간 분리).
+            record_id = str(uuid5(NAMESPACE_URL, "object:" + name_key(canonical)))
+        else:
+            record_id = str(uuid4())
         now = datetime.now().isoformat()
         with self.connect() as conn:
             if kind == "location":
@@ -132,11 +141,24 @@ class StructuredMemoryStore:
             )
         return True
 
-    def records(self, *, entry_type=None, skill_name="", success=None, limit=None, names=None):
+    def records(
+        self,
+        *,
+        entry_type=None,
+        entry_types=None,
+        skill_name="",
+        success=None,
+        limit=None,
+        names=None,
+    ):
         clauses, values = [], []
         if entry_type:
             clauses.append("r.entry_type=?")
             values.append(entry_type)
+        if entry_types:
+            kinds = list(entry_types)
+            clauses.append("r.entry_type IN (" + ",".join("?" for _ in kinds) + ")")
+            values.extend(kinds)
         if skill_name:
             clauses.append("r.skill_name=?")
             values.append(skill_name)
@@ -178,8 +200,9 @@ class StructuredMemoryStore:
             "last_seen": entry["timestamp"],
         }
 
-    def location(self, name):
-        entries = self.records(entry_type="location", names=[name])
+    def location(self, name, *, include_objects=False):
+        kinds = ("location", "object_location") if include_objects else ("location",)
+        entries = self.records(entry_types=kinds, names=[name])
         # 정확한 표준 이름은 같은 이름의 별칭보다 우선합니다.
         entries.sort(
             key=lambda e: (
@@ -197,9 +220,10 @@ class StructuredMemoryStore:
         )
         return self.place(entry, alias=matched_name)
 
-    def locations(self):
+    def locations(self, *, include_objects=False):
+        kinds = ("location", "object_location") if include_objects else ("location",)
         result = []
-        for entry in self.records(entry_type="location"):
+        for entry in self.records(entry_types=kinds):
             result.append(self.place(entry))
             result.extend(self.place(entry, alias=a) for a in entry["metadata"].get("aliases", []))
         return result

@@ -3,6 +3,18 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-06 — VLM/스캔 객체를 장소 메모리에서 분리(object_location)
+
+- **배경**: cloid1 장소 테이블 21건 중 15건이 `person`, `table`, `chair`, `laptop` 같은 VLM 객체 라벨이었습니다. `analyze_scene`/`find_object`/`scan_room`이 `add_object_location()`으로 객체를 저장하는데 이 API가 항상 `type=location`으로 기록해, 객체가 시맨틱 맵 장소 목록·순회 목록·이동 목적지 해석에 섞였습니다(`person`으로 이동, 순찰에서 사람을 방으로 취급).
+- **조치**:
+  - 구조화 저장소에 `object_location` 타입을 추가하고, 객체 이름은 `object:` 키로 UPSERT합니다(장소와 키 공간 분리).
+  - `add_object_location(..., as_object=True)`로 객체를 저장하도록 `vision_skill.analyze_scene`, `perception_skill.detect`(2곳), `perception_skill.scan_room`을 변경했습니다.
+  - `get_object_location`, `get_all_objects`, `locations`, `nearest`는 기본적으로 장소만 봅니다. 조작 경로(`manipulation_skill/core.py`)만 `include_objects=True`로 객체를 조회합니다.
+  - 전방 위치 조회 스킵 타입(`_FWD_SKIP_TYPES`)에 `object_location`을 추가했습니다.
+  - `place_migration.demote_object_locations()`를 추가해 과거 `type=location` 객체 행을 멱등하게 `object_location`으로 내립니다.
+  - `docs/RAG_AND_LEARNING.md`에 장소/객체 분리 규칙과 경로별 포함 여부를 표로 정리했습니다.
+- **검증**: `task unit-test` 2110 passed(신규 `test_object_vs_place_memory.py` 5건 포함), `ruff check`/`format --check` 통과. 실기(cloid1) 데이터 정리는 로봇 pull 후 `demote_object_locations()`로 수행합니다.
+
 ## 2026-11-06 — CLOiD 장소 기억 유실(컨테이너 재생성) 원인 확인 및 영속화
 
 - **배경**: cloid1에서 장소를 저장해도 조회되지 않았습니다. 구조화 DB(`/root/.robo_claw/memory.json.kb.collections/cloi01_azure--*.structured.db`)가 **0건**이었고, 장소 6건은 JSON 지식 미러(Qdrant 복원분)에만 남아 있었습니다. `/root/.robo_claw`가 볼륨이 아닌 컨테이너 파일시스템이라 컨테이너 재생성(18:23) 시 SQLite가 비었고, RAG 미러는 Qdrant에서 복원되지만 구조화 데이터는 복원되지 않습니다.

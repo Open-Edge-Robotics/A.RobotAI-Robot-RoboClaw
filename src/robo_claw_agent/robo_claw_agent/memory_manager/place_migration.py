@@ -154,3 +154,27 @@ def repromote_places(
             continue
         stats["inserted"] += 1 if stored else 0
     return stats
+
+
+# VLM/스캔 관측이 장소(`location`)로 저장됐던 과거 데이터를 객체(`object_location`)로 내린다.
+# 그대로 두면 "person", "table" 같은 객체가 이동 목적지·순회 장소로 쓰인다.
+_OBJECT_KIND_MARKERS = ("object",)
+
+
+def demote_object_locations(store: Any) -> int:
+    """`kind=object` 관측 레코드를 `object_location` 타입으로 내리고 건수를 돌려준다.
+
+    이동 목적지 해석(`get_location`/`navigate_to`)과 순회 목록은 `object_location`을
+    보지 않으므로, 이 변환만으로 객체가 장소로 오인되는 문제가 사라진다. 객체 이름은
+    조작(grasp/place)에서 `include_objects=True`로 계속 조회할 수 있다.
+    """
+    markers = ",".join("?" for _ in _OBJECT_KIND_MARKERS)
+    with store.connect() as conn:
+        cursor = conn.execute(
+            "UPDATE records SET entry_type='object_location', "
+            "metadata=json_set(metadata, '$.type', 'object_location') "
+            "WHERE entry_type='location' "
+            f"AND json_extract(metadata, '$.kind') IN ({markers})",
+            list(_OBJECT_KIND_MARKERS),
+        )
+        return cursor.rowcount

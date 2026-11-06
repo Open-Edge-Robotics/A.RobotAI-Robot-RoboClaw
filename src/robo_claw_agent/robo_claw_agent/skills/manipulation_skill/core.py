@@ -103,7 +103,8 @@ def _resolve_pose_from_object_memory(
     if not hasattr(memory, "get_object_location"):
         return None
 
-    object_info = memory.get_object_location(object_name)
+    # 조작은 VLM/스캔이 기록한 객체 관측도 조회 대상으로 쓴다(이동 목적지 해석과 다름).
+    object_info = memory.get_object_location(object_name, include_objects=True)
     if not object_info:
         return None
 

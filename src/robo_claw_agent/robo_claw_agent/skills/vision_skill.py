@@ -128,6 +128,7 @@ OBJECTS: [{"name": "object_name", "x_rel": 0.5, "y_rel": 0.5}]
                                 "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
                             },
                         },
+                        as_object=True,
                     )
                     detected_names.append(name)
             except Exception as e:

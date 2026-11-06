@@ -194,6 +194,7 @@ class ScanRoomSkill(BaseSkill):
                                     world_x,
                                     world_y,
                                     metadata=metadata,
+                                    as_object=True,
                                 )
                             except Exception as exc:
                                 logger.warning(
