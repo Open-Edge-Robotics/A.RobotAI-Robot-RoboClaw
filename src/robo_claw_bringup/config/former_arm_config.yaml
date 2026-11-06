@@ -1,12 +1,14 @@
 # Former0045 + AgileX Nero(7-DOF) 팔 프로필.
 # 기동: --robot-config former_arm (launch 인자 robot_config:=former_arm)
 #
-# 전제 조건 — 팔 제어 PC(nero-arm, 192.168.50.202, ROS 2 jazzy):
+# 전제 조건 — 팔 제어 PC(nero-arm, 192.168.50.202):
 #   1) CAN 활성화: `ip -br link show can0` 이 UP, bitrate 1000000
-#      (agx_arm_ros/scripts/can_activate.sh, 부팅 자동화는 아직 없음)
+#      (nero-arm 의 systemd can0-activate.service 가 부팅 시 자동 활성화)
 #   2) RoboClaw 컨테이너와 같은 ROS 그래프로 연결:
 #      ROS_DOMAIN_ID=4, RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-#   3) 팔 PC에서 agx_arm_ctrl 드라이버와 MoveIt arm group(move_group) 기동
+#   3) 팔 PC에서 agx_arm_ctrl 드라이버를 ROS 2 Humble 컨테이너(nero_arm_driver)로 기동.
+#      manipulation_backend "agx" 는 드라이버 토픽/서비스를 직접 쓰므로 MoveIt
+#      move_group 은 필요 없다. (docs/MANIPULATION.md 의 Nero 팔 연동 절 참고)
 #   4) TF: 팔 URDF 루트 링크(base_link)를 로봇 base_link 의 static transform 으로
 #      붙인다. 팔 URDF 의 world_to_base_link 체인은 그대로 사용하지 않는다.
 #      프레임 이름을 바꿀 때는 아래 manipulation_base_frame 도 함께 수정한다.

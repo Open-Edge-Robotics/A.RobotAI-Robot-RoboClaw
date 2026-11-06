@@ -78,36 +78,52 @@ Former0045 에 AgileX Nero(7-DOF) 팔과 AgileX 그리퍼(`agx_gripper`)가 장�
 
 팔 PC(Ubuntu 24.04)는 호스트에 직접 설치하지 않고 **ROS 2 Humble 기반 도커 컨테이너(`nero_humble:1.0`)** 로 팔 드라이버를 기동하여 RoboClaw 에이전트와 완벽히 동일한 ROS 환경(`humble`, `ROS_DOMAIN_ID=4`)을 유지합니다.
 
-#### 1) CAN 버스 활성화 (부팅 후 필수)
+#### 1) CAN 버스 활성화
+`can0`(1 Mbit/s)는 nero-arm 의 systemd 유닛 `can0-activate.service`(`~/can0-activate.service`,
+설치는 `~/install-can0-activate.sh`)가 부팅 시 자동으로 올립니다. 상태만 확인합니다.
+
 ```bash
 # nero-arm 호스트에서 실행
-sudo ip link set can0 up type can bitrate 1000000
-ip -s link show can0
+systemctl status can0-activate.service --no-pager
+ip -details -statistics link show can0   # can state ERROR-ACTIVE, bitrate 1000000 이어야 함
 ```
 
 #### 2) 드라이버 도커 컨테이너 기동
+컨테이너 실행 래퍼는 nero-arm 의 `~/humble_docker/`(`run.sh`, `start_arm.sh`, `Dockerfile`)에 있습니다.
+`run.sh` 는 `--net=host --privileged`로 실행하며 다음을 마운트합니다.
+
+| 호스트 | 컨테이너 | 용도 |
+| :--- | :--- | :--- |
+| `~/agx_arm_ws/src` | `/ws/src` | `agx_arm_ros` 소스(호스트와 공유) |
+| `~/agx_arm_ws_humble/{build,install,log}` | `/ws/{build,install,log}` | Humble 전용 빌드 결과 |
+| `~/cyclonedds_wired.xml` | `/root/cyclonedds_wired.xml` (읽기 전용) | 유선 NIC(`enp86s0`) 고정 DDS 설정 |
+
 ```bash
-# nero-arm 호스트에서 실행 (상시 백그라운드 구동)
-docker run -d \
-  --name nero_arm_driver \
-  --restart unless-stopped \
-  --network host \
-  --privileged \
-  -v /dev:/dev \
-  -v /dev/shm:/dev/shm \
-  nero_humble:1.0 \
-  bash -lc "source /opt/ros/humble/setup.bash && \
-            source /ws/install/setup.bash && \
-            export ROS_DOMAIN_ID=4 && \
-            ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py \
-              speed_percent:=20 \
-              effector_type:=agx_gripper \
-              auto_enable:=true"
+# nero-arm 호스트에서 실행
+~/humble_docker/start_arm.sh agx_gripper                                      # 모터 자동 활성화 (기본값)
+~/humble_docker/start_arm.sh agx_gripper auto_enable:=false control_enabled:=false  # 읽기 전용 (모터 꺼짐, 명령 무시)
+```
+
+현재 운영 중인 컨테이너 `nero_arm_driver`(`--restart unless-stopped`)는 다음 인자로 `ros2 launch`를 실행합니다.
+
+```text
+ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:=nero \
+  effector_type:=agx_gripper speed_percent:=20 fw_version:=v121
 ```
 
 - `speed_percent:=20`: 안전을 위해 최고 속도의 20%로 제한합니다.
 - `effector_type:=agx_gripper`: 장착된 그리퍼를 활성화합니다.
-- `auto_enable:=true`: 기동 즉시 모터를 활성화하고 제어 게이트를 엽니다.
+- `fw_version:=v121`: 펌웨어 자동 감지를 건너뜁니다.
+- `auto_enable`, `control_enabled`는 기본값 `true`입니다. 컨테이너가 재시작될 때마다 모터를 활성화하고
+  `/control/*` 게이트를 엽니다. 같은 DDS 도메인의 어떤 노드든 `/control/*`로 팔을 움직일 수 있으므로,
+  실기기 검증 전에는 읽기 전용 모드로 기동하고 `agx_backend`가 `/enable_agx_arm`, `/control_enable`을 호출하게 합니다.
+
+#### 3) 통신 환경 주의
+- 팔 PC 호스트의 손목 카메라(`wrist-camera.service`)는 ROS 2 Jazzy 이고 드라이버는 Humble 입니다. 같은 도메인(4)에
+  배포판이 섞이면 `ros2 node list`가 `empty node name returned by the RMW layer`로 실패할 수 있습니다.
+  토픽 통신은 유지되므로 점검은 `ros2 topic info <topic> --no-daemon`, `ros2 service list --no-daemon`을 사용합니다.
+- `ros2 daemon`은 호스트(Jazzy)와 컨테이너(Humble)가 공유하면 타입 해시 오류가 나므로 컨테이너 안에서는 `--no-daemon`을 붙입니다.
+- 이 설정은 `former/autostart/cyclonedds.xml`의 배포판 혼재 경고와 같은 원인입니다.
 
 ### 2. 제어 인터페이스 계약 (`agx_backend`)
 

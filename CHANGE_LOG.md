@@ -3,6 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-06 — 에이전트 executor 정지 감지·복구(하트비트 워치독) 및 중첩 spin 제거
+
+- **배경**: Former0045에서 `arm_pose` 스킬 대기 이후 에이전트가 "먹통"이 되는 증상이 두 번(15:16, 15:30) 재현됐습니다. py-spy로 보면 `MultiThreadedExecutor`의 wait set이 비어(`nodes_to_use=[]`, `subscriptions=[]`, `timers=[]`) 상태 퍼블리시(1초), joint_states, 액션/서비스 응답이 모두 멈춘 상태였습니다. 팔 서비스 future가 완료되지 않는 상황에서 `_ros_sync.wait_for_future_sync()`가 스킬 콜백 안에서 `rclpy.spin_once()`로 같은 노드를 다시 spin 한 것이 방아쇠였습니다.
+- **조치**:
+  - `wait_for_future_sync()`에서 중첩 spin을 제거하고 future 완료 콜백을 `threading.Event`로 대기하도록 변경했습니다(타임아웃 시 cancel + 지정 예외 유지).
+  - `agent_node/heartbeat_watchdog.py`를 추가했습니다. 별도 스레드가 1초 주기 `/status` 하트비트를 감시(기본 30초)하고, 유실 시 노드를 executor에 재등록한 뒤 경고하며, 다음 점검에도 복구되지 않으면 컨테이너를 비정상 종료해 systemd 재기동을 유도합니다.
+  - 상태 타이머를 `ReentrantCallbackGroup`으로 옮겨 기본 그룹의 긴 콜백으로 인한 오탐을 막고, 파라미터 `status_heartbeat_timeout_sec`(기본 30초, 0이면 비활성)을 추가했습니다.
+  - `docs/OPERATIONS.md` 파라미터 표를 갱신했습니다.
+- **검증**: `task unit-test` 2064 passed(신규 `test_ros_sync.py` 4건, `test_heartbeat_watchdog.py` 6건 포함), `uv run ruff check src/` 통과, 변경 파일 `ruff format --check` 통과. `ros2 launch`가 자식 프로세스 사망 시에도 exit code 0으로 끝나는 것을 로컬 실험으로 확인해 컨테이너 종료는 PID 1 SIGKILL 방식으로 구현했습니다.
+- **남은 작업**: 실기에서 멈춤을 강제로 유발해 "복구 → 재기동" 경로를 확인해야 합니다.
+
 ## 2026-11-06 — FleetControl capability를 에이전트 등록 스킬 기준으로 보고
 
 - **배경**: Maestro 관제 화면에서 CLOiD 1·2호의 capability가 비어 있었습니다. CLOiD는 컨테이너 안에서 `rclaw launch`를 local 모드로 실행하는데, AI Config Server 기본값 `RC_SKILLS_GUIDE_FILE=config/SKILLS.md`가 docker 모드(`/ros2_ws`) 기준 상대 경로라 작업 디렉터리 `/ws`에서 파일을 찾지 못했고, connector는 경고 없이 빈 manifest를 보냈습니다. 또한 로봇별 `SKILLS.md`는 표가 없는 사용 가이드여서, 표가 없을 때 본문 코드 표기를 모두 수집하던 기존 파서는 사용 불가로 명시된 스킬(`grasp`, `stow_for_navigation` 등)과 `joint1`·`base_link` 같은 비스킬 이름까지 capability로 보고했습니다(Former 카드에서 확인).
@@ -13,6 +24,17 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
   - `rclaw` local 모드가 `RC_SKILLS_GUIDE_FILE`을 실제 존재하는 절대 경로로 보정합니다(존재하는 절대 경로 유지 → ProjectRoot 기준 상대 경로 → 캐시 `SKILLS.md`). 에이전트의 `skills_guide_file` 인자와 같은 파일을 가리킵니다.
   - `docs/OPERATIONS.md`의 FleetControl capability 설명을 갱신했습니다.
 - **검증**: `pytest src/robo_claw_grpc/tests/test_fleet_connector.py` 12건 통과(신규 7건), `src/robo_claw_grpc/tests` 36건 통과·2건은 로컬 환경의 `cv2` 부재로 실패(`test_services.py`, 변경과 무관), `go test ./...`·`go vet ./launcher/` 통과(신규 `TestBuildMergedEnvResolvesSkillsGuideForFleetConnector` 5개 케이스), `ruff check src/robo_claw_grpc` 통과. 기존 `docs/SKILLS.md` 파싱 결과는 변경 전과 동일(106개)함을 확인했습니다. `call_query_state`는 ROS 2 환경이 없어 실기 검증이 필요합니다.
+
+## 2026-11-06 — Nero 팔 PC 구동 구조 점검 결과를 문서에 반영
+
+- **배경**: `nero-arm`을 읽기 전용으로 점검한 결과, `docs/MANIPULATION.md`와 `former_arm_config.yaml` 주석이 실제 운영과 달랐습니다(CAN 수동 활성화·Jazzy 호스트·MoveIt 필요로 기재).
+- **조치**:
+  - CAN 활성화를 systemd `can0-activate.service` 자동 기동 기준으로 수정하고, 컨테이너 기동을 `~/humble_docker/start_arm.sh`와 마운트·DDS 설정 기준으로 정리했습니다.
+  - 드라이버가 `auto_enable`/`control_enabled` 기본값(`true`)으로 재시작되어 `/control/*` 게이트가 상시 열려 있음을 명시하고, 읽기 전용 기동 방법을 추가했습니다.
+  - Jazzy 카메라와 Humble 드라이버 혼재 시 `ros2 node list` 실패 증상과 `--no-daemon` 점검 방법을 추가했습니다.
+  - `former_arm_config.yaml` 주석에서 MoveIt `move_group` 전제를 제거했습니다(`agx` 백엔드는 드라이버 토픽/서비스를 직접 사용).
+- **검증**: yaml 파싱, `git diff --check`, 문서 상대 링크 검증 통과. 코드 변경 없음.
+- **남은 작업(환경)**: 드라이버 `control_enabled:=false` 기본 기동, RoboClaw DDS 인터페이스를 유선망으로 정렬, 손목 카메라 배포판 분리, `robo_claw_container` 실행 인자의 토큰 평문 노출 해소(토큰 재발급 포함)는 원격 호스트 변경이라 별도 승인 후 진행합니다.
 
 ## 2026-11-06 — discovery 노드가 RMW 그래프 질의 실패로 스캔을 멈추지 않도록 보완
 

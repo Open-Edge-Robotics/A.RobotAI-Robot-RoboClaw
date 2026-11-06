@@ -362,7 +362,10 @@ def setup_ros_interfaces(node) -> None:
         callback_group=cb_group,
     )
 
-    node.create_timer(1.0, node._publish_status)
+    # 상태 타이머는 하트비트 워치독의 입력이므로 재진입 가능 그룹에 둔다.
+    # 기본(mutually exclusive) 그룹의 긴 콜백에 가려지면 정상 동작 중에도
+    # 하트비트가 끊긴 것처럼 보인다.
+    node.create_timer(1.0, node._publish_status, callback_group=cb_group)
 
     # 스킬 자가 학습: 주기적 교훈 추출 타이머 (interval>0 일 때만)
     if (

@@ -104,6 +104,10 @@ class AgentParams:
     # 태스크 큐 최대 대기열 크기 (0 = 큐 비활성화, 즉시 병렬 실행)
     task_queue_max_size: int = 8
 
+    # 상태 하트비트 감시(초). executor 가 멈춰 상태 퍼블리시가 끊긴 것을 별도
+    # 스레드에서 감지해 복구/재기동한다. 0 이하이면 감시를 끈다.
+    status_heartbeat_timeout_sec: float = 30.0
+
     # 복합 명령 자동 분해(Task Decomposition) — SLM이 여러 절이 이어진 명령을
     # 한 번에 처리하지 못하는 문제를 보완하기 위해 복합 명령을 하위 지시문으로
     # 분해해 순차 실행한다.
@@ -251,6 +255,9 @@ def declare_agent_parameters(node) -> None:
     # 태스크 큐 최대 대기열 크기
     node.declare_parameter("task_queue_max_size", 8)
 
+    # 상태 하트비트 감시(초). 0 이하이면 감시를 끈다.
+    node.declare_parameter("status_heartbeat_timeout_sec", 30.0)
+
     # 복합 명령 자동 분해(Task Decomposition)
     # 자리 양보 협상
     node.declare_parameter("yield_slot_enabled", True)
@@ -348,6 +355,7 @@ def read_agent_parameters(node) -> AgentParams:
         llm_fail_fast=_b(node, "llm_fail_fast"),
         strict_config=_b(node, "strict_config"),
         task_queue_max_size=_i(node, "task_queue_max_size"),
+        status_heartbeat_timeout_sec=_d(node, "status_heartbeat_timeout_sec"),
         enable_task_decomposition=_b(node, "enable_task_decomposition"),
         yield_slot_enabled=_b(node, "yield_slot_enabled"),
         yield_precheck_mode=_s(node, "yield_precheck_mode"),

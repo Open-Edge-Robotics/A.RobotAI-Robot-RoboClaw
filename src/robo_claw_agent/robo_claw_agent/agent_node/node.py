@@ -25,6 +25,7 @@ from ..skills.limits import load_limits_dict
 from ..types import AgentState
 from .eligibility_gate import step_routing_mode
 from .execution import ExecutionMixin
+from .heartbeat_watchdog import HeartbeatWatchdog
 from .initialization import (
     load_skills,
     setup_last_pose_tracking,
@@ -83,6 +84,9 @@ class AgentNode(Node, ExecutionMixin):
         self._yield_slot_enabled = p.yield_slot_enabled
         self._state = AgentState.IDLE
         self._current_skill = ""
+        # 상태 하트비트 워치독. main() 에서 생성/기동한다.
+        self._status_heartbeat_timeout_sec = float(p.status_heartbeat_timeout_sec or 0.0)
+        self._heartbeat_watchdog: HeartbeatWatchdog | None = None
         # 센서 토픽 — 자가진단(_check_sensors_cached)이 하드코딩 대신 이 값을 사용
         self._lidar_topic = p.lidar_topic or "/scan"
         self._imu_topic = p.imu_topic or "/imu"
@@ -322,6 +326,10 @@ class AgentNode(Node, ExecutionMixin):
         status.message = message
         status.agent_id = self._agent_id
         self._status_pub.publish(status)
+        # 하트비트: executor 가 콜백을 멈추면 이 경로가 끊기고 워치독이 감지한다.
+        watchdog = self._heartbeat_watchdog
+        if watchdog is not None:
+            watchdog.beat()
 
     def _check_sensors_cached(self) -> dict[str, bool] | None:
         """핵심 센서(lidar/imu/camera) 토픽 수신 여부 점검.
@@ -573,11 +581,25 @@ def main() -> None:
     node = AgentNode()
     executor = MultiThreadedExecutor()
     executor.add_node(node)
+
+    # executor 가 콜백 dispatch 를 멈춰도(상태 퍼블리시 중단) 별도 스레드에서 감지한다.
+    def _recover_executor() -> None:
+        # 노드가 executor 에서 빠졌으면 재등록하고 wait set 재구성을 깨운다.
+        executor.add_node(node)
+        executor.wake()
+
+    node._heartbeat_watchdog = HeartbeatWatchdog(
+        timeout_sec=node._status_heartbeat_timeout_sec,
+        recover=_recover_executor,
+    )
+    node._heartbeat_watchdog.start()
     try:
         executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        if node._heartbeat_watchdog is not None:
+            node._heartbeat_watchdog.stop()
         if node._task_queue is not None:
             node._task_queue.stop()
         node._memory.flush()
