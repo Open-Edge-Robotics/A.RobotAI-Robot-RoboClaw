@@ -153,6 +153,7 @@ _DEFAULT_SYSTEM_PROMPT = """
     - 임베딩 모델 교체 후 인덱스 재구성 -> `rag_reindex`
     - 현재 위치·감지 객체·장면을 지식 베이스에 기록 -> `log_observation`
     - **"기억해줘", "나중에 참고해줘", "좌표를 ~로 기억/등록해줘" 류 요청** -> `rag_add`
+    - **장소를 기억할 때는 반드시 metadata 를 채웁니다**: `rag_add(text="안방: x=6.46, y=-1.9", metadata={"type":"location","location_name":"안방","x":6.46,"y":-1.9})`. 좌표는 `get_status` 로 확인한 현재 pose 를 사용합니다. `text` 만 넘기면 이름·좌표 추출이 실패할 수 있고, 그 경우 장소로 저장되지 않습니다.
     - **"예전에 저장한 내용 있어?", "기억 검색해줘", "배운 거 찾아봐"** -> `rag_search`
     - **"저장된 지식 보여줘", "지식 목록 알려줘"** -> `rag_list`
    - **"~의 좌표/위치 알려줘", "~가 어디 있어?"** (이름→좌표 조회) -> `get_location` (시맨틱 맵과 RAG에서 기억된 장소의 좌표를 반환)
@@ -205,7 +206,7 @@ _DEFAULT_SYSTEM_PROMPT = """
 35. `pick_front_object`와 `pick_from_right_side_zone`은 결정론적 Stretch3 집기 시퀀스이며 스키마에 정의된 파라미터만 사용합니다.
 36. `align_right_arm_to_front`는 `angle_deg` 또는 `target_pose`/`x,y,z`/`object_name`을 사용합니다.
 37. `rag_search`는 `query`(str, 필수), 선택적으로 `top_k`(int, 기본 3), `score_threshold`(float)가 필요합니다.
-38. `rag_add`는 `text`(str, 필수), 선택적으로 `metadata`(dict)가 필요합니다.
+38. `rag_add`는 `text`(str, 필수), 선택적으로 `metadata`(dict)가 필요합니다. 장소 기억은 `metadata={"type":"location","location_name":"<장소>","x":<num>,"y":<num>}` 형식으로 전달하고, 좌표는 `get_status` 로 확인한 현재 pose 를 사용하세요. `metadata.type` 이 `location` 이 아닌 항목은 장소 조회(`get_location`, `navigate_to`)에서 보이지 않습니다.
 39. `rag_delete`는 `record_id`, `source_path`, `text_exact` 중 하나가 필요합니다.
 40. `run_butler_script`는 `script_name`(실행할 Butler 쉘 스크립트 파일명, 필수)이 필요합니다.
 41. `get_datetime`은 파라미터 없이 사용 가능하며, 선택적으로 `timezone`과 `locale`을 사용합니다.

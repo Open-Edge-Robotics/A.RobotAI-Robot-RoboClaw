@@ -3,6 +3,19 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-06 — 장소 기억 저장 실패(metadata 없는 rag_add) 수정과 레거시 장소 이관
+
+- **배경**: former0045·0047에서 "현재 좌표를 확인해서 안방으로 기억해줘" 요청이 이동에 쓰이지 않았습니다. LLM은 `rag_add`를 `text`만으로 호출했고(예 `현재 좌표 (x: 6.46, y: -1.9)는 안방입니다`, `안방의 좌표는 x: …`, `데스크: x=…`), 이름 추출기가 `…의 위치`·`위치는 X입니다`·`X로 기억`·`X (…)` 네 문형만 알아 이름을 얻지 못했습니다. 이름이 없으면 `type=location` 승격이 안 되고, metadata가 빈 채로 벡터 지식에만 저장되어 장소 조회(`get_location`/`navigate_to`)에서 보이지 않았습니다. 그런데도 `rag_add`는 "지식 1건을 저장했습니다"로 **성공을 반환해 유실이 가려졌습니다**. 실기 DB 확인 결과 former0045는 장소 3건만, former0047은 VLM 객체 라벨(door/wall/shoes)만 SQLite에 있고 실제 장소는 레거시 JSON에만 있었습니다.
+- **조치**:
+  - `_location_name_from_text`에 문형 3종을 추가했습니다: `(위치|좌표)(좌표)·(x: …)·는 <이름>입니다`, `<이름>의 좌표는 x: …`, `<이름>: x=…`. 지시어·운영 로그 어휘(`현재 위치`, `이동 성공 좌표` 등)는 `_clean_place_name`으로 배제합니다.
+  - `rag_add`는 장소 의도를 감지하면 좌표를 현재 pose로 채우고 `frame_id`를 함께 기록하며(odom 폴백이면 경고), 좌표를 확보하지 못하면 **저장하지 않고 `failure_reason=no_coordinates`로 실패**를 반환합니다. 결과에 `saved_as`(`location`/`knowledge`)를 넣어 실제 저장 경로를 드러냅니다.
+  - 위치 metadata 정규화·판정 헬퍼를 `memory_manager/semantic.py`로 옮겨 저장 경로와 이관 도구가 같은 규칙을 쓰도록 했습니다(`rag.py`는 기존 이름 재노출).
+  - `memory_manager/place_migration.py`와 `scripts/repromote_places.py`를 추가했습니다. 레거시 JSON의 `type=location`/`navigated_coordinate`와 metadata 없이 저장된 장소 문장을 SQLite로 승격하며, `--dry-run`과 충돌 건너뛰기를 지원합니다.
+  - 프롬프트와 `rag_add` 스키마 설명에 metadata 예시를 명시했습니다.
+  - `docs/RAG_AND_LEARNING.md`에 저장 규칙 표와 이관 절차를 추가했습니다.
+- **검증**: `task build` 후 `task unit-test` 2081 passed(신규 `test_place_memory_save.py` 20건, `test_place_migration.py` 5건 포함), `ruff check`/`format --check` 통과. 실 DB 사본으로 `scripts/repromote_places.py` 실행해 former0047 데이터 형태(9건)에서 장소 6건(안방·데스크·신발장·충전대·거실·주방)만 승격되고 일반 지식과 `현재 위치`는 제외되는 것을 확인했습니다.
+- **남은 작업**: 로봇(former0045/0047, cloid2)에서 에이전트를 멈추고 `scripts/repromote_places.py`를 실행한 뒤, 장소명 이동이 실제로 해석되는지 확인해야 합니다. 이번 변경 배포도 필요합니다.
+
 ## 2026-11-06 — CLOiD 도구 호출 경로에서 주행 전 boxing prelude 교착 해소
 
 - **배경**: CLOiD 2호기에서 "주방으로 이동해줘" 같은 이동 요청이 항상 실패하고 "박싱자세 해줘"만 동작했습니다. 로그에는 `Inserting cloid_navigation_pose before CLOiD base motion skill 'navigate_to'` 직후 `cloid_navigation_pose 준비 도구가 도구 목록에 없다`는 답변이 남았습니다. `llm_tool_calling=true` 배포의 네이티브 도구 호출 루프(`_run_native_tool_loop`)가 주행 안전 게이트가 삽입한 prelude를 실행하지 않고 "준비 도구를 먼저 호출하세요"로 되돌렸는데, `cloid_navigation_pose`는 `is_internal=true`라 도구 목록에 없어 모델이 영구히 만족시킬 수 없는 교착이었습니다. JSON 응답 경로와 직접 라우팅 경로는 prelude를 그대로 실행해 정상 동작했습니다.

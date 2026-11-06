@@ -1125,7 +1125,7 @@
         "text",
         "metadata"
       ],
-      "description": "RAG 지식 베이스에 텍스트 1건을 수동 등록합니다. 파라미터: text(str, 필수), metadata(dict, 선택).",
+      "description": "RAG 지식 베이스에 텍스트 1건을 수동 등록합니다. 파라미터: text(str, 필수), metadata(dict, 선택). 장소를 기억할 때는 metadata={\"type\":\"location\",\"location_name\":\"안방\",\"x\":<num>,\"y\":<num>} 처럼 좌표까지 넣어야 장소로 저장되며, 좌표는 get_status 로 확인한 현재 pose 를 사용합니다.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/system_skill/rag.py"
     },
     {

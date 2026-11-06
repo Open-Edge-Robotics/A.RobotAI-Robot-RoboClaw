@@ -24,8 +24,49 @@
 SQL 데이터와 의미 검색 데이터를 함께 관리합니다.
 
 기존 `.semantic.json`과 벡터 저장소의 구조화 레코드는 자동 이관하지 않습니다.
-오래된 장소·실행 경험은 새 조회와 의미 검색에서 제외하며 파일과 원격 데이터 자체는
-삭제하지 않습니다. 사용할 장소는 `rag_add`로 이름과 좌표를 다시 등록합니다.
+이관이 필요하면 아래 "레거시 장소 이관" 절차를 사용합니다.
+
+### 장소 기억 저장 규칙
+
+장소를 기억할 때는 `rag_add`에 `metadata`를 함께 전달합니다.
+
+```json
+{"type": "location", "location_name": "안방", "x": 6.46, "y": -1.9}
+```
+
+좌표는 `get_status`로 확인한 현재 pose를 사용합니다. 다음 동작을 보장합니다.
+
+| 입력 | 저장 결과 |
+| --- | --- |
+| metadata에 이름과 좌표 | `type=location`으로 SQLite 저장, 시맨틱 맵 동기화 |
+| text에만 이름·좌표("현재 위치(x: …)는 안방입니다", "안방의 좌표는 x: …", "데스크: x=…" 등) | 같은 규칙으로 이름·좌표를 추출해 SQLite 저장 |
+| 이름만 있고 좌표 없음 | 현재 pose로 좌표를 채우고 `frame_id`를 기록 |
+| 이름은 있지만 좌표를 확보하지 못함 | 저장하지 않고 실패 반환(`failure_reason=no_coordinates`) |
+| 장소 의도가 아님 | 벡터 지식 저장(`saved_as=knowledge`) |
+
+`metadata.type`이 `location`이 아닌 항목은 `get_location`·`navigate_to`에서 보이지 않습니다.
+결과의 `saved_as` 값(`location`/`knowledge`)으로 실제 저장 경로를 확인할 수 있습니다.
+
+### 레거시 장소 이관
+
+SQLite 전환 이전에 JSON 지식 베이스에만 저장된 장소는 이동 해석에 사용되지 않습니다.
+다음 스크립트로 한 번에 승격할 수 있습니다(파일 삭제 없음, 이름 키 기준 UPSERT).
+
+```bash
+# 1) 대상 확인 (기록 없음)
+python3 scripts/repromote_places.py --dry-run
+
+# 2) 반영 (에이전트를 멈추고 실행)
+python3 scripts/repromote_places.py
+
+# 로봇 컨테이너
+python3 scripts/repromote_places.py --memory-dir /ros2_ws/agent_workspace/memory
+```
+
+스크립트는 namespace별 지식 파일을 읽어 ① `type=location`/`navigated_coordinate`이면서
+좌표가 있는 항목과 ② metadata 없이 저장된 "장소처럼 보이는 텍스트"를 모두 구조화
+저장소로 옮깁니다. 다른 장소가 이미 쓰는 이름·별칭과 충돌하는 항목은 건너뛰고
+`conflicts`로 보고합니다.
 장소 갱신은 동일 이름을 덮어쓰고 이전 별칭을 제거하며 다른 장소의 별칭 충돌은 거절합니다.
 좌표가 잘못되었거나 유한하지 않으면 기존 값을 유지하고 저장을 거절합니다.
 

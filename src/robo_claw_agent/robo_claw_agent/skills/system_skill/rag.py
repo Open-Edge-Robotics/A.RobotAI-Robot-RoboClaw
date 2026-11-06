@@ -17,9 +17,11 @@ from robo_claw_agent.memory_manager.semantic import (  # noqa: F401
     _entry_all_names,
     _entry_place_names,
     _entry_xy,
+    _is_location_metadata,
     _is_self_location_name,
     _location_name_from_metadata,
     _location_name_from_text,
+    _normalize_location_metadata,
     _normalize_location_name,
 )
 from robo_claw_agent.skill_manager import BaseSkill
@@ -88,22 +90,6 @@ def _summarize_top_result(result: dict[str, Any]) -> str:
     return _sanitize_knowledge_text(str(result.get("text", "")))
 
 
-def _is_location_metadata(metadata: dict[str, Any]) -> bool:
-    """이름 + 좌표(x, y)를 모두 갖춘 위치 지식인지 판정한다."""
-    if not isinstance(metadata, dict):
-        return False
-    if not _location_name_from_metadata(metadata):
-        return False
-    if "x" not in metadata or "y" not in metadata:
-        return False
-    try:
-        float(metadata["x"])
-        float(metadata["y"])
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
 # 역방향 조회(좌표→이름) 폴백에서 위치로 취급하지 않을 운영 로그 타입
 _NON_LOCATION_TYPES = frozenset(
     {
@@ -115,75 +101,6 @@ _NON_LOCATION_TYPES = frozenset(
         "last_pose",
     }
 )
-_XY_IN_TEXT = re.compile(
-    r"x\s*[:=]\s*(-?\d+(?:\.\d+)?)\D+?y\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE
-)
-_PAIR_IN_TEXT = re.compile(r"\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)")
-_COMMA_COORD_IN_TEXT = re.compile(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:좌표|위치)?")
-
-
-def _normalize_location_metadata(text: str, metadata: dict[str, Any]) -> dict[str, Any]:
-    """위치 저장을 사이트/언어 무관하게 일관 저장하도록 metadata를 표준화한다.
-
-    이름/좌표가 metadata 또는 텍스트 어디에 있든, 확인되면 표준 키
-    (`location_name`, `x`, `y`, `type="location"`)를 채운다. 이렇게 하면 시맨틱 맵
-    동기화·좌표→이름 역조회·사실 우선 랭킹·검색 필터가 장소명과 무관하게 일관 동작한다.
-    좌표를 확인할 수 없으면(일반 지식 등) 원본을 그대로 둔다.
-    """
-    md = dict(metadata) if isinstance(metadata, dict) else {}
-
-    # metadata 의 이름키는 _location_name_from_metadata 가 걸러내므로, 지시어 이름을
-    # 지우려면 원본 키를 직접 본다.
-    explicit_name = next(
-        (str(md.get(key, "")).strip() for key in _LOCATION_NAME_KEYS if md.get(key)),
-        "",
-    )
-    name = explicit_name or _location_name_from_text(text)
-    # "현재 위치"/"여기" 같은 위치 지시어는 장소명이 아니다. 지식 텍스트는 그대로
-    # 저장하되 위치 사실로 승격하지 않아 시맨틱 맵에 장소로 등록되지 않게 한다.
-    if name and _is_self_location_name(name):
-        name = ""
-        for key in _LOCATION_NAME_KEYS:
-            md.pop(key, None)
-
-    xy: tuple[float, float] | None = None
-    if "x" in md and "y" in md:
-        try:
-            xy = (float(md["x"]), float(md["y"]))
-        except (TypeError, ValueError):
-            xy = None
-    t_str = str(text or "")
-    if xy is None:
-        m = _XY_IN_TEXT.search(t_str)
-        if m:
-            try:
-                xy = (float(m.group(1)), float(m.group(2)))
-            except (TypeError, ValueError):
-                xy = None
-    if xy is None:
-        m = _PAIR_IN_TEXT.search(t_str)
-        if m:
-            try:
-                xy = (float(m.group(1)), float(m.group(2)))
-            except (TypeError, ValueError):
-                xy = None
-    if xy is None:
-        m = _COMMA_COORD_IN_TEXT.search(t_str)
-        if m:
-            try:
-                xy = (float(m.group(1)), float(m.group(2)))
-            except (TypeError, ValueError):
-                xy = None
-
-    if name and xy is not None:
-        md.setdefault("location_name", name)
-        md["x"] = xy[0]
-        md["y"] = xy[1]
-        if not md.get("type"):
-            md["type"] = "location"
-    return md
-
-
 # dedup에서 삭제하면 안 되는 운영 로그 타입(위치 사실이 아님).
 _DEDUP_KEEP_TYPES = frozenset(
     {
@@ -336,7 +253,9 @@ class RAGAddSkill(BaseSkill):
     allow_with_others = False
     description = (
         "RAG 지식 베이스에 텍스트 1건을 수동 등록합니다. "
-        "파라미터: text(str, 필수), metadata(dict, 선택)."
+        "파라미터: text(str, 필수), metadata(dict, 선택). "
+        '장소를 기억할 때는 metadata={"type":"location","location_name":"안방","x":<num>,"y":<num>} '
+        "처럼 좌표까지 넣어야 장소로 저장되며, 좌표는 get_status 로 확인한 현재 pose 를 사용합니다."
     )
     input_schema = {
         "type": "object",
@@ -344,7 +263,10 @@ class RAGAddSkill(BaseSkill):
             "text": {"type": "string", "description": "저장할 지식 또는 관찰 내용"},
             "metadata": {
                 "type": "object",
-                "description": "선택 메타데이터. 위치는 location_name/x/y 사용",
+                "description": (
+                    "선택 메타데이터. 장소 기억은 "
+                    "{type:'location', location_name:'안방', x:1.2, y:3.4} 형식으로 전달"
+                ),
             },
         },
         "required": ["text"],
@@ -384,19 +306,52 @@ class RAGAddSkill(BaseSkill):
             except Exception:  # noqa: BLE001
                 pose = None
             if pose and pose.get("x") is not None and pose.get("y") is not None:
+                # 좌표 프레임을 함께 기록한다. map 이 아니면(odom 폴백) 같은 장소가
+                # 다른 좌표로 저장될 수 있으므로 로그로 구분한다.
+                frame = str(pose.get("frame") or "")
                 metadata = {
                     **metadata,
                     "x": round(float(pose["x"]), 2),
                     "y": round(float(pose["y"]), 2),
                     "location_name": metadata.get("location_name") or loc_name,
                     "type": metadata.get("type") or "location",
+                    **({"frame_id": frame} if frame else {}),
                 }
                 logger.info(
-                    "[rag_add] location '%s' saved without coords — filled from current pose (%.2f, %.2f)",
+                    "[rag_add] location '%s' saved without coords — filled from current pose (%.2f, %.2f, frame=%s)",
                     loc_name,
                     metadata["x"],
                     metadata["y"],
+                    frame or "unknown",
                 )
+                if frame and frame != "map":
+                    logger.warning(
+                        "[rag_add] place '%s' saved with non-map frame '%s' — "
+                        "navigate_to는 map 프레임을 가정하므로 좌표가 어긋날 수 있습니다.",
+                        loc_name,
+                        frame,
+                    )
+        # 장소 기억 요청인데 좌표를 확보하지 못한 경우, 일반 지식으로 조용히
+        # 저장하지 않고 실패를 알린다. 예전에는 metadata가 비어 벡터 지식으로만
+        # 남았고 장소 조회(get_location/navigate_to)에서 보이지 않아 유실처럼 보였다.
+        if loc_name and not _is_location_metadata(metadata):
+            logger.warning(
+                "[rag_add] place '%s' not saved as location — no coordinates available",
+                loc_name,
+            )
+            return {
+                "success": False,
+                "failure_reason": "no_coordinates",
+                "saved_as": "none",
+                "message": (
+                    f"'{loc_name}' 위치를 장소로 저장하지 못했습니다. 좌표를 확인할 수 없습니다. "
+                    "현재 위치를 확인한 뒤 metadata 에 type=location, location_name, x, y 를 "
+                    "넣어 다시 저장해 주세요."
+                ),
+                "text": text,
+                "semantic_updated": False,
+                "deduped": 0,
+            }
         # 같은 이름 위치 재저장 시 이전 RAG 항목 제거(중복/좌표 충돌 방지).
         # 시맨틱 맵은 add_object_location이 이름으로 덮어쓰므로 별도 처리 불필요.
         deduped = _dedup_prior_locations(self.node._memory, metadata)
@@ -404,9 +359,17 @@ class RAGAddSkill(BaseSkill):
         semantic_updated = False
         if stored:
             semantic_updated = _sync_location_to_semantic_map(self.node._memory, metadata)
+        saved_as = "location" if _is_location_metadata(metadata) else "knowledge"
+        if not stored:
+            message = "지식 저장에 실패했습니다."
+        elif saved_as == "location":
+            message = f"'{loc_name}' 위치를 장소로 저장했습니다."
+        else:
+            message = "지식 1건을 저장했습니다."
         return {
             "success": stored,
-            "message": "지식 1건을 저장했습니다." if stored else "지식 저장에 실패했습니다.",
+            "saved_as": saved_as,
+            "message": message,
             "text": text,
             "semantic_updated": semantic_updated,
             "deduped": deduped,

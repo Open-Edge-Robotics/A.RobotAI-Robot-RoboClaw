@@ -139,6 +139,28 @@ _NAME_BEFORE_PAREN = re.compile(
 _NON_NAME_WORDS = frozenset(
     {"현재", "지금", "이", "그", "저", "여기", "우리", "제", "너", "나", "현", "좌표"}
 )
+
+# (E) '현재 위치(x: 1.0, y: 2.0)는 안방입니다' / '현재 좌표 (…)는 신발장입니다'
+#     실기에서 가장 흔한 발화. 좌표 괄호가 이름 앞을 가로막아 (A)/(B) 문형이 모두
+#     빗나갔고, 그 결과 장소가 아닌 일반 지식으로 저장됐다.
+_NAME_AFTER_COORD_PAREN = re.compile(
+    r"(?:위치|좌표)\s*\([^)]*\)\s*(?:는|은)?\s*['\"]?([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]*?)['\"]?\s*"
+    r"(?:입니다|이다|이에요|에요|예요|이야)"
+)
+# (F) '안방의 좌표는 x: 1.0, y: 2.0' / '거실 좌표: x=…' — '위치' 대신 '좌표'를 쓰는 문형
+_NAME_BEFORE_COORDS = re.compile(
+    r"^\s*['\"]?([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]{0,19}?)['\"]?\s*(?:의\s*)?(?:좌표|위치)\s*"
+    r"[:：]?\s*(?:는|은)?\s*(?:x\s*[:=]|\(|-?\d)"
+)
+# (G) '데스크: x=6.43, y=-3.71' — 이름 토큰 하나 + 콜론 + 좌표
+_NAME_BEFORE_COLON_COORDS = re.compile(
+    r"^\s*['\"]?([0-9A-Za-z가-힣][0-9A-Za-z가-힣_]{0,19})['\"]?\s*[:：]\s*(?:x\s*[:=]|-?\d+\s*,)"
+)
+# 장소명이 아닌 운영 로그 어휘. 좌표 문형에서 "이동 성공 좌표" 같은 표현이 장소로
+# 승격되는 것을 막는다(_is_self_location_name 이 걸러내지 못하는 경우 보완).
+_PLACE_NAME_STOPWORDS = frozenset(
+    {"이동", "성공", "실패", "좌표", "위치", "지도", "맵", "경로", "스캔", "관찰", "기록", "결과"}
+)
 # "이동 성공 좌표: … (키친 (-5.15, -1.18))" 처럼 괄호 안 장소명을 뽑는다.
 _PAREN_NAME_RE = re.compile(r"\(([0-9A-Za-z가-힣][0-9A-Za-z가-힣 ]{0,19}?)\s*\(")
 # 정방향 위치 근거로 인정하지 않을 순수 운영 로그 타입.
@@ -181,29 +203,51 @@ def _location_name_from_text(text: str) -> str:
     사이트/언어 무관하게 임의의 장소명을 받는다.
     """
     t = str(text or "")
+    # (E) '…위치(x, y)는 <이름>입니다' — 좌표 괄호가 이름 앞에 오는 실기 발화.
+    m = _NAME_AFTER_COORD_PAREN.search(t)
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
     # (B) '…위치는 <이름>입니다' 를 먼저 시도(문두의 '현재/이/그' 오검출 방지).
     m = _NAME_AFTER_LOC.search(t)
-    if m:
-        return m.group(1).strip()
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
     # (A) '<이름> (의) 위치…' — 단, 지시/부사어는 이름으로 보지 않는다.
     m = _NAME_BEFORE_LOC.search(t)
-    if m:
-        name = m.group(1).strip()
-        if name and name not in _NON_NAME_WORDS:
-            return name
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
+    # (F) '<이름>의 좌표는 x: …' / '<이름> 좌표: x=…'
+    m = _NAME_BEFORE_COORDS.search(t)
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
+    # (G) '<이름>: x=…, y=…'
+    m = _NAME_BEFORE_COLON_COORDS.search(t)
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
     # (C) '<이름>(으)로 기억/저장/등록' (예: "3,4 좌표를 실험실로 기억해줘")
     m = _NAME_ACTION_LOC.search(t)
-    if m:
-        name = m.group(1).strip()
-        if name and name not in _NON_NAME_WORDS:
-            return name
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
     # (D) '<이름> (x, y)' (예: "회의실 (-1.5, 2.8)")
     m = _NAME_BEFORE_PAREN.search(t)
-    if m:
-        name = m.group(1).strip()
-        if name and name not in _NON_NAME_WORDS:
-            return name
+    if name := _clean_place_name(m.group(1) if m else ""):
+        return name
     return ""
+
+
+def _clean_place_name(name: str) -> str:
+    """추출된 후보가 실제 장소명인지 확인한다(지시어·운영 로그 어휘 배제).
+
+    문형 매칭만으로는 "현재 위치", "이동 성공" 같은 표현이 잡힌다. 그런 이름을
+    장소로 등록하면 순회 목록이나 이동 목적지로 오용되므로 여기서 한 번 더 거른다.
+    """
+    candidate = str(name or "").strip().strip("'\"")
+    if not candidate or candidate in _NON_NAME_WORDS:
+        return ""
+    if _is_self_location_name(candidate):
+        return ""
+    if any(word in _PLACE_NAME_STOPWORDS for word in candidate.split()):
+        return ""
+    return candidate
 
 
 def _entry_place_names(entry: dict[str, Any]) -> list[str]:
@@ -425,3 +469,81 @@ class SemanticMixin:
 
     def get_all_objects(self) -> list[dict[str, Any]]:
         return self._structured_store.locations()
+
+
+# ── 위치 metadata 표준화 (저장 경로·이관 도구 공용) ──────────────────
+# 원래 skills/system_skill/rag.py 에 있었으나, 레거시 지식 이관(place_migration)도 같은
+# 규칙을 써야 두 경로가 어긋나지 않으므로 ROS 비의존 모듈로 옮겼다. rag.py 는 기존
+# 이름 그대로 재노출하므로 호출부/테스트는 영향을 받지 않는다.
+
+_XY_IN_TEXT = re.compile(
+    r"x\s*[:=]\s*(-?\d+(?:\.\d+)?)\D+?y\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE
+)
+_PAIR_IN_TEXT = re.compile(r"\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)")
+_COMMA_COORD_IN_TEXT = re.compile(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:좌표|위치)?")
+
+
+def _is_location_metadata(metadata: dict[str, Any]) -> bool:
+    """이름 + 좌표(x, y)를 모두 갖춘 위치 지식인지 판정한다."""
+    if not isinstance(metadata, dict):
+        return False
+    if not _location_name_from_metadata(metadata):
+        return False
+    if "x" not in metadata or "y" not in metadata:
+        return False
+    try:
+        float(metadata["x"])
+        float(metadata["y"])
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _normalize_location_metadata(text: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """위치 저장을 사이트/언어 무관하게 일관 저장하도록 metadata를 표준화한다.
+
+    이름/좌표가 metadata 또는 텍스트 어디에 있든, 확인되면 표준 키
+    (`location_name`, `x`, `y`, `type="location"`)를 채운다. 이렇게 하면 시맨틱 맵
+    동기화·좌표→이름 역조회·사실 우선 랭킹·검색 필터가 장소명과 무관하게 일관 동작한다.
+    좌표를 확인할 수 없으면(일반 지식 등) 원본을 그대로 둔다.
+    """
+    md = dict(metadata) if isinstance(metadata, dict) else {}
+
+    # metadata 의 이름키는 _location_name_from_metadata 가 걸러내므로, 지시어 이름을
+    # 지우려면 원본 키를 직접 본다.
+    explicit_name = next(
+        (str(md.get(key, "")).strip() for key in _LOCATION_NAME_KEYS if md.get(key)),
+        "",
+    )
+    name = explicit_name or _location_name_from_text(text)
+    # "현재 위치"/"여기" 같은 위치 지시어는 장소명이 아니다. 지식 텍스트는 그대로
+    # 저장하되 위치 사실로 승격하지 않아 시맨틱 맵에 장소로 등록되지 않게 한다.
+    if name and _is_self_location_name(name):
+        name = ""
+        for key in _LOCATION_NAME_KEYS:
+            md.pop(key, None)
+
+    xy: tuple[float, float] | None = None
+    if "x" in md and "y" in md:
+        try:
+            xy = (float(md["x"]), float(md["y"]))
+        except (TypeError, ValueError):
+            xy = None
+    t_str = str(text or "")
+    for pattern in (_XY_IN_TEXT, _PAIR_IN_TEXT, _COMMA_COORD_IN_TEXT):
+        if xy is not None:
+            break
+        m = pattern.search(t_str)
+        if m:
+            try:
+                xy = (float(m.group(1)), float(m.group(2)))
+            except (TypeError, ValueError):
+                xy = None
+
+    if name and xy is not None:
+        md.setdefault("location_name", name)
+        md["x"] = xy[0]
+        md["y"] = xy[1]
+        if not md.get("type"):
+            md["type"] = "location"
+    return md
