@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 ENV_RUN_LOG_PATH = "RC_CLEANUP_RUN_LOG_PATH"
 
 # 위임 또는 로컬 처리까지 완료된 상태. 이 상태들만 "정리 대상 1건이 처리됨"으로 본다.
-HANDLED_STATUSES = frozenset({"handled", "delegated", "delegated_demo"})
+HANDLED_STATUSES = frozenset({"handled", "delegated", "delegated_demo", "reported_to_maestro"})
 
 _MAX_CANDIDATES = 20
 _MAX_CANDIDATE_CAPABILITIES = 8

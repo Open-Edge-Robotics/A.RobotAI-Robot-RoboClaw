@@ -214,8 +214,30 @@ LLM이 아니라 수신 로봇의 로컬 실행 경계에서 최종 적용됩니
 
 `autonomous_act` patrol 루프의 `ProcessPeerMessages` BT 노드는 별도로 동료가 보낸 메시지를 수집해 `LLMDecideAction` 프롬프트에 "동료와의 최근 대화"로 주입합니다. 따라서 순찰 중 동료의 도움 요청에도 대응할 수 있습니다(`autonomous_act`는 기억된 장소를 한 번씩 순회하면 종료하므로, 반복 순찰에는 `patrol(rounds=0)`을 사용합니다). `tidy_home`의 위임은 정리 대상 한 건에 대한 단발 요청이며 지속 대화나 협업 루프를 시작하지 않습니다.
 
+### Maestro 관제 중의 위임: 직접 호출 대신 보고 (`RC_PEER_HANDOFF_MODE`)
+
+Maestro(FleetControl)에 연결된 로봇은 모든 로봇 명령이 Maestro를 거쳐야 합니다. 그래야 Maestro의 safety policy, dangerous 스킬 승인, 로봇별 1건 실행, Mission 기록이 지켜집니다. 그래서 관제 중에는 `tidy_home`(그리고 같은 `ResolveCleanupHandoff` BT 노드를 쓰는 `autonomous_act`)이 동료를 `delegate_task`/`call_peer_robot`으로 직접 부르지 않습니다.
+
+| `RC_PEER_HANDOFF_MODE` | 동작 |
+| --- | --- |
+| 생략 | `MAESTRO_IP`가 있으면 `report`, 없으면 `direct` |
+| `report` | 동료를 부르지 않고 필요한 동료 작업을 보고합니다. 장소 결과는 `reported_to_maestro` |
+| `direct` | 기존처럼 동료에게 단발 위임합니다 |
+
+`report`에서 `tidy_home`은 기본으로 정리를 끝까지 마친 뒤 반환합니다(`wait_for_completion` 생략 시 `true`). 결과에는 장소별 `results`와 `peer_requests`가 들어갑니다.
+
+```json
+{"status": "completed", "run_id": "...", "results": [{"place": "안방", "status": "reported_to_maestro"}],
+ "peer_requests": [{"kind": "cleanup_demo", "required_capability": "cleanup_demo",
+   "suggested_peer": "cloid01", "place": "안방", "target": "포장지",
+   "instruction": "<위임 때 보내던 구조화 명령>", "source_robot": "Former0047"}]}
+```
+
+Maestro는 `peer_requests`마다 해당 동료에게 후속 Action을 만들어 실행합니다. 동료 로봇이 `instruction`을 해석하는 방식은 직접 위임과 같습니다. `direct` 모드나 Maestro 없이 쓸 때는 기존 동작(시작 즉시 반환)이 그대로입니다.
+
 ### 내부 구조
 
+- 위임 경로 결정: `skills/fleet_handoff.py`
 - 대화 상태: `cooperation_skill/conversation.py` (`PeerConversationManager`)
 - 수신 인박스: `cooperation_skill/inbox.py` (`PeerMessageInbox`)
 - 자율협동 루프: `cooperation_skill/cooperate_autonomous.py` (`AutonomousCooperateSkill`)

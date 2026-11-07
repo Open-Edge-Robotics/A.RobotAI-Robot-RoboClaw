@@ -24,6 +24,7 @@ from ..cleanup_run_metrics import (
     record_cleanup_delegate,
     record_cleanup_handoff,
 )
+from ..fleet_handoff import reports_to_maestro
 from .core import BTNode, NodeStatus
 from .globals import _AUTONOMOUS_ACTIVE, _SLEEP_WAKE, release_autonomous
 from .helpers import (
@@ -555,6 +556,41 @@ class ResolveCleanupHandoff(BTNode):
             demo_target=demo_target,
             place=place,
         )
+        if reports_to_maestro():
+            # Maestro 관제 중: 동료를 직접 부르지 않고 필요한 작업을 보고한다(fleet_handoff.py).
+            target = demo_target if handoff_kind == "cleanup_demo" else target_description
+            status = (
+                f"Maestro 관제 중이라 {peer['peer_name']}에게 직접 요청하지 않고 "
+                "Maestro에 동료 작업 필요를 보고합니다."
+            )
+            blackboard["cleanup_handoff_report"] = {
+                "kind": handoff_kind,
+                "required_capability": "cleanup_demo"
+                if handoff_kind == "cleanup_demo"
+                else "manipulation",
+                "suggested_peer": str(peer["peer_name"]),
+                "place": place,
+                "target": target,
+                "instruction": instruction,
+            }
+            blackboard["cleanup_handoff_status"] = status
+            blackboard["decided_skill"] = "none"
+            blackboard["decided_params"] = {}
+            blackboard["decided_reason"] = status
+            _record_handoff(
+                place=place,
+                target=target,
+                handoff_kind=handoff_kind,
+                peer=str(peer["peer_name"]),
+                transport=str(peer["transport"]),
+                send_path="maestro_report",
+                blocked=False,
+                reason=status,
+                candidates=_peer_candidate_snapshot(node, peer["peer_name"]),
+            )
+            self._skill.send_user_message(f"정리 대상 '{target}'을 발견했습니다. {status}")
+            return NodeStatus.SUCCESS
+
         skill_name = "delegate_task" if peer["transport"] == "ros2" else "call_peer_robot"
         params = (
             {
