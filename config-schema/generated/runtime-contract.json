@@ -957,6 +957,21 @@
           "config_server"
         ]
     },
+    "fleet.enabled": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "MAESTRO_ENABLED",
+      "api_json": "maestro_enabled",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "fleet.maestro_ip": {
       "type": "string",
       "scope": "runtime",

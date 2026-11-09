@@ -450,6 +450,13 @@ RUNTIME_CONFIG_FIELDS = {
         "scope": "secret",
         "secret": True,
     },
+    "fleet.enabled": {
+        "env": "MAESTRO_ENABLED",
+        "launch_argument": "",
+        "parameter": "",
+        "scope": "runtime",
+        "secret": False,
+    },
     "fleet.maestro_ip": {
         "env": "MAESTRO_IP",
         "launch_argument": "",

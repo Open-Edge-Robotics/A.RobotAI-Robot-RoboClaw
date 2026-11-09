@@ -76,6 +76,7 @@ def test_connector_registers_and_executes_command_over_real_grpc(tmp_path):
                 maestro_ip="127.0.0.1",
                 robot_port=port,
                 robot_id="robot-realistic-1",
+                maestro_enabled=True,
                 site_id="lab",
                 map_id="floor-1",
                 map_version="v1",

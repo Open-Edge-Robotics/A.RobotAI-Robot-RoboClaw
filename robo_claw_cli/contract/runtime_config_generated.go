@@ -655,6 +655,16 @@ var RuntimeFields = map[string]RuntimeField{
 		ROSParameter:   "",
 		Secret:         true,
 	},
+	"fleet.enabled": {
+		Canonical:      "fleet.enabled",
+		Type:           "boolean",
+		Scope:          "runtime",
+		Env:            "MAESTRO_ENABLED",
+		APIJSON:        "maestro_enabled",
+		LaunchArgument: "",
+		ROSParameter:   "",
+		Secret:         false,
+	},
 	"fleet.maestro_ip": {
 		Canonical:      "fleet.maestro_ip",
 		Type:           "string",

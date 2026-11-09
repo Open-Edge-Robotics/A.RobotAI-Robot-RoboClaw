@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.12.0",
+  "contract_version": "2.13.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -1431,12 +1431,34 @@
       ]
     },
     {
+      "canonical": "fleet.enabled",
+      "type": "boolean",
+      "scope": "runtime",
+      "default": false,
+      "secret": false,
+      "description": "Enable the outbound FleetControl connector to Maestro. When false the connector is never started even if fleet.maestro_ip is set.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "MAESTRO_ENABLED",
+      "api_json": "maestro_enabled",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
       "canonical": "fleet.maestro_ip",
       "type": "string",
       "scope": "runtime",
       "default": "",
       "secret": false,
-      "description": "Maestro FleetControl server IP; empty disables the outbound connector.",
+      "description": "Maestro FleetControl server IP; the outbound connector uses it when fleet.enabled is true.",
       "enum": [],
       "minimum": null,
       "maximum": null,

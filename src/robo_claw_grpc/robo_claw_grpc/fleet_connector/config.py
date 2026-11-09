@@ -19,11 +19,20 @@ class DisconnectPolicy(str, Enum):
         return str(self.value)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    """Read a boolean env value; unset or empty keeps the default."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class FleetConnectorConfig:
     maestro_ip: str
     robot_port: int
     robot_id: str
+    maestro_enabled: bool = False
     site_id: str = ""
     map_id: str = ""
     map_version: str = ""
@@ -39,7 +48,8 @@ class FleetConnectorConfig:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.maestro_ip)
+        """Connector runs only when the deployment explicitly enables it."""
+        return self.maestro_enabled and bool(self.maestro_ip)
 
     @property
     def target(self) -> str:
@@ -52,8 +62,11 @@ class FleetConnectorConfig:
             raise ValueError("ROBOT_PORT must be between 1 and 65535")
         robot_id = os.getenv("ROBOT_ID", "").strip()
         maestro_ip = os.getenv("MAESTRO_IP", "").strip()
-        if maestro_ip and not robot_id:
-            raise ValueError("ROBOT_ID is required when MAESTRO_IP is set")
+        maestro_enabled = _env_flag("MAESTRO_ENABLED")
+        if maestro_enabled and not maestro_ip:
+            raise ValueError("MAESTRO_IP is required when MAESTRO_ENABLED is true")
+        if maestro_enabled and not robot_id:
+            raise ValueError("ROBOT_ID is required when MAESTRO_ENABLED is true")
         try:
             policy = DisconnectPolicy(os.getenv("MAESTRO_DISCONNECT_POLICY", "complete").lower())
         except ValueError as exc:
@@ -71,13 +84,14 @@ class FleetConnectorConfig:
             maestro_ip=maestro_ip,
             robot_port=port,
             robot_id=robot_id,
+            maestro_enabled=maestro_enabled,
             site_id=os.getenv("ROBOT_SITE_ID", ""),
             map_id=os.getenv("ROBOT_MAP_ID", ""),
             map_version=os.getenv("ROBOT_MAP_VERSION", ""),
             map_frame_id=os.getenv("ROBOT_MAP_FRAME_ID", "map"),
             skills_file=skills_file,
             disconnect_policy=policy,
-            tls=os.getenv("FLEET_CONTROL_TLS", "false").lower() in {"1", "true", "yes"},
+            tls=_env_flag("FLEET_CONTROL_TLS"),
             ca_cert=os.getenv("FLEET_CONTROL_CA_CERT", ""),
             client_cert=os.getenv("FLEET_CONTROL_CLIENT_CERT", ""),
             client_key=os.getenv("FLEET_CONTROL_CLIENT_KEY", ""),

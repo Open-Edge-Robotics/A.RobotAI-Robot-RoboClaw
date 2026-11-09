@@ -71,6 +71,11 @@ async def serve(
             TelemetryProvider(fleet_config, battery_node, nav_node),
         )
         connector_task = asyncio.create_task(connector.run())
+    elif fleet_config.maestro_ip:
+        logger.info(
+            "Maestro connector disabled: MAESTRO_ENABLED is not true (MAESTRO_IP=%s)",
+            fleet_config.maestro_ip,
+        )
 
     try:
         await grpc_server.start()

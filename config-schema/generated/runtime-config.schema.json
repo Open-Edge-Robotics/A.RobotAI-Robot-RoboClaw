@@ -571,9 +571,17 @@
           "x-secret": true,
           "writeOnly": true
         },
+        "maestro_enabled": {
+          "type": "boolean",
+          "description": "Enable the outbound FleetControl connector to Maestro. When false the connector is never started even if fleet.maestro_ip is set.",
+          "default": false,
+          "x-canonical-name": "fleet.enabled",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
         "maestro_ip": {
           "type": "string",
-          "description": "Maestro FleetControl server IP; empty disables the outbound connector.",
+          "description": "Maestro FleetControl server IP; the outbound connector uses it when fleet.enabled is true.",
           "default": "",
           "x-canonical-name": "fleet.maestro_ip",
           "x-scope": "runtime",

@@ -3,6 +3,17 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-09 — Maestro connector 실행 스위치(MAESTRO_ENABLED) 도입
+
+- **배경**: Maestro FleetControl outbound connector의 실행 여부가 `MAESTRO_IP` 값의 유무로만 결정되어, 프로필에 IP를 남겨 둔 배포에서는 Maestro를 쓰지 않겠다는 의도를 표현할 수 없었습니다.
+- **조치**:
+  - 공통 contract v2.13.0의 `fleet.enabled`(`MAESTRO_ENABLED`, 기본값 `false`)를 vendoring하고 생성 아티팩트를 갱신했습니다(`./rclaw contract update --from`).
+  - `fleet_connector/config.py`: `maestro_enabled` 필드를 추가하고 `enabled`를 `maestro_enabled and bool(maestro_ip)`로 변경했습니다. `MAESTRO_ENABLED=true`에서 `MAESTRO_IP`/`ROBOT_ID`가 비면 `ValueError`로 종료합니다. boolean 환경변수 파싱은 `_env_flag()`로 통일했습니다(`FLEET_CONTROL_TLS` 포함).
+  - `server.py`: connector를 시작하지 않을 때 IP만 남아 있으면 그 사실을 INFO 로그로 남깁니다.
+  - `robo_claw_cli config-doctor`: `maestro_enabled=true`면 `maestro_ip`, `robot_id`, `use_grpc` 일관성을 검증합니다. `false`면 남아 있는 IP를 오류로 보지 않습니다.
+- **검증**: `./rclaw contract check` 통과, `pytest src/robo_claw_grpc/tests/test_fleet_connector*.py` 16 passed, `go test ./cmd/`(CLI)·`go vet ./...` 통과.
+- **마이그레이션**: 기존 `.env`/프로필에 `MAESTRO_ENABLED`가 없으면 connector가 시작되지 않습니다. 운영 프로필은 설정 서버에서 스위치를 켜고, 수동 `.env`는 `MAESTRO_ENABLED=true`를 추가해야 합니다.
+
 ## 2026-11-06 — VLM/스캔 객체를 장소 메모리에서 분리(object_location)
 
 - **배경**: cloid1 장소 테이블 21건 중 15건이 `person`, `table`, `chair`, `laptop` 같은 VLM 객체 라벨이었습니다. `analyze_scene`/`find_object`/`scan_room`이 `add_object_location()`으로 객체를 저장하는데 이 API가 항상 `type=location`으로 기록해, 객체가 시맨틱 맵 장소 목록·순회 목록·이동 목적지 해석에 섞였습니다(`person`으로 이동, 순찰에서 사람을 방으로 취급).

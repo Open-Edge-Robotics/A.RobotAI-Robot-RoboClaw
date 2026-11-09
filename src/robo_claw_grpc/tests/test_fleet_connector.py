@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+import pytest
 from robo_claw_grpc.fleet_connector.capabilities import (
     CapabilityManifest,
     build_capabilities,
@@ -42,12 +43,14 @@ def config(tmp_path: Path, policy=DisconnectPolicy.COMPLETE):
         maestro_ip="127.0.0.1",
         robot_port=50053,
         robot_id="robot-1",
+        maestro_enabled=True,
         journal_path=str(tmp_path / "commands.db"),
         disconnect_policy=policy,
     )
 
 
 def test_config_uses_required_environment_names(monkeypatch):
+    monkeypatch.setenv("MAESTRO_ENABLED", "true")
     monkeypatch.setenv("MAESTRO_IP", "10.0.0.1")
     monkeypatch.setenv("ROBOT_PORT", "50053")
     monkeypatch.setenv("ROBOT_ID", "former-1")
@@ -56,10 +59,40 @@ def test_config_uses_required_environment_names(monkeypatch):
 
     value = FleetConnectorConfig.from_env()
 
+    assert value.enabled is True
     assert value.target == "10.0.0.1:50053"
     assert value.robot_id == "former-1"
     assert value.map_frame_id == "map"
     assert value.disconnect_policy is DisconnectPolicy.COMPLETE
+
+
+def test_config_is_disabled_without_maestro_enabled(monkeypatch):
+    monkeypatch.setenv("MAESTRO_IP", "10.0.0.1")
+    monkeypatch.setenv("ROBOT_ID", "former-1")
+    monkeypatch.delenv("MAESTRO_ENABLED", raising=False)
+
+    value = FleetConnectorConfig.from_env()
+
+    assert value.maestro_enabled is False
+    assert value.enabled is False
+
+
+def test_config_requires_ip_when_enabled(monkeypatch):
+    monkeypatch.setenv("MAESTRO_ENABLED", "true")
+    monkeypatch.setenv("ROBOT_ID", "former-1")
+    monkeypatch.delenv("MAESTRO_IP", raising=False)
+
+    with pytest.raises(ValueError, match="MAESTRO_IP"):
+        FleetConnectorConfig.from_env()
+
+
+def test_config_requires_robot_id_when_enabled(monkeypatch):
+    monkeypatch.setenv("MAESTRO_ENABLED", "true")
+    monkeypatch.setenv("MAESTRO_IP", "10.0.0.1")
+    monkeypatch.delenv("ROBOT_ID", raising=False)
+
+    with pytest.raises(ValueError, match="ROBOT_ID"):
+        FleetConnectorConfig.from_env()
 
 
 def test_capabilities_are_intersected_with_runtime_skills(tmp_path):

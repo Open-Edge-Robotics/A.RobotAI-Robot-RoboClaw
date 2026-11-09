@@ -70,6 +70,7 @@ Schema version: `2.0`
 | `system1.skills` | `SYSTEM1_SKILLS` | `system1_skills` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.max_options` | `SYSTEM1_MAX_OPTIONS` | `system1_max_options` | `integer` | `12` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.api_key` | `SYSTEM1_API_KEY` | `system1_api_key` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
+| `fleet.enabled` | `MAESTRO_ENABLED` | `maestro_enabled` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.maestro_ip` | `MAESTRO_IP` | `maestro_ip` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.robot_port` | `ROBOT_PORT` | `robot_port` | `integer` | `50053` | `runtime` | `false` | local, docker, simulation, config_server |
 | `fleet.robot_id` | `ROBOT_ID` | `robot_id` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -344,9 +345,13 @@ Maximum number of candidate skills or places shown to System 1.
 
 Optional bearer API key for a hosted System 1 provider.
 
+### `fleet.enabled`
+
+Enable the outbound FleetControl connector to Maestro. When false the connector is never started even if fleet.maestro_ip is set.
+
 ### `fleet.maestro_ip`
 
-Maestro FleetControl server IP; empty disables the outbound connector.
+Maestro FleetControl server IP; the outbound connector uses it when fleet.enabled is true.
 
 ### `fleet.robot_port`
 

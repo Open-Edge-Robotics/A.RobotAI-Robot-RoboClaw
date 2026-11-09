@@ -220,7 +220,7 @@ ROS 배포판에 따라 최적화된 시뮬레이션 엔진을 자동으로 선�
 
 > **`ExecuteSkill` vs `ExecuteTask`**: `ExecuteSkill`은 지정한 스킬 하나를 즉시 실행(LLM 추론 우회). `ExecuteTask`는 자연어 명령을 에이전트에 전달해 LLM이 상황을 판단해 적절한 스킬을 선택·실행.
 
-`MAESTRO_IP`, `ROBOT_PORT`, `ROBOT_ID`를 설정하면 `robo_claw_grpc`가 Maestro의 FleetControl server로 outbound stream을 연결합니다. capability는 Robot의 `SKILLS.md`에서 구성하며 command 결과와 idempotency key는 local SQLite journal에 저장합니다. 설정과 disconnect 정책은 [docs/OPERATIONS.md](docs/OPERATIONS.md#maestro-fleetcontrol-outbound-connector)를 참고하세요.
+`MAESTRO_ENABLED=true`와 `MAESTRO_IP`, `ROBOT_PORT`, `ROBOT_ID`를 설정하면 `robo_claw_grpc`가 Maestro의 FleetControl server로 outbound stream을 연결합니다. `MAESTRO_ENABLED`가 `false`(기본값)면 IP가 지정되어 있어도 연결하지 않습니다. capability는 Robot의 `SKILLS.md`에서 구성하며 command 결과와 idempotency key는 local SQLite journal에 저장합니다. 설정과 disconnect 정책은 [docs/OPERATIONS.md](docs/OPERATIONS.md#maestro-fleetcontrol-outbound-connector)를 참고하세요.
 
 ### 3. HTTP API
 

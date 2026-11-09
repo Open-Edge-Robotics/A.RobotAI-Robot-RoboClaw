@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/wkqco33/wcli"
 	"github.com/wkqco33/wcli/logging"
@@ -70,6 +71,36 @@ func validateRuntimeManifest(schemaVersion, revision string, config map[string]i
 		if number, ok := domain.(float64); ok && (number < 0 || number > 232 || number != float64(int(number))) {
 			return fmt.Errorf("ros_domain_id가 올바르지 않습니다: %s", strconv.FormatFloat(number, 'f', -1, 64))
 		}
+	}
+	if err := validateMaestroConfig(config); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateMaestroConfig는 Maestro connector 스위치와 그 필수 값의 일관성을 검사한다.
+// maestro_enabled=false이면 maestro_ip가 남아 있어도 로봇은 연결하지 않는다.
+func validateMaestroConfig(config map[string]interface{}) error {
+	raw, ok := config["maestro_enabled"]
+	if !ok {
+		// 구버전 설정 서버는 스위치를 내려주지 않는다.
+		return nil
+	}
+	enabled, ok := raw.(bool)
+	if !ok {
+		return fmt.Errorf("maestro_enabled가 boolean이 아닙니다")
+	}
+	if !enabled {
+		return nil
+	}
+	if ip, ok := config["maestro_ip"].(string); !ok || strings.TrimSpace(ip) == "" {
+		return fmt.Errorf("maestro_enabled=true이면 maestro_ip가 필요합니다")
+	}
+	if id, ok := config["robot_id"].(string); !ok || strings.TrimSpace(id) == "" {
+		return fmt.Errorf("maestro_enabled=true이면 robot_id가 필요합니다")
+	}
+	if useGrpc, ok := config["use_grpc"].(bool); ok && !useGrpc {
+		return fmt.Errorf("maestro_enabled=true이면 use_grpc도 true여야 합니다")
 	}
 	return nil
 }

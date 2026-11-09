@@ -76,9 +76,10 @@ ExecuteTask action goal과 ExecuteSkill service 요청이 모두 단일 워커 �
 
 ## Maestro FleetControl outbound connector
 
-`robo_claw_grpc`를 실행할 때 `MAESTRO_IP`가 설정되어 있으면 Robot이 Maestro의 FleetControl server로 outbound stream을 연결합니다. `rclaw launch --docker --use-grpc`는 `.env`를 컨테이너에 전달하므로 다음 설정을 사용할 수 있습니다.
+`robo_claw_grpc`를 실행할 때 `MAESTRO_ENABLED=true`이면 Robot이 Maestro의 FleetControl server로 outbound stream을 연결합니다. `rclaw launch --docker --use-grpc`는 `.env`를 컨테이너에 전달하므로 다음 설정을 사용할 수 있습니다.
 
 ```bash
+MAESTRO_ENABLED=true
 ROBOT_ID=former-01
 MAESTRO_IP=192.168.10.10
 ROBOT_PORT=50053
@@ -92,7 +93,9 @@ MAESTRO_DISCONNECT_POLICY=complete
 FLEET_COMMAND_JOURNAL_PATH=/tmp/robo_claw_fleet_commands.sqlite3
 ```
 
-- `MAESTRO_IP`가 비어 있으면 connector는 비활성화됩니다.
+- `MAESTRO_ENABLED`가 `true`가 아니면 connector는 비활성화됩니다(기본값 `false`). `MAESTRO_IP`가 남아 있어도 연결하지 않으므로, 다른 Maestro 호스트로 임시 전환할 때 IP를 보존한 채 스위치로 끌 수 있습니다.
+- `MAESTRO_ENABLED=true`이면 `MAESTRO_IP`와 `ROBOT_ID`가 필수입니다. 누락 시 `robo_claw_grpc`가 설정 오류로 종료합니다.
+- connector는 `robo_claw_grpc` 프로세스 안에서 생성되므로 launch의 `use_grpc`(=`USE_GRPC`)도 함께 켜야 합니다.
 - 개발 단계의 insecure 연결은 신뢰할 수 있는 LAN에서만 사용합니다.
 - `ROBOT_ID`는 배포 동안 유지하고 `session_id`는 process 재시작마다 바뀝니다.
 - capability는 registration 직전에 에이전트 `/robo_claw_agent_node/query_state`가 반환하는 등록 스킬 목록으로 만듭니다. 내부 스킬은 제외하고 위험도(`read`/`dangerous`, 이동 스킬은 `motion`)와 input schema를 함께 전송합니다.
