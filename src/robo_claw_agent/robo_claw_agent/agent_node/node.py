@@ -21,6 +21,7 @@ from robo_claw_msgs.msg import AgentStatus
 from ..llm_bridge import BaseLLMBridge
 from ..observability import OperationTracker
 from ..skill_manager import SkillManager, SkillResult
+from ..skills.fleet_handoff import PEER_COLLAB_SKILLS, maestro_control_active
 from ..skills.limits import load_limits_dict
 from ..types import AgentState
 from .eligibility_gate import step_routing_mode
@@ -213,6 +214,12 @@ class AgentNode(Node, ExecutionMixin):
 
         allowed = _parse(p.skill_allowed_json)
         blocked = _parse(p.skill_blocked_json)
+        # Maestro 관제 중에는 peer 협업 스킬을 항상 차단한다(등록 해제의 백스톱).
+        if maestro_control_active():
+            blocked = sorted(set(blocked) | PEER_COLLAB_SKILLS)
+            self.get_logger().info(
+                "Maestro enabled: peer collaboration skills blocked by policy"
+            )
         self._skills.set_skill_policy(allowed=allowed, blocked=blocked)
 
     def _validate_required_configs(self, p) -> None:
@@ -448,6 +455,13 @@ class AgentNode(Node, ExecutionMixin):
 
     def _handle_peer_message(self, request, response):
         """자율협동 — 동료 로봇이 보낸 대화 메시지를 협동 인박스로 전달한다."""
+        if maestro_control_active():
+            # Maestro 관제 중에는 로봇끼리 직접 대화하지 않는다. Maestro가 중계한다.
+            response.success = False
+            response.error_message = (
+                "Maestro 관제 중에는 로봇 간 협동 메시지를 받지 않습니다."
+            )
+            return response
         peer_name = request.peer_name
         message = request.message
 
@@ -539,6 +553,8 @@ class AgentNode(Node, ExecutionMixin):
 
     def _ensure_autonomous_cooperate_for_peer_message(self, message: str) -> None:
         """협동 메시지를 처음 받는 로봇도 목표를 이어받아 자동 참여시킨다."""
+        if maestro_control_active():
+            return
         try:
             from ..skills.cooperation_skill.cooperate_autonomous import cooperation_start_params
             from ..skills.cooperation_skill.globals import is_cooperation_active

@@ -3,6 +3,18 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-09 — Maestro 관제 중 로봇 간 협업 차단
+
+- **배경**: Maestro는 여러 로봇의 계획·배정·기록을 단일 경로로 관리하는 상위 에이전트입니다. 그런데 Maestro를 켜도 에이전트는 peer 협업 스킬(`call_peer_robot`, `autonomous_cooperate` 등)을 그대로 노출했고, `~/peer_message`로 동료 메시지를 받으면 자율협동을 자동 시작했습니다. 기존 `fleet_handoff`의 "직접 위임 금지" 규칙도 `MAESTRO_IP` 유무로만 판정해 `MAESTRO_ENABLED`와 어긋났습니다.
+- **조치**:
+  - `skills/fleet_handoff.py`: `maestro_control_active()`(`MAESTRO_ENABLED`)를 추가하고 판정 기준을 통일했습니다. `peer_handoff_mode()`는 Maestro 활성 시 항상 `report`이며 `RC_PEER_HANDOFF_MODE=direct` override는 무시하고 경고합니다. peer 협업 스킬 목록(`PEER_COLLAB_SKILLS`)을 상수로 정의했습니다(자리 양보는 제외).
+  - `agent_node/initialization.py`: 스킬 로드 직후 peer 협업 스킬을 **등록 해제**해 LLM 도구 목록·`query_state`·FleetControl capability에서 제거합니다.
+  - `agent_node/node.py`: `_apply_skill_policy`가 peer 협업 스킬을 항상 차단(백스톱)하고, `~/peer_message` 수신을 거부하며, 동료 메시지로 인한 자율협동 자동 시작을 막습니다.
+  - `agent_node/prompts.py`: 프롬프트/SKILLS.md 가이드에서 peer 협업 스킬 안내 문구를 제거하고 Maestro 보고 규칙으로 대체합니다.
+  - `robo_claw_channel/client_node.py`: Maestro 활성 시 설정된 peer 연결을 열지 않고 경고합니다(설정 계층 정규화의 백스톱).
+  - `.env.example`·`docs/PEER_COLLABORATION.md`·`docs/OPERATIONS.md`·`README.md`에 Maestro 사용 시 금지 규칙과 예외(자리 양보)를 명시했습니다.
+- **검증**: `pytest src/robo_claw_agent/tests/test_peer_isolation.py src/robo_claw_agent/tests/test_fleet_handoff.py` 12 passed, `pytest src/robo_claw_agent/tests` 1693 passed, `pytest src/robo_claw_channel/tests src/robo_claw_grpc/tests` 155 passed, `ruff check src/` 통과. 기존 실패 10건은 842fd12가 `manipulation_skill/core.py:107`에서 `include_objects=True`를 넘기도록 바꾸면서 테스트 스텁이 갱신되지 않은 건으로, 이번 변경과 무관합니다.
+
 ## 2026-11-09 — Maestro connector 실행 스위치(MAESTRO_ENABLED) 도입
 
 - **배경**: Maestro FleetControl outbound connector의 실행 여부가 `MAESTRO_IP` 값의 유무로만 결정되어, 프로필에 IP를 남겨 둔 배포에서는 Maestro를 쓰지 않겠다는 의도를 표현할 수 없었습니다.

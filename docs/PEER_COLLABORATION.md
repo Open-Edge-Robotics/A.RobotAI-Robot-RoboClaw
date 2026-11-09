@@ -1,5 +1,29 @@
 # 멀티 에이전트(동료 로봇) 협업
 
+## Maestro 사용 시 (MAESTRO_ENABLED=true)
+
+Maestro가 로봇 명령의 단일 경로인 배포에서는 아래 기능이 **비활성화**됩니다.
+
+- `delegate_task`, `call_peer_robot`, `broadcast_to_peers`, `list_peer_robots`,
+  `query_peer_status`, `query_peer_capabilities`, `coordinate_peer_task`,
+  `autonomous_cooperate`, `stop_autonomous_cooperate` 스킬은 **등록되지 않습니다**
+  (LLM 도구 목록, `query_state`, FleetControl capability에도 나타나지 않음).
+- `~/peer_message` 수신이 거부되고, 동료 메시지로 자율협동이 자동 시작되지 않습니다.
+- `ENABLE_GRPC`, `ENABLE_GRPC_CLIENT`, `GRPC_TARGET_PEERS_JSON`은 설정 서버가
+  `false`/`[]`로 정규화하며, 값이 남아 있어도 client_node가 연결을 열지 않습니다.
+- 동료 작업이 필요하면 스킬 결과의 `peer_requests`로 보고하고, Maestro가 해당
+  동료에게 후속 작업을 보냅니다. `RC_PEER_HANDOFF_MODE=direct`는 무시됩니다.
+
+**예외**: `request_yield_slot`(`~/yield_slot`)은 LLM 판단이 없는 결정론적 충돌
+방지 프로토콜이므로 Maestro 사용 중에도 유지합니다.
+
+**혼재 플릿 주의**: Maestro 명령과 동료 로봇의 `delegate_task`는 같은
+`/execute_task` 액션을 사용해 수신 측에서 출처를 구분할 수 없습니다. Maestro를
+쓰는 플릿은 모든 로봇에 `MAESTRO_ENABLED=true`를 배포해 peer 스킬을 함께
+비활성화해야 합니다.
+
+아래 내용은 Maestro를 사용하지 않는(=`MAESTRO_ENABLED=false`) 배포에 적용됩니다.
+
 RoboClaw 에이전트는 두 가지 방식으로 다른 RoboClaw 인스턴스와 협업할 수 있습니다.
 
 | 방식                    | 스킬                                                                             | 대상                                              | 특징                                                                                                            |

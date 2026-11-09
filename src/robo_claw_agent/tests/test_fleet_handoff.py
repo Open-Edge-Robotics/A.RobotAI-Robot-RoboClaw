@@ -13,15 +13,24 @@ from robo_claw_agent.skills import fleet_handoff
 pytestmark = pytest.mark.unit
 
 
-def test_mode_defaults_to_report_when_maestro_is_configured(monkeypatch):
+def test_mode_defaults_to_report_when_maestro_is_enabled(monkeypatch):
     assert fleet_handoff.peer_handoff_mode() == "direct"
-    monkeypatch.setenv("MAESTRO_IP", "192.168.50.114")
+    monkeypatch.setenv("MAESTRO_ENABLED", "true")
     assert fleet_handoff.peer_handoff_mode() == "report"
+    # Maestro 활성 중에는 direct 수동 override를 무시한다.
     monkeypatch.setenv("RC_PEER_HANDOFF_MODE", "direct")
+    assert fleet_handoff.peer_handoff_mode() == "report"
+    monkeypatch.delenv("MAESTRO_ENABLED")
     assert fleet_handoff.peer_handoff_mode() == "direct"
-    monkeypatch.delenv("MAESTRO_IP")
     monkeypatch.setenv("RC_PEER_HANDOFF_MODE", "report")
     assert fleet_handoff.peer_handoff_mode() == "report"
+
+
+def test_maestro_ip_alone_no_longer_forces_report_mode(monkeypatch):
+    """스위치 도입 후에는 MAESTRO_IP만 남아 있어도 관제 중으로 보지 않는다."""
+    monkeypatch.setenv("MAESTRO_IP", "192.168.50.114")
+    assert fleet_handoff.maestro_control_active() is False
+    assert fleet_handoff.peer_handoff_mode() == "direct"
 
 
 def _demo_handoff(monkeypatch):
@@ -49,7 +58,7 @@ def _demo_handoff(monkeypatch):
 
 
 def test_under_maestro_the_peer_is_not_called_and_the_need_is_reported(monkeypatch):
-    monkeypatch.setenv("MAESTRO_IP", "192.168.50.114")
+    monkeypatch.setenv("MAESTRO_ENABLED", "true")
     handoff, skill = _demo_handoff(monkeypatch)
 
     assert handoff.tick() == NodeStatus.SUCCESS
@@ -79,7 +88,7 @@ def test_without_maestro_the_existing_direct_handoff_is_kept(monkeypatch):
 def test_tidy_home_waits_and_returns_peer_requests_under_maestro(monkeypatch):
     from robo_claw_agent.skills import tidy_home_skill
 
-    monkeypatch.setenv("MAESTRO_IP", "192.168.50.114")
+    monkeypatch.setenv("MAESTRO_ENABLED", "true")
     skill = TidyHomeSkill()
     skill.node = MagicMock()
     skill.node._skills.has_skill.return_value = False

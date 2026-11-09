@@ -96,6 +96,7 @@ FLEET_COMMAND_JOURNAL_PATH=/tmp/robo_claw_fleet_commands.sqlite3
 - `MAESTRO_ENABLED`가 `true`가 아니면 connector는 비활성화됩니다(기본값 `false`). `MAESTRO_IP`가 남아 있어도 연결하지 않으므로, 다른 Maestro 호스트로 임시 전환할 때 IP를 보존한 채 스위치로 끌 수 있습니다.
 - `MAESTRO_ENABLED=true`이면 `MAESTRO_IP`와 `ROBOT_ID`가 필수입니다. 누락 시 `robo_claw_grpc`가 설정 오류로 종료합니다.
 - connector는 `robo_claw_grpc` 프로세스 안에서 생성되므로 launch의 `use_grpc`(=`USE_GRPC`)도 함께 켜야 합니다.
+- Maestro 사용 중에는 로봇 간 협업이 금지됩니다. peer 협업 스킬(`delegate_task`, `call_peer_robot`, `broadcast_to_peers`, `list_peer_robots`, `query_peer_status`, `query_peer_capabilities`, `coordinate_peer_task`, `autonomous_cooperate`, `stop_autonomous_cooperate`)은 등록되지 않고, `~/peer_message` 수신도 거부됩니다. 동료 작업은 결과의 `peer_requests`로 Maestro에 보고합니다. `ENABLE_GRPC`/`ENABLE_GRPC_CLIENT`/`GRPC_TARGET_PEERS_JSON`은 설정 서버가 꺼 버리며, 자리 양보(`request_yield_slot`)는 안전 프로토콜이라 유지됩니다. 자세한 내용은 [PEER_COLLABORATION.md](PEER_COLLABORATION.md#maestro-사용-시-maestro_enabledtrue)를 참고하세요.
 - 개발 단계의 insecure 연결은 신뢰할 수 있는 LAN에서만 사용합니다.
 - `ROBOT_ID`는 배포 동안 유지하고 `session_id`는 process 재시작마다 바뀝니다.
 - capability는 registration 직전에 에이전트 `/robo_claw_agent_node/query_state`가 반환하는 등록 스킬 목록으로 만듭니다. 내부 스킬은 제외하고 위험도(`read`/`dangerous`, 이동 스킬은 `motion`)와 input schema를 함께 전송합니다.

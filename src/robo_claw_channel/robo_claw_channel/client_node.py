@@ -43,6 +43,14 @@ from .ros_future_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _maestro_control_active() -> bool:
+    """Maestro가 명령 단일 경로인 배포인지 여부(환경변수 기준)."""
+    raw = os.getenv("MAESTRO_ENABLED")
+    if raw is None or not raw.strip():
+        return False
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 _MAX_PEER_QUEUE_SIZE = 128
 
 
@@ -281,6 +289,15 @@ class MessengerClientNode(Node):
                 "'robo_claw_agent'. Set a unique agent_id per robot so cooperation replies "
                 "can be routed to the correct peer."
             )
+
+        # Maestro 관제 중에는 로봇끼리 직접 연결하지 않는다. 설정이 남아 있어도
+        # outbound peer 연결을 열지 않는다(설정 계층 정규화의 백스톱).
+        if _maestro_control_active() and self._peers:
+            self.get_logger().warning(
+                "Maestro enabled: peer collaboration is disabled — ignoring "
+                f"{len(self._peers)} configured peer connection(s)"
+            )
+            self._peers = []
 
         # 백그라운드 gRPC 연결 및 수신 스레드 시작
         for peer in self._peers:

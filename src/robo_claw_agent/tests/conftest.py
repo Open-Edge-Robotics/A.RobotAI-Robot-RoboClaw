@@ -151,6 +151,7 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(autouse=True)
 def _default_peer_handoff_mode(monkeypatch):
-    """Keep peer-handoff tests independent of a developer's MAESTRO_IP environment."""
+    """Keep Maestro/peer-handoff tests independent of the developer environment."""
+    monkeypatch.delenv("MAESTRO_ENABLED", raising=False)
     monkeypatch.delenv("MAESTRO_IP", raising=False)
     monkeypatch.delenv("RC_PEER_HANDOFF_MODE", raising=False)

@@ -679,6 +679,31 @@ def _append_shared_sections(node, base: str) -> str:
     return base
 
 
+def strip_peer_collaboration_guidance(text: str) -> str:
+    """Maestro 관제 중에는 peer 협업 스킬 안내를 프롬프트에서 제거한다.
+
+    스킬 자체가 등록 해제되지만, 정적 프롬프트/SKILLS.md 가이드에 남은
+    ``call_peer_robot`` 같은 문구를 LLM이 그대로 시도하지 않도록 정리한다.
+    """
+    from robo_claw_agent.skills.fleet_handoff import PEER_COLLAB_SKILLS
+
+    tokens = tuple(f"`{name}`" for name in sorted(PEER_COLLAB_SKILLS))
+    note = (
+        "  - Maestro 관제 중이므로 로봇 간 협업/위임 스킬은 제공되지 않습니다. "
+        "동료 작업이 필요하면 결과의 peer_requests로 보고하세요."
+    )
+    kept: list[str] = []
+    note_added = False
+    for line in text.splitlines():
+        if any(token in line for token in tokens):
+            continue
+        kept.append(line)
+        if not note_added and line.strip().startswith("11.") and "협업/진단" in line:
+            kept.append(note)
+            note_added = True
+    return "\n".join(kept)
+
+
 def assemble_static_prompt_base(node, *, tool_mode: bool = False) -> str:
     """스킬 목록·가이드 등 정적 프롬프트 영역을 1회만 조립해 캐시한다.
 
@@ -710,6 +735,11 @@ def assemble_static_prompt_base(node, *, tool_mode: bool = False) -> str:
             base = base + f"\n\n[사용 가능한 스킬]\n{skill_lines}"
 
     base = _append_shared_sections(node, base)
+
+    from robo_claw_agent.skills.fleet_handoff import maestro_control_active
+
+    if maestro_control_active():
+        base = strip_peer_collaboration_guidance(base)
 
     setattr(node, cache_attr, base)
     return base

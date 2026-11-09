@@ -116,6 +116,24 @@ class SkillManager:
         self._skills[skill.name] = skill
         logger.info("Skill registered: %s", skill.name)
 
+    def remove_skills(self, names: list[str] | set[str] | frozenset[str]) -> list[str]:
+        """이름 목록에 해당하는 스킬을 등록 해제한다.
+
+        Maestro 관제 중 peer 협업 스킬처럼 배포 정책상 아예 노출하지 않아야 하는
+        스킬은 실행 정책 차단만으로 부족하다(LLM 도구 목록, ``query_state``,
+        FleetControl capability 에 계속 나타남). 로드 직후 등록을 해제한다.
+        """
+        removed: list[str] = []
+        for name in names:
+            normalized = str(name).strip()
+            if not normalized:
+                continue
+            if self._skills.pop(normalized, None) is not None:
+                removed.append(normalized)
+        if removed:
+            logger.info("Skills removed: %s", sorted(removed))
+        return removed
+
     def load_from_module(self, module_path: str) -> None:
         """
         모듈 경로에서 BaseSkill 서브클래스를 모두 로드.

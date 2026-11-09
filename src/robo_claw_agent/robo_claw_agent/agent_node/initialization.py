@@ -28,6 +28,7 @@ from robo_claw_msgs.srv import (
 
 from ..llm_bridge import create_llm_bridge
 from ..memory_manager import MemoryManager
+from ..skills.fleet_handoff import PEER_COLLAB_SKILLS, maestro_control_active
 from ..tracing import init_tracing, suppress_call_logging
 from ..vector_store import DualVectorStore, QdrantVectorStore
 from .params import AgentParams
@@ -236,6 +237,17 @@ def load_skills(node, p: AgentParams) -> None:
     """스킬 모듈과 MCP 서버 스킬을 로드한다."""
     for module in p.skill_modules:
         node._skills.load_from_module(module)
+
+    # Maestro 관제 중에는 로봇끼리 직접 명령하지 않는다. peer 협업 스킬은
+    # 등록 자체를 해제해 LLM 도구 목록·query_state·FleetControl capability 에서
+    # 모두 사라지게 한다(실행 정책 차단은 백스톱으로 유지).
+    if maestro_control_active():
+        removed = node._skills.remove_skills(PEER_COLLAB_SKILLS)
+        if removed:
+            node.get_logger().info(
+                "Maestro enabled: peer collaboration skills disabled "
+                f"({', '.join(sorted(removed))})"
+            )
 
     if p.mcp_enabled and p.mcp_servers_json:
         try:
