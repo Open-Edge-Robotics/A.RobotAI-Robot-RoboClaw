@@ -147,3 +147,10 @@ def pytest_collection_modifyitems(config, items):
         # mcp 마커
         if "mcp" in item.keywords and not _is_module_available("mcp"):
             item.add_marker(skip_mcp)
+
+
+@pytest.fixture(autouse=True)
+def _default_peer_handoff_mode(monkeypatch):
+    """Keep peer-handoff tests independent of a developer's MAESTRO_IP environment."""
+    monkeypatch.delenv("MAESTRO_IP", raising=False)
+    monkeypatch.delenv("RC_PEER_HANDOFF_MODE", raising=False)

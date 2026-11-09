@@ -28,6 +28,7 @@ from .cleanup_policy import (
     _select_cloid_indicator_motion,
 )
 from .cleanup_run_metrics import new_run_id, record_cleanup_run
+from .fleet_handoff import REPORTED_STATUS, reports_to_maestro
 
 logger = logging.getLogger(__name__)
 _MAX_CLEANUP_ACTIONS_PER_PLACE = 4
@@ -90,6 +91,13 @@ class TidyHomeSkill(BaseSkill):
                     "값을 주면 그 수만큼만 확인합니다."
                 ),
             },
+            "wait_for_completion": {
+                "type": "boolean",
+                "description": (
+                    "true면 정리를 끝까지 마친 뒤 장소별 결과와 peer_requests를 반환합니다. "
+                    "생략하면 Maestro 관제 중에는 true, 아니면 false(시작 즉시 반환)."
+                ),
+            },
         },
         "additionalProperties": False,
     }
@@ -112,6 +120,9 @@ class TidyHomeSkill(BaseSkill):
         self._previous_indicator_motion_id: int | None = None
         self._places_truncated = False
         self._place_limit = 0
+        # 현재 실행에서 Maestro에 보고할 동료 작업(fleet_handoff.py)과 마지막 실행 결과.
+        self._run_peer_requests: list[dict[str, Any]] = []
+        self._last_run: dict[str, Any] = {}
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         scope = str(params.get("scope", "home")).strip().lower()
@@ -142,6 +153,8 @@ class TidyHomeSkill(BaseSkill):
             )
         if (error := self.require_node()) is not None:
             return error
+        wait = params.get("wait_for_completion")
+        wait_for_completion = reports_to_maestro() if wait is None else bool(wait)
 
         skills = getattr(self.node, "_skills", None)
         if skills is not None and skills.has_skill("run_butler_script"):
@@ -191,6 +204,11 @@ class TidyHomeSkill(BaseSkill):
             return self.fail_result(
                 f"정리 작업을 시작하지 못했습니다: {exc}", failure_reason="start_failed"
             )
+        if wait_for_completion:
+            # Maestro가 실제 완료와 결과를 알 수 있도록 끝날 때까지 기다린다.
+            # 스킬 timeout은 SkillManager가 관리한다(초과 시 timeout 실패로 응답).
+            worker.join()
+            return self._completion_result(run_id)
         start_message = f"{len(places)}개 기억 장소를 대상으로 한 번의 정리 작업을 시작했습니다."
         if self._places_truncated:
             start_message += (
@@ -325,6 +343,8 @@ class TidyHomeSkill(BaseSkill):
         target_location: str = "",
     ) -> None:
         results: list[dict[str, Any]] = []
+        self._run_peer_requests = []
+        self._last_run = {}
         found_cleanup_target = False
         # 실험 계측 — 구간별 소요 시간을 같은 키로 누적해 표 2의 평균 시간을 계산한다.
         phase_ms: dict[str, float] = {}
@@ -476,7 +496,47 @@ class TidyHomeSkill(BaseSkill):
                 )
             except Exception:  # noqa: BLE001
                 logger.warning("[TidyHome] run log record failed", exc_info=True)
+            self._last_run = {
+                "run_id": run_id,
+                "results": [dict(result) for result in results],
+                "peer_requests": list(self._run_peer_requests),
+                "error": run_error,
+            }
             release_autonomous()
+
+    def _completion_result(self, run_id: str) -> dict[str, Any]:
+        """wait_for_completion 실행의 최종 결과. 동료 작업은 peer_requests로 보고한다."""
+        run = self._last_run if self._last_run.get("run_id") == run_id else {}
+        results = list(run.get("results", []))
+        peer_requests = list(run.get("peer_requests", []))
+        error = str(run.get("error", ""))
+        summary = ", ".join(f"{item['place']}: {item['status']}" for item in results)
+        detail = {
+            "run_id": run_id,
+            "results": results,
+            "peer_requests": peer_requests,
+        }
+        if error:
+            return self.fail_result(
+                f"정리 작업이 중단됐습니다: {error}", failure_reason="run_error", **detail
+            )
+        if any(item.get("status") == "cancelled" for item in results):
+            return self.fail_result(
+                "정리 작업이 취소되었습니다.",
+                failure_reason="cancelled",
+                status="cancelled",
+                **detail,
+            )
+        if not results or all(item.get("status") in _INCOMPLETE_PLACE_STATES for item in results):
+            return self.fail_result(
+                f"정리 장소를 확인하지 못했습니다. {summary}".strip(),
+                failure_reason="places_not_checked",
+                **detail,
+            )
+        message = f"정리 작업을 마쳤습니다. 장소별 결과: {summary}"
+        if peer_requests:
+            message += f" 동료 작업 {len(peer_requests)}건을 Maestro에 보고합니다."
+        return self.success_result(message, status="completed", **detail)
 
     def _visit_place(self, place_name: str) -> tuple[bool, str]:
         from robo_claw_agent.skills.navigation_skill.patrol import visit_place
@@ -628,6 +688,12 @@ class TidyHomeSkill(BaseSkill):
             return "planning_failed"
         if blackboard.get("cleanup_handoff_blocked"):
             return "unhandled"
+        report = blackboard.get("cleanup_handoff_report")
+        if isinstance(report, dict):
+            self._run_peer_requests.append(
+                {**report, "source_robot": str(getattr(self.node, "_agent_id", "") or "")}
+            )
+            return REPORTED_STATUS
         if (
             not blackboard.get("cleanup_handoff_prepared")
             and blackboard.get("decided_skill") != "execute_cloid_motion"
