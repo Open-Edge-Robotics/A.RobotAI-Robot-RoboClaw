@@ -453,6 +453,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/DUAL_CAMERA_GRASP.md](docs/DUAL_CAMERA_GRASP.md)                       | 헤드 카메라 병용 파지(서보 + ArUco 차분 보정) 설계·튜닝                   |
 | [docs/HEAD_CAMERA_UPRIGHT_ROTATION.md](docs/HEAD_CAMERA_UPRIGHT_ROTATION.md) | 헤드 카메라 세로 마운트 회전 보정                                         |
 | [docs/CLOiD_GUIDE.md](docs/CLOiD_GUIDE.md)                                   | CLOi 플랫폼 서비스 구동(submodule) 가이드                                 |
+| [docs/TOFU_ETHERCAT_LICENSE.md](docs/TOFU_ETHERCAT_LICENSE.md)               | CLOiD EtherCAT 라이선스 시간 제한·관절 제어 중단 진단                      |
 | [docs/PROMPT_TOKEN_COUNT.md](docs/PROMPT_TOKEN_COUNT.md)                     | 프롬프트 토큰 수 측정(`count_prompt_tokens.py`)·`num_ctx` 산정            |
 | [docs/AI_CONFIG_VIEWER.md](docs/AI_CONFIG_VIEWER.md)                         | AI Config 활성 설정의 LLM·임베딩 하이퍼파라미터 조회(`show_ai_config.py`) |
 | [docs/RESET_ROBOT_STATE.md](docs/RESET_ROBOT_STATE.md)                       | 호스트 SSH 로봇 상태 초기화(`reset_robot_state.sh`)                       |

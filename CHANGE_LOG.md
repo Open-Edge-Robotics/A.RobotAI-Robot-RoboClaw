@@ -3,6 +3,10 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — CLOiD EtherCAT 라이선스 운영 진단 문서
+
+- **Added**: [CLOiD EtherCAT 라이선스 진단 문서](docs/TOFU_ETHERCAT_LICENSE.md)를 추가합니다. CLOiD2의 약 62분 후 관절 제어 중단과 라이선스 누락 검증 결과를 정리하며, 미해결 상태와 정식 키 발급 후 70분 이상 재검증 필요성을 명시합니다.
+
 ## 2026-11-10 — AGX 구동 실패 감시 및 팔·섀시 좌표계 분리
 
 - **Fixed**: `agx_health.py`에 ROS 의존성이 없는 진단 판정을 분리합니다. `arm_status=NORMAL`이어도 목표 발행 후 새 진단의 `motion_status=1`이면 실패로 보고하고 목표 재전송을 중단합니다. 진단 항목별 오류를 검사하며 다른 항목의 `NO_SOLUTION`이 하드웨어 오류를 가리지 않도록 합니다. 면제 범위는 다른 오류가 없는 `NO_SOLUTION`에 한정합니다.
