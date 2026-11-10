@@ -31,6 +31,7 @@ from std_srvs.srv import Empty, SetBool
 from ._ros_sync import wait_for_future_sync
 from .agx_health import (
     ARM_STATUS_NO_SOLUTION,
+    describe_arm_status,
     diagnose_arm_status,
     diagnose_motion_faults,
     diagnose_motor_status,
@@ -45,7 +46,6 @@ from .types import MotionOutcome
 logger = logging.getLogger(__name__)
 
 _POSITION_KEYS = ("x", "y", "z")
-_REPUBLISH_INTERVAL_SEC = 0.5
 #: joint_states 피드백 로그 간격. 드라이버는 수십~수백 Hz 로 피드백을 발행하므로
 #: 콜백마다 INFO 를 남기면 로그가 폭주한다.
 _FEEDBACK_LOG_INTERVAL_SEC = 10.0
@@ -399,26 +399,56 @@ class AgxDriverBackend:
                 )
             self._spin_once()
 
+    def _wait_for_single_subscriber(self, label: str, publisher: Any) -> None:
+        """발행 직전에 제어 토픽 구독자가 정확히 하나인지 확인한다.
+
+        같은 드라이버 토픽을 여러 프로세스가 구독하면 어느 쪽이 명령을 수행할지 알 수
+        없으므로(예: 중복 드라이버 인스턴스) 발행을 거부한다. 구독자가 있기 전에
+        발행한 명령은 유실되므로 ``agx_feedback_timeout_sec`` 까지만 기다린다.
+        ``get_subscription_count`` 가 없는 대역 publisher 는 이 검사를 생략한다.
+        """
+        count_fn = getattr(publisher, "get_subscription_count", None)
+        if not callable(count_fn):
+            return
+        timeout = float(self._config.agx_feedback_timeout_sec)
+        deadline = time.monotonic() + timeout
+        while True:
+            count = int(count_fn())
+            if count == 1:
+                return
+            if count > 1:
+                raise ManipulationError(
+                    f"{label}: 제어 토픽 구독자가 {count}개라 어느 드라이버가 명령을 수행할지 "
+                    "모호합니다. 중복 드라이버/브리지를 정리할 때까지 명령을 발행하지 않습니다."
+                )
+            if time.monotonic() > deadline:
+                raise ManipulationError(
+                    f"{label}: {timeout:.1f}초 안에 제어 토픽 구독자를 찾지 못해 명령을 "
+                    "발행하지 않았습니다. 드라이버 기동과 ROS_DOMAIN_ID/RMW 설정을 확인하세요."
+                )
+            self._spin_once()
+
     def _wait_until(
         self,
         predicate: Any,
         label: str,
         feedback_seen: Any,
-        republish_fn: Any = None,
         *,
         diagnostics_baseline: tuple[int, int] | None = None,
         allow_no_solution: bool = True,
     ) -> None:
-        """목표 수렴까지 대기한다. 피드백/목표 도달 실패는 예외로 알린다.
+        """목표 수렴까지 대기한다. 피드백 상실/목표 미수렴은 예외로 알린다.
 
-        이동이 시작된 뒤 도착한 드라이버 진단(``motion_status``/``err_status``/모터
-        이상)은 목표 도달·재발행 판단보다 먼저 검사해, 실패가 확인되면 같은 명령을
-        반복 발행하지 않고 즉시 중단한다.
+        이동 중 도착한 드라이버 진단(``err_status``/``arm_status``/모터 이상)은 목표
+        도달 판단보다 먼저 검사해, 실제 하드웨어 오류가 확인되면 즉시 중단한다.
+        ``motion_status=1``(아직 도착하지 않음)은 정상 진행 상태이므로 실패로 보지 않고
+        피드백 수렴과 타임아웃만 본다. 목표 명령은 한 번만 발행하며 대기 중에 다시
+        발행하지 않는다(재발행은 드라이버 궤적을 다시 시작시키거나 거부된 명령을
+        무의미하게 반복한다).
         """
         start = time.monotonic()
         motion_deadline = start + float(self._config.agx_motion_timeout_sec)
         feedback_deadline = start + float(self._config.agx_feedback_timeout_sec)
-        last_publish = start
         last_log = start
         if diagnostics_baseline is None:
             diagnostics_baseline = self._diagnostics_baseline()
@@ -440,13 +470,14 @@ class AgxDriverBackend:
                 )
             if now > motion_deadline:
                 self._driver_ready = False
+                summary = describe_arm_status(self._latest_arm_status)
+                self._log_info(f"{label}: 목표 미수렴, 최신 팔 상태({summary})")
                 raise ManipulationError(
                     f"{label}: {float(self._config.agx_motion_timeout_sec):.1f}초 내에 "
-                    f"목표에 도달하지 못했습니다."
+                    f"목표에 도달하지 못했습니다. 최신 팔 상태({summary}). "
+                    "이 필드만으로 실패 원인을 단정하지 말고 목표 미수렴과 드라이버 "
+                    "로그를 확인하세요."
                 )
-            if republish_fn is not None and (now - last_publish) >= _REPUBLISH_INTERVAL_SEC:
-                republish_fn()
-                last_publish = now
             if (now - last_log) >= 1.0:
                 cur_gripper = (
                     dict(
@@ -727,13 +758,13 @@ class AgxDriverBackend:
         msg.name = list(cmd_positions.keys())
         msg.position = [cmd_positions[name] for name in msg.name]
         diagnostics_baseline = self._diagnostics_baseline()
+        self._wait_for_single_subscriber("joint 목표", self._move_joint_pub)
         self._move_joint_pub.publish(msg)
 
         self._wait_until(
             lambda: self._joints_reached(targets),
             "joint 목표",
             lambda: self._joint_feedback_seen,
-            republish_fn=lambda: self._move_joint_pub.publish(msg),
             diagnostics_baseline=diagnostics_baseline,
         )
         self._set_last_motion(already_at_target=already_at_target)
@@ -789,13 +820,13 @@ class AgxDriverBackend:
 
         publisher = self._move_linear_pub if cartesian else self._move_pose_pub
         diagnostics_baseline = self._diagnostics_baseline()
+        self._wait_for_single_subscriber("pose 목표", publisher)
         publisher.publish(msg)
 
         self._wait_until(
             lambda: self._pose_reached(targets),
             "pose 목표",
             lambda: self._tcp_feedback_seen,
-            republish_fn=lambda: publisher.publish(msg),
             diagnostics_baseline=diagnostics_baseline,
             allow_no_solution=False,
         )

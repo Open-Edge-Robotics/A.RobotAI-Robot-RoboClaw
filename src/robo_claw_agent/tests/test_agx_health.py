@@ -210,8 +210,8 @@ def test_ok_level_statuses_do_not_block_commands():
     assert diagnosis.blocking is None
 
 
-def test_pre_existing_motion_failure_does_not_block_new_command():
-    """명령 이전부터 남은 motion_status 실패는 새 조인트 이동 시도를 막지 않는다."""
+def test_pre_existing_not_arrived_status_does_not_block_new_command():
+    """명령 이전부터 남은 motion_status=1(아직 도착하지 않음)은 새 이동을 막지 않는다."""
     msg = _Array(_status(2, arm_status="0", err_status="0", motion_status="1"))
 
     assert diagnose_arm_status(msg, allow_no_solution=True).blocking is None
@@ -229,15 +229,64 @@ def test_bytes_level_is_normalized():
 # ── 이동 시작 이후 새 샘플 검사 ──
 
 
-def test_motion_failure_blocks_even_at_ok_level():
-    """드라이버는 motion_status=1 을 level 0 으로도 발행한다."""
-    msg = _Array(_status(0, arm_status="0", err_status="0", motion_status="1"))
+def test_motion_status_not_arrived_alone_is_not_a_fault():
+    """Byte4 의 0x01 은 목표 도달 실패가 아니라 '아직 도착하지 않음'이다."""
+    msg = _Array(
+        _status(
+            0,
+            arm_status="0",
+            err_status="0",
+            motion_status=str(agx_health.MOTION_STATUS_NOT_ARRIVED),
+        )
+    )
 
-    entry = diagnose_motion_faults(msg, allow_no_solution=True)
+    assert diagnose_motion_faults(msg, allow_no_solution=True) is None
+
+
+def test_motion_status_not_arrived_does_not_mask_hardware_error():
+    """도착 전 비트가 켜져 있어도 같은 엔트리의 하드웨어 오류는 그대로 알린다."""
+    entry = diagnose_motion_faults(
+        _Array(
+            _status(
+                2,
+                name="joint7",
+                message="arm_status=JOINT_COMMUNICATION_ERR(0x5)",
+                arm_status="0x5",
+                err_status="0",
+                motion_status="1",
+            )
+        ),
+        allow_no_solution=True,
+    )
 
     assert entry is not None
-    assert "arm_status=0" in entry.summary()
+    assert entry.arm_status == 5
     assert "motion_status=1" in entry.summary()
+
+
+def test_motion_status_not_arrived_with_nonzero_err_status_blocks():
+    entry = diagnose_motion_faults(
+        _Array(_status(0, arm_status="0", err_status="3", motion_status="1")),
+        allow_no_solution=True,
+    )
+
+    assert entry is not None
+    assert entry.err_status == 3
+
+
+def test_arm_status_summary_reports_latest_fields_without_cause_claim():
+    """타임아웃 로그에는 최신 필드 값만 넣고 원인을 단정하지 않는다."""
+    summary = agx_health.describe_arm_status(
+        _Array(_status(0, name="arm", arm_status="0", err_status="0", motion_status="1"))
+    )
+
+    assert "arm_status=0" in summary
+    assert "motion_status=1" in summary
+    assert "err_status=0" in summary
+
+
+def test_arm_status_summary_handles_missing_diagnostics():
+    assert agx_health.describe_arm_status(None) == "진단 없음"
 
 
 def test_nonzero_err_status_blocks_before_dispatch_even_at_ok_level():

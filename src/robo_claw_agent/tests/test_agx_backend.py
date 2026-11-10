@@ -738,8 +738,102 @@ def test_joint_move_rejects_singularity_and_target_limit(code: int) -> None:
     assert not _published_messages(node, config.agx_move_joint_topic)
 
 
-def test_joint_move_stops_publishing_when_motion_failure_arrives_during_wait() -> None:
-    """이동 시작 뒤 도착한 motion_status=1 은 level 0 이어도 즉시 실패시킨다."""
+def test_joint_move_completes_while_motion_status_reports_not_arrived(monkeypatch) -> None:
+    """motion_status=1(아직 도착하지 않음)은 정상 진행이므로 계속 대기한다."""
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=1.0, agx_feedback_timeout_sec=0.1)
+    backend = AgxDriverBackend(node, config)
+    joint_callback = node.subscriptions[config.agx_joint_state_topic]
+    arm_callback = node.subscriptions[config.agx_arm_status_topic]
+    joint_callback(_joint_state(["joint1"], [0.0]))  # type: ignore[operator]
+
+    positions = iter([0.3, 0.6, 1.0])
+
+    def step() -> None:
+        clock.now += 0.05
+        joint_callback(_joint_state(["joint1"], [next(positions, 1.0)]))  # type: ignore[operator]
+        arm_callback(  # type: ignore[operator]
+            _arm_status(0, "not arrived", code="0", err_status="0", motion_status="1")
+        )
+
+    monkeypatch.setattr(backend, "_spin_once", step)
+
+    backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    assert len(publisher.messages) == 1
+    assert backend.last_motion is not None
+    assert backend.last_motion.moved is True
+
+
+def test_joint_move_times_out_with_single_publish_when_motion_status_never_arrives(
+    monkeypatch,
+) -> None:
+    """motion_status=1 이 계속되어도 재발행 없이 한 번만 발행하고 타임아웃한다."""
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.6, agx_feedback_timeout_sec=0.1)
+    backend = AgxDriverBackend(node, config)
+    joint_callback = node.subscriptions[config.agx_joint_state_topic]
+    arm_callback = node.subscriptions[config.agx_arm_status_topic]
+    joint_callback(_joint_state(["joint1"], [0.0]))  # type: ignore[operator]
+
+    def step() -> None:
+        clock.now += 0.05
+        joint_callback(_joint_state(["joint1"], [0.0]))  # type: ignore[operator]
+        arm_callback(  # type: ignore[operator]
+            _arm_status(0, "not arrived", code="0", err_status="0", motion_status="1")
+        )
+
+    monkeypatch.setattr(backend, "_spin_once", step)
+
+    with pytest.raises(ManipulationError) as excinfo:
+        backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    message = str(excinfo.value)
+    assert "도달하지 못했습니다" in message
+    assert "motion_status=1" in message
+    assert "팔 상태 오류" not in message
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    assert len(publisher.messages) == 1
+    assert backend.last_motion is None
+
+
+def test_pre_existing_not_arrived_status_does_not_report_success_off_target(monkeypatch) -> None:
+    """명령 전부터 motion_status=1 이어도 목표 미수렴을 성공으로 보고하지 않는다."""
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.2, agx_feedback_timeout_sec=0.1)
+    backend = AgxDriverBackend(node, config)
+    joint_callback = node.subscriptions[config.agx_joint_state_topic]
+    arm_callback = node.subscriptions[config.agx_arm_status_topic]
+    joint_callback(_joint_state(["joint1"], [0.0]))  # type: ignore[operator]
+    arm_callback(  # type: ignore[operator]
+        _arm_status(0, "not arrived", code="0", err_status="0", motion_status="1")
+    )
+
+    def step() -> None:
+        clock.now += 0.05
+        joint_callback(_joint_state(["joint1"], [0.0]))  # type: ignore[operator]
+        arm_callback(  # type: ignore[operator]
+            _arm_status(0, "not arrived", code="0", err_status="0", motion_status="1")
+        )
+
+    monkeypatch.setattr(backend, "_spin_once", step)
+
+    with pytest.raises(ManipulationError, match="도달하지 못했습니다"):
+        backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    assert backend.last_motion is None
+    assert len(node.publishers[config.agx_move_joint_topic][0].messages) == 1
+
+
+def test_joint_move_stops_publishing_when_new_hardware_error_arrives_during_wait() -> None:
+    """도착 전 비트가 켜져 있어도 새 하드웨어 오류는 즉시 거부한다."""
     node = _FakeNode()
     config = _config(agx_motion_timeout_sec=0.3)
     backend = AgxDriverBackend(node, config)
@@ -751,22 +845,140 @@ def test_joint_move_stops_publishing_when_motion_failure_arrives_during_wait() -
     publisher = node.publishers[config.agx_move_joint_topic][0]
     publisher.on_publish = lambda: arm_callback(  # type: ignore[operator]
         _arm_status(
-            0,
-            "motion_status=REACH_TARGET_POS_FAILED(0x1)",
-            code="0",
+            2,
+            "arm_status=JOINT_COMMUNICATION_ERR(0x5)",
+            code="0x5",
             err_status="0",
             motion_status="1",
         )
     )
 
-    with pytest.raises(ManipulationError, match="motion_status=1"):
+    with pytest.raises(ManipulationError, match="JOINT_COMMUNICATION_ERR"):
         backend.move_to_joint_target("arm", {"joint1": 1.0})
 
     assert len(publisher.messages) == 1
 
 
-def test_joint_move_is_attempted_when_motion_failure_predates_the_command() -> None:
-    """명령 이전부터 남은 motion_status 실패는 새 조인트 이동 시도를 막지 않는다."""
+def test_joint_move_stops_publishing_when_new_err_status_arrives_during_wait() -> None:
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.3)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    arm_callback = node.subscriptions[config.agx_arm_status_topic]
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    publisher.on_publish = lambda: arm_callback(  # type: ignore[operator]
+        _arm_status(0, "err_status=3", code="0", err_status="3", motion_status="1")
+    )
+
+    with pytest.raises(ManipulationError, match="err_status=3"):
+        backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    assert len(publisher.messages) == 1
+
+
+def test_joint_move_fails_closed_when_control_topic_has_no_subscriber(monkeypatch) -> None:
+    """제어 토픽 구독자가 없으면 명령을 발행하지 않고 실패한다."""
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+    node = _FakeNode()
+    config = _config(agx_feedback_timeout_sec=0.05)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    publisher.get_subscription_count = lambda: 0  # type: ignore[attr-defined]
+
+    with pytest.raises(ManipulationError, match="구독자"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert publisher.messages == []
+
+
+def test_joint_move_waits_for_delayed_control_subscriber(monkeypatch) -> None:
+    """agx_feedback_timeout_sec 안에 구독자가 나타나면 정상 발행한다."""
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+    node = _FakeNode()
+    config = _config(agx_feedback_timeout_sec=0.1)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    counts: list[int] = []
+
+    def count() -> int:
+        value = 1 if clock.now >= 1000.05 else 0
+        counts.append(value)
+        return value
+
+    publisher.get_subscription_count = count  # type: ignore[attr-defined]
+
+    backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert counts == [0, 1]
+    assert len(publisher.messages) == 1
+
+
+def test_joint_move_fails_closed_when_control_topic_has_two_subscribers() -> None:
+    """제어 대상이 모호한 다중 구독이면 발행하지 않고 거부한다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    publisher.get_subscription_count = lambda: 2  # type: ignore[attr-defined]
+
+    with pytest.raises(ManipulationError, match="모호"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert publisher.messages == []
+
+
+def test_pose_move_fails_closed_when_control_topic_has_two_subscribers() -> None:
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_tcp_pose_topic](  # type: ignore[operator]
+        _tcp_pose(0.3, 0.0, 0.4)
+    )
+    publisher = node.publishers[config.agx_move_pose_topic][0]
+    publisher.get_subscription_count = lambda: 2  # type: ignore[attr-defined]
+
+    with pytest.raises(ManipulationError, match="모호"):
+        backend.move_to_pose_target("arm", _pose_goal(0.3, 0.0, 0.4), "link7")
+
+    assert publisher.messages == []
+
+
+def test_fake_publisher_without_subscription_count_keeps_working() -> None:
+    """get_subscription_count 가 없는 대역 publisher 는 기존처럼 발행한다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    assert not hasattr(publisher, "get_subscription_count")
+    assert len(publisher.messages) == 1
+
+
+def test_joint_move_is_attempted_when_not_arrived_status_predates_the_command() -> None:
+    """명령 전부터 남은 motion_status=1(아직 도착하지 않음)은 새 조인트 이동을 막지 않는다."""
     node = _FakeNode()
     config = _config()
     backend = AgxDriverBackend(node, config)
@@ -777,7 +989,7 @@ def test_joint_move_is_attempted_when_motion_failure_predates_the_command() -> N
     node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
         _arm_status(
             2,
-            "motion_status=REACH_TARGET_POS_FAILED(0x1)",
+            "motion_status=NOT_YET_ARRIVED(0x1)",
             code="0",
             err_status="0",
             motion_status="1",

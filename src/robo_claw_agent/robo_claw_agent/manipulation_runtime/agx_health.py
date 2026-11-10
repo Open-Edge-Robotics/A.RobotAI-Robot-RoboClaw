@@ -9,6 +9,10 @@ duck typing 으로만 다루므로(``.status``, ``.level``, ``.values``, ``.key`
 
 - ``arm_status``·``motion_status``·``err_status`` 는 10진(``"2"``, ``"02"``) 또는
   16진(``"0x2"``) 문자열로 온다. 드라이버 버전에 따라 표기가 달라지므로 둘 다 해석한다.
+- ``motion_status`` Byte4 의 ``0x01`` 은 목표 도달 실패가 아니라 "아직 도착하지 않음"
+  (NOT YET ARRIVED)이다(0x00 도착). SDK enum 이름 ``REACH_TARGET_POS_FAILED`` 와 공식
+  ``move_j`` 예제·드라이버 ``_wait_motion_done`` 은 0 이 될 때까지 기다릴 뿐 1 에서
+  중단하지 않는다.
 - 한 DiagnosticArray 의 DiagnosticStatus 엔트리는 서로 독립이다. 한 엔트리의 IK 코드가
   다른 엔트리의 하드웨어 오류를 가리면 안 되므로 판정은 항상 엔트리 단위로 한다.
 
@@ -27,8 +31,10 @@ from typing import Any
 ARM_STATUS_OK = 0x00
 #: ArmStatus.NO_SOLUTION. pose(move_p) IK 실패의 흔적이며 move_j 는 계속 동작한다.
 ARM_STATUS_NO_SOLUTION = 0x02
-#: MotionStatus.REACH_TARGET_POS_FAILED. 드라이버가 목표 도달에 실패했다고 보고한 상태.
-MOTION_STATUS_TARGET_FAILED = 0x01
+#: MotionStatus 의 목표 도착 비트(Byte4). 0x00 도착, 0x01 아직 도착하지 않음.
+#: SDK enum 이름 ``REACH_TARGET_POS_FAILED`` 는 오해를 부르지만 의미는 실패가 아니라
+#: 진행 중이다. 정상 이동 중에도 발행되므로 이 값만으로 명령을 중단하지 않는다.
+MOTION_STATUS_NOT_ARRIVED = 0x01
 
 #: diagnostic_msgs/DiagnosticStatus.OK, WARN, ERROR
 DIAGNOSTIC_OK = 0
@@ -244,16 +250,27 @@ def diagnose_arm_status(msg: Any, *, allow_no_solution: bool) -> ArmStatusDiagno
     return ArmStatusDiagnosis(blocking=blocking, tolerated_joint_no_solution=tolerated)
 
 
-def diagnose_motion_faults(msg: Any, *, allow_no_solution: bool) -> ArmStatusEntry | None:
-    """이동 시작 이후 **새로 도착한** 팔 진단에서 이번 명령의 실패를 찾는다.
+def describe_arm_status(msg: Any) -> str:
+    """최신 팔 진단을 타임아웃/오류 메시지용 요약으로 만든다(없으면 ``진단 없음``).
 
-    드라이버는 ``motion_status=1``(REACH_TARGET_POS_FAILED)을 level 0 으로도 발행하므로
-    레벨과 무관하게 확인한다. ``err_status`` 가 0 이 아니거나 ERROR 레벨의 ``arm_status``
-    가 남아 있으면 같은 명령을 반복 발행하지 않고 즉시 실패로 알린다.
+    값만 나열하며 실패 원인을 단정하지 않는다. ``motion_status=1`` 도 그대로 보여
+    주므로 로그를 읽는 사람이 진행 중과 정지를 구분할 수 있다.
+    """
+    entries = arm_status_entries(msg)
+    if not entries:
+        return "진단 없음"
+    return "; ".join(f"{entry.name}: {entry.summary()}" for entry in entries)
+
+
+def diagnose_motion_faults(msg: Any, *, allow_no_solution: bool) -> ArmStatusEntry | None:
+    """이동 시작 이후 **새로 도착한** 팔 진단에서 이번 명령의 하드웨어 오류를 찾는다.
+
+    ``motion_status`` 는 보지 않는다. Byte4 의 ``0x01`` 은 "아직 도착하지 않음"이며
+    정상 진행 중에도 발행되므로 실패로 단정할 수 없다. 목표 도달 판정은 피드백 수렴
+    대기가 담당하고, 여기서는 ``err_status`` 가 0 이 아니거나 ERROR 레벨의
+    ``arm_status`` 가 남아 있는 실제 오류만 알린다.
     """
     for entry in arm_status_entries(msg):
-        if entry.motion_status == MOTION_STATUS_TARGET_FAILED:
-            return entry
         if entry.err_status not in (None, 0):
             return entry
         if entry.level < DIAGNOSTIC_ERROR:
