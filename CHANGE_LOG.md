@@ -3,6 +3,16 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — 팔 마운트 좌표계 확인: 앞쪽 자세는 joint2 > 0
+
+- **배경**: 실기에서 프리셋을 적용할 때마다 팔이 **로봇 뒤쪽**으로 넘어가 몸체에 부딪혔습니다. URDF/순기구학으로 계산한 TCP는 앞(+x)이었지만, 작업자가 본 실제 팔은 어깨에서 상완이 뒤로 넘어간 상태였습니다. 즉 **arm base frame 의 `+x` 가 로봇 뒤쪽**이고, `joint2 < 0`(기존 프리셋 전부)이 뒤쪽 자세였습니다.
+- **조치**:
+  - `former_arm_config.yaml`: 프리셋 12종을 **앞쪽 기준(`joint2 ≥ 0`)**으로 다시 계산했습니다(`ready` j2 +0.116/j4 +1.252, `stow` j2 0.0/j4 +1.726, `table` j2 +0.721, `reach` j2 +1.431 등). TCP x 가 음수인 값이 로봇 앞입니다.
+  - `docs/MANIPULATION.md`: 프리셋 표를 앞쪽 기준으로 교체하고 **좌표계 주의**(`+x`=로봇 뒤, `joint2>0`=앞, `joint4` 접힘 방향은 `joint2` 부호에 따라 반대로 보임)를 명시했습니다.
+  - `tests/test_former_arm_presets.py`: 모든 프리셋이 `joint2 ≥ 0`(앞쪽)인지 검증하는 테스트를 추가하고 `stow` 값을 갱신했습니다.
+- **검증**: `pytest src/robo_claw_bringup/tests/test_former_arm_presets.py` 8 passed, `task unit-test` 통과, `ruff check` 통과.
+- **미검증**: 새 프리셋 조합의 실기 구동은 하지 못했습니다. 당시 팔이 `motion_status=REACH_TARGET_POS_FAILED` 상태로 모든 모션 명령을 거부했고(모터 enabled·에러 없음, 브레이크 해제 정상), E-stop/전원 상태 확인이 필요합니다.
+
 ## 2026-11-10 — `stow` 를 낮은 보관 자세로 교체
 
 - **배경**: 기존 `stow`(joint2 -0.846 / joint4 +1.160)는 상완이 앞으로 48도 기운 체 전완만 위로 접은 자세라, 높이가 거의 home 과 같고 `>` 모양으로 들려 보였습니다. "보관 자세"로 쓰기에는 부적합했습니다.

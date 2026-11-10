@@ -77,20 +77,17 @@ robo_claw_agent_node:
     # 주의: AGX 드라이버의 /move_home 은 move_j([0]*7) 이므로 "home" 은 모든 조인트가
     # 0 rad 인 **수직으로 뻗은 자세** 이며 접은 자세가 아니다.
     #
-    # 아래 프리셋은 2026-11-10 nero-arm 실기에서 /control/move_j 로 각 자세를 실제
-    # 구동하고 /feedback/tcp_pose 가 SDK MDH 순기구학(pyAgxArm.utiles.mdh_kinematics)
-    # 예상값과 1mm 이내로 일치하는 것을 확인한 값이다. 팔 URDF/SDK 조인트 한계
-    # (ROBOT_LIMITS.former_arm.json) 안에 들어온다.
+    # 좌표계 주의(실기 확인): 이 팔은 arm base frame 의 +x 가 **로봇 뒤쪽**입니다.
+    # 따라서 로봇 앞쪽으로 팔을 쓰려면 joint2 를 **양수**로 줘야 합니다(joint2 < 0 은 뒤로 넘어감).
+    # 아래 프리셋은 그 기준으로 pyAgxArm MDH 순기구학으로 계산한 값입니다. TCP x 가 음수면 로봇 앞입니다.
     #   home        수직 zero (드라이버 /move_home)
-    #   ready       작업 대기: 가슴 앞, 팔꿈치 접음 (TCP +0.30/+0.50)
-    #   carry       ready 별칭 (기본 named pose 이름 유지용)
-    #   stow/fold   낮게 접기: 배송·주행 전 안전 자세 (TCP +0.22/+0.39, 가장 낮고 컴팩트)
-    #   table       테이블 앞 낮은 위치 (TCP +0.51/+0.27, 팔꿈치 하한 근처)
-    #   reach       앞으로 뻗기 (TCP +0.55/+0.30)
-    #   side_left/right  base 요크 좌표계 시험 (joint1 ±0.6 rad)
-    #   wrist_down/up    joint6 하한/상한 시험
-    #   roll_ccw/cw      joint7 ±1.55 rad 시험
-    manipulation_named_poses_json: '{"home": "home", "ready": {"joint1": 0.0, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "carry": {"joint1": 0.0, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "stow": {"joint1": 0.0, "joint2": -1.57, "joint3": 0.0, "joint4": 1.9, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "fold": {"joint1": 0.0, "joint2": -1.57, "joint3": 0.0, "joint4": 1.9, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "table": {"joint1": 0.0, "joint2": -0.9, "joint3": 0.0, "joint4": -0.9, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "reach": {"joint1": 0.0, "joint2": -1.143, "joint3": 0.0, "joint4": -0.302, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "side_left": {"joint1": 0.6, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "side_right": {"joint1": -0.6, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "wrist_down": {"joint1": 0.0, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": -0.733, "joint7": 0.0}, "wrist_up": {"joint1": 0.0, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.87, "joint7": 0.0}, "roll_ccw": {"joint1": 0.0, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.0, "joint7": 1.55}, "roll_cw": {"joint1": 0.0, "joint2": -1.265, "joint3": 0.0, "joint4": 1.246, "joint5": 0.0, "joint6": 0.0, "joint7": -1.55}}'
+    #   ready       앞 30 cm / 높이 50 cm, 팔꿈치 접힘
+    #   carry       ready 별칭
+    #   stow/fold   앞 27 cm / 높이 41 cm 로 접은 보관 자세
+    #   table       앞 45 cm / 높이 26 cm
+    #   reach       앞 55 cm / 높이 30 cm
+    #   side_left/right  base 요크 시험 / wrist_*·roll_*  손목 범위 시험
+    manipulation_named_poses_json: '{"home": "home", "ready": {"joint1": 0.0, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "carry": {"joint1": 0.0, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "stow": {"joint1": 0.0, "joint2": 0.0, "joint3": 0.0, "joint4": 1.726, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "fold": {"joint1": 0.0, "joint2": 0.0, "joint3": 0.0, "joint4": 1.726, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "table": {"joint1": 0.0, "joint2": 0.721, "joint3": 0.0, "joint4": 1.273, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "reach": {"joint1": 0.0, "joint2": 1.431, "joint3": 0.0, "joint4": -0.317, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "side_left": {"joint1": 0.6, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "side_right": {"joint1": -0.6, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.0, "joint7": 0.0}, "wrist_down": {"joint1": 0.0, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": -0.733, "joint7": 0.0}, "wrist_up": {"joint1": 0.0, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.87, "joint7": 0.0}, "roll_ccw": {"joint1": 0.0, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.0, "joint7": 1.55}, "roll_cw": {"joint1": 0.0, "joint2": 0.116, "joint3": 0.0, "joint4": 1.252, "joint5": 0.0, "joint6": 0.0, "joint7": -1.55}}'
     manipulation_gripper_presets_json: '{"open": {"gripper": 0.05}, "close": {"gripper": 0.0}}'
 
     # 실기 초기 검증 구간: 속도/가속 스케일을 낮게 유지한다.
