@@ -3,6 +3,31 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — Nero 팔 조인트 한계 확정 및 동작 프리셋 추가
+
+- **배경**: `home`(수직 zero) 과 `stow`(접힘)를 구분한 뒤에도, 팔을 어떤 자세로 움직일 수 있는지에 대한 실측 근거가 없었습니다. `arm_pose` 로 쓸 수 있는 이름은 `home` 뿐이었고, `move_pose` 로 위치를 지정하려면 IK 가 필요해 `NO_SOLUTION` 위험이 남아 있었습니다.
+- **조사**: nero-arm(192.168.50.202)의 `agx_arm_ctrl` 소스와 `pyAgxArm` SDK, `nero_description.urdf`,
+  `agx_arm.srdf`, `joint_limits.yaml` 을 확인했습니다.
+  - SDK `ROBOT_JOINT_LIMIT_PRESET_RAD["nero"]` 가 authoritative 한계입니다(URDF revolute limit 과 동일).
+  - `pyAgxArm.utiles.mdh_kinematics.fk_from_mdh()` 로 순기구학을 오프라인 계산할 수 있고,
+    결과가 `/feedback/tcp_pose` 와 일치합니다(0 자세 TCP `(0, -0.0235, 0.718)`).
+  - SRDF group state 는 `home`(모든 조인트 0) 하나뿐입니다.
+  - `arm_status=NO_SOLUTION(0x2)` 은 `move_p`(IK) 실패 이력이며 `move_j`(조인트 목표)는 정상 동작합니다.
+- **조치**:
+  - `former_arm_config.yaml`: `manipulation_named_poses_json` 에 `ready`/`carry`/`stow`/`fold`/`table`/
+    `reach`/`side_left`/`side_right`/`wrist_down`/`wrist_up`/`roll_ccw`/`roll_cw` 프리셋을 추가했습니다.
+  - `ROBOT_LIMITS.former_arm.json`: joint 한계를 SDK 값으로 통일했습니다(기존 파일은 일부 조인트에서
+    URDF/SDK 보다 넓었습니다).
+  - `docs/MANIPULATION.md`: 조인트 한계 표와 프리셋 표(TCP 기대값 포함), 팔을 수직 아래로 늘어뜨릴 수
+    없다는 제약(joint2 하한 -100도)을 기록했습니다.
+  - `SKILLS.former_arm.md`: 사용 가능한 pose 이름, "팔 내려" = `stow`, 주행 전 `stow` 규칙을 반영했습니다.
+  - `tests/test_former_arm_presets.py`: 프리셋이 모든 팔 조인트를 정의하고 하드 한계 안에 있는지,
+    `home` 이 서비스 별칭인지, 한계 값이 SDK 와 같은지 검증합니다.
+- **검증**: nero-arm 실기에서 11개 프리셋(`home`~`fold`, `carry` 는 `ready` 별칭)을 `/control/move_j` 로
+  순서대로 구동해 조인트 수렴과 `/feedback/tcp_pose` 를 확인했습니다(SDK FK 기대값과 오차 ≤1 mm,
+  각 자세 1.4~5.6초). `pytest src/robo_claw_bringup/tests/test_former_arm_presets.py` 6 passed.
+- **남은 일**: `former0045` 에이전트 재기동 후 `arm_pose` 로 프리셋 호출 경로를 확인해야 합니다(미실시).
+
 ## 2026-11-10 — AGX 팔 이동 결과 검증(home 미동작·포즈 실패 오보고 수정)
 
 - **배경**: former0045(Nero 팔) 실기에서 "팔을 조금 올려봐" 요청이 `move_pose(x=0.3,y=0,z=0.5)` 로
