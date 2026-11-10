@@ -203,6 +203,9 @@ def test_move_to_named_pose_home_calls_driver_service() -> None:
     config = _config(named_pose_joint_values={})
     backend = AgxDriverBackend(node, config)
 
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 0.0])
+    )
     backend.move_to_named_pose("arm", "home")
 
     client = node.clients[config.agx_home_service]
@@ -216,6 +219,9 @@ def test_move_to_named_pose_home_reports_missing_service() -> None:
     node.clients[config.agx_home_service] = _FakeClient(service_available=False)
     backend = AgxDriverBackend(node, config)
 
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 0.0])
+    )
     with pytest.raises(ManipulationRuntimeUnavailableError, match="move_home"):
         backend.move_to_named_pose("arm", "home")
 
@@ -391,3 +397,117 @@ def test_joint_state_feedback_logging_is_throttled(monkeypatch, caplog) -> None:
     assert len(feedback_logs) == 2
     assert "gripper=0.020000" in feedback_logs[0]
     assert "gripper=0.030000" in feedback_logs[1]
+
+
+# ── home 검증 / arm 상태 감시 / 위치만 지정한 pose 목표 ──
+
+
+def _arm_status(level: int, message: str, name: str = "arm"):
+    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
+
+    status = DiagnosticStatus()
+    status.level = level
+    status.name = name
+    status.message = message
+    msg = DiagnosticArray()
+    msg.status = [status]
+    return msg
+
+
+def test_move_to_named_pose_home_fails_when_arm_does_not_move() -> None:
+    """드라이버 /move_home 은 Empty 응답만 주므로 실제 자세 수렴을 확인해야 한다."""
+    node = _FakeNode()
+    config = _config(named_pose_joint_values={}, agx_motion_timeout_sec=0.15)
+    backend = AgxDriverBackend(node, config)
+
+    # 팔이 home(zero) 자세가 아닌 상태에서 피드백이 전혀 변하지 않는 상황
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 1.2])
+    )
+
+    with pytest.raises(ManipulationError, match="도달하지 못했습니다"):
+        backend.move_to_named_pose("arm", "home")
+
+    assert node.clients[config.agx_home_service].calls == 1
+
+
+def test_move_to_named_pose_home_reports_already_at_target() -> None:
+    node = _FakeNode()
+    config = _config(named_pose_joint_values={})
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2", "gripper"], [0.0, 0.0, 0.05])
+    )
+    backend.move_to_named_pose("arm", "home")
+
+    assert backend.last_motion is not None
+    assert backend.last_motion.already_at_target is True
+
+
+def test_move_rejects_when_arm_status_is_error() -> None:
+    """arm_status=NO_SOLUTION 같은 드라이버 오류를 숨기지 않고 즉시 실패한다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0")
+    )
+
+    with pytest.raises(ManipulationError, match="NO_SOLUTION"):
+        backend.move_to_joint_target("arm", {"joint1": 0.5})
+
+
+def test_gripper_only_move_ignores_arm_status_error() -> None:
+    """그리퍼 단독 제어는 팔 오류와 무관하게 동작해야 한다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "gripper"], [0.0, 0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(2, "arm_status=NO_SOLUTION(0x2)")
+    )
+    backend.move_to_joint_target("gripper", {"gripper": 0.0})
+
+
+def test_move_to_pose_target_keeps_current_orientation_when_not_explicit() -> None:
+    """위치만 지정한 요청은 identity 자세가 아니라 현재 자세를 유지해야 한다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    current = _tcp_pose(0.3, 0.0, 0.4)
+    current.pose.orientation.x = 0.0
+    current.pose.orientation.y = 0.0
+    current.pose.orientation.z = 0.7071068
+    current.pose.orientation.w = 0.7071068
+    node.subscriptions[config.agx_tcp_pose_topic](current)  # type: ignore[operator]
+
+    goal = PoseGoal(
+        frame_id="base_link",
+        position={"x": 0.3, "y": 0.0, "z": 0.4},
+        orientation={"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        orientation_explicit=False,
+    )
+    backend.move_to_pose_target("arm", goal, "link7")
+
+    published = node.publishers[config.agx_move_pose_topic][0].messages
+    assert published[0].pose.orientation.z == pytest.approx(0.7071068)
+    assert published[0].pose.orientation.w == pytest.approx(0.7071068)
+
+
+def test_pose_goal_from_params_marks_orientation_explicit() -> None:
+    from robo_claw_agent.manipulation_runtime import pose_goal_from_params
+
+    implicit = pose_goal_from_params({"x": 0.1, "y": 0.0, "z": 0.2})
+    assert implicit.orientation_explicit is False
+
+    explicit = pose_goal_from_params({"x": 0.1, "y": 0.0, "z": 0.2, "qw": 1.0})
+    assert explicit.orientation_explicit is True

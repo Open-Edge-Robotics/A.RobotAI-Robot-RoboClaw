@@ -83,6 +83,7 @@ def offset_pose(
             "z": pose.position["z"] + float(direction["z"]) * distance_m,
         },
         orientation=dict(pose.orientation),
+        orientation_explicit=pose.orientation_explicit,
     )
 
 
@@ -119,6 +120,7 @@ def pose_goal_from_params(
         ) from exc
 
     orientation_source = source.get("orientation")
+    orientation_explicit = True
     if isinstance(orientation_source, Mapping):
         orientation = {
             "x": float(orientation_source.get("x", 0.0)),
@@ -140,8 +142,16 @@ def pose_goal_from_params(
             float(source.get("yaw", 0.0)),
         )
     else:
+        # 위치만 지정된 요청. 자세를 identity 로 고정하면 도달 불가능한 목표가 되므로
+        # 소비하는 쪽(백엔드)이 현재 자세를 유지하도록 표시만 남긴다.
         orientation = {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+        orientation_explicit = False
 
     frame_id = str(source.get("frame_id") or params.get("frame_id") or default_frame)
 
-    return PoseGoal(frame_id=frame_id, position=position, orientation=orientation)
+    return PoseGoal(
+        frame_id=frame_id,
+        position=position,
+        orientation=orientation,
+        orientation_explicit=orientation_explicit,
+    )

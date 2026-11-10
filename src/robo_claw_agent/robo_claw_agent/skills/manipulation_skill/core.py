@@ -82,6 +82,7 @@ def _transform_pose_goal(node: Any, pose: PoseGoal, target_frame: str) -> PoseGo
             "z": transformed.pose.orientation.z,
             "w": transformed.pose.orientation.w,
         },
+        orientation_explicit=pose.orientation_explicit,
     )
 
 
@@ -154,10 +155,14 @@ def _move_sequence_result(
     action: str,
     payload: dict[str, Any],
     extra: dict[str, Any] | None = None,
+    already_action: str | None = None,
 ) -> dict[str, Any]:
+    message = action
+    if already_action and payload.get("already_at_target"):
+        message = already_action
     return {
         "success": True,
-        "message": action,
+        "message": message,
         **payload,
         **(extra or {}),
     }

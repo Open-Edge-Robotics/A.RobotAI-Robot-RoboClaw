@@ -190,6 +190,9 @@ def load_manipulation_config(node: Any) -> ManipulationConfig:
         agx_tcp_pose_topic=_read_string(
             node, "manipulation_agx_tcp_pose_topic", "/feedback/tcp_pose"
         ),
+        agx_arm_status_topic=_read_string(
+            node, "manipulation_agx_arm_status_topic", "/feedback/arm_status"
+        ),
         agx_joint_tolerance_rad=_read_float(node, "manipulation_agx_joint_tolerance_rad", 0.02),
         agx_pose_tolerance_m=_read_float(node, "manipulation_agx_pose_tolerance_m", 0.01),
         agx_motion_timeout_sec=_read_float(node, "manipulation_agx_motion_timeout_sec", 30.0),

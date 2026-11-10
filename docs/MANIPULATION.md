@@ -138,11 +138,25 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 | 제어 게이트 활성화 | `/control_enable` | `std_srvs/srv/SetBool` (데이터 `true`) |
 | 모터 활성화 | `/enable_agx_arm` | `std_srvs/srv/SetBool` (데이터 `true`) |
 | 홈 위치 이동 | `/move_home` | `std_srvs/srv/Empty` |
+| 팔 상태 진단 | `/feedback/arm_status` | `diagnostic_msgs/msg/DiagnosticArray` |
 
 #### 그리퍼 및 팔 관절 제어 특성
 - **그리퍼 단독 제어**: `agx_arm_ctrl` 드라이버는 `move_j` 메시지에 팔 관절이 포함되어 있으면 팔 동작 모터를 구동합니다. 따라서 그리퍼만 움직일 때는 `name: ['gripper']`, `position: [width]` 만 발행하여 팔 관절 모터 간섭 없이 빠르고 안전하게 동작합니다.
 - **팔 관절 제어**: 드라이버의 생략 관절 0.0 보정(리셋) 버그를 방지하기 위해, 지정되지 않은 관절은 최신 수신된 피드백(`_latest_joint_state`) 값으로 자동 보존하여 발행합니다.
 - **물리 검증 완료**: 실기 그리퍼 열기(`open_gripper`, 0.05m 도달) 및 닫기(`close_gripper`, 0.00038m 도달) 물리적 동작이 검증되었습니다.
+
+#### 결과 검증과 실패 보고 (`agx_backend`)
+드라이버 서비스 응답만으로는 실제 동작 여부를 알 수 없으므로 다음을 코드에서 강제합니다.
+
+| 항목 | 동작 |
+| :--- | :--- |
+| `/move_home` 결과 | 서비스 호출 후 `/feedback/joint_states` 가 드라이버 home 자세(모든 팔 조인트 0 rad)에 수렴하는지 확인하고, 수렴하지 않으면 `ManipulationError` 로 실패 보고합니다. |
+| 이미 그 자세 | 명령 시점에 이미 목표 자세였으면 `already_at_target=true` 로 결과를 돌려주고, 스킬 메시지는 "이동 완료" 대신 "이미 그 자세입니다" 로 보고합니다. |
+| 팔 오류 상태 | `/feedback/arm_status` 의 `level` 이 ERROR 이면(예: `arm_status=NO_SOLUTION`) 팔 조인트/포즈/home 명령을 즉시 거부하고 드라이버 메시지를 그대로 전달합니다. 그리퍼 단독 제어는 이 검사에서 제외합니다. |
+| 위치만 지정한 pose 목표 | `orientation`·`roll/pitch/yaw`·쿼터니언을 주지 않으면 identity 자세가 아니라 **현재 end-effector 자세를 유지**해 발행합니다. identity 자세로 고정하면 IK 불가(`NO_SOLUTION`)로 목표에 도달하지 못하고 팔이 최대 신장에서 멈춥니다. |
+
+> **주의 — 드라이버 home 은 "접은 자세" 가 아닙니다.** `agx_arm_ctrl` 의 `/move_home` 은 `move_j([0]*N)` 이며 Nero 기준 모든 조인트가 0 rad 인 **수직으로 뻗은 자세** 입니다. 접은 자세나 주행 전 안전 자세가 필요하면 `manipulation_named_poses_json` 에 `stow`/`fold` 같은 이름으로 조인트 맵을 정의해 `arm_pose` 로 호출해야 합니다. 정의 없이 `home` 으로 접기를 시도하면 "이미 그 자세" 로 끝나고 팔은 움직이지 않습니다.
+
 
 ### 3. 그리퍼 도달 피드백 타임아웃 진단
 

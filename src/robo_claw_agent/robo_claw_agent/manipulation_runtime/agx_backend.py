@@ -33,6 +33,7 @@ from .exceptions import (
     ManipulationError,
     ManipulationRuntimeUnavailableError,
 )
+from .types import MotionOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,11 @@ _REPUBLISH_INTERVAL_SEC = 0.5
 #: joint_states 피드백 로그 간격. 드라이버는 수십~수백 Hz 로 피드백을 발행하므로
 #: 콜백마다 INFO 를 남기면 로그가 폭주한다.
 _FEEDBACK_LOG_INTERVAL_SEC = 10.0
+#: /move_home 이 이동시키는 목표 자세(agx_arm_ctrl 의 move_j([0]*arm_joint_count)).
+#: 드라이버 home 은 "수직 zero 자세" 이며, 이 백엔드는 서비스 응답만으로 성공을
+#: 선언하지 않고 이 자세에 실제로 수렴했는지 확인한다.
+_HOME_JOINT_TARGET = 0.0
+_GRIPPER_KEYWORD = "gripper"
 
 
 class AgxDriverBackend:
@@ -51,6 +57,7 @@ class AgxDriverBackend:
         self._config = config
         self._latest_joint_state: JointState | None = None
         self._latest_tcp_pose: PoseStamped | None = None
+        self._latest_arm_status: Any = None
         self._joint_feedback_seen = False
         self._tcp_feedback_seen = False
         self._home_client = None
@@ -58,6 +65,8 @@ class AgxDriverBackend:
         self._control_enable_client = None
         self._driver_ready = False
         self._last_feedback_log_time: float | None = None
+        #: 마지막 이동의 사후 검증 결과(스킬 계층이 "이동 완료" 와 "이미 그 자세" 를 구분).
+        self.last_motion: MotionOutcome | None = None
 
         cb_group = None
         try:
@@ -95,6 +104,7 @@ class AgxDriverBackend:
                     10,
                     **sub_kwargs,
                 )
+                self._create_arm_status_subscription(node, config, sub_kwargs)
             except TypeError:
                 # _FakeNode 처럼 callback_group 을 받지 않는 대역 노드 fallback
                 node.create_subscription(
@@ -109,6 +119,7 @@ class AgxDriverBackend:
                     self._on_tcp_pose,
                     10,
                 )
+                self._create_arm_status_subscription(node, config, {})
         except Exception as exc:  # noqa: BLE001 - 드라이버 인터페이스 생성 실패
             raise ManipulationRuntimeUnavailableError(
                 f"AGX 드라이버 토픽 인터페이스 생성 실패: {exc}"
@@ -202,6 +213,70 @@ class AgxDriverBackend:
     def _on_tcp_pose(self, msg: PoseStamped) -> None:
         self._latest_tcp_pose = msg
         self._tcp_feedback_seen = True
+
+    def _create_arm_status_subscription(
+        self, node: Any, config: Any, sub_kwargs: dict[str, Any]
+    ) -> None:
+        """드라이버 진단(/feedback/arm_status) 구독. 메시지 타입이 없으면 생략한다."""
+        topic = str(getattr(config, "agx_arm_status_topic", "") or "").strip()
+        if not topic:
+            return
+        try:
+            from diagnostic_msgs.msg import DiagnosticArray
+        except Exception:  # noqa: BLE001 - 진단 구독은 없어도 동작해야 한다
+            logger.warning("diagnostic_msgs 를 사용할 수 없어 arm_status 감시를 생략합니다.")
+            return
+        try:
+            node.create_subscription(DiagnosticArray, topic, self._on_arm_status, 10, **sub_kwargs)
+        except Exception as exc:  # noqa: BLE001 - 진단 구독 실패는 치명적이지 않다
+            logger.warning("arm_status 구독 생성 실패(%s): %s", topic, exc)
+
+    def _on_arm_status(self, msg: Any) -> None:
+        self._latest_arm_status = msg
+
+    def _raise_if_arm_fault(self, label: str) -> None:
+        """드라이버가 ERROR 진단을 보낸 상태면 팔 명령을 즉시 거부한다.
+
+        agx_arm_ctrl 은 IK 실패(NO_SOLUTION 등)를 서비스 응답으로 알려주지 않고
+        /feedback/arm_status 로만 노출한다. 이 검사가 없으면 명령은 조용히 무시되고
+        30초 뒤 "목표에 도달하지 못했습니다" 만 보고된다.
+        """
+        msg = self._latest_arm_status
+        if msg is None:
+            return
+        for status in getattr(msg, "status", []) or []:
+            level = getattr(status, "level", 0)
+            if isinstance(level, bytes):
+                level = level[0] if level else 0
+            if int(level) < 2:  # OK=0, WARN=1
+                continue
+            name = str(getattr(status, "name", "") or "arm")
+            message = str(getattr(status, "message", "") or "").strip()
+            raise ManipulationError(
+                f"{label}: 팔 드라이버 상태 오류({name}: {message or '상세 없음'}). "
+                "드라이버 로그와 팔 전원/비상정지 상태를 확인하고, 오류가 해소된 뒤 다시 요청하세요."
+            )
+
+    def _home_joint_targets(self) -> dict[str, float]:
+        """드라이버 home(/move_home = move_j([0]*N)) 목표를 피드백 조인트 이름으로 만든다.
+
+        그리퍼는 home 이동 대상이 아니므로 제외한다.
+        """
+        state = self._latest_joint_state
+        if state is None:
+            return {}
+        return {
+            str(name).strip(): _HOME_JOINT_TARGET
+            for name in state.name
+            if _GRIPPER_KEYWORD not in str(name).lower()
+        }
+
+    def _set_last_motion(self, *, already_at_target: bool, detail: str = "") -> None:
+        self.last_motion = MotionOutcome(
+            moved=not already_at_target,
+            already_at_target=already_at_target,
+            detail=detail,
+        )
 
     def _spin_once(self) -> None:
         # agent_node 는 MultiThreadedExecutor 에서 실행되므로 rclpy.spin_once()를
@@ -326,11 +401,23 @@ class AgxDriverBackend:
         )
 
     def call_home_service(self) -> None:
-        """드라이버의 home 서비스(std_srvs/Empty)를 호출한다."""
+        """드라이버 home 서비스를 호출하고, 실제 자세 수렴까지 검증한다.
+
+        agx_arm_ctrl 의 ``/move_home`` 은 ``std_srvs/Empty`` 이고 내부 동작(미연결·
+        미활성·모션 타임아웃)을 응답으로 알려주지 않는다. 응답만 보고 성공을 선언하면
+        팔이 전혀 움직이지 않아도 "홈 이동 완료" 로 보고된다(실기 확인된 증상).
+        따라서 서비스 호출 뒤 ``feedback/joint_states`` 가 드라이버 home 자세
+        (모든 팔 조인트 0 rad)로 수렴했는지 확인하고, 수렴하지 않으면 실패로 알린다.
+        """
         self._ensure_driver_ready()
         service_name = str(self._config.agx_home_service or "move_home").strip()
         if not service_name:
             raise ManipulationConfigError("manipulation_agx_home_service 가 비어 있습니다.")
+
+        self._raise_if_arm_fault("home 목표")
+        self._wait_for_feedback(lambda: self._joint_feedback_seen, "home 목표")
+        home_targets = self._home_joint_targets()
+        already_at_home = bool(home_targets) and self._joints_reached(home_targets)
 
         try:
             if self._home_client is None:
@@ -363,6 +450,24 @@ class AgxDriverBackend:
             error_cls=ManipulationError,
         )
 
+        if not home_targets:
+            # 피드백에 조인트 이름이 없으면 검증할 수 없다. 성공을 주장하지 않는다.
+            raise ManipulationError(
+                "home 서비스는 호출했지만 검증할 조인트 피드백이 없습니다. "
+                "/feedback/joint_states 발행 상태를 확인하세요."
+            )
+
+        # 서비스 응답 직후에는 아직 이동 중일 수 있으므로, 목표 수렴을 제한 시간까지 기다린다.
+        self._wait_until(
+            lambda: self._joints_reached(home_targets),
+            "home 목표",
+            lambda: self._joint_feedback_seen,
+        )
+        self._set_last_motion(
+            already_at_target=already_at_home,
+            detail="driver home (팔 조인트 0 rad)",
+        )
+
     def move_to_joint_target(self, group_name: str, joint_values: Mapping[str, float]) -> None:
         del group_name  # 드라이버는 MoveIt planning group 개념이 없다
 
@@ -382,6 +487,9 @@ class AgxDriverBackend:
         # 팔 관절이 포함된 경우에만 드라이버의 생략 관절 0.0 보정을 위해
         # 현재 피드백의 팔 관절값을 유지한다.
         is_gripper_only = all("gripper" in name.lower() for name in targets)
+        if not is_gripper_only:
+            self._raise_if_arm_fault("joint 목표")
+        already_at_target = self._joints_reached(targets)
         cmd_positions: dict[str, float] = {}
         if not is_gripper_only and self._latest_joint_state is not None:
             for name, pos in zip(
@@ -403,6 +511,7 @@ class AgxDriverBackend:
             lambda: self._joint_feedback_seen,
             republish_fn=lambda: self._move_joint_pub.publish(msg),
         )
+        self._set_last_motion(already_at_target=already_at_target)
 
     def move_to_pose_target(
         self,
@@ -428,7 +537,9 @@ class AgxDriverBackend:
             targets[key] = float(value)
 
         self._ensure_driver_ready()
+        self._raise_if_arm_fault("pose 목표")
         self._wait_for_feedback(lambda: self._tcp_feedback_seen, "pose 목표")
+        already_at_target = self._pose_reached(targets)
 
         msg = PoseStamped()
         msg.header.frame_id = base_frame
@@ -436,6 +547,17 @@ class AgxDriverBackend:
         msg.pose.position.y = targets["y"]
         msg.pose.position.z = targets["z"]
         orientation = getattr(pose, "orientation", None) or {}
+        if not getattr(pose, "orientation_explicit", True):
+            # 위치만 지정된 요청은 현재 end-effector 자세를 유지한다. identity 자세로
+            # 고정하면 IK 불가(NO_SOLUTION)로 최대 신장에서 멈추는 원인이 된다.
+            current = self._latest_tcp_pose.pose.orientation if self._latest_tcp_pose else None
+            if current is not None:
+                orientation = {
+                    "x": current.x,
+                    "y": current.y,
+                    "z": current.z,
+                    "w": current.w,
+                }
         msg.pose.orientation.x = float(orientation.get("x", 0.0))
         msg.pose.orientation.y = float(orientation.get("y", 0.0))
         msg.pose.orientation.z = float(orientation.get("z", 0.0))
@@ -450,3 +572,4 @@ class AgxDriverBackend:
             lambda: self._tcp_feedback_seen,
             republish_fn=lambda: publisher.publish(msg),
         )
+        self._set_last_motion(already_at_target=already_at_target)

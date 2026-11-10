@@ -10,6 +10,23 @@ class PoseGoal:
     frame_id: str
     position: dict[str, float]
     orientation: dict[str, float]
+    #: 호출자가 orientation 을 직접 지정했는지 여부. False 면 위치만 지정한 요청이므로
+    #: 백엔드가 현재 end-effector 자세(orientation)를 유지한다. 위치만 지정했는데
+    #: identity 자세로 해석하면 도달 불가능한 목표가 되어 팔이 최대 신장에서 멈춘다.
+    orientation_explicit: bool = True
+
+
+@dataclass(frozen=True)
+class MotionOutcome:
+    """백엔드가 실제로 수행한 이동 결과(사후 검증 요약).
+
+    ``already_at_target`` 은 명령이 목표에 도달했지만 발행 시점에 이미 그 자세였음을
+    뜻한다. 스킬 계층은 이 값으로 "이동 완료" 와 "이미 그 자세" 를 구분해 보고한다.
+    """
+
+    moved: bool = True
+    already_at_target: bool = False
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -50,6 +67,9 @@ class ManipulationConfig:
     agx_move_linear_topic: str = "control/move_l"
     agx_joint_state_topic: str = "feedback/joint_states"
     agx_tcp_pose_topic: str = "feedback/tcp_pose"
+    #: 드라이버 DiagnosticArray. ERROR 레벨이면 팔 계열 명령을 즉시 거부한다
+    #: (예: arm_status=NO_SOLUTION 상태에서 30초 대기 후 "도달 실패" 만 보고하는 것 방지).
+    agx_arm_status_topic: str = "feedback/arm_status"
     agx_joint_tolerance_rad: float = 0.02
     agx_pose_tolerance_m: float = 0.01
     agx_motion_timeout_sec: float = 30.0

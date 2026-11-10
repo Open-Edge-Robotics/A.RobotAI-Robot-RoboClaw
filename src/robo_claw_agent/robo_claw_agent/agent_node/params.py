@@ -236,6 +236,7 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("manipulation_agx_move_linear_topic", "control/move_l")
     node.declare_parameter("manipulation_agx_joint_state_topic", "feedback/joint_states")
     node.declare_parameter("manipulation_agx_tcp_pose_topic", "feedback/tcp_pose")
+    node.declare_parameter("manipulation_agx_arm_status_topic", "feedback/arm_status")
     node.declare_parameter("manipulation_agx_joint_tolerance_rad", 0.02)
     node.declare_parameter("manipulation_agx_pose_tolerance_m", 0.01)
     node.declare_parameter("manipulation_agx_motion_timeout_sec", 30.0)

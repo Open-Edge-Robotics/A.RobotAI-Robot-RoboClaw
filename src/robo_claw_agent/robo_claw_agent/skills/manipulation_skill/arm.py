@@ -26,7 +26,9 @@ class ArmPoseSkill(BaseSkill):
     input_schema = {"type": "object", "properties": {"pose_name": {"type": "string"}}, "required": ["pose_name"], "additionalProperties": True}
     description = (
         "팔을 named pose로 이동합니다. "
-        "pose_name 파라미터가 필요하며, 실제 MoveIt target 이름은 설정으로 매핑됩니다."
+        "pose_name 파라미터가 필요하며, 실제 MoveIt target 이름은 설정으로 매핑됩니다. "
+        "AGX(Nero) 백엔드에서 home 은 모든 조인트 0 rad 의 수직으로 뻗은 자세이며 "
+        "접은 자세가 아닙니다. 접기는 설정에 stow 등 접힘 자세가 정의된 경우에만 가능합니다."
     )
 
     def validate_params(self, params: dict[str, Any]) -> bool:
@@ -52,6 +54,7 @@ class ArmPoseSkill(BaseSkill):
 
         return _move_sequence_result(
             action=f"포즈 이동 완료: {pose_name}",
+            already_action=f"이미 '{pose_name}' 자세입니다(명령 시점과 동일)",
             payload=result,
         )
 
@@ -102,6 +105,7 @@ class MoveJointsSkill(BaseSkill):
 
         return _move_sequence_result(
             action="조인트 이동 완료",
+            already_action="이미 목표 조인트 자세입니다(명령 시점과 동일)",
             payload=result,
         )
 
@@ -116,6 +120,7 @@ class MovePoseSkill(BaseSkill):
         "end-effector 를 목표 pose로 이동합니다. "
         "target_pose 또는 x/y/z 좌표(미터, 기본 프레임 base_link: x=앞/y=왼쪽/z=위)가 필요하며 "
         "orientation 또는 roll/pitch/yaw를 함께 줄 수 있습니다. "
+        "자세를 지정하지 않으면 현재 end-effector 자세를 유지합니다. "
         "map 등 다른 프레임의 좌표는 frame_id로 지정하면 실행 시점 TF로 자동 변환됩니다."
     )
 
@@ -154,5 +159,6 @@ class MovePoseSkill(BaseSkill):
 
         return _move_sequence_result(
             action="Pose 이동 완료",
+            already_action="이미 목표 pose에 있습니다(명령 시점과 동일)",
             payload=result,
         )

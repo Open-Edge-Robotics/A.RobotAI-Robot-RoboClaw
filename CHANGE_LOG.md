@@ -3,6 +3,41 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — AGX 팔 이동 결과 검증(home 미동작·포즈 실패 오보고 수정)
+
+- **배경**: former0045(Nero 팔) 실기에서 "팔을 조금 올려봐" 요청이 `move_pose(x=0.3,y=0,z=0.5)` 로
+  라우팅됐고 30초 타임아웃까지 팔이 최대 신장 상태로 멈췄습니다. 이어서 "팔 home 자세로 해줘",
+  "그대로 인데 팔을 접어줘" 요청은 `arm_pose(home)` 이 50~60ms 만에 "executed successfully" 로
+  끝나 팔이 전혀 움직이지 않았습니다. 원인은 세 가지입니다.
+  1) AGX 드라이버 `/move_home` 은 `move_j([0]*N)` 이며 Nero 기준 **수직으로 뻗은 zero 자세**입니다.
+  즉 "home" 은 접은 자세가 아니고, 이미 그 자세면 서비스는 즉시 반환합니다.
+  2) `/move_home` 은 `std_srvs/Empty` 라 미연결·미활성·모션 타임아웃을 응답으로 알려주지 않습니다.
+  `call_home_service()` 가 응답만 보고 성공을 선언해 팔이 안 움직여도 "홈 이동 완료" 로 보고됐습니다.
+  3) 위치만 지정한 pose 목표가 orientation 을 identity 로 고정해 발행돼 IK 불가(`NO_SOLUTION`)를
+  유발하고, 드라이버 상태 오류는 `/feedback/arm_status` 로만 노출돼 30초 대기 끝에
+  "도달하지 못했습니다" 만 보고됐습니다.
+- **조치**:
+  - `manipulation_runtime/agx_backend.py`: `/move_home` 호출 뒤 `/feedback/joint_states` 가 드라이버
+    home 자세(팔 조인트 0 rad)에 수렴하는지 검증하고, 미수렴 시 `ManipulationError` 로 실패를 알립니다.
+    `/feedback/arm_status`(DiagnosticArray) 를 구독해 ERROR 레벨이면 팔 명령을 즉시 거부합니다
+    (그리퍼 단독 제어는 제외). 위치만 지정한 pose 목표는 현재 end-effector 자세를 유지해 발행합니다.
+  - `manipulation_runtime/types.py`·`math.py`: `PoseGoal.orientation_explicit`, `MotionOutcome` 을 추가하고
+    `pose_goal_from_params()` 가 orientation 지정 여부를 보존합니다.
+  - `manipulation_runtime/runtime.py`·`skills/manipulation_skill/arm.py`: 사후 검증 결과
+    (`moved`, `already_at_target`)를 스킬 결과에 싣고, 이미 그 자세였으면 "이동 완료" 대신
+    "이미 그 자세입니다" 로 메시지를 구분합니다.
+  - `agent_node/params.py`·`former_arm_config.yaml`: `manipulation_agx_arm_status_topic`
+    (`/feedback/arm_status`) 를 추가하고, `home` 이 접은 자세가 아님을 설정 주석에 명시했습니다.
+  - `SKILLS.former_arm.md`·`docs/MANIPULATION.md`: "home = 수직 zero(접은 자세 아님)", 접기는 `stow`
+    정의 시에만, `already_at_target` 이면 움직였다고 보고하지 않음, 팔 오류는 반복 대신 보고 규칙을 추가했습니다.
+- **검증**: `task unit-test` 2131 passed, `pytest src/robo_claw_agent/tests/test_agx_backend.py` 22 passed
+  (신규 7건: home 미동작 실패·이미 home 보고·arm_status 오류 거부·그리퍼 예외·orientation 유지·
+  orientation_explicit). `ruff check`/대상 파일 `ruff format --check` 통과. 기존
+  `test_manipulation_grasp_place.py` 10건 실패는 변경 전 동일하게 재현되는 기존 실패입니다.
+- **실기 미검증**: 팔이 현재 `arm_status=NO_SOLUTION(0x2)`, 팔 조인트 피드백 0.0, TCP `z≈0.72m`
+  (수직 최대 신장) 상태입니다. 접은 자세(`stow`) 조인트 값은 실측 전이라 정의하지 않았고,
+  새 검증 경로는 실기에서 재확인해야 합니다.
+
 ## 2026-11-09 — Maestro 관제 중 로봇 간 협업 차단
 
 - **배경**: Maestro는 여러 로봇의 계획·배정·기록을 단일 경로로 관리하는 상위 에이전트입니다. 그런데 Maestro를 켜도 에이전트는 peer 협업 스킬(`call_peer_robot`, `autonomous_cooperate` 등)을 그대로 노출했고, `~/peer_message`로 동료 메시지를 받으면 자율협동을 자동 시작했습니다. 기존 `fleet_handoff`의 "직접 위임 금지" 규칙도 `MAESTRO_IP` 유무로만 판정해 `MAESTRO_ENABLED`와 어긋났습니다.

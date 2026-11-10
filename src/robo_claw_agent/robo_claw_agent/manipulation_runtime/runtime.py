@@ -31,6 +31,21 @@ def tolerate_contact(label: str = "move"):
         )
 
 
+def _motion_payload(backend: Any) -> dict[str, Any]:
+    """백엔드가 남긴 사후 검증 결과를 스킬 결과 payload 로 변환한다.
+
+    ``already_at_target`` 이 True 면 명령 시점에 이미 그 자세였으므로 스킬은
+    "이동 완료" 대신 "이미 그 자세" 로 보고해야 한다.
+    """
+    outcome = getattr(backend, "last_motion", None)
+    if outcome is None:
+        return {}
+    return {
+        "moved": bool(getattr(outcome, "moved", True)),
+        "already_at_target": bool(getattr(outcome, "already_at_target", False)),
+    }
+
+
 class MoveItManipulationRuntime:
     """manipulation skill에서 사용하는 공통 런타임"""
 
@@ -91,6 +106,7 @@ class MoveItManipulationRuntime:
             "pose_name": str(pose_name).strip(),
             "moveit_target": target_name,
             "group_name": self._arm_group(group_name),
+            **_motion_payload(backend),
         }
 
     def move_to_joint_target(
@@ -111,6 +127,7 @@ class MoveItManipulationRuntime:
             "group_name": self._arm_group(group_name),
             "joint_count": len(normalized),
             "joints": normalized,
+            **_motion_payload(backend),
         }
 
     def move_to_pose_target(
@@ -143,6 +160,7 @@ class MoveItManipulationRuntime:
             "orientation": dict(pose.orientation),
             "end_effector_link": ee_link,
             "cartesian": cartesian,
+            **_motion_payload(backend),
         }
 
     def _validate_joint_limits(
@@ -176,4 +194,5 @@ class MoveItManipulationRuntime:
             "preset_name": preset_key,
             "group_name": self._gripper_group(group_name),
             "joints": dict(joint_map),
+            **_motion_payload(backend),
         }
