@@ -69,7 +69,7 @@
         "target_x",
         "target_y"
       ],
-      "description": "전역 맵(/map)을 분석하여 로봇 주변의 장애물 분포, 특정 위치의 통과 가능 여부 등을 파악합니다. LLM이 특정 위치(target_x, target_y)가 이동 가능한지 확인하거나, 맵의 통계를 얻을 때 사용합니다. 이 분석 결과를 바탕으로 좌표를 획득하여 annotate_map 도구에 전달할 수 있습니다.",
+      "description": "전역 맵을 분석하여 로봇 주변의 장애물 분포, 특정 위치의 통과 가능 여부 등을 파악합니다. LLM이 특정 위치(target_x, target_y)가 이동 가능한지 확인하거나, 맵의 통계를 얻을 때 사용합니다. 이 분석 결과를 바탕으로 좌표를 획득하여 annotate_map 도구에 전달할 수 있습니다.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/map_skill/analyze.py"
     },
     {
@@ -598,7 +598,7 @@
         "min_separation_m",
         "max_openness_m"
       ],
-      "description": "전역 맵(/map)을 수치 분석하여 로봇이 실제로 도달 가능한 '넓고 개방된 이동 후보 장소'들을 찾아 시맨틱 맵에 등록하고, 맵 이미지에 마킹하여 반환합니다. 각 후보는 등록된 이름(예: '이동가능지점1')으로 이후 navigate_to에 사용할 수 있습니다. 파라미터: max_places(기본 5), min_openness_m(기본 0.3), min_separation_m(기본 1.5). 특정 단일 좌표의 통과 가능 여부만 확인하려면 analyze_map을 사용하세요.",
+      "description": "전역 맵을 수치 분석하여 로봇이 실제로 도달 가능한 '넓고 개방된 이동 후보 장소'들을 찾아 시맨틱 맵에 등록하고, 맵 이미지에 마킹하여 반환합니다. 각 후보는 등록된 이름(예: '이동가능지점1')으로 이후 navigate_to에 사용할 수 있습니다. 파라미터: max_places(기본 5), min_openness_m(기본 0.3), min_separation_m(기본 1.5). 특정 단일 좌표의 통과 가능 여부만 확인하려면 analyze_map을 사용하세요.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/map_skill/find_places.py"
     },
     {

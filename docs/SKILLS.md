@@ -23,6 +23,23 @@
 임의 스크립트·현재 위치 조회·외부 플러그인은 대체합니다. 자세한 실행 방법은
 [설정 가이드](CONFIGURATION_GUIDE.md#로봇-없이-grpc와-llm을-실행합니다)를 참고합니다.
 
+### 지도 입력과 이미지 전송
+
+`capture_map`, `get_map_visual`, `analyze_map`, `annotate_map`,
+`find_reachable_places`, `explore`의 `map_topic`은 선택 인자입니다. 생략하거나
+공백이면 로봇 파라미터를 사용하며, 설정이 없으면 `/map`을 사용합니다. CLOiD는
+`cloid` 프로필에서 `/lio/grid_map`을 자동 선택하므로 일반 지도 요청에 토픽을
+직접 지정할 필요가 없습니다.
+
+`capture_map`과 `get_map_visual`은 `map_metadata.map_topic`에 사용한 토픽을
+반환합니다. 이미지 생성에 성공해 `file_path`를 반환한 결과는 기존 채널 자동
+전송 경로를 사용합니다. 지도 수신·frame 검증·파일 저장에 실패하면 이미지를
+전송하지 않습니다. 수신 timeout 때 다른 토픽으로 자동 전환하지 않습니다.
+
+자율 행동과 양보 후보 계산도 로봇의 지도 토픽과 freshness 정책을 사용합니다.
+정적·갱신형 설정과 10초 freshness 상한은
+[지도 설정](CONFIGURATION_GUIDE.md#로봇별-지도-토픽)을 참고합니다.
+
 | 카테고리 | 스킬 | 공개 범위 | 위험도 | 백엔드 | 설명 |
 | --- | --- | --- | --- | --- | --- |
 | Manipulation | `adaptive_pick_object` | Public | action | stretch | 물체 탐색부터 정렬·파지·복귀까지 수행 |
@@ -81,7 +98,7 @@
 | Map | `find_reachable_places` | Public | action | 공통 | 도달 가능한 개방 공간 후보 계산 |
 | Map | `get_map_visual` | Public | action | 공통 | 현재 지도 시각화 및 전송 |
 | Autonomous | `autonomous_act` | Public | action | 공통 | 기억된 장소 한 바퀴 순찰 후 자동 종료·제자리 관찰(프론티어 탐험 미수행) |
-| Autonomous | `tidy_home` | Public | action | 공통 | 각 장소 4방향 관찰 후 폐기물·수건·쿠션·명확한 빨래 후보 확인, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연. Maestro 관제 중(`RC_PEER_HANDOFF_MODE=report`, `MAESTRO_IP` 설정 시 기본)에는 동료를 직접 부르지 않고 정리를 마친 뒤 `peer_requests`로 보고(`wait_for_completion` 기본 true). 집 범위 순회 목록은 같은 위치(0.75m 이내)·로봇 라벨 중복 장소를 한 번만 포함하고 `현재 위치`·`여기` 같은 위치 지시어는 제외 |
+| Autonomous | `tidy_home` | Public | action | 공통 | 각 장소 4방향 관찰 후 폐기물·수건·쿠션·명확한 빨래 후보 확인, 유형별 승인 목적지 검증, 동료 단발 위임·CLOi 폐기물 시연. Maestro 관제 중(`RC_PEER_HANDOFF_MODE=report`, MAESTRO_IP 설정 시 기본)에는 동료를 직접 부르지 않고 정리를 마친 뒤 peer_requests로 보고(wait_for_completion 기본 true). 집 범위 순회 목록은 같은 위치(0.75m 이내)·로봇 라벨 중복 장소를 한 번만 포함하고 `현재 위치`·`여기` 같은 위치 지시어는 제외 |
 | Autonomous | `condition_reactive` | Public | action | 공통 | 조건 감지 시 foreground 중단 및 후속 체인 실행 |
 | Autonomous | `explore` | Public | action | 공통 | 미탐사 영역 자율 탐험 |
 | Autonomous | `reactive_navigate` | Public | action | 공통 | 이동 중 객체 감지 시 반응 행동 |

@@ -40,7 +40,7 @@ def test_initialize_map_status_param():
 
 def test_initialize_map_status_auto_no_map():
     skill = MagicMock()
-    skill.wait_for_message.return_value = None  # /map 수신 실패 모사
+    skill.wait_for_map_message.return_value = None  # Map reception failure.
 
     node = InitializeMapStatus(skill, param_has_map=None)
     blackboard = {}
@@ -49,7 +49,7 @@ def test_initialize_map_status_auto_no_map():
 
     assert status == NodeStatus.SUCCESS
     assert blackboard["has_map"] is False
-    skill.wait_for_message.assert_called_once()
+    skill.wait_for_map_message.assert_called_once()
 
 
 def test_check_has_map():

@@ -10,7 +10,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
 
 from robo_claw_agent.skill_manager import BaseSkill
 
@@ -32,7 +31,10 @@ class FindReachablePlacesSkill(BaseSkill):
     input_schema = {
         "type": "object",
         "properties": {
-            "map_topic": {"type": "string", "default": "/map"},
+            "map_topic": {
+                "type": "string",
+                "description": "맵 토픽입니다. 생략하거나 공백이면 로봇 설정을 사용합니다.",
+            },
             "max_places": {"type": "integer", "default": 5},
             "min_openness_m": {"type": "number", "default": 0.3},
             "min_separation_m": {"type": "number", "default": 1.5},
@@ -41,7 +43,7 @@ class FindReachablePlacesSkill(BaseSkill):
         "additionalProperties": False,
     }
     description = (
-        "전역 맵(/map)을 수치 분석하여 로봇이 실제로 도달 가능한 '넓고 개방된 이동 후보 장소'들을 "
+        "전역 맵을 수치 분석하여 로봇이 실제로 도달 가능한 '넓고 개방된 이동 후보 장소'들을 "
         "찾아 시맨틱 맵에 등록하고, 맵 이미지에 마킹하여 반환합니다. "
         "각 후보는 등록된 이름(예: '이동가능지점1')으로 이후 navigate_to에 사용할 수 있습니다. "
         "파라미터: max_places(기본 5), min_openness_m(기본 0.3), min_separation_m(기본 1.5). "
@@ -49,17 +51,20 @@ class FindReachablePlacesSkill(BaseSkill):
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        map_topic = self.get_string_param(params, "map_topic", "/map")
+        map_topic = (
+            self.get_string_param(
+                {"map_topic": (params.get("map_topic") or "").strip()}, "map_topic", "/map"
+            ).strip()
+            or "/map"
+        )
         max_places = int(params.get("max_places", 5))
         min_openness_m = float(params.get("min_openness_m", 0.3))
         min_separation_m = float(params.get("min_separation_m", 1.5))
         max_openness_m = float(params.get("max_openness_m", 3.0))
 
-        map_msg = self.wait_for_message(
-            OccupancyGrid,
+        map_msg = self.wait_for_map_message(
             map_topic,
             timeout_sec=10.0,
-            use_transient_local=True,
             max_age_sec=10.0,
         )
         if not map_msg:

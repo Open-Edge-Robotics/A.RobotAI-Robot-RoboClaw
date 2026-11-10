@@ -9,7 +9,6 @@ import time
 from typing import Any
 
 import numpy as np
-from nav_msgs.msg import OccupancyGrid
 
 from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.navigation_skill import (  # type: ignore
@@ -105,11 +104,7 @@ def _filter_frontiers_by_radius(
     radius: float,
 ) -> list[tuple[float, float]]:
     """탐험 반경 내 프론티어만 필터링"""
-    return [
-        (fx, fy)
-        for fx, fy in frontiers
-        if math.hypot(fx - robot_x, fy - robot_y) <= radius
-    ]
+    return [(fx, fy) for fx, fy in frontiers if math.hypot(fx - robot_x, fy - robot_y) <= radius]
 
 
 def _select_nearest_frontier(
@@ -128,11 +123,24 @@ class ExploreSkill(BaseSkill):
 
     name = "explore"
     terminal_behavior = "background"
-    input_schema = {"type": "object", "properties": {
-        "exploration_radius": {"type": "number", "default": 5.0},
-        "target_coverage": {"type": "number", "default": 80.0, "minimum": 0.0, "maximum": 100.0},
-        "max_iterations": {"type": "integer", "default": 30}, "map_topic": {"type": "string", "default": "/map"}
-    }, "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "exploration_radius": {"type": "number", "default": 5.0},
+            "target_coverage": {
+                "type": "number",
+                "default": 80.0,
+                "minimum": 0.0,
+                "maximum": 100.0,
+            },
+            "max_iterations": {"type": "integer", "default": 30},
+            "map_topic": {
+                "type": "string",
+                "description": "맵 토픽입니다. 생략하거나 공백이면 로봇 설정을 사용합니다.",
+            },
+        },
+        "additionalProperties": False,
+    }
     description = (
         "SLAM 모드에서 지정된 반경(exploration_radius, 기본 5.0m) 내의 미탐사 영역을 "
         "자율적으로 탐험하며 지도를 확장합니다. "
@@ -149,7 +157,12 @@ class ExploreSkill(BaseSkill):
         radius = float(params.get("exploration_radius", 5.0))
         target_coverage = float(params.get("target_coverage", 80.0))
         max_iterations = int(params.get("max_iterations", 30))
-        map_topic = str(params.get("map_topic", "/map"))
+        map_topic = (
+            self.get_string_param(
+                {"map_topic": (params.get("map_topic") or "").strip()}, "map_topic", "/map"
+            ).strip()
+            or "/map"
+        )
 
         logger.info(
             "Starting exploration: radius=%.1fm, target_coverage=%.1f%%, max_iter=%d",
@@ -188,7 +201,9 @@ class ExploreSkill(BaseSkill):
                 )
 
                 if final_coverage >= target_coverage:
-                    logger.info("Reached target coverage %.1f%% — exploration complete", target_coverage)
+                    logger.info(
+                        "Reached target coverage %.1f%% — exploration complete", target_coverage
+                    )
                     self.send_user_message(
                         f"탐사율 {final_coverage:.1f}%를 달성했습니다. 탐험을 완료합니다."
                     )
@@ -208,14 +223,10 @@ class ExploreSkill(BaseSkill):
                     info.origin.position.y,
                 )
                 clusters = _cluster_frontiers(raw_frontiers, cluster_dist=0.5)
-                in_radius = _filter_frontiers_by_radius(
-                    clusters, robot_x, robot_y, radius
-                )
+                in_radius = _filter_frontiers_by_radius(clusters, robot_x, robot_y, radius)
 
                 def not_visited(p: tuple[float, float]) -> bool:
-                    return all(
-                        math.hypot(p[0] - vx, p[1] - vy) > 0.5 for vx, vy in visited
-                    )
+                    return all(math.hypot(p[0] - vx, p[1] - vy) > 0.5 for vx, vy in visited)
 
                 candidates = [p for p in in_radius if not_visited(p)]
 
@@ -248,9 +259,7 @@ class ExploreSkill(BaseSkill):
                     f"(현재 탐사율: {final_coverage:.1f}%)"
                 )
 
-                accepted, msg, goal_handle = _send_navigation_goal(
-                    self.node, tx, ty, "map"
-                )
+                accepted, msg, goal_handle = _send_navigation_goal(self.node, tx, ty, "map")
                 if not accepted:
                     logger.warning("Frontier movement rejected: %s — trying next frontier", msg)
                     visited.add((tx, ty))
@@ -309,8 +318,7 @@ class ExploreSkill(BaseSkill):
         return {
             "success": True,
             "message": (
-                f"탐험을 시작합니다. "
-                f"반경 {radius:.1f}m, 목표 탐사율 {target_coverage:.1f}%"
+                f"탐험을 시작합니다. 반경 {radius:.1f}m, 목표 탐사율 {target_coverage:.1f}%"
             ),
             "exploration_radius": radius,
             "target_coverage": target_coverage,
@@ -319,9 +327,16 @@ class ExploreSkill(BaseSkill):
 
     def _wait_for_map(self, map_topic: str) -> Any:
         """맵 메시지 수신"""
-        return self.wait_for_message(
-            OccupancyGrid, map_topic, timeout_sec=10.0, use_transient_local=True
+        message = self.wait_for_map_message(map_topic, timeout_sec=10.0, max_age_sec=10.0)
+        if message is None:
+            return None
+        valid, reason = self.validate_message_frame(
+            message, getattr(self.node, "_map_frame", "map"), "OccupancyGrid"
         )
+        if not valid:
+            logger.warning("Exploration map rejected: %s", reason)
+            return None
+        return message
 
 
 class StopExploreSkill(BaseSkill):
@@ -330,7 +345,9 @@ class StopExploreSkill(BaseSkill):
     name = "stop_explore"
     terminal_behavior = "terminal"
     input_schema = {"type": "object", "properties": {}, "additionalProperties": False}
-    description = "현재 진행 중인 자율 탐험만 즉시 중단합니다. 일반 이동 중단은 `stop`을 사용하세요."
+    description = (
+        "현재 진행 중인 자율 탐험만 즉시 중단합니다. 일반 이동 중단은 `stop`을 사용하세요."
+    )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         del params

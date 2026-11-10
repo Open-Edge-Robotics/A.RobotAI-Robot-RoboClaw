@@ -526,6 +526,11 @@ def _launch_setup(context, *args, **kwargs):
     odom_topic = (
         config.get("robo_claw_core_node", {}).get("ros__parameters", {}).get("odom_topic", "/odom")
     )
+    map_topic = (
+        config.get("robo_claw_agent_node", {}).get("ros__parameters", {}).get("map_topic", "/map")
+    )
+    map_topic = map_topic.strip() if isinstance(map_topic, str) else ""
+    map_topic = map_topic or "/map"
 
     agent_remappings = []
     if odom_topic and odom_topic != "/odom":
@@ -785,7 +790,7 @@ def _launch_setup(context, *args, **kwargs):
                 "battery_topic": "/battery_state",
                 "pose_topic": "/amcl_pose",
                 "navigate_to_topic": "/robo_claw_grpc/navigate_to",
-                "map_topic": "/map",
+                "map_topic": map_topic,
             }
         ],
         condition=IfCondition(LaunchConfiguration("use_grpc")),

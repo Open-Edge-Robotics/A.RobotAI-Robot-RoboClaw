@@ -153,7 +153,6 @@ class ExploreNode(BTNode):
 
         try:
             import numpy as np
-            from nav_msgs.msg import OccupancyGrid
 
             from robo_claw_agent.agent_node.nav_safety import prepare_navigation
             from robo_claw_agent.skills.explore_skill import (
@@ -168,11 +167,16 @@ class ExploreNode(BTNode):
             logger.error("[BT] ExploreNode: import failed - %s", e)
             return NodeStatus.FAILURE
 
-        map_msg = self._skill.wait_for_message(
-            OccupancyGrid, "/map", timeout_sec=5.0, use_transient_local=True
-        )
+        map_topic = self._skill.get_string_param({}, "map_topic", "/map")
+        map_msg = self._skill.wait_for_map_message(map_topic, timeout_sec=5.0)
         if not map_msg:
             logger.warning("[BT] ExploreNode: failed to receive map")
+            return NodeStatus.FAILURE
+        valid, reason = self._skill.validate_message_frame(
+            map_msg, getattr(self._skill.node, "_map_frame", "map"), "OccupancyGrid"
+        )
+        if not valid:
+            logger.warning("[BT] ExploreNode: map rejected - %s", reason)
             return NodeStatus.FAILURE
 
         info = map_msg.info

@@ -119,6 +119,17 @@ RC_AGENT_ID=cloi02
 | `ROBOT.cloid.1.md` | CLOiD 1호 전용 소울 프로필(팔·상체 모션을 쓰는 정상 개체의 개성) |
 | `ROBOT.cloid.2.md` | CLOiD 2호 전용 소울 프로필(관찰·순찰 중심으로 공간을 살피는 개성) |
 
+`cloid_config.yaml`은 지도 토픽을 `/lio/grid_map`, `map_is_static`을 `false`로
+지정합니다. 지도 캡처·분석·마킹·탐색·양보 동작과 기본 launch의 gRPC 지도 구독은
+이 토픽을 사용합니다. 스킬 호출에서 `map_topic`을 생략해도 적용합니다. 기존
+로봇의 미설정 기본 토픽은 `/map`으로 유지합니다.
+
+갱신형 지도는 transient-local 또는 volatile 여부와 관계없이 10초 이내 데이터만
+사용합니다. 수신되지 않거나 frame이 맞지 않으면 지도 기반 판단을 차단합니다.
+배포 후 `/lio/grid_map`이 `nav_msgs/msg/OccupancyGrid`인지, publisher의 QoS,
+발행 주기, `header.frame_id`와 `map_frame`의 일치를 확인합니다. 자세한 설정은
+[지도 설정](CONFIGURATION_GUIDE.md#로봇별-지도-토픽)을 참고합니다.
+
 ### 개체별 스킬·소울 가이드 선택
 
 CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체별 개성과 운용 역할이 달라 스킬 가이드와 소울

@@ -6,6 +6,7 @@
 
 import logging
 import threading
+import time
 import weakref
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -52,6 +53,7 @@ class _SubscriptionSlot:
     def __init__(self) -> None:
         self.subscription: Any = None
         self.last_message: Any = None
+        self.last_received_monotonic: float = 0.0
         self._lock = threading.Lock()
         self._handlers: list[Callable[[Any], None]] = []
 
@@ -69,13 +71,18 @@ class _SubscriptionSlot:
 
     def __call__(self, msg: Any) -> None:
         with self._lock:
+            self.last_message = msg
+            self.last_received_monotonic = time.monotonic()
             handlers = tuple(self._handlers)
-        self.last_message = msg
         for handler in handlers:
             try:
                 handler(msg)
             except Exception:  # noqa: BLE001
                 logger.exception("Subscription slot handler failed")
+
+    def cached_sample(self) -> tuple[Any, float]:
+        with self._lock:
+            return self.last_message, self.last_received_monotonic
 
 
 # 노드별 구독 슬롯 캐시. 노드 속성으로 보관해 노드 수명과 함께 사라진다.
@@ -471,6 +478,8 @@ class BaseSkill(ABC):
         use_transient_local: bool = False,
         allow_best_effort: bool = True,
         max_age_sec: float | None = None,
+        fresh_volatile: bool = False,
+        fresh_transient_local: bool = False,
     ) -> T | None:
         """특정 토픽에서 메시지 하나를 수신할 때까지 대기 (One-shot).
 
@@ -478,10 +487,13 @@ class BaseSkill(ABC):
         현재 시각 대비 max_age_sec를 초과하거나 미래 시점(>2초)인 메시지는 무시하고
         최신 메시지를 계속 대기한다.
 
-        단, use_transient_local=True(latched 토픽)인 경우에는 age 검사를
+        단, use_transient_local=True(latched 토픽)인 경우에는 기본적으로 age 검사를
         적용하지 않는다. latched 토픽은 마지막 샘플을 그대로 전달하므로
         수신 시점의 age가 max_age_sec보다 큰 것이 정상이며, 이를 stale로
         판단하면 정적 맵(/map)처럼 1회만 발행되는 토픽을 영구히 놓치게 된다.
+
+        fresh_volatile/fresh_transient_local enable map freshness checks for
+        each durability, including the monotonic age of cached samples.
         """
         if self.node is None:
             logger.error("Node is not configured. wait_for_message unavailable.")
@@ -562,8 +574,23 @@ class BaseSkill(ABC):
 
         registered: list[tuple[_SubscriptionSlot, Callable[[T], None]]] = []
         for qos in qos_profiles:
+            check_map_age = (fresh_volatile and qos.durability == DurabilityPolicy.VOLATILE) or (
+                fresh_transient_local and qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
+            )
+
+            def on_message(
+                msg: T, received_age_sec: float = 0.0, *, check_age: bool = check_map_age
+            ) -> None:
+                if check_age:
+                    from .map_messages import map_sample_is_fresh
+
+                    if not map_sample_is_fresh(self.node, msg, max_age_sec, received_age_sec):
+                        logger.debug("wait_for_message: dropped stale map on %s", topic)
+                        return
+                _cb(msg)
+
             try:
-                slot = self.get_message_slot(msg_type, topic, qos, handler=_cb)
+                slot = self.get_message_slot(msg_type, topic, qos, handler=on_message)
             except Exception as exc:
                 # 일부 RMW 구현은 지원하지 않는 QoS 조합에서 예외를 낼 수
                 # 있으므로 다른 후보 QoS를 계속 시도한다.
@@ -576,11 +603,13 @@ class BaseSkill(ABC):
                     exc,
                 )
                 continue
-            registered.append((slot, _cb))
+            registered.append((slot, on_message))
             # latched 토픽은 이미 매칭된 구독에 DDS가 재전송하지 않으므로,
             # 캐시된 마지막 샘플을 새 대기자에게 재생한다.
-            if use_transient_local and not event.is_set() and slot.last_message is not None:
-                _cb(slot.last_message)
+            if use_transient_local and not event.is_set():
+                cached_message, received_at = slot.cached_sample()
+                if cached_message is not None:
+                    on_message(cached_message, max(0.0, time.monotonic() - received_at))
             if event.is_set():
                 break
 
@@ -597,6 +626,14 @@ class BaseSkill(ABC):
                 slot.remove_handler(handler)
 
         return received_msg[0] if received_msg else None
+
+    def wait_for_map_message(
+        self, map_topic: str, timeout_sec: float = 5.0, max_age_sec: float | None = 10.0
+    ) -> Any | None:
+        """Receive static or fresh volatile maps on the selected topic only."""
+        from .map_messages import wait_for_map_message
+
+        return wait_for_map_message(self, map_topic, timeout_sec, max_age_sec)
 
     def validate_message_frame(
         self, message: Any, expected_frame: str | None, label: str

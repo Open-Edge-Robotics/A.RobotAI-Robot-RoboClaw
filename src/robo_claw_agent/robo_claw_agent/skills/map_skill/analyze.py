@@ -1,8 +1,6 @@
 import logging
 from typing import Any
 
-from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
-
 from robo_claw_agent.skill_manager import BaseSkill
 
 logger = logging.getLogger(__name__)
@@ -16,30 +14,36 @@ class AnalyzeMapSkill(BaseSkill):
     input_schema = {
         "type": "object",
         "properties": {
-            "map_topic": {"type": "string", "default": "/map"},
+            "map_topic": {
+                "type": "string",
+                "description": "맵 토픽입니다. 생략하거나 공백이면 로봇 설정을 사용합니다.",
+            },
             "target_x": {"type": "number"},
             "target_y": {"type": "number"},
         },
         "additionalProperties": False,
     }
     description = (
-        "전역 맵(/map)을 분석하여 로봇 주변의 장애물 분포, 특정 위치의 통과 가능 여부 등을 파악합니다. "
+        "전역 맵을 분석하여 로봇 주변의 장애물 분포, 특정 위치의 통과 가능 여부 등을 파악합니다. "
         "LLM이 특정 위치(target_x, target_y)가 이동 가능한지 확인하거나, 맵의 통계를 얻을 때 사용합니다. "
         "이 분석 결과를 바탕으로 좌표를 획득하여 annotate_map 도구에 전달할 수 있습니다."
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        map_topic = params.get("map_topic", "/map")
+        map_topic = (
+            self.get_string_param(
+                {"map_topic": (params.get("map_topic") or "").strip()}, "map_topic", "/map"
+            ).strip()
+            or "/map"
+        )
         target_x = params.get("target_x")
         target_y = params.get("target_y")
 
         logger.info("Waiting to receive map data: topic=%s", map_topic)
 
-        map_msg = self.wait_for_message(
-            OccupancyGrid,
+        map_msg = self.wait_for_map_message(
             map_topic,
             timeout_sec=5.0,
-            use_transient_local=True,
             max_age_sec=10.0,
         )
         if not map_msg:

@@ -3,6 +3,13 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — 로봇별 지도 토픽과 갱신형 지도 수신
+
+- **Fixed**: 지도 스킬·자율 탐색·양보 후보 계산의 `/map` 고정을 제거합니다. 명시적 스킬 인자, 로봇 파라미터, `/map` 순으로 지도 토픽을 선택하고 CLOiD는 `/lio/grid_map`을 사용합니다. 기본 launch의 gRPC 지도 구독에도 같은 토픽을 전달합니다.
+- **Added**: robot-local `map_is_static` 설정을 추가합니다. CLOiD 갱신형 지도의 메시지·캐시는 QoS와 관계없이 10초 freshness 상한을 적용하며, 기존 정적 지도의 latched 수신을 유지합니다. 탐색·양보 경로에서 frame 불일치를 차단합니다.
+- **Changed**: 지도 스키마의 고정 `/map` default를 제거하고 캡처·시각화 metadata에 선택 토픽을 추가합니다. gRPC 지도 수신은 transient-local·volatile와 reliable·best-effort publisher를 지원합니다.
+- **검증**: `task unit-test` 2367개, 신규 지도 테스트의 colcon 4개 묶음(109개 사례), 관련 3개 패키지 빌드와 Ruff·스킬 목록·설정 contract·문서 링크 검사를 검증합니다. colcon은 기존 테스트 환경의 경로 누락을 실행 시 보완합니다. 실제 CLOiD DDS 수신과 채널 전송은 미검증입니다.
+
 ## 2026-11-10 — CLOiD EtherCAT 라이선스 운영 진단 문서
 
 - **Added**: [CLOiD EtherCAT 라이선스 진단 문서](docs/TOFU_ETHERCAT_LICENSE.md)를 추가합니다. CLOiD2의 약 62분 후 관절 제어 중단과 라이선스 누락 검증 결과를 정리하며, 미해결 상태와 정식 키 발급 후 70분 이상 재검증 필요성을 명시합니다.

@@ -89,6 +89,8 @@ class AgentParams:
     agent_workspace_dir: str | None = None
     skill_modules: list[str] = field(default_factory=list)
 
+    map_topic: str = "/map"
+    map_is_static: bool = True
     map_frame: str = "map"
     robot_base_frame: str = "base_link"
     mcp_enabled: bool = False
@@ -203,6 +205,8 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("aruco_marker_frame_pairs_json", "")
     node.declare_parameter("aruco_marker_max_age_sec", 1.5)
     node.declare_parameter("aruco_max_residual_m", 0.10)
+    node.declare_parameter("map_topic", "/map")
+    node.declare_parameter("map_is_static", True)
     node.declare_parameter("map_frame", "map")
     node.declare_parameter("robot_base_frame", "base_link")
     node.declare_parameter("mcp_enabled", False)
@@ -347,6 +351,8 @@ def read_agent_parameters(node) -> AgentParams:
         skill_modules=list(
             node.get_parameter("skill_modules").get_parameter_value().string_array_value
         ),
+        map_topic=_s(node, "map_topic") or "/map",
+        map_is_static=_b(node, "map_is_static"),
         map_frame=_s(node, "map_frame") or "map",
         robot_base_frame=_s(node, "robot_base_frame") or "base_link",
         mcp_enabled=_b(node, "mcp_enabled"),

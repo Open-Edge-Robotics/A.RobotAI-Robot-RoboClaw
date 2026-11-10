@@ -118,8 +118,6 @@ class RunExploreOnce(BTNode):
         self._radius = exploration_radius
 
     def tick(self) -> NodeStatus:
-        from nav_msgs.msg import OccupancyGrid
-
         from robo_claw_agent.skills.explore_skill import (
             _EXPLORE_ACTIVE,
             _cluster_frontiers,
@@ -137,10 +135,15 @@ class RunExploreOnce(BTNode):
             logger.debug("[BT] ExploreSkill already running — skipping RunExploreOnce")
             return NodeStatus.SUCCESS
 
-        map_msg = self._skill.wait_for_message(
-            OccupancyGrid, "/map", timeout_sec=5.0, use_transient_local=True
-        )
+        map_topic = self._skill.get_string_param({}, "map_topic", "/map")
+        map_msg = self._skill.wait_for_map_message(map_topic, timeout_sec=5.0)
         if not map_msg:
+            return NodeStatus.FAILURE
+        valid, reason = self._skill.validate_message_frame(
+            map_msg, getattr(self._skill.node, "_map_frame", "map"), "OccupancyGrid"
+        )
+        if not valid:
+            logger.warning("[BT] RunExploreOnce: map rejected - %s", reason)
             return NodeStatus.FAILURE
 
         info = map_msg.info

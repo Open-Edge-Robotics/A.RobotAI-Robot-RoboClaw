@@ -5,7 +5,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
 
 from robo_claw_agent.skill_manager import BaseSkill
 
@@ -22,7 +21,10 @@ class GetMapVisualSkill(BaseSkill):
     input_schema = {
         "type": "object",
         "properties": {
-            "map_topic": {"type": "string", "default": "/map"},
+            "map_topic": {
+                "type": "string",
+                "description": "맵 토픽입니다. 생략하거나 공백이면 로봇 설정을 사용합니다.",
+            },
             "output_path": {"type": "string"},
             "analyze": {"type": "boolean", "default": True},
         },
@@ -36,7 +38,12 @@ class GetMapVisualSkill(BaseSkill):
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        map_topic = params.get("map_topic", "/map")
+        map_topic = (
+            self.get_string_param(
+                {"map_topic": (params.get("map_topic") or "").strip()}, "map_topic", "/map"
+            ).strip()
+            or "/map"
+        )
 
         # 유니크한 파일명 생성
         timestamp = int(time.time())
@@ -46,11 +53,9 @@ class GetMapVisualSkill(BaseSkill):
 
         logger.info("Waiting to receive map visualization data: topic=%s (10s)", map_topic)
 
-        map_msg = self.wait_for_message(
-            OccupancyGrid,
+        map_msg = self.wait_for_map_message(
             map_topic,
             timeout_sec=10.0,
-            use_transient_local=True,
             max_age_sec=10.0,
         )
         if not map_msg:
@@ -114,6 +119,7 @@ class GetMapVisualSkill(BaseSkill):
             "file_path": output_path,
             "vlm_status": "success" if vlm_success else "failed",
             "map_metadata": {
+                "map_topic": map_topic,
                 "width": width,
                 "height": height,
                 "resolution": info.resolution,

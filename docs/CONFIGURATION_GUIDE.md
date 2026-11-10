@@ -41,6 +41,34 @@ RoboClaw local Registry snapshot은 compatibility 비교용입니다.
 검증을 위해 override할 때는 어떤 값을 덮어쓰는지 `config-effective`로 확인해야
 합니다.
 
+### 로봇별 지도 토픽
+
+지도 토픽은 robot YAML의 `robo_claw_agent_node.ros__parameters`에서 지정합니다.
+CLOiD의 `cloid_config.yaml`은 다음 설정을 사용합니다.
+
+```yaml
+robo_claw_agent_node:
+  ros__parameters:
+    map_topic: "/lio/grid_map"
+    map_is_static: false
+```
+
+맵 스킬은 **명시적 `map_topic` 실행 인자 → 로봇 파라미터 → `/map`** 순서로
+선택합니다. 생략하거나 공백인 인자는 로봇 설정을 사용합니다. 기본 launch는 같은
+로봇 설정의 토픽을 gRPC 지도 구독에도 전달합니다. 별도 `RC_MAP_TOPIC` 환경변수나
+공통 runtime contract 변경은 필요하지 않습니다.
+
+`map_is_static`의 기본값은 `true`입니다. 정적 지도는 transient-local로 받은
+오래된 latched 샘플을 허용합니다. `false`인 갱신형 지도는 durability와 관계없이
+메시지 시각과 캐시 수신 시각에 10초 freshness 상한을 적용합니다. volatile 샘플은
+정적 설정에서도 같은 상한을 적용합니다. stamp가 없거나 0이면 수신 시각으로 캐시
+수명을 제한합니다. 토픽을 명시적으로 바꿔도 정적·갱신형 정책은 노드 설정을 따릅니다.
+
+선택한 토픽을 수신하지 못하면 다른 지도로 자동 전환하지 않습니다. 지도 메시지의
+`frame_id`는 `map_frame`과 일치해야 하며, 불일치 시 분석·탐색·양보 후보 계산을
+차단합니다. 헤더가 없는 레거시 메시지는 경고와 함께 호환성을 유지합니다. 대시보드는
+기존 `/map`, `/lio/grid_map` 다중 구독 동작을 유지합니다.
+
 ## 실행 방식
 
 `rclaw launch`의 네이티브 실행은 `RMW_IMPLEMENTATION`이 지정되지 않으면

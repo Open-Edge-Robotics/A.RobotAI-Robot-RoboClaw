@@ -5,7 +5,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
 
 from robo_claw_agent.agent_node.utils import extract_objects
 from robo_claw_agent.skill_manager import BaseSkill
@@ -17,14 +16,17 @@ logger = logging.getLogger(__name__)
 
 
 class AnnotateMapSkill(BaseSkill):
-    """전역 맵(/map) 이미지에 특정 장소나 좌표를 마킹합니다."""
+    """전역 맵 이미지에 특정 장소나 좌표를 마킹합니다."""
 
     name = "annotate_map"
     answer_mode = "informational"
     input_schema = {
         "type": "object",
         "properties": {
-            "map_topic": {"type": "string", "default": "/map"},
+            "map_topic": {
+                "type": "string",
+                "description": "맵 토픽입니다. 생략하거나 공백이면 로봇 설정을 사용합니다.",
+            },
             "markers": {"type": "array", "items": {"type": "object"}},
             "prompt": {"type": "string"},
             "output_path": {"type": "string"},
@@ -34,7 +36,12 @@ class AnnotateMapSkill(BaseSkill):
     description = "전역 맵 이미지에 특정 장소나 좌표를 마킹합니다."
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        map_topic = params.get("map_topic", "/map")
+        map_topic = (
+            self.get_string_param(
+                {"map_topic": (params.get("map_topic") or "").strip()}, "map_topic", "/map"
+            ).strip()
+            or "/map"
+        )
         markers = params.get("markers", [])  # [{'name': str, 'x': float, 'y': float}]
         prompt = params.get(
             "prompt",
@@ -46,11 +53,9 @@ class AnnotateMapSkill(BaseSkill):
         )
 
         # 맵 메시지 수신 및 이미지 변환
-        map_msg = self.wait_for_message(
-            OccupancyGrid,
+        map_msg = self.wait_for_map_message(
             map_topic,
             timeout_sec=10.0,
-            use_transient_local=True,
             max_age_sec=10.0,
         )
         if not map_msg:

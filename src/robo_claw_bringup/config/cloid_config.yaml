@@ -56,6 +56,10 @@ robo_claw_agent_node:
     # depth/camera_info 토픽은 지정하지 않는다 — 헤드 RGB 카메라의 optical frame 이
     # TF 트리에 없어 3D 역투영이 성립하지 않는다.
     camera_topic: "/rgb_cam_head_front_left/image_raw/compressed"
+    # Robot-local OccupancyGrid for map skills and gRPC telemetry.
+    map_topic: "/lio/grid_map"
+    # LIO maps remain dynamic even when published with transient-local QoS.
+    map_is_static: false
 
     # 실제 모션 목록은 /task_manager/motion_map 토픽에서 읽는다. 토픽이 비어 있을 때만
     # 읽기 전용 파일 fallback을 사용하며, 파일은 RoboClaw 컨테이너 내부에 마운트되어야 한다.

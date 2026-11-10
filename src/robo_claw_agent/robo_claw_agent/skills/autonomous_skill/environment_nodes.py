@@ -77,9 +77,7 @@ class RefreshPeerStatusCache(BTNode):
                 query_skill.set_node(node)
                 for peer_name in peer_names:
                     try:
-                        result = query_skill.execute(
-                            {"peer_name": peer_name, "timeout_sec": 10.0}
-                        )
+                        result = query_skill.execute({"peer_name": peer_name, "timeout_sec": 10.0})
                         if result.get("success"):
                             cache[peer_name] = {
                                 "summary": result.get("status_summary", ""),
@@ -179,13 +177,18 @@ class InitializeMapStatus(BTNode):
             return NodeStatus.SUCCESS
 
         try:
-            from nav_msgs.msg import OccupancyGrid
-            map_msg = self._skill.wait_for_message(
-                OccupancyGrid, "/map", timeout_sec=3.0, use_transient_local=True
-            )
+            map_topic = self._skill.get_string_param({}, "map_topic", "/map")
+            map_msg = self._skill.wait_for_map_message(map_topic, timeout_sec=3.0)
             if map_msg is None:
                 self._blackboard["has_map"] = False
-                logger.info("[BT] Failed to receive /map topic — setting has_map = False")
+                logger.info("[BT] Failed to receive %s topic — setting has_map = False", map_topic)
+                return NodeStatus.SUCCESS
+            valid, reason = self._skill.validate_message_frame(
+                map_msg, getattr(self._skill.node, "_map_frame", "map"), "OccupancyGrid"
+            )
+            if not valid:
+                self._blackboard["has_map"] = False
+                logger.warning("[BT] Map state rejected: %s", reason)
                 return NodeStatus.SUCCESS
 
             data = np.array(map_msg.data)
@@ -199,10 +202,16 @@ class InitializeMapStatus(BTNode):
 
             if unknown_ratio <= 30.0:
                 self._blackboard["has_map"] = True
-                logger.info("[BT] Map unexplored ratio %.1f%% (<= 30%%) — setting has_map = True", unknown_ratio)
+                logger.info(
+                    "[BT] Map unexplored ratio %.1f%% (<= 30%%) — setting has_map = True",
+                    unknown_ratio,
+                )
             else:
                 self._blackboard["has_map"] = False
-                logger.info("[BT] Map unexplored ratio %.1f%% (> 30%%) — setting has_map = False", unknown_ratio)
+                logger.info(
+                    "[BT] Map unexplored ratio %.1f%% (> 30%%) — setting has_map = False",
+                    unknown_ratio,
+                )
         except Exception as exc:
             logger.error("[BT] Map state determination error: %s", exc)
             self._blackboard["has_map"] = False

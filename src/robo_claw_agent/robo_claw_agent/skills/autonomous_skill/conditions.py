@@ -112,13 +112,16 @@ class CheckMapCoverage(BTNode):
 
     def tick(self) -> NodeStatus:
         try:
-            from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
-
-            map_msg = self._skill.wait_for_message(
-                OccupancyGrid, "/map", timeout_sec=5.0, use_transient_local=True
-            )
+            map_topic = self._skill.get_string_param({}, "map_topic", "/map")
+            map_msg = self._skill.wait_for_map_message(map_topic, timeout_sec=5.0)
             if map_msg is None:
                 return NodeStatus.FAILURE  # 맵 없음 → 탐험 필요
+            valid, reason = self._skill.validate_message_frame(
+                map_msg, getattr(self._skill.node, "_map_frame", "map"), "OccupancyGrid"
+            )
+            if not valid:
+                logger.warning("[BT] Map coverage rejected: %s", reason)
+                return NodeStatus.FAILURE
             data = np.array(map_msg.data)
             coverage = (1.0 - np.sum(data == -1) / data.size) * 100.0
             self._blackboard["current_map_coverage"] = round(coverage, 1)

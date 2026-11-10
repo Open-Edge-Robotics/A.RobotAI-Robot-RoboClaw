@@ -37,7 +37,7 @@ class RoboClawGrpcNavNode(Node):
             )
             map_qos_profile = QoSProfile(
                 depth=1,
-                reliability=QoSReliabilityPolicy.RELIABLE,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             )
 
@@ -52,6 +52,18 @@ class RoboClawGrpcNavNode(Node):
                 topic=map_topic,
                 callback=self.map_callback,
                 qos_profile=map_qos_profile,
+            )
+            # Preserve latched maps while also accepting live volatile publishers.
+            # BEST_EFFORT readers match both reliable and best-effort writers.
+            self.map_live_subscription = self.create_subscription(
+                msg_type=OccupancyGrid,
+                topic=map_topic,
+                callback=self.map_callback,
+                qos_profile=QoSProfile(
+                    depth=1,
+                    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                    durability=QoSDurabilityPolicy.VOLATILE,
+                ),
             )
             self.navigate_to_subscription = self.create_subscription(
                 msg_type=PoseStamped,

@@ -258,12 +258,24 @@ def _battery_percent(node: Any) -> float | None:
     return None
 
 
-def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
-    """``/map``(OccupancyGrid) 한 장을 가져온다.
+def _node_map_topic(node: Any) -> str:
+    """Resolve the configured node map topic with BaseSkill parameter precedence."""
+    try:
+        if node.has_parameter("map_topic"):
+            value = node.get_parameter("map_topic").get_parameter_value().string_value
+            if isinstance(value, str) and value:
+                return value
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[Yield] Map topic parameter unavailable: %s", exc)
+    return "/map"
 
-    메시지 대기 헬퍼는 노드가 아니라 ``BaseSkill`` 메서드(``wait_for_message``)에
-    있다. 등록된 스킬 인스턴스를 빌려 호출하고, 없으면 노드에 같은 이름의 헬퍼가
-    있는지 본다. 둘 다 없으면 추측하지 않고 None 을 돌려준다(fail-closed).
+
+def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
+    """설정된 지도(OccupancyGrid) 한 장을 freshness 정책에 따라 가져온다.
+
+    노드의 ``wait_for_message``가 있으면 지도 freshness 옵션을 명시합니다.
+    없으면 등록된 스킬의 ``wait_for_map_message``를 호출합니다. 둘 다 없거나
+    조회에 실패하면 다른 지도를 추측하지 않고 None을 반환합니다(fail-closed).
     """
     try:
         from nav_msgs.msg import OccupancyGrid  # type: ignore[import]
@@ -272,10 +284,32 @@ def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
 
     helper = getattr(node, "wait_for_message", None)
     if callable(helper):
+        map_topic = _node_map_topic(node)
         try:
-            return helper(OccupancyGrid, "/map", timeout_sec=timeout_sec, use_transient_local=True)
+            from robo_claw_agent.skills.map_messages import map_is_static
+
+            map_msg = helper(
+                OccupancyGrid,
+                map_topic,
+                timeout_sec=timeout_sec,
+                use_transient_local=True,
+                max_age_sec=10.0,
+                fresh_volatile=True,
+                fresh_transient_local=not map_is_static(node),
+            )
+            if map_msg is None:
+                return None
+            from robo_claw_agent.skills.base import BaseSkill
+
+            valid, reason = BaseSkill.validate_message_frame(
+                node, map_msg, getattr(node, "_map_frame", "map"), "OccupancyGrid"
+            )
+            if not valid:
+                logger.warning("[Yield] Map rejected: %s", reason)
+                return None
+            return map_msg
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[Yield] /map 조회 실패(node helper): %s", exc)
+            logger.debug("[Yield] %s lookup failed (node helper): %s", map_topic, exc)
             return None
 
     skills = getattr(node, "_skills", None)
@@ -288,15 +322,23 @@ def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
     for name in names:
         if not name:
             continue
-        skill = skills.get_skill(name)
-        if skill is None or not hasattr(skill, "wait_for_message"):
-            continue
         try:
-            return skill.wait_for_message(
-                OccupancyGrid, "/map", timeout_sec=timeout_sec, use_transient_local=True
+            skill = skills.get_skill(name)
+            if skill is None or not callable(getattr(skill, "wait_for_map_message", None)):
+                continue
+            map_topic = skill.get_string_param({}, "map_topic", "/map")
+            map_msg = skill.wait_for_map_message(map_topic, timeout_sec=timeout_sec)
+            if map_msg is None:
+                return None
+            valid, reason = skill.validate_message_frame(
+                map_msg, getattr(skill.node, "_map_frame", "map"), "OccupancyGrid"
             )
+            if not valid:
+                logger.warning("[Yield] Map rejected: %s", reason)
+                return None
+            return map_msg
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[Yield] /map 조회 실패(skill helper): %s", exc)
+            logger.debug("[Yield] Map lookup failed (skill helper): %s", exc)
             return None
     return None
 
