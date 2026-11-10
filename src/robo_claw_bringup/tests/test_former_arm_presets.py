@@ -81,12 +81,21 @@ def test_every_preset_covers_all_arm_joints() -> None:
         assert tuple(value) == _ARM_JOINTS, f"{name}: {tuple(value)}"
 
 
-def test_stow_preserves_the_experimental_joint_map() -> None:
-    # This checks stored data, not mounting direction or collision safety.
+def test_stow_and_fold_match_the_operator_captured_pose() -> None:
+    # Recorded joint feedback for the operator-held reference posture, with motors off.
+    # This asserts stored data only, not calibration or collision-safe motion.
     poses = _named_poses()
-    assert poses["stow"] == poses["fold"]
-    assert poses["stow"]["joint2"] == 0.0
-    assert poses["stow"]["joint4"] == 1.726
+    expected = {
+        "joint1": 0.053476888281106257,
+        "joint2": -1.3984974230380163,
+        "joint3": 0.006178465552059927,
+        "joint4": 1.8161372597477394,
+        "joint5": -0.1135162145497112,
+        "joint6": -0.009285151620609835,
+        "joint7": 0.6997548570020866,
+    }
+    assert poses["stow"] == expected
+    assert poses["fold"] == expected
 
 
 def test_every_preset_has_finite_numeric_values() -> None:

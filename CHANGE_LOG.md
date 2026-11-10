@@ -10,6 +10,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 - **Changed**: 지도 스키마의 고정 `/map` default를 제거하고 캡처·시각화 metadata에 선택 토픽을 추가합니다. gRPC 지도 수신은 transient-local·volatile와 reliable·best-effort publisher를 지원합니다.
 - **검증**: `task unit-test` 2367개, 신규 지도 테스트의 colcon 4개 묶음(109개 사례), 관련 3개 패키지 빌드와 Ruff·스킬 목록·설정 contract·문서 링크 검사를 검증합니다. colcon은 기존 테스트 환경의 경로 누락을 실행 시 보완합니다. 실제 CLOiD DDS 수신과 채널 전송은 미검증입니다.
 
+## 2026-11-10 — operator-captured 팔 자세를 stow 참조 스냅샷으로 저장
+
+- **Changed**: 모터 비활성 상태에서 작업자가 유지한 피드백 자세(joint1 `0.053477`, joint2 `-1.398497`, joint3 `0.006178`, joint4 `1.816137`, joint5 `-0.113516`, joint6 `-0.009285`, joint7 `0.699755` rad)를 로컬 `former_arm` 설정의 `stow`/`fold`에 기록합니다. 이는 영점 교정이 아니라 관절각 스냅샷이며 시작 자세와 목표 자세가 같을 때만 의미가 있습니다.
+- **안전 제한**: 전원 활성화 시 no-goal 상태에서도 joint7이 약 49.8° 이동한 실측이 있어 모터를 다시 켜지 않았습니다. `stow` 스냅샷을 보관/주행 안전 자세로 승인하지 않으며 프리셋 이동 경로는 검증 전까지 자동 실행하지 않습니다. 영점·하드웨어 한계·충돌 보호는 바꾸지 않습니다.
+- **검증**: `pytest src/robo_claw_bringup/tests/test_former_arm_presets.py` 9 passed, 변경 테스트 Ruff 통과. 설정은 로컬 작업 트리만 변경했으며 robot 설정 서버 배포/로봇 재시작은 하지 않았습니다.
+
 ## 2026-11-10 — CLOiD EtherCAT 라이선스 운영 진단 문서
 
 - **Added**: [CLOiD EtherCAT 라이선스 진단 문서](docs/TOFU_ETHERCAT_LICENSE.md)를 추가합니다. CLOiD2의 약 62분 후 관절 제어 중단과 라이선스 누락 검증 결과를 정리하며, 미해결 상태와 정식 키 발급 후 70분 이상 재검증 필요성을 명시합니다.
