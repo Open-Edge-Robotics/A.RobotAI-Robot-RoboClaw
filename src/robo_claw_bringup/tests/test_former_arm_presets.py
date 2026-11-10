@@ -77,6 +77,15 @@ def test_every_preset_covers_all_arm_joints() -> None:
         assert tuple(value) == _ARM_JOINTS, f"{name}: {tuple(value)}"
 
 
+def test_stow_uses_the_low_fold_pose() -> None:
+    # 낮게 접는 보관 자세: joint2 를 수평(-1.57)까지 내리고 joint4 를 1.9 로 접는다
+    # (실기 TCP +0.222/+0.394, FK 오차 1 mm). fold 는 stow 의 별칭이다.
+    poses = _named_poses()
+    assert poses["stow"] == poses["fold"]
+    assert poses["stow"]["joint2"] == -1.57
+    assert poses["stow"]["joint4"] == 1.9
+
+
 def test_every_preset_stays_inside_robot_limits() -> None:
     limits = _joint_limits()
     for name, value in _named_poses().items():

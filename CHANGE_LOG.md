@@ -3,6 +3,12 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — `stow` 를 낮은 보관 자세로 교체
+
+- **배경**: 기존 `stow`(joint2 -0.846 / joint4 +1.160)는 상완이 앞으로 48도 기운 체 전완만 위로 접은 자세라, 높이가 거의 home 과 같고 `>` 모양으로 들려 보였습니다. "보관 자세"로 쓰기에는 부적합했습니다.
+- **조치**: `stow`(및 별칭 `fold`)를 joint2 `-1.570`(수평), joint4 `+1.900` 로 바꿔 그리퍼를 몸 앞 22 cm, 높이 39 cm 로 내렸습니다(TCP `+0.222, -0.023, +0.394`). `docs/MANIPULATION.md` 프리셋 표와 `tests/test_former_arm_presets.py` 에 값을 고정했습니다.
+- **검증**: nero-arm 실기에서 `/control/move_j` 로 이동해 1.6초에 수렴하고 `/feedback/tcp_pose` 가 FK 기대값과 1 mm 이내 일치했습니다. `pytest src/robo_claw_bringup/tests/test_former_arm_presets.py` 7 passed.
+
 ## 2026-11-10 — 팔 상태 오류 분류: IK 관련 코드가 조인트 이동을 막지 않도록 수정
 
 - **배경**: former0045 실기에서 "팔을 접어줘" → `arm_pose(stow)` 가
