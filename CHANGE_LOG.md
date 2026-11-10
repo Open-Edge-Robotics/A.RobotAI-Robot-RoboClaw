@@ -3,6 +3,26 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-10 — 팔 상태 오류 분류: IK 관련 코드가 조인트 이동을 막지 않도록 수정
+
+- **배경**: former0045 실기에서 "팔을 접어줘" → `arm_pose(stow)` 가
+  `팔 드라이버 상태 오류(arm: arm_status=NO_SOLUTION(0x2))` 로 거부되고, 에이전트가
+  사용자에게 "팔 제어 PC 전원/비상정지 확인"을 요구했습니다. 그러나 `NO_SOLUTION` 은
+  직전 `move_p`(IK) 명령이 해를 찾지 못한 흔적이며 `move_j`(조인트 목표)는 정상 동작합니다
+  (같은 상태에서 11개 프리셋을 실제 구동해 확인). 앞선 수정이 모든 ERROR 레벨을
+  동일하게 거부한 탓에 멀쩡한 조인트 이동이 막혔습니다.
+- **조치**: `agx_backend._raise_if_arm_fault()` 가 드라이버 `arm_status` 코드를 구분합니다.
+  - IK 관련 코드(`NO_SOLUTION` 0x02, `SINGULARITY_POINT` 0x03, `TARGET_POS_EXCEEDS_LIMIT` 0x04):
+    조인트/홈 이동은 경고 로그만 남기고 진행하고, `move_pose` 에서만 거부합니다
+    ("pose 대신 move_joints/정의된 프리셋으로 다시 요청하세요").
+  - 비상정지·조인트 통신·브레이크 미해제·충돌·과열·기타(0x01, 0x05~0x0A, 0x0E, 0x0F):
+    종전처럼 모든 팔 명령을 거부합니다.
+  - 같은 IK 경고를 반복 출력하지 않도록 코드별로 1회만 기록합니다.
+- **검증**: `pytest src/robo_claw_agent/tests/test_agx_backend.py` 25 passed
+  (NO_SOLUTION 에서 `move_joints`/`arm_pose` 허용, `move_pose` 거부, 통신 오류(0x05)는
+  조인트 이동도 거부, 그리퍼 단독 제어 예외), `task unit-test` 통과, `ruff check` 통과.
+  실기에서 "팔을 접어줘"가 다시 동작하는지는 배포 후 미검증입니다.
+
 ## 2026-11-10 — Nero 팔 조인트 한계 확정 및 동작 프리셋 추가
 
 - **배경**: `home`(수직 zero) 과 `stow`(접힘)를 구분한 뒤에도, 팔을 어떤 자세로 움직일 수 있는지에 대한 실측 근거가 없었습니다. `arm_pose` 로 쓸 수 있는 이름은 `home` 뿐이었고, `move_pose` 로 위치를 지정하려면 IK 가 필요해 `NO_SOLUTION` 위험이 남아 있었습니다.

@@ -402,13 +402,15 @@ def test_joint_state_feedback_logging_is_throttled(monkeypatch, caplog) -> None:
 # ── home 검증 / arm 상태 감시 / 위치만 지정한 pose 목표 ──
 
 
-def _arm_status(level: int, message: str, name: str = "arm"):
-    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
+def _arm_status(level: int, message: str, name: str = "arm", code: int | None = None):
+    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
     status = DiagnosticStatus()
     status.level = level
     status.name = name
     status.message = message
+    if code is not None:
+        status.values = [KeyValue(key="arm_status", value=str(code))]
     msg = DiagnosticArray()
     msg.status = [status]
     return msg
@@ -446,7 +448,7 @@ def test_move_to_named_pose_home_reports_already_at_target() -> None:
 
 
 def test_move_rejects_when_arm_status_is_error() -> None:
-    """arm_status=NO_SOLUTION 같은 드라이버 오류를 숨기지 않고 즉시 실패한다."""
+    """비상정지·통신 오류 같은 실제 모션 차단 상태는 즉시 거부한다."""
     node = _FakeNode()
     config = _config()
     backend = AgxDriverBackend(node, config)
@@ -455,11 +457,68 @@ def test_move_rejects_when_arm_status_is_error() -> None:
         _joint_state(["joint1"], [0.0])
     )
     node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
-        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0")
+        _arm_status(
+            2,
+            "arm_status=JOINT_COMMUNICATION_ERR(0x5), err_status=0",
+            code=0x05,
+        )
     )
 
-    with pytest.raises(ManipulationError, match="NO_SOLUTION"):
+    with pytest.raises(ManipulationError, match="JOINT_COMMUNICATION_ERR"):
         backend.move_to_joint_target("arm", {"joint1": 0.5})
+
+
+def test_move_to_joint_target_allows_stale_no_solution() -> None:
+    """NO_SOLUTION 은 직전 pose(IK) 명령의 흔적이므로 조인트 이동을 막지 않는다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0", code=0x02)
+    )
+
+    backend.move_to_joint_target("arm", {"joint1": 0.0})
+    assert node.publishers[config.agx_move_joint_topic][0].messages
+
+
+def test_move_to_named_pose_allows_stale_no_solution() -> None:
+    """프리셋(조인트 맵) home/stow 이동도 NO_SOLUTION 에 막히지 않는다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0", code=0x02)
+    )
+
+    backend.move_to_named_pose("arm", "home")
+    assert node.publishers[config.agx_move_joint_topic][0].messages
+
+
+def test_move_to_pose_target_rejects_stale_no_solution() -> None:
+    """pose(자세) 목표는 NO_SOLUTION 에서 IK 가 실패하므로 먼저 거부한다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_tcp_pose_topic](  # type: ignore[operator]
+        _tcp_pose(0.3, 0.0, 0.4)
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0", code=0x02)
+    )
+
+    with pytest.raises(ManipulationError, match=r"자세\(IK\)"):
+        backend.move_to_pose_target("arm", _pose_goal(0.3, 0.0, 0.4), "link7")
+
+    assert not _published_messages(node, config.agx_move_pose_topic)
 
 
 def test_gripper_only_move_ignores_arm_status_error() -> None:
@@ -472,7 +531,7 @@ def test_gripper_only_move_ignores_arm_status_error() -> None:
         _joint_state(["joint1", "gripper"], [0.0, 0.0])
     )
     node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
-        _arm_status(2, "arm_status=NO_SOLUTION(0x2)")
+        _arm_status(2, "arm_status=JOINT_COMMUNICATION_ERR(0x5)", code=0x05)
     )
     backend.move_to_joint_target("gripper", {"gripper": 0.0})
 

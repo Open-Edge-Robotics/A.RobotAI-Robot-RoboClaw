@@ -47,6 +47,10 @@ _FEEDBACK_LOG_INTERVAL_SEC = 10.0
 #: 선언하지 않고 이 자세에 실제로 수렴했는지 확인한다.
 _HOME_JOINT_TARGET = 0.0
 _GRIPPER_KEYWORD = "gripper"
+#: 팔 자세(pose/IK) 명령의 결과로만 나타나는 arm_status. 이전 move_p 실패 흔적이
+#: 남은 상태이며, 조인트 목표(move_j) 실행을 막지 않는다. pose 명령에서만 거부한다.
+#: (ArmStatus: 0x02 NO_SOLUTION, 0x03 SINGULARITY_POINT, 0x04 TARGET_POS_EXCEEDS_LIMIT)
+_IK_ONLY_ARM_STATUS = frozenset({0x02, 0x03, 0x04})
 
 
 class AgxDriverBackend:
@@ -65,6 +69,8 @@ class AgxDriverBackend:
         self._control_enable_client = None
         self._driver_ready = False
         self._last_feedback_log_time: float | None = None
+        #: 같은 IK 경고를 반복 출력하지 않기 위한 마지막 코드.
+        self._last_ik_warning_code: int | None = None
         #: 마지막 이동의 사후 검증 결과(스킬 계층이 "이동 완료" 와 "이미 그 자세" 를 구분).
         self.last_motion: MotionOutcome | None = None
 
@@ -234,24 +240,62 @@ class AgxDriverBackend:
     def _on_arm_status(self, msg: Any) -> None:
         self._latest_arm_status = msg
 
-    def _raise_if_arm_fault(self, label: str) -> None:
-        """드라이버가 ERROR 진단을 보낸 상태면 팔 명령을 즉시 거부한다.
+    def _latest_arm_status_code(self) -> int | None:
+        """최신 arm_status 의 ArmStatus 코드를 꺼낸다(진단 values 의 'arm_status')."""
+        msg = self._latest_arm_status
+        if msg is None:
+            return None
+        for status in getattr(msg, "status", []) or []:
+            for item in getattr(status, "values", []) or []:
+                if str(getattr(item, "key", "")).strip() != "arm_status":
+                    continue
+                try:
+                    return int(str(getattr(item, "value", "")).strip(), 0)
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def _raise_if_arm_fault(self, label: str, *, require_ik: bool = False) -> None:
+        """드라이버가ERROR 진단을 보낸 상태면 팔 명령을 즉시 거부한다.
 
         agx_arm_ctrl 은 IK 실패(NO_SOLUTION 등)를 서비스 응답으로 알려주지 않고
         /feedback/arm_status 로만 노출한다. 이 검사가 없으면 명령은 조용히 무시되고
         30초 뒤 "목표에 도달하지 못했습니다" 만 보고된다.
+
+        ``arm_status=NO_SOLUTION(0x2)`` 같은 IK 관련 코드는 **직전 pose 명령의 흔적**
+        이라 move_j(조인트 목표)를 막지 않는다(실기 확인). 따라서 ``require_ik`` 가
+        False 인 조인트/홈 이동에서는 경고만 남기고 계속 진행하고, pose 명령에서만
+        거부한다. 비상정지·통신·브레이크·과열 같은 실제 모션 차단 코드는 모두 거부한다.
         """
         msg = self._latest_arm_status
         if msg is None:
             return
-        for status in getattr(msg, "status", []) or []:
+        statuses = getattr(msg, "status", []) or []
+        code = self._latest_arm_status_code()
+        for status in statuses:
             level = getattr(status, "level", 0)
             if isinstance(level, bytes):
                 level = level[0] if level else 0
-            if int(level) < 2:  # OK=0, WARN=1
+            if int(level) < 2:  # OK=0, WARN=1 (teaching 등)
                 continue
             name = str(getattr(status, "name", "") or "arm")
             message = str(getattr(status, "message", "") or "").strip()
+            if code in _IK_ONLY_ARM_STATUS:
+                if require_ik:
+                    raise ManipulationError(
+                        f"{label}: 팔이 자세(IK) 목표를 해석하지 못한 상태입니다({name}: "
+                        f"{message or '상세 없음'}). pose 대신 조인트(move_joints)나 "
+                        "정의된 프리셋(arm_pose)으로 다시 요청하세요."
+                    )
+                if self._last_ik_warning_code != code:
+                    self._last_ik_warning_code = code
+                    logger.warning(
+                        "%s: 팔 상태 경고(%s: %s) - 조인트 이동은 계속 진행합니다.",
+                        label,
+                        name,
+                        message or "상세 없음",
+                    )
+                return
             raise ManipulationError(
                 f"{label}: 팔 드라이버 상태 오류({name}: {message or '상세 없음'}). "
                 "드라이버 로그와 팔 전원/비상정지 상태를 확인하고, 오류가 해소된 뒤 다시 요청하세요."
@@ -537,7 +581,7 @@ class AgxDriverBackend:
             targets[key] = float(value)
 
         self._ensure_driver_ready()
-        self._raise_if_arm_fault("pose 목표")
+        self._raise_if_arm_fault("pose 목표", require_ik=True)
         self._wait_for_feedback(lambda: self._tcp_feedback_seen, "pose 목표")
         already_at_target = self._pose_reached(targets)
 

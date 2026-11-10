@@ -152,7 +152,7 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 | :--- | :--- |
 | `/move_home` 결과 | 서비스 호출 후 `/feedback/joint_states` 가 드라이버 home 자세(모든 팔 조인트 0 rad)에 수렴하는지 확인하고, 수렴하지 않으면 `ManipulationError` 로 실패 보고합니다. |
 | 이미 그 자세 | 명령 시점에 이미 목표 자세였으면 `already_at_target=true` 로 결과를 돌려주고, 스킬 메시지는 "이동 완료" 대신 "이미 그 자세입니다" 로 보고합니다. |
-| 팔 오류 상태 | `/feedback/arm_status` 의 `level` 이 ERROR 이면(예: `arm_status=NO_SOLUTION`) 팔 조인트/포즈/home 명령을 즉시 거부하고 드라이버 메시지를 그대로 전달합니다. 그리퍼 단독 제어는 이 검사에서 제외합니다. |
+| 팔 오류 상태 | `/feedback/arm_status` 의 `level` 이 ERROR 이면 팔 명령을 즉시 거부하고 드라이버 메시지를 그대로 전달합니다. 단 `arm_status` 가 IK 관련 코드(`NO_SOLUTION` 0x02, `SINGULARITY_POINT` 0x03, `TARGET_POS_EXCEEDS_LIMIT` 0x04)면 **직전 pose 명령의 흔적**이므로 경고만 남기고 조인트/홈 이동은 계속 진행하며, `move_pose` 만 거부합니다. 비상정지·조인트 통신·브레이크·충돌·과열·기타 오류(0x01, 0x05~0x0A, 0x0E, 0x0F)는 조인트 이동도 거부합니다. 그리퍼 단독 제어는 이 검사에서 제외합니다. |
 | 위치만 지정한 pose 목표 | `orientation`·`roll/pitch/yaw`·쿼터니언을 주지 않으면 identity 자세가 아니라 **현재 end-effector 자세를 유지**해 발행합니다. identity 자세로 고정하면 IK 불가(`NO_SOLUTION`)로 목표에 도달하지 못하고 팔이 최대 신장에서 멈춥니다. |
 
 > **주의 — 드라이버 home 은 "접은 자세" 가 아닙니다.** `agx_arm_ctrl` 의 `/move_home` 은 `move_j([0]*N)` 이며 Nero 기준 모든 조인트가 0 rad 인 **수직으로 뻗은 자세** 입니다. 접은 자세나 주행 전 안전 자세가 필요하면 `manipulation_named_poses_json` 에 `stow`/`fold` 같은 이름으로 조인트 맵을 정의해 `arm_pose` 로 호출해야 합니다. 정의 없이 `home` 으로 접기를 시도하면 "이미 그 자세" 로 끝나고 팔은 움직이지 않습니다.
@@ -192,7 +192,7 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 
 - 팔 전체 길이는 약 0.58 m 로, `joint2` 가 0 인 자세에서 TCP 는 base 기준 z=0.718 m 입니다. `joint2` 는 `-1.745 rad` 까지라 **수직 아래로 늘어뜨리는 자세는 불가능**합니다(최대 -100도).
 - `joint4`(팔꿈치) 양수는 전완을 몸쪽/위로 접고, 음수는 앞/아래로 펍니다.
-- `arm_status=NO_SOLUTION(0x2)` 은 `/control/move_p`(IK) 실패 이력이 남은 상태이며 `move_j`(조인트 목표)는 정상 동작합니다. `/move_home` 이나 재기동으로 초기화됩니다.
+- `arm_status=NO_SOLUTION(0x2)` 은 `/control/move_p`(IK) 실패 이력이 남은 상태이며 `move_j`(조인트 목표)는 정상 동작합니다. 백엔드는 이 코드에서 `move_pose` 만 거부하고 `arm_pose`/`move_joints` 는 경고를 남긴 뒤 진행합니다. 플래그 자체는 드라이버 재기동이나 성공한 pose 명령으로 초기화됩니다.
 
 
 ### 4. 그리퍼 도달 피드백 타임아웃 진단
