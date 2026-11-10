@@ -331,6 +331,54 @@ def test_move_raises_when_enable_service_returns_false() -> None:
     assert not _published_messages(node, config.agx_move_joint_topic)
 
 
+@pytest.mark.parametrize(
+    ("preserved_joint", "position", "limits"),
+    [
+        ("joint2", -1.7568, [-1.74533, 1.74533]),
+        ("joint4", 2.1956, [-1.012291, 2.146755]),
+        ("joint7", 1.6910, [-1.570797, 1.570797]),
+    ],
+)
+def test_partial_target_rejects_out_of_range_preserved_joint(
+    preserved_joint, position, limits
+) -> None:
+    node = _FakeNode()
+    node._robot_limits_dict = {"manipulation": {"joint_limits": {preserved_joint: limits}}}
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+    node.subscriptions[config.agx_joint_state_topic](
+        _joint_state(["joint1", preserved_joint], [0.0, position])
+    )
+
+    with pytest.raises(ManipulationConfigError, match=preserved_joint):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert node.clients == {}
+    assert not _published_messages(node, config.agx_move_joint_topic)
+    assert backend.last_motion is None
+
+
+def test_explicit_valid_target_can_replace_out_of_range_feedback(monkeypatch) -> None:
+    node = _FakeNode()
+    node._robot_limits_dict = {"manipulation": {"joint_limits": {"joint2": [-1.74533, 1.74533]}}}
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+    callback = node.subscriptions[config.agx_joint_state_topic]
+    callback(_joint_state(["joint1", "joint2"], [0.0, -1.7568]))
+    monkeypatch.setattr(
+        backend, "_spin_once", lambda: callback(_joint_state(["joint1", "joint2"], [0.0, -1.7]))
+    )
+
+    backend.move_to_joint_target("arm", {"joint1": 0.0, "joint2": -1.7})
+
+    published = _published_messages(node, config.agx_move_joint_topic)
+    assert len(published) == 1
+    assert dict(zip(published[0].name, published[0].position, strict=True)) == {
+        "joint1": 0.0,
+        "joint2": -1.7,
+    }
+
+
 def test_move_to_joint_target_preserves_unspecified_arm_joints_from_feedback() -> None:
     node = _FakeNode()
     config = _config()

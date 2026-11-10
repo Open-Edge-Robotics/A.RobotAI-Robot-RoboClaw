@@ -749,6 +749,19 @@ class AgxDriverBackend:
         )
         cmd_positions = dict(targets) if is_gripper_only else self._preserved_joint_command(targets)
 
+        # Validate the actual command, including preserved joints, before any IO.
+        from robo_claw_agent.skills.limits import check_joint_targets
+
+        limit_error = check_joint_targets(
+            cmd_positions, getattr(self._node, "_robot_limits_dict", None)
+        )
+        if limit_error:
+            raise ManipulationConfigError(
+                f"전체 조인트 명령이 설정 한계를 벗어나 발행하지 않았습니다: {limit_error}. "
+                "생략된 관절의 현재값도 명령에 포함됩니다. 임의로 클램프하거나 영점을 "
+                "변경하지 않고 전체 목표와 시작 자세를 확인하세요."
+            )
+
         self._ensure_driver_ready()
         if not is_gripper_only:
             self._raise_if_arm_fault("joint 목표")
