@@ -81,6 +81,43 @@ def test_move_pose_skill_requires_end_effector_config():
     assert "end_effector_link" in result["message"]
 
 
+def test_move_pose_rejects_implicit_chassis_coordinates_without_mount_tf():
+    backend = FakeBackend()
+    node = _make_node(
+        {
+            "manipulation_base_frame": "nero_arm_base_link",
+            "manipulation_end_effector_link": "link7",
+        },
+        _manipulation_backend=backend,
+    )
+    skill = MovePoseSkill()
+    skill.set_node(node)
+
+    result = skill.execute({"x": 0.3, "y": 0.0, "z": 0.4})
+
+    assert result["success"] is False
+    assert "TF" in result["message"]
+    assert backend.calls == []
+
+
+def test_move_pose_accepts_explicit_arm_coordinates():
+    backend = FakeBackend()
+    node = _make_node(
+        {
+            "manipulation_base_frame": "nero_arm_base_link",
+            "manipulation_end_effector_link": "link7",
+        },
+        _manipulation_backend=backend,
+    )
+    skill = MovePoseSkill()
+    skill.set_node(node)
+
+    result = skill.execute({"x": 0.3, "y": 0.0, "z": 0.4, "frame_id": "nero_arm_base_link"})
+
+    assert result["success"] is True
+    assert backend.calls[0][2] == "nero_arm_base_link"
+
+
 def test_open_and_close_gripper_use_presets():
     backend = FakeBackend()
     params = {

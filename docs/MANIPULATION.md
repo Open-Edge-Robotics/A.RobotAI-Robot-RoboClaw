@@ -139,6 +139,7 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 | 모터 활성화 | `/enable_agx_arm` | `std_srvs/srv/SetBool` (데이터 `true`) |
 | 홈 위치 이동 | `/move_home` | `std_srvs/srv/Empty` |
 | 팔 상태 진단 | `/feedback/arm_status` | `diagnostic_msgs/msg/DiagnosticArray` |
+| 모터별 진단 | `/feedback/motor_status` | `diagnostic_msgs/msg/DiagnosticArray` |
 
 #### 그리퍼 및 팔 관절 제어 특성
 - **그리퍼 단독 제어**: `agx_arm_ctrl` 드라이버는 `move_j` 메시지에 팔 관절이 포함되어 있으면 팔 동작 모터를 구동합니다. 따라서 그리퍼만 움직일 때는 `name: ['gripper']`, `position: [width]` 만 발행하여 팔 관절 모터 간섭 없이 빠르고 안전하게 동작합니다.
@@ -152,14 +153,16 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 | :--- | :--- |
 | `/move_home` 결과 | 서비스 호출 후 `/feedback/joint_states` 가 드라이버 home 자세(모든 팔 조인트 0 rad)에 수렴하는지 확인하고, 수렴하지 않으면 `ManipulationError` 로 실패 보고합니다. |
 | 이미 그 자세 | 명령 시점에 이미 목표 자세였으면 `already_at_target=true` 로 결과를 돌려주고, 스킬 메시지는 "이동 완료" 대신 "이미 그 자세입니다" 로 보고합니다. |
-| 팔 오류 상태 | `/feedback/arm_status` 의 `level` 이 ERROR 이면 팔 명령을 즉시 거부하고 드라이버 메시지를 그대로 전달합니다. 단 `arm_status` 가 IK 관련 코드(`NO_SOLUTION` 0x02, `SINGULARITY_POINT` 0x03, `TARGET_POS_EXCEEDS_LIMIT` 0x04)면 **직전 pose 명령의 흔적**이므로 경고만 남기고 조인트/홈 이동은 계속 진행하며, `move_pose` 만 거부합니다. 비상정지·조인트 통신·브레이크·충돌·과열·기타 오류(0x01, 0x05~0x0A, 0x0E, 0x0F)는 조인트 이동도 거부합니다. 그리퍼 단독 제어는 이 검사에서 제외합니다. |
+| 팔 오류 상태 | 진단 항목별로 `arm_status`와 `err_status`를 검사합니다. `NO_SOLUTION`(0x02)만 있고 다른 오류가 없는 경우 조인트 목표에서 경고로 처리합니다. 특이점(0x03), 목표 한계 초과(0x04), 비상정지, 통신·브레이크·충돌·과열 오류는 차단합니다. 다른 진단 항목의 오류를 `NO_SOLUTION`으로 덮어 무시하지 않습니다. |
+| 구동 중 실패 | 목표 전송 후 새 진단에서 `motion_status=1`이면 `arm_status=NORMAL`이어도 실패로 보고하고 목표 재전송을 중단합니다. 오류가 해제됐다는 것과 실제 구동이 성공했다는 것을 구분합니다. |
+| 모터 및 피드백 | 수신된 모터 진단의 충돌·스톨·과전류·비활성 상태를 검사합니다. 조인트/TCP 피드백이 `manipulation_agx_feedback_timeout_sec`보다 오래되거나 비유한 값이면 목표 도달로 인정하지 않습니다. 모터 진단 미수신 상태에서의 호환 동작은 안전성 검증 근거로 삼지 않습니다. |
 | 위치만 지정한 pose 목표 | `orientation`·`roll/pitch/yaw`·쿼터니언을 주지 않으면 identity 자세가 아니라 **현재 end-effector 자세를 유지**해 발행합니다. identity 자세로 고정하면 IK 불가(`NO_SOLUTION`)로 목표에 도달하지 못하고 팔이 최대 신장에서 멈춥니다. |
 
 > **주의 — 드라이버 home 은 "접은 자세" 가 아닙니다.** `agx_arm_ctrl` 의 `/move_home` 은 `move_j([0]*N)` 이며 Nero 기준 모든 조인트가 0 rad 인 **수직으로 뻗은 자세** 입니다. 접은 자세나 주행 전 안전 자세가 필요하면 `manipulation_named_poses_json` 에 `stow`/`fold` 같은 이름으로 조인트 맵을 정의해 `arm_pose` 로 호출해야 합니다. 정의 없이 `home` 으로 접기를 시도하면 "이미 그 자세" 로 끝나고 팔은 움직이지 않습니다.
 
 ### 3. Nero 팔 조인트 한계와 동작 프리셋
 
-한계는 `pyAgxArm` SDK(`ROBOT_JOINT_LIMIT_PRESET_RAD["nero"]`, `nero_description.urdf` 와 같은 값)를 기준으로 하며, `ROBOT_LIMITS.former_arm.json` 의 `manipulation.joint_limits` 가 같은 값을 들고 있습니다.
+표는 `pyAgxArm` SDK의 `ROBOT_JOINT_LIMIT_PRESET_RAD["nero"]` 기준이며 `ROBOT_LIMITS.former_arm.json`에 저장합니다. URDF와 SDK 사이에는 일부 반올림 차이가 있습니다. 2026-11-10 컨트롤러 조회에서는 joint6 상한이 55°로 SDK의 50°와 달랐습니다. 설정을 확대하지 않고 더 좁은 SDK 범위를 유지합니다. 각도 범위 안이라는 사실만으로 몸체와의 충돌 안전성이 보장되지는 않습니다.
 
 | 조인트 | 하한 (rad) | 상한 (rad) | 하한 (deg) | 상한 (deg) |
 | :--- | ---: | ---: | ---: | ---: |
@@ -188,13 +191,15 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 | `roll_ccw` | joint7 +1.55 | 0 | +0.116 | 0 | +1.252 | 0 | 0 | +1.55 | -0.300, -0.023, 0.500 |
 | `roll_cw` | joint7 -1.55 | 0 | +0.116 | 0 | +1.252 | 0 | 0 | -1.55 | -0.300, -0.023, 0.500 |
 
-> **좌표계 주의 (실기 확인)** — 이 팔은 arm base frame 의 `+x` 가 **로봇 뒤쪽**입니다. `joint2 < 0` 이면 상완이 로봇 뒤로 넘어가고, 그 상태에서 `joint4` 를 접으면 로봇 몸체에 부딪힙니다(실기 사고). **로봇 앞쪽 자세는 `joint2 > 0`** 으로 주세요. 위 표의 TCP `x` 가 음수인 값이 로봇 앞입니다.
+> **장착 좌표계와 안전성은 미확정입니다.** 사진과 피드백에서 뒤쪽 접힘을 확인했지만, 이를 근거로 모든 자세의 앞뒤 방향을 `joint2` 부호 하나로 단정하지 않습니다. 위 프리셋의 이름과 TCP 계산값은 충돌 검증이나 보관 자세 승인 결과가 아닙니다. 자동 접기·주행 전 적용을 보류하고 장착된 로봇에서 전체 이동 경로를 검증합니다.
 
-실기 확인 사실:
+좌표계 및 점검 기준:
 
-- 팔 전체 길이는 약 0.58 m 로, `joint2` 가 0 인 자세에서 TCP 는 base 기준 z=0.718 m 입니다. `joint2` 는 `-1.745 rad` 까지라 **수직 아래로 늘어뜨리는 자세는 불가능**합니다(최대 -100도).
-- `joint4`(팔꿈치)의 접힘 방향은 `joint2` 부호에 따라 반대로 보입니다(어깨가 뒤집히기 때문). 그래서 `stow` 같은 접힘 자세는 **반드시 눈으로 확인**해야 하며, 위 표 값은 MDH 순기구학 계산값입니다.
-- `arm_status=NO_SOLUTION(0x2)` 은 `/control/move_p`(IK) 실패 이력이 남은 상태이며 `move_j`(조인트 목표)는 정상 동작합니다. 백엔드는 이 코드에서 `move_pose` 만 거부하고 `arm_pose`/`move_joints` 는 경고를 남긴 뒤 진행합니다. 플래그 자체는 드라이버 재기동이나 성공한 pose 명령으로 초기화됩니다.
+- 팔 드라이버 좌표는 `nero_arm_base_link`, 로봇 섀시는 `base_link`로 구분합니다. `base_link`/`map` 좌표를 사용할 때는 `frame_id`를 명시하고 실측 장착 TF로 변환합니다. 변환이 없으면 실행을 거부하며 두 프레임을 같은 이름으로 합치거나 변환값을 추측하지 않습니다.
+- 사진 기준 체인은 어깨 → `NERO` 글자가 있는 상완 → 팔꿈치 → 전완 → 손목 → 그리퍼입니다. 단일 TCP 높이나 `>`/`Γ` 모양만으로 안전성을 판단하지 않습니다.
+- `arm_status=NORMAL`, 모터 `enabled`라도 구동 성공은 아닙니다. 2026-11-10 작은 범위의 목표 전송 후 `motion_status=1`과 미수렴을 확인했습니다. 원인이 확정되기 전에는 재부팅·보호 해제·큰 각도 이동을 반복하지 않습니다.
+- 설치된 SDK는 기본 `local_loopback=False`이므로 별도 `candump`에 로컬 송신 프레임이 안 보일 수 있습니다. 송신 카운터와 오프라인 패킹을 함께 대조하며, 덤프에 없다는 이유만으로 명령 미전송을 단정하지 않습니다.
+- `move_js`는 벤더 문서에서 궤적 계획·평활화가 없는 고위험 모드로 경고합니다. 구동 실패의 우회 수단으로 사용하지 않습니다. 영점·관절 한계·충돌 보호도 임의 변경하지 않습니다.
 
 
 ### 4. 그리퍼 도달 피드백 타임아웃 진단

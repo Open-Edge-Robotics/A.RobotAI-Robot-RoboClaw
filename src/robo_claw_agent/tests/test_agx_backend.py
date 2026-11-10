@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 from geometry_msgs.msg import PoseStamped
@@ -25,9 +26,15 @@ pytestmark = pytest.mark.unit
 class _RecordingPublisher:
     def __init__(self) -> None:
         self.messages: list[object] = []
+        #: 발행 직후 1회 실행되는 훅. 드라이버가 명령에 반응해 진단을 발행하는 상황을 모사한다.
+        self.on_publish: Any = None
 
     def publish(self, msg: object) -> None:
         self.messages.append(msg)
+        hook = self.on_publish
+        if hook is not None:
+            self.on_publish = None
+            hook()
 
 
 class _DoneFuture:
@@ -313,10 +320,15 @@ def test_move_raises_when_enable_service_returns_false() -> None:
     node = _FakeNode()
     config = _config()
     backend = AgxDriverBackend(node, config)
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 0.0])
+    )
     node.create_client(object, config.agx_enable_service).response = _FailedResp()
 
     with pytest.raises(ManipulationError, match="Agx_arm is not connected"):
         backend.move_to_named_pose("arm", "home")
+
+    assert not _published_messages(node, config.agx_move_joint_topic)
 
 
 def test_move_to_joint_target_preserves_unspecified_arm_joints_from_feedback() -> None:
@@ -402,18 +414,77 @@ def test_joint_state_feedback_logging_is_throttled(monkeypatch, caplog) -> None:
 # ── home 검증 / arm 상태 감시 / 위치만 지정한 pose 목표 ──
 
 
-def _arm_status(level: int, message: str, name: str = "arm", code: int | None = None):
-    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+def _arm_status_entry(
+    level: int,
+    message: str,
+    name: str = "arm",
+    code: int | str | None = None,
+    *,
+    err_status: int | str | None = None,
+    motion_status: int | str | None = None,
+):
+    """DiagnosticStatus 한 엔트리(팔 상태 진단의 단일 status)."""
+    from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 
     status = DiagnosticStatus()
     status.level = level
     status.name = name
     status.message = message
+    values = []
     if code is not None:
-        status.values = [KeyValue(key="arm_status", value=str(code))]
+        values.append(KeyValue(key="arm_status", value=str(code)))
+    if err_status is not None:
+        values.append(KeyValue(key="err_status", value=str(err_status)))
+    if motion_status is not None:
+        values.append(KeyValue(key="motion_status", value=str(motion_status)))
+    status.values = values
+    return status
+
+
+def _arm_status_array(*statuses):
+    from diagnostic_msgs.msg import DiagnosticArray
+
+    msg = DiagnosticArray()
+    msg.status = list(statuses)
+    return msg
+
+
+def _arm_status(
+    level: int,
+    message: str,
+    name: str = "arm",
+    code: int | str | None = None,
+    *,
+    err_status: int | str | None = None,
+    motion_status: int | str | None = None,
+):
+    return _arm_status_array(
+        _arm_status_entry(
+            level,
+            message,
+            name,
+            code,
+            err_status=err_status,
+            motion_status=motion_status,
+        )
+    )
+
+
+def _motor_status(*values: tuple[str, str], level: int = 0):
+    """모터 진단 DiagnosticArray(단일 status)."""
+    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+
+    status = DiagnosticStatus()
+    status.level = level
+    status.name = "motor"
+    status.values = [KeyValue(key=key, value=value) for key, value in values]
     msg = DiagnosticArray()
     msg.status = [status]
     return msg
+
+
+def _motor_topic(config: ManipulationConfig) -> str:
+    return str(getattr(config, "agx_motor_status_topic", "feedback/motor_status"))
 
 
 def test_move_to_named_pose_home_fails_when_arm_does_not_move() -> None:
@@ -478,7 +549,13 @@ def test_move_to_joint_target_allows_stale_no_solution() -> None:
         _joint_state(["joint1"], [0.0])
     )
     node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
-        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0", code=0x02)
+        _arm_status(
+            2,
+            "arm_status=NO_SOLUTION(0x2), err_status=0",
+            code=0x02,
+            err_status=0,
+            motion_status=0,
+        )
     )
 
     backend.move_to_joint_target("arm", {"joint1": 0.0})
@@ -495,7 +572,13 @@ def test_move_to_named_pose_allows_stale_no_solution() -> None:
         _joint_state(["joint1", "joint2"], [0.0, 0.0])
     )
     node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
-        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0", code=0x02)
+        _arm_status(
+            2,
+            "arm_status=NO_SOLUTION(0x2), err_status=0",
+            code=0x02,
+            err_status=0,
+            motion_status=0,
+        )
     )
 
     backend.move_to_named_pose("arm", "home")
@@ -512,7 +595,13 @@ def test_move_to_pose_target_rejects_stale_no_solution() -> None:
         _tcp_pose(0.3, 0.0, 0.4)
     )
     node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
-        _arm_status(2, "arm_status=NO_SOLUTION(0x2), err_status=0", code=0x02)
+        _arm_status(
+            2,
+            "arm_status=NO_SOLUTION(0x2), err_status=0",
+            code=0x02,
+            err_status=0,
+            motion_status=0,
+        )
     )
 
     with pytest.raises(ManipulationError, match=r"자세\(IK\)"):
@@ -570,3 +659,282 @@ def test_pose_goal_from_params_marks_orientation_explicit() -> None:
 
     explicit = pose_goal_from_params({"x": 0.1, "y": 0.0, "z": 0.2, "qw": 1.0})
     assert explicit.orientation_explicit is True
+
+
+# ── 진단 엔트리별 판정 / 이동 중 새 진단 / 피드백 신선도 ──
+
+
+def test_joint_move_rejects_hardware_error_masked_by_no_solution_in_another_status() -> None:
+    """한 엔트리의 NO_SOLUTION 이 다른 엔트리의 통신 오류를 가리면 안 된다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status_array(
+            _arm_status_entry(
+                2, "arm_status=NO_SOLUTION(0x2), err_status=0", code="02", err_status="0"
+            ),
+            _arm_status_entry(
+                2,
+                "arm_status=JOINT_COMMUNICATION_ERR(0x5), err_status=0",
+                name="joint7",
+                code="0x5",
+                err_status="0",
+            ),
+        )
+    )
+
+    with pytest.raises(ManipulationError, match="JOINT_COMMUNICATION_ERR"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+def test_joint_move_rejects_no_solution_when_err_status_is_nonzero() -> None:
+    """NO_SOLUTION 이라도 err_status 가 0 이 아니면 실제 오류다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(
+            2,
+            "arm_status=NO_SOLUTION(0x2), err_status=0x5",
+            code=0x02,
+            err_status="0x5",
+        )
+    )
+
+    with pytest.raises(ManipulationError, match="err_status=5"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+@pytest.mark.parametrize("code", [0x03, 0x04])
+def test_joint_move_rejects_singularity_and_target_limit(code: int) -> None:
+    """0x03 SINGULARITY_POINT / 0x04 TARGET_POS_EXCEEDS_LIMIT 는 더 이상 면제하지 않는다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, 0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(2, f"arm_status code 0x{code:02x}", code=code, err_status="0")
+    )
+
+    with pytest.raises(ManipulationError, match="팔 드라이버 상태 오류"):
+        backend.move_to_named_pose("arm", "home")
+
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+def test_joint_move_stops_publishing_when_motion_failure_arrives_during_wait() -> None:
+    """이동 시작 뒤 도착한 motion_status=1 은 level 0 이어도 즉시 실패시킨다."""
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.3)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    arm_callback = node.subscriptions[config.agx_arm_status_topic]
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    publisher.on_publish = lambda: arm_callback(  # type: ignore[operator]
+        _arm_status(
+            0,
+            "motion_status=REACH_TARGET_POS_FAILED(0x1)",
+            code="0",
+            err_status="0",
+            motion_status="1",
+        )
+    )
+
+    with pytest.raises(ManipulationError, match="motion_status=1"):
+        backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    assert len(publisher.messages) == 1
+
+
+def test_joint_move_is_attempted_when_motion_failure_predates_the_command() -> None:
+    """명령 이전부터 남은 motion_status 실패는 새 조인트 이동 시도를 막지 않는다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    node.subscriptions[config.agx_arm_status_topic](  # type: ignore[operator]
+        _arm_status(
+            2,
+            "motion_status=REACH_TARGET_POS_FAILED(0x1)",
+            code="0",
+            err_status="0",
+            motion_status="1",
+        )
+    )
+
+    backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert len(node.publishers[config.agx_move_joint_topic][0].messages) == 1
+    assert backend.last_motion is not None
+    assert backend.last_motion.already_at_target is True
+
+
+def test_motor_status_subscription_uses_default_topic() -> None:
+    """ "모터 진단 토픽은 새 ROS 파라미터 없이 getattr 기본값을 쓴다."""
+    node = _FakeNode()
+    config = _config()
+    AgxDriverBackend(node, config)
+
+    assert _motor_topic(config) in node.subscriptions
+
+
+def test_move_rejects_before_enabling_when_motor_status_reports_collision() -> None:
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[_motor_topic(config)](_motor_status(("collision", "true")))  # type: ignore[operator]
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+
+    with pytest.raises(ManipulationError, match="모터 오류"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert config.agx_enable_service not in node.clients
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+def test_move_stops_publishing_when_motor_is_disabled_during_wait() -> None:
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.3)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    motor_callback = node.subscriptions[_motor_topic(config)]
+    publisher = node.publishers[config.agx_move_joint_topic][0]
+    publisher.on_publish = lambda: motor_callback(_motor_status(("enabled", "false")))  # type: ignore[operator]
+
+    with pytest.raises(ManipulationError, match="disabled"):
+        backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    assert len(publisher.messages) == 1
+
+
+def test_move_rejects_non_finite_target_before_enabling() -> None:
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+
+    with pytest.raises(ManipulationConfigError, match="유한"):
+        backend.move_to_joint_target("arm", {"joint1": float("nan")})
+
+    assert config.agx_enable_service not in node.clients
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+def test_move_rejects_nan_in_preserved_feedback_before_enabling() -> None:
+    """생략 관절을 피드백 값으로 보존할 때 NaN 이 섞이면 발행하지 않는다."""
+    node = _FakeNode()
+    config = _config()
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [0.0, float("nan")])
+    )
+
+    with pytest.raises(ManipulationError, match="유한"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert config.agx_enable_service not in node.clients
+    assert not _published_messages(node, config.agx_move_joint_topic)
+
+
+def test_nan_joint_feedback_is_not_treated_as_reached() -> None:
+    """abs(nan - target) 비교는 False 이므로 NaN 을 목표 도달로 오판하면 안 된다."""
+    node = _FakeNode()
+    config = _config(named_pose_joint_values={}, agx_motion_timeout_sec=0.15)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1", "joint2"], [float("nan"), 0.0])
+    )
+
+    with pytest.raises(ManipulationError, match="도달하지 못했습니다"):
+        backend.move_to_named_pose("arm", "home")
+
+
+def test_stale_joint_feedback_is_not_treated_as_reached(monkeypatch) -> None:
+    """agx_feedback_timeout_sec 보다 오래된 피드백은 도달 판정에 쓰지 않는다."""
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.15, agx_feedback_timeout_sec=0.05)
+    backend = AgxDriverBackend(node, config)
+
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    clock.now += 1.0
+
+    with pytest.raises(ManipulationError, match="피드백을 받지 못했습니다"):
+        backend.move_to_joint_target("arm", {"joint1": 0.0})
+
+    assert not _published_messages(node, config.agx_move_joint_topic)
+    assert node.clients == {}
+
+
+def test_stale_tcp_feedback_is_not_treated_as_reached(monkeypatch) -> None:
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.15, agx_feedback_timeout_sec=0.05)
+    backend = AgxDriverBackend(node, config)
+
+    clock = _FakeClock()
+    monkeypatch.setattr(agx_backend, "time", clock)
+
+    node.subscriptions[config.agx_tcp_pose_topic](_tcp_pose(0.3, 0.0, 0.4))  # type: ignore[operator]
+    clock.now += 1.0
+
+    with pytest.raises(ManipulationError, match="피드백을 받지 못했습니다"):
+        backend.move_to_pose_target("arm", _pose_goal(0.3, 0.0, 0.4), "link7")
+
+    assert not _published_messages(node, config.agx_move_pose_topic)
+    assert node.clients == {}
+
+
+def test_move_resets_last_motion_before_each_attempt() -> None:
+    """실패한 이동 뒤에도 이전 이동의 last_motion 이 남지 않아야 한다."""
+    node = _FakeNode()
+    config = _config(agx_motion_timeout_sec=0.15)
+    backend = AgxDriverBackend(node, config)
+
+    node.subscriptions[config.agx_joint_state_topic](  # type: ignore[operator]
+        _joint_state(["joint1"], [0.0])
+    )
+    backend.move_to_joint_target("arm", {"joint1": 0.0})
+    assert backend.last_motion is not None
+    assert backend.last_motion.already_at_target is True
+
+    with pytest.raises(ManipulationError):
+        backend.move_to_joint_target("arm", {"joint1": 1.0})
+
+    assert backend.last_motion is None

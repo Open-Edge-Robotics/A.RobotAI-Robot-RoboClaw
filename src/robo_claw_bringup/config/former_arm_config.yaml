@@ -9,9 +9,9 @@
 #   3) 팔 PC에서 agx_arm_ctrl 드라이버를 ROS 2 Humble 컨테이너(nero_arm_driver)로 기동.
 #      manipulation_backend "agx" 는 드라이버 토픽/서비스를 직접 쓰므로 MoveIt
 #      move_group 은 필요 없다. (docs/MANIPULATION.md 의 Nero 팔 연동 절 참고)
-#   4) TF: 팔 URDF 루트 링크(base_link)를 로봇 base_link 의 static transform 으로
-#      붙인다. 팔 URDF 의 world_to_base_link 체인은 그대로 사용하지 않는다.
-#      프레임 이름을 바꿀 때는 아래 manipulation_base_frame 도 함께 수정한다.
+#   4) Keep the driver arm frame separate from chassis base_link.
+#      Publish a measured base_link -> nero_arm_base_link mounting transform
+#      before using chassis/map coordinates. Never guess the mounting offset.
 robo_claw_core_node:
   ros__parameters:
     loop_rate_hz: 50.0
@@ -68,7 +68,7 @@ robo_claw_agent_node:
 
     # 팔 끝 링크: nero 기본 URDF 는 link7, 플랜지 조립품은 flange_link.
     manipulation_end_effector_link: "link7"
-    manipulation_base_frame: "base_link"
+    manipulation_base_frame: "nero_arm_base_link"
     manipulation_tool_frame: "link7"
 
     # SRDF group_state 이름만 사용한다. 조인트 값을 직접 정의한 사전 자세는
@@ -77,9 +77,10 @@ robo_claw_agent_node:
     # 주의: AGX 드라이버의 /move_home 은 move_j([0]*7) 이므로 "home" 은 모든 조인트가
     # 0 rad 인 **수직으로 뻗은 자세** 이며 접은 자세가 아니다.
     #
-    # 좌표계 주의(실기 확인): 이 팔은 arm base frame 의 +x 가 **로봇 뒤쪽**입니다.
-    # 따라서 로봇 앞쪽으로 팔을 쓰려면 joint2 를 **양수**로 줘야 합니다(joint2 < 0 은 뒤로 넘어감).
-    # 아래 프리셋은 그 기준으로 pyAgxArm MDH 순기구학으로 계산한 값입니다. TCP x 가 음수면 로봇 앞입니다.
+    # Experimental joint presets: FK/range checks do not validate collision safety.
+    # Photo/feedback show a rearward fold; the mounting TF is not yet measured.
+    # Do not infer chassis directions from joint2 sign or arm-frame TCP alone.
+    # Validate the complete swept path on the installed robot before automatic use.
     #   home        수직 zero (드라이버 /move_home)
     #   ready       앞 30 cm / 높이 50 cm, 팔꿈치 접힘
     #   carry       ready 별칭
@@ -98,6 +99,7 @@ robo_claw_agent_node:
     manipulation_default_approach_distance_m: 0.08
     manipulation_default_retreat_distance_m: 0.08
 
-    # 팔 상태 진단 토픽. level 이 ERROR 이면(예: arm_status=NO_SOLUTION) 팔 명령을
-    # 즉시 거부하고 드라이버 메시지를 그대로 보고한다.
+    # Diagnostics: hardware faults stop motion; a reported motion failure stops
+    # goal republishing even when arm_status is NORMAL. NO_SOLUTION alone may
+    # describe an earlier IK failure, not a motor power or emergency-stop fault.
     manipulation_agx_arm_status_topic: "/feedback/arm_status"

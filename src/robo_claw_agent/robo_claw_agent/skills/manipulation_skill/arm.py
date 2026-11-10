@@ -118,7 +118,9 @@ class MovePoseSkill(BaseSkill):
     input_schema = {"type": "object", "properties": {"target_pose": {"type": "object"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "frame_id": {"type": "string"}}, "oneOf": [{"required": ["target_pose"]}, {"required": ["x", "y", "z"]}], "additionalProperties": True}
     description = (
         "end-effector 를 목표 pose로 이동합니다. "
-        "target_pose 또는 x/y/z 좌표(미터, 기본 프레임 base_link: x=앞/y=왼쪽/z=위)가 필요하며 "
+        "target_pose 또는 x/y/z 좌표(미터, 기본 프레임 base_link: 로봇 x=앞/y=왼쪽/z=위)가 필요하며 "
+        "팔 프레임이 다르면 실측 장착 TF로 변환합니다. TF가 없으면 실행할 수 없습니다. "
+        "팔 기준 좌표는 검증된 frame_id를 명시하고 로봇 기준과 혼동하지 않습니다. "
         "orientation 또는 roll/pitch/yaw를 함께 줄 수 있습니다. "
         "자세를 지정하지 않으면 현재 end-effector 자세를 유지합니다. "
         "map 등 다른 프레임의 좌표는 frame_id로 지정하면 실행 시점 TF로 자동 변환됩니다."
@@ -140,7 +142,7 @@ class MovePoseSkill(BaseSkill):
             runtime = _get_runtime(self.node)
             pose = pose_goal_from_params(
                 params,
-                default_frame=runtime.config.base_frame,
+                default_frame="base_link",
             )
             pose = _transform_pose_goal(self.node, pose, runtime.config.base_frame)
             result = runtime.move_to_pose_target(

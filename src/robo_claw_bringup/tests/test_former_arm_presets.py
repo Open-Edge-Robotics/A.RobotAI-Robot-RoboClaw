@@ -58,6 +58,10 @@ def test_arm_profile_enables_manipulation_with_agx_backend() -> None:
     assert params["manipulation_agx_arm_status_topic"] == "/feedback/arm_status"
 
 
+def test_arm_frame_is_distinct_from_chassis_frame() -> None:
+    assert _agent_params()["manipulation_base_frame"] == "nero_arm_base_link"
+
+
 def test_named_poses_define_every_required_preset() -> None:
     poses = _named_poses()
     missing = [name for name in _REQUIRED_POSES if name not in poses]
@@ -77,23 +81,21 @@ def test_every_preset_covers_all_arm_joints() -> None:
         assert tuple(value) == _ARM_JOINTS, f"{name}: {tuple(value)}"
 
 
-def test_stow_uses_the_front_fold_pose() -> None:
-    # 보관 자세: 로봇 앞쪽(TCP x<0)으로 접는다. fold 는 stow 의 별칭이다.
+def test_stow_preserves_the_experimental_joint_map() -> None:
+    # This checks stored data, not mounting direction or collision safety.
     poses = _named_poses()
     assert poses["stow"] == poses["fold"]
     assert poses["stow"]["joint2"] == 0.0
     assert poses["stow"]["joint4"] == 1.726
 
 
-def test_presets_use_front_side_arm_frame() -> None:
-    """arm base frame 의 +x 가 로봇 뒤쪽이므로, 앞쪽 자세는 joint2 > 0 이어야 한다.
+def test_every_preset_has_finite_numeric_values() -> None:
+    import math
 
-    joint2 < 0 자세는 상완이 로봇 뒤로 넘어가 몸체와 충돌한다(실기 확인).
-    """
     for name, value in _named_poses().items():
         if isinstance(value, str):
             continue
-        assert value["joint2"] >= 0.0, f"{name}: joint2={value['joint2']} (뒤쪽 자세)"
+        assert all(math.isfinite(target) for target in value.values()), name
 
 
 def test_every_preset_stays_inside_robot_limits() -> None:
