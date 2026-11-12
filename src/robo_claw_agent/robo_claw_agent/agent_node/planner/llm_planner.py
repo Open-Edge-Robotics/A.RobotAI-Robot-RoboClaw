@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from ...answer import looks_like_json
+from ...domain.map_goal_guard import trusted_prelude as trusted_prelude_scope
 from ...llm_bridge.base import ToolTurn
 from ...tracing import (
     trace_context_outputs,
@@ -15,6 +16,9 @@ from ...tracing import (
     traceable,
 )
 from ...types import AgentState, LLMPlanResult, SkillChainItem
+from ..map_goal.enforcement import apply_map_goal_safety, map_goal_system_context
+from ..map_goal.scope import current_map_goal_scope
+from ..map_goal.tracker import STATUS_UNKNOWN, get_map_goal_tracker
 from ..nav_safety import POLICY_PRELUDE_FLAG, ensure_navigation_safety
 from ..utils import _omit_base64_data, tool_calling_enabled
 from .answers import _MAX_ANSWER_ROUNDS, _compose_result_answer
@@ -287,7 +291,12 @@ class LLMPlanner:
                     "content": f"{instruction}\n\n<retrieved_context>\n{context}\n</retrieved_context>",
                 }
 
-            if goal_handle.request.context_json:
+            scope = current_map_goal_scope()
+            if scope is not None:
+                # 지도 목표 컨텍스트는 HTTP 호출자가 준 원문을 그대로 넣지 않고
+                # 검증된 타입 데이터만 넣는다(임의 지시 주입 차단).
+                messages.insert(0, {"role": "system", "content": map_goal_system_context(scope)})
+            elif goal_handle.request.context_json:
                 messages.insert(
                     0,
                     {
@@ -297,6 +306,62 @@ class LLMPlanner:
                 )
 
         return messages, robot_summary
+
+    def _note_trusted_prelude_outcome(
+        self, skill_name: str, *, success: bool, result_data: Any
+    ) -> None:
+        """엔진이 삽입한 안전 prelude 실행 결과를 요청 스코프에 기록한다.
+
+        지도 목표 요청에서는 준비 동작도 실제 효과 시도다. 결과가 모호하면(타임아웃/
+        예외/무효과 미확인) 요청을 결과 미확정(``unknown``)으로 표시해 lease 를
+        유지하고, 이후 물리 동작/이동/준비를 모두 막는다. 일반 요청은 no-op 이다.
+        """
+        scope = current_map_goal_scope()
+        if scope is None:
+            return
+        hold = scope.mark_prelude_result(success=success, result_data=result_data)
+        if not hold:
+            return
+        self.node.get_logger().warning(
+            f"Trusted navigation prelude '{skill_name}' outcome unconfirmed — "
+            "holding the map goal request as unknown."
+        )
+        get_map_goal_tracker(self.node).transition(
+            scope.request_id,
+            STATUS_UNKNOWN,
+            message="주행 전 안전 준비 동작의 결과를 확인하지 못했습니다.",
+            reason="prep_outcome_unknown",
+        )
+
+    def _engine_executes_prelude(self, name: str) -> bool:
+        """엔진이 삽입한 안전 prelude 를 엔진이 직접 실행해야 하는지 판정한다.
+
+        지도 목표 요청에서 엔진이 삽입한(trusted 표식이 붙은) prelude 는 모델이
+        고른 항목이 아니므로, public 도구로 노출돼 있어도 엔진이 직접 실행한다.
+        그렇지 않으면 "준비 도구를 먼저 호출하세요"와 지도 목표 검증(모델이 고른
+        준비 동작 거부)이 서로 맞물려 이동이 영구히 막힌다(Stretch3 stow 사례).
+        일반 요청은 기존 규칙(도구 목록에 없는 내부 스킬만 엔진이 실행)을 유지한다.
+        """
+        if current_map_goal_scope() is not None:
+            return True
+        return self._resolve_tool_skill_name(name) is None
+
+    def _apply_safety_policy(self, chain: list[dict[str, Any]]) -> tuple[list[dict], str]:
+        """계획 체인에 주행 안전 정책을 적용한다.
+
+        지도 목표 요청이면 LLM 이 고른 원본 체인을 먼저 검증하고(좌표/프레임/추가
+        동작), 통과한 체인에만 로봇별 주행 전 안전 prelude 를 삽입한다. 검증에
+        실패하면 ``([], 사유)`` 를 돌려주며 어떤 스킬도 실행하지 않는다.
+        """
+        scope = current_map_goal_scope()
+        if scope is not None:
+            return apply_map_goal_safety(
+                chain, scope, self.node._skills, self.node.get_logger(), self.node
+            )
+        protected = ensure_navigation_safety(
+            chain, self.node._skills, self.node.get_logger(), self.node
+        )
+        return protected, ""
 
     def _tool_mode_enabled(self) -> bool:
         """네이티브 도구(tool) 호출 모드 사용 여부.
@@ -510,10 +575,10 @@ class LLMPlanner:
                 else self.node._validate_skill_chain(chain)
             )
             if not error:
-                protected = ensure_navigation_safety(
-                    chain, self.node._skills, self.node.get_logger(), self.node
-                )
-                if protected != chain:
+                protected, safety_error = self._apply_safety_policy(chain)
+                if safety_error:
+                    error = safety_error
+                elif protected != chain:
                     # 게이트가 삽입한 prelude 중 LLM 도구 목록에 없는 스킬(내부 안전
                     # 스킬)은 모델이 스스로 호출할 방법이 없다. 이때 "먼저 호출하세요"
                     # 로 되돌리면 매 라운드가 같은 거부로 끝나 이동이 영구히 막힌다
@@ -523,7 +588,7 @@ class LLMPlanner:
                         item
                         for item in protected
                         if item.get(POLICY_PRELUDE_FLAG)
-                        and self._resolve_tool_skill_name(str(item.get("skill") or "")) is None
+                        and self._engine_executes_prelude(str(item.get("skill") or ""))
                     ]
                     if internal_preludes:
                         chain = protected
@@ -653,7 +718,7 @@ class LLMPlanner:
                 # 위치 질의는 여기서 바로 확정 처리한다(모델 성능과 무관하게 동작).
                 # 이동 명령도 같은 처리를 받는다("키친으로 이동해" 에 산문만 답하는 경우).
                 forced_chain = None
-                if not answering:
+                if not answering and current_map_goal_scope() is None:
                     # 요약 라운드에서는 결정론적 강제 실행을 하지 않는다. 이 라운드의
                     # 목적은 이미 실행된 결과를 답변으로 만드는 것이므로, 스킬을 새로
                     # 강제하면 답변 없이 스킬만 다시 실행된다.
@@ -764,23 +829,28 @@ class LLMPlanner:
                 continue
 
             raw_chain = [{"skill": item.skill, "params": item.params} for item in plan.skills]
-            raw_chain = _preserve_user_navigation_target(
-                raw_chain, instruction, self.node.get_logger()
-            )
-            # 이동 교정을 위치질의 교정보다 **먼저** 한다. "거실 위치로 이동해" 처럼 두 조건이
-            # 모두 걸리는 문장에서, 사용자가 원한 이동을 조회로 바꿔치기하면 안 된다.
-            nav_corrected = _force_navigation_if_misrouted(
-                raw_chain, instruction, self.node.get_logger()
-            )
-            if nav_corrected is not raw_chain:
-                raw_chain = nav_corrected
-            else:
-                raw_chain = _route_location_query(
-                    raw_chain, instruction, self.node, self.node.get_logger()
+            # 지도 목표 요청은 결정론적 재작성(좌표/목적지 치환)을 적용하지 않는다.
+            if current_map_goal_scope() is None:
+                raw_chain = _preserve_user_navigation_target(
+                    raw_chain, instruction, self.node.get_logger()
                 )
-            raw_chain = ensure_navigation_safety(
-                raw_chain, self.node._skills, self.node.get_logger(), self.node
-            )
+                # 이동 교정을 위치질의 교정보다 **먼저** 한다. "거실 위치로 이동해" 처럼 두 조건이
+                # 모두 걸리는 문장에서, 사용자가 원한 이동을 조회로 바꿔치기하면 안 된다.
+                nav_corrected = _force_navigation_if_misrouted(
+                    raw_chain, instruction, self.node.get_logger()
+                )
+                if nav_corrected is not raw_chain:
+                    raw_chain = nav_corrected
+                else:
+                    raw_chain = _route_location_query(
+                        raw_chain, instruction, self.node, self.node.get_logger()
+                    )
+            raw_chain, safety_error = self._apply_safety_policy(raw_chain)
+            if safety_error:
+                self.node.get_logger().warning(f"Plan policy validation failed: {safety_error}")
+                messages.append({"role": "assistant", "content": llm_resp_content})
+                messages.append({"role": "user", "content": f"계획 검증 실패: {safety_error}"})
+                continue
             policy_error = self.node._validate_skill_chain(raw_chain)
             if policy_error:
                 self.node.get_logger().warning(f"Plan policy validation failed: {policy_error}")
@@ -941,13 +1011,37 @@ class LLMPlanner:
             self.node.get_logger().info(f"Attempting skill execution: {name} (params={params})")
             send_fb(f"실행: {name}", 40)
             self.node._set_state(AgentState.EXECUTING, name, f"{name} 실행 중")
-            res = await self.node._run_blocking(
-                f"skill:{name}",
-                self.node._skills.execute,
-                name,
-                params,
-                timeout,
-            )
+            if item.get(POLICY_PRELUDE_FLAG):
+                # 엔진이 삽입한 안전 prelude 만 trusted 컨텍스트에서 실행한다.
+                # 저수준(SkillManager) 경계가 같은 컨텍스트로 이 실행을 허용한다.
+                scope = current_map_goal_scope()
+                if scope is not None:
+                    scope.mark_prep_started()
+                outcome: dict[str, Any] = {"success": False, "result_data": None}
+                try:
+                    with trusted_prelude_scope(str(name)):
+                        res = await self.node._run_blocking(
+                            f"skill:{name}",
+                            self.node._skills.execute,
+                            name,
+                            params,
+                            timeout,
+                        )
+                    outcome = {
+                        "success": bool(res.success),
+                        "result_data": getattr(res, "result_data", None),
+                    }
+                finally:
+                    # 예외/타임아웃에도 준비 결과를 반드시 기록한다(cleanup).
+                    self._note_trusted_prelude_outcome(str(name), **outcome)
+            else:
+                res = await self.node._run_blocking(
+                    f"skill:{name}",
+                    self.node._skills.execute,
+                    name,
+                    params,
+                    timeout,
+                )
 
             clean_result_data = _omit_base64_data(res.result_data)
 

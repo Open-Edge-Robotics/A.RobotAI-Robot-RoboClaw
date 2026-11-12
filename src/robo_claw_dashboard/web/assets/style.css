@@ -2,6 +2,10 @@
 
 :root {
   --rc-map-height: 460px;
+  --rc-goal-marker: var(--bs-success);
+  --rc-goal-marker-pending: var(--bs-warning);
+  --rc-goal-line: var(--bs-border-color);
+  --rc-goal-surface: var(--bs-tertiary-bg);
 }
 
 body {
@@ -59,6 +63,67 @@ main {
 
 #map-canvas.pose-mode {
   cursor: crosshair;
+}
+
+#map-canvas.goal-mode {
+  cursor: crosshair;
+}
+
+#map-canvas:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 2px;
+}
+
+/* 목표 선택 모드 */
+.rc-goal-bar .btn {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+.rc-goal-send {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+.rc-goal-preview {
+  border: 1px solid var(--rc-goal-line);
+  border-radius: var(--bs-border-radius-sm);
+  background: var(--rc-goal-surface);
+  padding: 0.5rem 0.75rem;
+}
+
+.rc-goal-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  color: var(--bs-secondary-color);
+}
+
+.rc-goal-kv b {
+  color: var(--bs-body-color);
+  font-weight: 600;
+  font-family: var(--bs-font-monospace);
+}
+
+.rc-goal-message {
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8125rem;
+  color: var(--bs-body-color);
+}
+
+.rc-goal-progress {
+  height: 0.5rem;
+}
+
+.rc-goal-swatch {
+  display: none;
+  color: var(--rc-goal-marker);
+}
+
+.rc-goal-swatch-pending {
+  color: var(--rc-goal-marker-pending);
 }
 
 .rc-pose-kv {
@@ -532,6 +597,9 @@ main {
   .rc-coop-event {
     transition: none;
     animation: none;
+  }
+  .rc-goal-progress .progress-bar {
+    transition: none;
   }
 }
 

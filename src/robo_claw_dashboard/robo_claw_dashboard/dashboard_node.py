@@ -285,6 +285,11 @@ class DashboardNode(Node):
 
     def _shutdown_http(self) -> None:
         try:
+            # 새 지도 목표 접수를 막고 진행 중인 자기 goal 만 취소 요청한다(타 태스크 불간섭).
+            self._service.shutdown()
+        except Exception:  # noqa: BLE001 - 종료 중 최선의 노력
+            self.get_logger().debug("dashboard map goal shutdown 오류: %s", exc_info=True)
+        try:
             self._http_server.shutdown()
             self._http_server.server_close()
         except Exception:  # noqa: BLE001 - 종료 중 최선의 노력

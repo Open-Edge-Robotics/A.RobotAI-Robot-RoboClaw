@@ -3,6 +3,7 @@
 ``BaseSkill``/``SkillResult`` 등 실행 계약 타입은 ``skills/base.py`` 에 있다.
 """
 
+import contextvars
 import importlib
 import inspect
 import logging
@@ -14,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING, Any, Optional
 
+from ..domain.map_goal_guard import denied_skill_reason
 from ..observability import OperationTracker
 from ..tracing import trace_process_inputs, trace_process_outputs, traceable
 from .base import (
@@ -215,6 +217,25 @@ class SkillManager:
                 f"스킬 없음: {skill_name}",
                 0.0,
                 _standard_failure_data("skill_not_found"),
+            )
+
+        # 지도 목표 요청의 저수준 실행 경계. 계획 단계 검증을 우회하는 중첩 호출
+        # (읽기 전용 도구가 내부에서 move_relative 등을 실행하는 경우 포함)도 여기서
+        # 막는다. 요청 스코프가 없으면 아무것도 하지 않는다(일반 작업 영향 없음).
+        denied = denied_skill_reason(
+            skill_name,
+            risk_level=getattr(skill, "risk_level", "action"),
+            side_effects=getattr(skill, "side_effects", ()),
+            exclusive_resources=getattr(skill, "exclusive_resources", ()),
+        )
+        if denied:
+            logger.warning("Skill blocked by map goal guard: %s -> %s", skill_name, denied)
+            return SkillResult(
+                skill_name,
+                False,
+                denied,
+                0.0,
+                _standard_failure_data("map_goal_rejected"),
             )
 
         mock_execution = self.mock_robot and self._requires_robot(skill)
@@ -533,7 +554,11 @@ class SkillManager:
         불가능하므로, cancel()은 협조적 중단 요청이다.
         """
         del attempt
-        future = self._executor.submit(skill.execute, params)
+        # 스킬을 스레드 풀에서 실행하면 현재 컨텍스트(ContextVar)가 사라진다.
+        # 지도 목표처럼 요청 스코프를 쓰는 실행 경로가 요청 단위 상태를 볼 수 있도록
+        # 실행 시점의 컨텍스트를 복사해 넘긴다.
+        task_context = contextvars.copy_context()
+        future = self._executor.submit(task_context.run, skill.execute, params)
         try:
             return future.result(timeout=timeout_sec)
         except FuturesTimeoutError:

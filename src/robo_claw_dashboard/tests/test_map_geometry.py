@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -101,3 +102,114 @@ def test_map_image_is_drawn_with_y_flipped():
     assert data["minCorner"]["y"] == pytest.approx(
         data["rect"]["y"] + data["rect"]["height"], abs=1e-6
     )
+
+
+YAW_SCRIPT = """
+const geometry = require(process.argv[1]);
+const base = {
+  width: 8,
+  height: 6,
+  resolution: 0.5,
+  origin: { x: -5.95, y: -4.95, yaw: 0 },
+  cells: new Array(8 * 6).fill(0),
+};
+base.cells[3 * base.width + 5] = 255;
+
+function probe(yaw, localX, localY) {
+  const map = Object.assign({}, base, { origin: Object.assign({}, base.origin, { yaw }) });
+  const world = geometry.localToWorld(map, localX, localY);
+  const view = geometry.layout(720, 460, map);
+  const canvas = geometry.worldToCanvas(view, map, world.x, world.y);
+  const roundTrip = geometry.canvasToWorld(view, map, canvas.x, canvas.y);
+  const back = geometry.worldToLocal(map, world.x, world.y);
+  const grid = geometry.worldToGrid(map, world.x, world.y);
+  return {
+    world,
+    canvas,
+    roundTrip,
+    back,
+    grid,
+    heading: geometry.headingToCanvas(map, 1.0),
+    originYaw: geometry.originYaw(map),
+    imageRect: geometry.imageRect(view, map),
+  };
+}
+
+const half = Object.assign({}, base, { origin: Object.assign({}, base.origin, { yaw: Math.PI / 2 }) });
+const upper = geometry.worldToGrid(half, geometry.localToWorld(half, base.width * base.resolution, 1.1));
+const negative = geometry.worldToGrid(half, geometry.localToWorld(half, -1e-9, 1.1));
+
+console.log(JSON.stringify({
+  yaw0: probe(0, 2.1, 1.1),
+  yawHalf: probe(Math.PI / 2, 2.1, 1.1),
+  yawNegHalf: probe(-Math.PI / 2, 2.1, 1.1),
+  upper,
+  negative,
+  inside: geometry.worldToGrid(
+    half,
+    geometry.localToWorld(half, 0, 0).x,
+    geometry.localToWorld(half, 0, 0).y
+  ),
+  cellFree: geometry.cellAt(base, 0, 0),
+  cellUnknown: geometry.cellAt(base, 5, 3),
+  cellOutOfRange: geometry.cellAt(base, -1, 0),
+}));
+"""
+
+
+def _run_yaw() -> dict:
+    result = subprocess.run(
+        [_node(), "-e", YAW_SCRIPT, "--", str(GEOMETRY)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
+def test_world_canvas_round_trip_with_rotated_origin():
+    """origin.yaw 가 ±π/2 여도 월드↔캔버스 왕복이 원래 월드 좌표로 돌아와야 한다."""
+    data = _run_yaw()
+    for key in ("yaw0", "yawHalf", "yawNegHalf"):
+        probe = data[key]
+        assert probe["roundTrip"]["x"] == pytest.approx(probe["world"]["x"], abs=1e-9)
+        assert probe["roundTrip"]["y"] == pytest.approx(probe["world"]["y"], abs=1e-9)
+        # 역회전이 정확히 local (2.1, 1.1) 로 돌아와야 한다.
+        assert probe["back"]["x"] == pytest.approx(2.1, abs=1e-9)
+        assert probe["back"]["y"] == pytest.approx(1.1, abs=1e-9)
+
+
+def test_world_grid_uses_inverse_origin_rotation():
+    """world→grid 는 origin.yaw 의 역회전을 적용해야 셀이 맞는다."""
+    data = _run_yaw()
+    assert data["yawHalf"]["grid"] == {"col": 4, "row": 2}
+    assert data["yawNegHalf"]["grid"] == {"col": 4, "row": 2}
+
+
+def test_world_grid_rejects_outside_and_half_open_upper_bound():
+    data = _run_yaw()
+    assert data["inside"] == {"col": 0, "row": 0}
+    assert data["upper"] is None, "상단 경계(width*resolution)는 포함하면 안 된다"
+    assert data["negative"] is None
+
+
+def test_world_grid_cell_value_is_free_zero_only():
+    data = _run_yaw()
+    assert data["cellFree"] == 0
+    assert data["cellUnknown"] == 255
+    assert data["cellOutOfRange"] is None
+
+
+def test_map_heading_subtracts_origin_yaw_for_display():
+    """지도 이미지는 grid-local 축이므로 화면 방향은 origin.yaw 를 뺀 각도다."""
+    data = _run_yaw()
+    assert data["yaw0"]["heading"] == pytest.approx(1.0, abs=1e-12)
+    assert data["yawHalf"]["heading"] == pytest.approx(1.0 - math.pi / 2, abs=1e-12)
+    assert data["yawNegHalf"]["heading"] == pytest.approx(1.0 + math.pi / 2, abs=1e-12)
+    assert data["yawHalf"]["originYaw"] == pytest.approx(math.pi / 2, abs=1e-12)
+
+
+def test_map_image_rect_stays_grid_local_with_origin_yaw():
+    """지도 이미지는 회전하지 않고 grid-local 축으로 그린다."""
+    data = _run_yaw()
+    assert data["yawHalf"]["imageRect"] == data["yaw0"]["imageRect"]

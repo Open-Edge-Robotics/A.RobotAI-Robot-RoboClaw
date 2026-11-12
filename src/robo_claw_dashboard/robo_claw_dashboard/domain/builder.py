@@ -19,6 +19,7 @@ MAP_META_KEYS = (
     "resolution",
     "origin",
     "encoding",
+    "geometry_id",
 )
 
 

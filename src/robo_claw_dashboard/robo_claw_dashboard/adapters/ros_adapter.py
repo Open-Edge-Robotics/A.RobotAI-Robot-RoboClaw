@@ -55,6 +55,60 @@ def _wait_service(client: Any, timeout_sec: float) -> bool:
     return client.service_is_ready()
 
 
+def _wait_result_cancellable(
+    future: Any,
+    timeout_sec: float,
+    goal_handle: Any,
+    cancel_event: threading.Event | None,
+) -> bool:
+    """결과 future 를 기다리되 cancel_event 가 켜지면 자기 goal 만 취소 요청한다."""
+    deadline = time.monotonic() + max(0.0, timeout_sec)
+    while time.monotonic() < deadline:
+        if future.done():
+            return True
+        if cancel_event is not None and cancel_event.is_set():
+            _cancel_own_goal(
+                goal_handle, timeout_sec=min(2.0, max(0.2, deadline - time.monotonic()))
+            )
+            grace = time.monotonic() + 2.0
+            while time.monotonic() < grace:
+                if future.done():
+                    return True
+                time.sleep(0.05)
+            return False
+        time.sleep(0.05)
+    return future.done()
+
+
+def _cancel_own_goal(goal_handle: Any, *, timeout_sec: float) -> bool:
+    """이 호출이 만든 goal handle 하나만 취소 요청한다(응답은 정지 확인이 아닌 ACK)."""
+    try:
+        future = goal_handle.cancel_goal_async()
+    except Exception:  # noqa: BLE001 - 이미 종료/취소된 goal
+        return False
+    if not _wait_future(future, timeout_sec):
+        return False
+    try:
+        response = future.result()
+    except Exception:  # noqa: BLE001 - future 예외는 미확인으로 처리
+        return False
+    if response is None:
+        return False
+    canceling = getattr(response, "goals_canceling", None) or []
+    if not canceling:
+        return False
+    our_goal = getattr(goal_handle, "goal_id", None)
+    our_uuid = getattr(our_goal, "uuid", None)
+    if our_uuid is None:
+        # 취소 응답은 이 handle 로 보낸 요청에 대한 것만 담긴다.
+        return bool(canceling)
+    for item in canceling:
+        goal_id = getattr(item, "goal_id", item)
+        if getattr(goal_id, "uuid", None) == our_uuid:
+            return True
+    return False
+
+
 from ..coercion import coerce_float as _coerce_float
 from ..coercion import coerce_int as _coerce_int
 
@@ -510,26 +564,68 @@ class RosBackend:
         self._initialpose_pub.publish(msg)
         return {"success": True, "message": "초기 위치를 발행했습니다"}
 
-    def send_chat(self, message: str) -> dict[str, Any]:
-        """ExecuteTask 액션으로 자연어 메시지를 에이전트에 전달한다."""
-        if not self._task_client.wait_for_server(timeout_sec=self._timeout):
+    def send_chat(
+        self,
+        message: str,
+        *,
+        context_json: str | None = None,
+        timeout_sec: float | None = None,
+        on_event: Any = None,
+        cancel_event: threading.Event | None = None,
+    ) -> dict[str, Any]:
+        """ExecuteTask 액션으로 메시지를 전달한다.
+
+        기본 호출(``send_chat(message)``)은 기존 동기 동작을 유지한다. 지도 목표
+        모드만 context_json/timeout/이벤트 콜백을 사용하며, 결과 대기 타임아웃 시
+        자기 goal 하나만 취소 요청한다.
+        """
+        timeout = float(self._timeout if timeout_sec is None else timeout_sec)
+        if not self._task_client.wait_for_server(timeout_sec=min(timeout, self._timeout)):
             return {"success": False, "error": "에이전트 액션 서버 연결 실패"}
 
         goal = ExecuteTask.Goal()
         goal.instruction = message
-        goal.context_json = ""
-        goal.timeout_sec = self._timeout
+        goal.context_json = "" if context_json is None else str(context_json)
+        goal.timeout_sec = timeout
 
-        future = self._task_client.send_goal_async(goal)
-        if not _wait_future(future, self._timeout):
+        feedback_callback = None
+        if on_event is not None:
+
+            def feedback_callback(msg: Any) -> None:  # noqa: N807 - rclpy 콜백
+                try:
+                    feedback = msg.feedback
+                    on_event(
+                        {
+                            "type": "feedback",
+                            "current_step": str(feedback.current_step),
+                            "progress": int(feedback.progress),
+                        }
+                    )
+                except Exception:  # noqa: BLE001 - 콜백 오류로 액션을 방해하지 않는다
+                    return
+
+        future = self._task_client.send_goal_async(goal, feedback_callback=feedback_callback)
+        if not _wait_future(future, min(timeout, self._timeout)):
             return {"success": False, "error": "태스크 goal 응답 타임아웃"}
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
             return {"success": False, "error": "태스크 거부됨"}
+        if on_event is not None:
+            on_event({"type": "accepted"})
 
         result_future = goal_handle.get_result_async()
-        if not _wait_future(result_future, self._timeout):
-            return {"success": False, "error": "태스크 결과 대기 타임아웃"}
+        if not _wait_result_cancellable(result_future, timeout, goal_handle, cancel_event):
+            if on_event is None:
+                return {"success": False, "error": "태스크 결과 대기 타임아웃"}
+            # goals_canceling 은 취소 요청 ACK 일 뿐 실제 정지 확인이 아니다.
+            _cancel_own_goal(goal_handle, timeout_sec=min(2.0, max(0.2, timeout)))
+            return {
+                "success": False,
+                "error": "태스크 결과 대기 타임아웃",
+                "unknown": True,
+                "cancel_requested": True,
+                "cancel_confirmed": False,
+            }
         result = result_future.result()
         if result is None:
             return {"success": False, "error": "태스크 결과 없음"}

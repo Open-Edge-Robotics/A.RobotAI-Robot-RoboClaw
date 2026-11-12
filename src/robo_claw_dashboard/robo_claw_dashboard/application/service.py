@@ -7,7 +7,7 @@ rclpy / ROS 메시지 import 금지. backend protocol 을 통해 실제 ROS 어�
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -21,16 +21,22 @@ from ..domain.cooperation import (
 from ..domain.localization import (
     INITIAL_POSE_COVARIANCE,
     build_initial_pose,
+    ensure_geometry_id,
     unavailable_map,
     unavailable_pose,
     validate_initial_pose,
 )
 from ..domain.logs import format_log_jsonl, format_log_text, unavailable_logs
+from ..domain.map_goal import agent_identity_from_state_json
 from ..domain.peers import normalize_peers
 from ..domain.validation import validate_chat_message
+from .map_goal import MapGoalService
 from .scenario_runner import ScenarioConfig, ScenarioRunnerService
 
 logger = logging.getLogger(__name__)
+
+#: 지도 목표 제출 시 재사용하는 에이전트 신원 캐시 유효 시간(초).
+AGENT_IDENTITY_TTL_SEC = 15.0
 
 
 class DashboardBackend(Protocol):
@@ -49,7 +55,15 @@ class DashboardBackend(Protocol):
 
     def list_peers(self) -> list[dict[str, Any]]: ...
 
-    def send_chat(self, message: str) -> dict[str, Any]: ...
+    def send_chat(
+        self,
+        message: str,
+        *,
+        context_json: str | None = None,
+        timeout_sec: float | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> dict[str, Any]: ...
 
     def latest_map(self) -> dict[str, Any]: ...
 
@@ -78,11 +92,21 @@ class DashboardService:
         scenario_runner: ScenarioRunnerService | None = None,
         scenario_config: ScenarioConfig | None = None,
         monotonic: Callable[[], float] | None = None,
+        wall_clock: Callable[[], float] | None = None,
+        map_goals: MapGoalService | None = None,
     ) -> None:
         self._backend = backend
         self._scenario_runner = scenario_runner or ScenarioRunnerService(backend, scenario_config)
         self._monotonic = monotonic or time.monotonic
         self._cooperation_cache: dict[str, Any] | None = None
+        #: (monotonic, 신원/진행 기록) — 15초가 지난 에이전트 신원은 재사용하지 않는다.
+        self._agent_identity_cache: tuple[float, dict[str, Any]] | None = None
+        self._map_goals = map_goals or MapGoalService(
+            backend,
+            map_snapshot=self._latest_map,
+            agent_identity=self._agent_identity,
+            wall_clock=wall_clock,
+        )
         self._cooperation_cached_at = 0.0
         #: ThreadingHTTPServer 는 요청마다 스레드로 status/cooperation 을 동시에 부른다.
         #: (payload, cached_at) 을 한 쌍으로 읽고 써서 서로 다른 스냅샷이 섞이지 않게 한다.
@@ -130,6 +154,8 @@ class DashboardService:
             state = {}
             snapshot["state"] = state
         state["cooperation"] = self._store_cooperation(state)
+        # 지도 선택 목표 진행 상태는 같은 /api/status 폴링 응답에 싣는다(추가 타이머 없음).
+        snapshot["navigation_request"] = self._map_goals.status_record(state)
         return snapshot
 
     def cooperation_snapshot(
@@ -178,6 +204,14 @@ class DashboardService:
         """지도 셀 데이터를 포함한 스냅샷을 반환한다(미수신 시 available=false)."""
         return self._latest_map()
 
+    def submit_map_goal(self, payload: Any) -> dict[str, Any]:
+        """지도 선택 목표를 검증/접수한다. HTTP 코드가 담긴 dict 를 돌려준다."""
+        return self._map_goals.submit(payload)
+
+    def shutdown(self) -> None:
+        """진행 중인 지도 목표 워커를 정리한다."""
+        self._map_goals.shutdown()
+
     def logs_snapshot(
         self,
         *,
@@ -220,6 +254,21 @@ class DashboardService:
 
     def set_initial_pose(self, payload: Any) -> dict[str, Any]:
         """AMCL 초기 위치를 설정한다. 검증 실패는 발행 전에 거부한다."""
+        # 대시보드 재시작 후에도 에이전트 측 진행/미확인 기록을 lease 로 채택하고,
+        # matching terminal 이 관측될 때만 해제한다(사라진 캐시로 자동 해제 금지).
+        identity = self._agent_identity()
+        self._map_goals.observe_agent_record(
+            identity.get("map_navigation_request") if isinstance(identity, Mapping) else None
+        )
+        if self._map_goals.holds_lease():
+            # 이동 중 재위치추정은 실제 주행과 어긋난 좌표를 만들 수 있어 막는다.
+            return {
+                "success": False,
+                "error": (
+                    "지도 목표 이동이 진행 중이거나 결과를 확인하지 못했습니다. "
+                    "이동이 끝난 뒤 초기 위치를 변경하세요."
+                ),
+            }
         map_snapshot = self._latest_map()
         ok, error, pose = validate_initial_pose(payload, map_meta=map_snapshot)
         if not ok:
@@ -277,7 +326,25 @@ class DashboardService:
         except Exception:  # noqa: BLE001 - 지도 미수신은 정상 상태
             logger.debug("latest_map failed", exc_info=True)
             return unavailable_map()
-        return snapshot if isinstance(snapshot, dict) else unavailable_map()
+        if not isinstance(snapshot, dict):
+            return unavailable_map()
+        return ensure_geometry_id(snapshot)
+
+    def _agent_identity(self) -> dict[str, Any] | None:
+        """제출 시점의 에이전트 로봇 ID/주행 프레임을 15초 이내 값으로만 사용한다."""
+        now = self._monotonic()
+        cached = self._agent_identity_cache
+        if cached is not None and now - cached[0] <= AGENT_IDENTITY_TTL_SEC:
+            return dict(cached[1])
+        try:
+            parsed = agent_identity_from_state_json(self._backend.query_state())
+        except Exception:  # noqa: BLE001 - QueryState 실패는 미확인 상태
+            logger.debug("agent identity query failed", exc_info=True)
+            parsed = None
+        if parsed is None:
+            return None
+        self._agent_identity_cache = (now, parsed)
+        return dict(parsed)
 
     def _latest_pose(self) -> dict[str, Any]:
         try:

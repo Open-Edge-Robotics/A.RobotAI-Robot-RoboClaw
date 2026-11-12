@@ -23,6 +23,8 @@
     offsetY: 0,
     poseMode: false,
     drag: null,
+    dragPointerId: null,
+    mapGoal: null,
     configRows: { agent: [], dashboard: [] },
     configLoaded: false,
     statusInFlight: false,
@@ -75,7 +77,9 @@
       ...(options || {}),
     });
     if (resp.status === 401 || resp.status === 403) {
-      throw new Error("권한 없음: 토큰을 확인하세요. (" + resp.status + ")");
+      const err = new Error("권한 없음: 토큰을 확인하세요. (" + resp.status + ")");
+      err.status = resp.status;
+      throw err;
     }
     const data = await resp.json().catch(() => ({}));
     return { ok: resp.ok, status: resp.status, data };
@@ -116,6 +120,7 @@
     state.pose = localization.pose || null;
     renderPose();
     syncMap(localization.map || { available: false });
+    if (state.mapGoal) state.mapGoal.applySnapshot(snap);
     // 협동 패널은 같은 스냅샷(state.cooperation)만 소비한다(추가 HTTP/타이머 없음).
     if (state.cooperation) state.cooperation.applyStatus(snap);
   }
@@ -205,6 +210,7 @@
       if (state.map) {
         state.map = null;
         state.mapStampNs = null;
+        if (state.mapGoal) state.mapGoal.applyMap(null);
         draw();
       }
       return;
@@ -236,7 +242,9 @@
         height: data.height,
         resolution: data.resolution,
         origin: data.origin || { x: 0, y: 0, yaw: 0 },
-        frameId: data.frame_id,
+        frameId: typeof data.frame_id === "string" ? data.frame_id : "",
+        topic: typeof data.topic === "string" ? data.topic : "",
+        geometryId: typeof data.geometry_id === "string" ? data.geometry_id : null,
         stampNs: data.stamp_ns,
         cells: decodeCells(data.data),
       };
@@ -247,6 +255,7 @@
           data.width + "×" + data.height + " · (" +
           data.origin.x.toFixed(2) + ", " + data.origin.y.toFixed(2) + ")"
       );
+      if (state.mapGoal) state.mapGoal.applyMap(state.map);
       draw();
     } catch (err) {
       if (result) {
@@ -360,9 +369,17 @@
 
     drawPose(ctx, map);
     if (state.drag) drawCandidate(ctx, map, state.drag);
+    if (state.mapGoal) {
+      state.mapGoal.drawOverlay(ctx, map, {
+        scale: state.scale,
+        offsetX: state.offsetX,
+        offsetY: state.offsetY,
+      });
+    }
   }
 
-  function drawArrow(ctx, px, py, yaw, color) {
+  function drawArrow(ctx, px, py, worldYaw, color, map) {
+    const yaw = map ? RcMapGeometry.headingToCanvas(map, worldYaw) : worldYaw;
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(-yaw);
@@ -386,7 +403,7 @@
     ctx.strokeStyle = "#4f9cff";
     ctx.lineWidth = 2;
     ctx.stroke();
-    drawArrow(ctx, point.x, point.y, pose.yaw, "#4f9cff");
+    drawArrow(ctx, point.x, point.y, pose.yaw, "#4f9cff", map);
   }
 
   function drawCandidate(ctx, map, candidate) {
@@ -396,7 +413,7 @@
     ctx.strokeStyle = "#3ecf7a";
     ctx.lineWidth = 2;
     ctx.stroke();
-    drawArrow(ctx, point.x, point.y, candidate.yaw, "#3ecf7a");
+    drawArrow(ctx, point.x, point.y, candidate.yaw, "#3ecf7a", map);
   }
 
   function eventToWorld(canvas, ev) {
@@ -417,6 +434,8 @@
     if (!canvas) return;
 
     modeButton.addEventListener("click", () => {
+      // 목표 선택 컨트롤러가 있으면 모드 전환(초기 위치/목표/보기)을 그쪽이 소유한다.
+      if (state.mapGoal) return;
       state.poseMode = !state.poseMode;
       state.drag = null;
       modeButton.classList.toggle("active", state.poseMode);
@@ -433,6 +452,7 @@
       if (!state.poseMode || !state.map) return;
       const world = eventToWorld(canvas, ev);
       state.drag = { x: world.x, y: world.y, yaw: 0 };
+      state.dragPointerId = ev.pointerId;
       canvas.setPointerCapture(ev.pointerId);
       draw();
     });
@@ -451,15 +471,27 @@
     canvas.addEventListener("pointerup", () => {
       if (!state.drag) return;
       const candidate = state.drag;
-      state.drag = null;
+      releaseDragCapture(canvas);
       draw();
       sendInitialPose(candidate);
     });
 
     canvas.addEventListener("pointercancel", () => {
-      state.drag = null;
+      releaseDragCapture(canvas);
       draw();
     });
+  }
+
+  function releaseDragCapture(canvas) {
+    if (state.dragPointerId != null && canvas && typeof canvas.releasePointerCapture === "function") {
+      try {
+        canvas.releasePointerCapture(state.dragPointerId);
+      } catch (err) {
+        // 이미 해제된 포인터는 무시한다.
+      }
+    }
+    state.dragPointerId = null;
+    state.drag = null;
   }
 
   async function sendInitialPose(candidate) {
@@ -639,6 +671,26 @@
       localStorage.setItem(READONLY_KEY, el("readonly-token").value);
       localStorage.setItem(CONTROL_KEY, el("control-token").value);
       el("readonly-token").title = "저장됨";
+    });
+  }
+
+  function setupGoalPicker() {
+    if (!window.RcGoalPicker) return;
+    state.mapGoal = window.RcGoalPicker.mount({
+      document: document,
+      getControlToken: () => getControlToken(),
+      fetchJson: fetchJson,
+      canvas: () => el("map-canvas"),
+      draw: () => draw(),
+      onModeChange: (mode) => {
+        state.poseMode = mode === "initial_pose";
+        if (!state.poseMode) releaseDragCapture(el("map-canvas"));
+        const poseButton = el("pose-mode");
+        if (poseButton) poseButton.classList.toggle("active", state.poseMode);
+        const canvas = el("map-canvas");
+        if (canvas) canvas.classList.toggle("pose-mode", state.poseMode);
+        draw();
+      },
     });
   }
 
@@ -1211,6 +1263,7 @@
     setupTokens();
     setupConfigPanel();
     setupChat();
+    setupGoalPicker();
     setupMapInteraction();
     setupLogPanel();
     setupCooperationPanel();

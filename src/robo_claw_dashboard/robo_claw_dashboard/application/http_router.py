@@ -62,10 +62,16 @@ def _parse_body(body: Any) -> tuple[bool, Any]:
 
 
 def _handle_chat(body: Any, service: Any) -> HttpResponse:
-    """POST /api/chat - JSON body 를 검증하고 에이전트 메시지 전송."""
+    """POST /api/chat - 일반 채팅은 동기, map_goal 모드는 202 비동기 접수."""
     ok, payload = _parse_body(body)
     if not ok:
         return _json({"error": "잘못된 JSON"}, 400)
+
+    if isinstance(payload, dict) and "map_goal" in payload:
+        # map_goal 이 null/문자열이어도 일반 채팅으로 흘려보내지 않는다.
+        res = service.submit_map_goal(payload)
+        status_code = int(res.pop("status_code", 202 if res.get("success") else 400))
+        return _json(res, status=status_code)
 
     message = payload.get("message", "") if isinstance(payload, dict) else ""
     return _json(service.send_message(message))

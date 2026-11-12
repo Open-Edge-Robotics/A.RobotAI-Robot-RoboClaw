@@ -97,6 +97,7 @@ class TestStatus:
         snap = DashboardService(FakeBackend()).status()
         assert snap["agent"]["state"] == "UNKNOWN"
         assert snap["peers"] == []
+        assert snap["navigation_request"] is None
 
 
 class TestSendMessage:

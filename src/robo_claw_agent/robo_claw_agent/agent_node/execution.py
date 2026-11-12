@@ -24,7 +24,16 @@ from .fast_router import (
     DEFAULT_RULE_ROUTER,
     ROUTE_DIRECT_SKILL,
     ROUTE_SIMPLE_REPLY,
+    RouteDecision,
 )
+from .map_goal.dispatch import apply_task_outcome
+from .map_goal.scope import (
+    activate_map_goal_scope,
+    current_map_goal_scope,
+    map_goal_scope,
+    run_in_context,
+)
+from .map_goal.tracker import STATUS_PLANNING, get_map_goal_tracker
 from .nav_safety import ensure_navigation_safety
 from .skill_result_msg import build_skill_result_msg
 from .task_queue import QueuedTask, TaskQueue
@@ -161,7 +170,13 @@ class ExecutionMixin:
         try:
             try:
                 asyncio.get_running_loop()
+            except RuntimeError:
+                result = run_in_context(_trace_runtime_operation, op_name, func, args, kwargs)
+            else:
+                # Only a missing event loop permits synchronous fallback.
+                # An operation failure must never repeat a physical side effect.
                 coro = asyncio.to_thread(
+                    run_in_context,
                     _trace_runtime_operation,
                     op_name,
                     func,
@@ -171,8 +186,6 @@ class ExecutionMixin:
                 if timeout_sec is not None:
                     coro = asyncio.wait_for(coro, timeout=timeout_sec)
                 result = await coro
-            except RuntimeError:
-                result = _trace_runtime_operation(op_name, func, args, kwargs)
         except asyncio.TimeoutError:
             self._runtime_metrics.record(
                 op_name,
@@ -508,6 +521,36 @@ class ExecutionMixin:
     async def _execute_task_inner(
         self, goal_handle: Any, instruction: str, timeout: float
     ) -> tuple[str, list[Any], bool]:
+        """지도 목표 컨텍스트를 요청 스코프로 승격한 뒤 실행 본문을 호출한다.
+
+        지도 목표 컨텍스트가 있는데 검증에 실패하면 어떤 스킬도 실행하지 않고
+        실패로 끝낸다(자유 텍스트 폴백 금지). 스코프는 요청 스레드/태스크 안에서만
+        유효하며 예외·시간 초과에도 반드시 해제된다.
+        """
+        scope, scope_error = activate_map_goal_scope(self, goal_handle, instruction)
+        if scope_error:
+            from .map_goal.rejection import rejection_result
+
+            self.get_logger().warning(f"Map goal request rejected: {scope_error}")
+            report = rejection_result(self, goal_handle, scope_error)
+            return scope_error, [report] if report is not None else [], False
+        if scope is None:
+            return await self._execute_task_body(goal_handle, instruction, timeout)
+
+        with map_goal_scope(scope):
+            try:
+                result_msg, skill_results, task_success = await self._execute_task_body(
+                    goal_handle, instruction, timeout
+                )
+            except BaseException:
+                apply_task_outcome(self, scope, [], "지도 목표 실행 중 내부 오류가 발생했습니다.")
+                raise
+        apply_task_outcome(self, scope, skill_results, result_msg)
+        return result_msg, skill_results, task_success
+
+    async def _execute_task_body(
+        self, goal_handle: Any, instruction: str, timeout: float
+    ) -> tuple[str, list[Any], bool]:
         set_current_trace_metadata(
             {"robot_id": self._agent_id, "instruction_length": len(instruction)},
             tags=[f"robot:{self._agent_id}"],
@@ -536,13 +579,22 @@ class ExecutionMixin:
 
         # 사전 라우팅(그룹 A). SYSTEM1_ROUTER 설정에 따라 RuleRouter 또는 Laya 중
         # 하나만 판단한다. 복합 명령 선점 방지 등 기존 규칙은 RuleRouter 가 담당한다.
-        router = getattr(self, "_router", None) or DEFAULT_RULE_ROUTER
-        route = await router.decide(self, instruction)
+        # 지도 목표 요청은 검증된 좌표를 LLM planner 가 기존 navigate_to 로 골라야
+        # 하므로, 결정론적 사전 라우터가 이동을 선점하지 못하게 한다.
+        map_goal_request = current_map_goal_scope()
+        if map_goal_request is not None:
+            route = RouteDecision.to_llm(source="map_goal")
+        else:
+            router = getattr(self, "_router", None) or DEFAULT_RULE_ROUTER
+            route = await router.decide(self, instruction)
         set_current_trace_metadata(route.trace_metadata())
         if route.kind == ROUTE_DIRECT_SKILL:
-            result_msg, skill_results, task_success, pending_send_events = (
-                await self._execute_direct_route(route, instruction, timeout, send_fb)
-            )
+            (
+                result_msg,
+                skill_results,
+                task_success,
+                pending_send_events,
+            ) = await self._execute_direct_route(route, instruction, timeout, send_fb)
             if pending_send_events:
                 try:
                     asyncio.get_running_loop()
@@ -561,6 +613,13 @@ class ExecutionMixin:
             task_success = True
             return result_msg, skill_results, task_success
 
+        if map_goal_request is not None:
+            get_map_goal_tracker(self).transition(
+                map_goal_request.request_id,
+                STATUS_PLANNING,
+                message="지도 목표 계획을 수립합니다.",
+            )
+
         send_fb("상태 및 과거 지식 파악 중", 10)
         messages, robot_summary = await self._planner.collect_task_context(instruction, goal_handle)
 
@@ -569,6 +628,8 @@ class ExecutionMixin:
             # 네이티브 도구 루프는 원본 요청과 도구 결과를 한 대화에서 유지합니다.
             and not tool_calling_enabled(getattr(self, "_llm_tool_calling", False), self._llm)
             and getattr(self, "_enable_task_decomposition", True)
+            # 지도 목표는 단일 좌표 하나이므로 하위 단계로 분해하지 않는다.
+            and map_goal_request is None
             and (self._task_decomposer.looks_compound(instruction))
         ):
             (
@@ -668,7 +729,11 @@ class ExecutionMixin:
                     timeout,
                 )
                 skill_results.append(res)
-                if res.success and isinstance(res.result_data, dict) and "file_path" in res.result_data:
+                if (
+                    res.success
+                    and isinstance(res.result_data, dict)
+                    and "file_path" in res.result_data
+                ):
                     file_path = res.result_data["file_path"]
                     msg_text = res.result_data.get(
                         "message", f"'{step_name}' 실행 결과 이미지입니다."

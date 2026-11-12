@@ -5,6 +5,8 @@
 """
 
 import base64
+import hashlib
+import json
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -64,6 +66,52 @@ def encode_cells_base64(cells: Sequence[Any]) -> str:
     return base64.b64encode(bytes(_normalize_cell(cell) for cell in cells)).decode("ascii")
 
 
+def _quantize_geometry(value: Any) -> float:
+    """지도 지오메트리 해시용 12자리 반올림(음의 0 은 0.0 으로 정규화)."""
+    rounded = round(float(value), 12)
+    return 0.0 if rounded == 0.0 else rounded
+
+
+def compute_geometry_id(snapshot: Mapping[str, Any] | None) -> str | None:
+    """지도 스냅샷의 지오메트리 지문(SHA256 64 hex)을 계산한다.
+
+    토픽/프레임/크기/해상도/원점(정규화 yaw)만 포함한다. 셀 데이터와 stamp 는
+    포함하지 않으므로 같은 지도에서 셀만 바뀌면 ID 는 유지되고, 제출 시점에
+    셀 값이 다시 검증된다. 브라우저는 서버가 준 값을 복사만 한다.
+    """
+    if not isinstance(snapshot, Mapping) or not snapshot.get("available"):
+        return None
+    try:
+        origin = snapshot["origin"]
+        if not isinstance(origin, Mapping):
+            return None
+        payload = [
+            str(snapshot.get("topic") or ""),
+            str(snapshot["frame_id"]),
+            int(snapshot["width"]),
+            int(snapshot["height"]),
+            _quantize_geometry(snapshot["resolution"]),
+            _quantize_geometry(origin["x"]),
+            _quantize_geometry(origin["y"]),
+            _quantize_geometry(normalize_yaw(float(origin.get("yaw", 0.0)))),
+        ]
+    except (KeyError, TypeError, ValueError):
+        return None
+    raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def ensure_geometry_id(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """스냅샷에 geometry_id 가 없으면 계산해 넣은 사본을 돌려준다."""
+    if not isinstance(snapshot, dict):
+        return snapshot
+    existing = snapshot.get("geometry_id")
+    if isinstance(existing, str) and len(existing) == 64:
+        return snapshot
+    snapshot["geometry_id"] = compute_geometry_id(snapshot)
+    return snapshot
+
+
 def _check_map_meta(*, width: int, height: int, resolution: float) -> None:
     if int(width) <= 0 or int(height) <= 0:
         raise ValueError(f"지도 크기가 올바르지 않습니다: {width}x{height}")
@@ -104,6 +152,7 @@ def build_map_snapshot(
     }
     if topic:
         snapshot["topic"] = str(topic)
+    snapshot["geometry_id"] = compute_geometry_id(snapshot)
     return snapshot
 
 
@@ -212,7 +261,17 @@ def validate_initial_pose(
     extent = _map_extent(map_meta)
     if extent is not None:
         min_x, min_y, max_x, max_y = extent
-        if not (min_x <= x <= max_x and min_y <= y <= max_y):
+        origin = map_meta["origin"]
+        try:
+            origin_yaw = float(origin.get("yaw", 0.0))
+        except (TypeError, ValueError):
+            return False, "지도 원점 회전 값이 올바르지 않습니다", None
+        if not math.isfinite(origin_yaw):
+            return False, "지도 원점 회전 값이 유한한 수가 아닙니다", None
+        dx, dy = x - float(origin["x"]), y - float(origin["y"])
+        tested_x = float(origin["x"]) + math.cos(origin_yaw) * dx + math.sin(origin_yaw) * dy
+        tested_y = float(origin["y"]) - math.sin(origin_yaw) * dx + math.cos(origin_yaw) * dy
+        if not (min_x <= tested_x <= max_x and min_y <= tested_y <= max_y):
             return (
                 False,
                 f"초기 위치가 지도 범위를 벗어났습니다: ({x:.2f}, {y:.2f}) "

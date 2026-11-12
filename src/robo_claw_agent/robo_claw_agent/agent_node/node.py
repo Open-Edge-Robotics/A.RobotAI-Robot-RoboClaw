@@ -40,6 +40,7 @@ from .initialization import (
     setup_ros_interfaces,
     setup_tf,
 )
+from .map_goal.tracker import map_navigation_request_snapshot
 from .nav_safety import register_cloid_navigation_pose_invalidation
 from .params import declare_agent_parameters, read_agent_parameters
 from .planner import LLMPlanner
@@ -457,6 +458,9 @@ class AgentNode(Node, ExecutionMixin):
         }
         if self._task_queue is not None:
             state_data["task_queue"] = self._task_queue.metrics.__dict__
+        # 지도 목표 관측: 로봇의 지도 프레임과 마지막 요청 기록(없으면 null).
+        state_data["navigation_frame"] = str(getattr(self, "_map_frame", "map") or "map")
+        state_data["map_navigation_request"] = map_navigation_request_snapshot(self)
         cooperation = self._cooperation_snapshot()
         if cooperation is not None:
             state_data["cooperation"] = cooperation

@@ -442,7 +442,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/MANIPULATION.md](docs/MANIPULATION.md)                                 | MoveIt 기반 매니퓰레이션 설정, Stretch3 백엔드                            |
 | [docs/HTTP_API.md](docs/HTTP_API.md)                                         | HTTP API 전체 레퍼런스                                                    |
 | [docs/MESSENGER_GUIDE.md](docs/MESSENGER_GUIDE.md)                           | Discord/Slack/Telegram 연동 가이드                                        |
-| [docs/DASHBOARD.md](docs/DASHBOARD.md)                                       | 웹 대시보드(`robo_claw_dashboard`) 상태·협동 관측·메시지 전송                  |
+| [docs/DASHBOARD.md](docs/DASHBOARD.md)                                       | 웹 대시보드(`robo_claw_dashboard`) 상태·협동 관측·지도 이동 메시지                  |
 | [docs/LANGSMITH_INTEGRATION.md](docs/LANGSMITH_INTEGRATION.md)               | LangSmith LLM 트레이싱/모니터링 활성화                                    |
 | [docs/SYSTEM1_FAST_ROUTER.md](docs/SYSTEM1_FAST_ROUTER.md)                   | System 1 Fast Router(Laya) 설정·환경변수·운영 가이드                      |
 | [docs/SYSTEM1_LAYA_DOCKER.md](docs/SYSTEM1_LAYA_DOCKER.md)                   | Laya 서버 Docker 실행(같은 호스트 AGX Orin / 다른 호스트 엣지 서버)       |

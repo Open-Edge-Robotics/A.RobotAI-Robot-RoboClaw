@@ -67,6 +67,22 @@ class TestBuildSnapshot:
         snap = build_snapshot(peers=peers)
         assert snap["peers"][0]["name"] == "peer-1"
 
+    def test_map_metadata_includes_geometry_id(self):
+        map_snapshot = {
+            "available": True,
+            "frame_id": "map",
+            "width": 4,
+            "height": 3,
+            "resolution": 0.5,
+            "origin": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            "encoding": "uint8",
+            "geometry_id": "a" * 64,
+            "data": "AAAA",
+        }
+        snap = build_snapshot(map_snapshot=map_snapshot)
+        assert snap["localization"]["map"]["geometry_id"] == "a" * 64
+        assert "data" not in snap["localization"]["map"]
+
     def test_fixed_timestamp_is_used(self):
         from datetime import datetime, timezone
 

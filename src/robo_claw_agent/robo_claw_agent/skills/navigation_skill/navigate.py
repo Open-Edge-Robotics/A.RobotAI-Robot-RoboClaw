@@ -6,6 +6,11 @@ from typing import Any
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
 
+from robo_claw_agent.agent_node.map_goal.dispatch import (
+    MapGoalNavigationGuard,
+    finish_navigation_dispatch,
+    navigation_timeout_sec,
+)
 from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.yield_precheck import (
     request_peer_yield,
@@ -30,6 +35,9 @@ from .core import (
 from .orientation import shortest_angular_delta_rad, yaw_to_point_rad
 
 logger = logging.getLogger(__name__)
+
+# Nav2 결과 대기 기본 상한(초). 지도 목표 요청은 요청 예산(180초)으로 더 줄인다.
+_NAV_RESULT_TIMEOUT_SEC = 300.0
 
 
 class NavigateToSkill(BaseSkill):
@@ -123,6 +131,13 @@ class NavigateToSkill(BaseSkill):
             logger.warning("navigate_to safety gate rejection: %s", gate_err)
             return self.fail_result(gate_err)
 
+        # 지도 목표 요청(대시보드 지도 선택)은 지금 지도/좌표를 다시 검증한 뒤
+        # 요청당 한 번만 실제 goal 을 보낸다. 스코프가 없으면 (None, "") 이다.
+        map_goal_guard, map_goal_error = MapGoalNavigationGuard.begin(self, x=x, y=y, frame=frame)
+        if map_goal_error:
+            logger.warning("Map goal navigation blocked: %s", map_goal_error)
+            return self.fail_result(map_goal_error, failure_reason="map_goal_rejected")
+
         dest_str = f"{(target_name + ' ') if target_name else ''}({x:.2f}, {y:.2f})"
         arrival_tolerance_m = _get_arrival_tolerance_m(self.node)
         current_pose = self.get_map_pose()
@@ -143,11 +158,17 @@ class NavigateToSkill(BaseSkill):
                 self.send_user_message(
                     f"✅ 이미 {dest_str}지점 부근에 있습니다 (오차 {current_distance:.2f}m)."
                 )
-                return self.success_result(
+                already_result = self.success_result(
                     f"{dest_str}지점에 이미 도착해 있습니다 (오차 {current_distance:.2f}m)",
                     x=x,
                     y=y,
                     distance_m=round(current_distance, 3),
+                )
+                return finish_navigation_dispatch(
+                    already_result,
+                    map_goal_guard,
+                    success=True,
+                    result_message="already_within_tolerance",
                 )
 
         # 진행 방향 yaw 각도 계산. 목표 좌표와 같은 frame의 pose를 써야 한다.
@@ -205,13 +226,19 @@ class NavigateToSkill(BaseSkill):
         accepted, message, goal_handle = _send_navigation_goal(self.node, x, y, frame, yaw=yaw)
         if not accepted:
             logger.error("Failed to send navigation goal: %s", message)
-            return self.fail_result(message)
+            return finish_navigation_dispatch(
+                self.fail_result(message), map_goal_guard, success=False, result_message=message
+            )
+
+        if map_goal_guard is not None:
+            map_goal_guard.mark_execution_started(goal_handle)
 
         self.send_user_message(f"📍 {dest_str}지점으로 이동을 시작합니다.")
 
+        # 지도 목표 요청은 요청 전체 예산(180초) 안에서만 결과를 기다린다.
         success, result_message = _wait_for_goal_result(
             goal_handle,
-            timeout_sec=300.0,
+            timeout_sec=navigation_timeout_sec(map_goal_guard, _NAV_RESULT_TIMEOUT_SEC),
             label="내비게이션",
         )
 
@@ -289,11 +316,21 @@ class NavigateToSkill(BaseSkill):
                 logger.debug("[navigate_to] RAG save failed: %s", _rag_e)
 
         if success:
-            return self.success_result(f"{dest_str}지점으로 이동 완료", x=x, y=y)
+            return finish_navigation_dispatch(
+                self.success_result(f"{dest_str}지점으로 이동 완료", x=x, y=y),
+                map_goal_guard,
+                success=True,
+                result_message=result_message,
+            )
         fail_kwargs: dict[str, Any] = {"x": x, "y": y}
         if early_abort_diagnosed:
             fail_kwargs["failure_reason"] = "progress_checker_timeout"
-        return self.fail_result(f"{dest_str}지점으로 이동 실패: {result_message}", **fail_kwargs)
+        return finish_navigation_dispatch(
+            self.fail_result(f"{dest_str}지점으로 이동 실패: {result_message}", **fail_kwargs),
+            map_goal_guard,
+            success=False,
+            result_message=result_message,
+        )
 
 
 class FollowWaypointsSkill(BaseSkill):

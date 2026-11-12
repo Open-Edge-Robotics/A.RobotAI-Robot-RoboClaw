@@ -9,6 +9,7 @@ from robo_claw_dashboard.domain.localization import (
     build_initial_pose,
     build_map_snapshot,
     build_pose_snapshot,
+    compute_geometry_id,
     encode_cells_base64,
     normalize_yaw,
     parse_map_topics,
@@ -25,6 +26,20 @@ MAP_META = {
 }
 
 
+@pytest.mark.parametrize("x,y,allowed", [(-1.75, 0.25, True), (2.5, 0.5, False)])
+def test_initial_pose_checks_rotated_map_axes_without_changing_margin(x, y, allowed):
+    metadata = {
+        "width": 4,
+        "height": 4,
+        "resolution": 0.5,
+        "origin": {"x": 0.0, "y": 0.0, "yaw": math.pi / 2},
+    }
+    ok, error, pose = validate_initial_pose({"x": x, "y": y}, map_meta=metadata)
+    assert ok is allowed
+    assert (pose is not None) is allowed
+    assert (error is None) is allowed
+
+
 class TestEncodeCells:
     def test_unknown_cells_map_to_unknown_value(self):
         assert encode_cells_base64([0, 100, -1, 50]) == base64.b64encode(
@@ -37,6 +52,19 @@ class TestEncodeCells:
 
 
 class TestBuildMapSnapshot:
+    def test_snapshot_carries_server_geometry_id(self):
+        snap = build_map_snapshot(
+            width=4,
+            height=3,
+            resolution=0.5,
+            origin=MAP_META["origin"],
+            frame_id="map",
+            cells=[0] * 12,
+            topic="/map",
+        )
+        assert len(snap["geometry_id"]) == 64
+        assert snap["geometry_id"] == compute_geometry_id(dict(snap, stamp_ns=99))
+
     def test_snapshot_carries_meta_and_encoded_cells(self):
         cells = [0] * (MAP_META["width"] * MAP_META["height"])
         snap = build_map_snapshot(frame_id="map", cells=cells, stamp_ns=1234, **MAP_META)
