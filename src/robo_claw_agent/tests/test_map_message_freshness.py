@@ -110,16 +110,23 @@ def test_volatile_map_rejects_invalid_timestamp(receiver):
     assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is None
 
 
-@pytest.mark.parametrize("durability", ["transient_local", "volatile"])
-def test_dynamic_map_rejects_old_sample_regardless_of_durability(receiver, durability):
+def test_dynamic_volatile_map_rejects_old_stamp(receiver):
     skill, node, _ = receiver
     node.map_is_static = False
-    node.publisher_durability = durability
+    node.publisher_durability = "volatile"
     node.message = sample(989)
     assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is None
 
 
-def test_dynamic_latched_map_rejects_old_cache_without_stamp(receiver, monkeypatch):
+def test_dynamic_latched_map_accepts_old_stamp(receiver):
+    skill, node, _ = receiver
+    node.map_is_static = False
+    node.publisher_durability = "transient_local"
+    node.message = sample(989)
+    assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is node.message
+
+
+def test_dynamic_latched_map_reuses_old_cache_without_stamp(receiver, monkeypatch):
     skill, node, _ = receiver
     node.map_is_static = False
     node.publisher_durability = "transient_local"
@@ -129,4 +136,14 @@ def test_dynamic_latched_map_rejects_old_cache_without_stamp(receiver, monkeypat
     assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is node.message
     node.publishing = False
     now[0] = 111.0
-    assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is None
+    assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is node.message
+
+
+def test_cloid_latched_map_with_hour_old_stamp_is_usable(receiver):
+    skill, node, _ = receiver
+    node.map_is_static = False
+    node.publisher_durability = "transient_local"
+    # CLOiD grid_map_node는 latched 맵을 1회 발행하고 stamp를 갱신하지 않는다.
+    # 실측에서 stamp가 약 5.7시간 과거였지만 맵은 유일한 최신 데이터이므로 수용해야 한다.
+    node.message = sample(989)  # node clock=1000 기준 약 11초 과거(> max_age 10초)
+    assert skill.wait_for_map_message("/lio/grid_map", timeout_sec=0.01) is node.message

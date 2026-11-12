@@ -152,7 +152,6 @@ def test_yield_node_reader_preserves_map_freshness_policy(topic, expected):
         "use_transient_local": True,
         "max_age_sec": 10.0,
         "fresh_volatile": True,
-        "fresh_transient_local": False,
     }
 
 

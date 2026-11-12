@@ -286,8 +286,6 @@ def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
     if callable(helper):
         map_topic = _node_map_topic(node)
         try:
-            from robo_claw_agent.skills.map_messages import map_is_static
-
             map_msg = helper(
                 OccupancyGrid,
                 map_topic,
@@ -295,7 +293,6 @@ def _wait_for_map(node: Any, *, timeout_sec: float = 2.0) -> Any | None:
                 use_transient_local=True,
                 max_age_sec=10.0,
                 fresh_volatile=True,
-                fresh_transient_local=not map_is_static(node),
             )
             if map_msg is None:
                 return None

@@ -3,6 +3,13 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-12 — CLOiD latched 지도 freshness 차단 수정
+
+- **Fixed**: `map_is_static=false` 갱신형 지도에 적용하던 10초 stamp freshness 상한이 latched(transient-local) 맵까지 차단해 CLOiD `/lio/grid_map`을 "수신 불가"로 실패시키던 문제를 수정합니다. CLOiD `grid_map_node`는 맵을 1회 발행한 뒤 stamp를 갱신하지 않으므로 정지 상태에서 stamp가 수 시간 과거로 남아 모든 지도 스킬이 timeout 됐습니다. latched 맵은 stamp와 관계없이 수용하고 freshness는 volatile 스트림에만 적용합니다.
+- **Added**: `capture_map`·`get_map_visual`의 `map_metadata.map_age_sec`에 맵 나이를 보고합니다.
+- **Changed**: `wait_for_message`의 `fresh_transient_local` 파라미터와 `map_messages.map_is_static` 헬퍼를 제거합니다. `map_is_static` ROS 파라미터는 선언·문서화를 유지합니다.
+- **검증**: `test_map_message_freshness.py` 15개, `test_map_capture_delivery.py` 2개, `test_map_topic_selection.py`·`test_autonomous_map_topic.py` 93개(Python 3.12 ROS 환경) 통과, Ruff 통과. CLOiD 1호 실측으로 `/lio/grid_map`이 `nav_msgs/OccupancyGrid`(RELIABLE/TRANSIENT_LOCAL)이고 stamp가 약 5.7시간 과거임을 확인했습니다. 수정 후 실기 스킬 재호출·이미지 반환은 미검증입니다.
+
 ## 2026-11-12 — 지도 목표 선택을 이동 메시지로 전달
 
 - **Added**: 대시보드에 초기 위치와 분리된 목표 선택·메시지 미리보기·전송·진행 표시를 추가합니다. 지도 클릭만으로 이동하지 않고 기존 `/api/chat`·`ExecuteTask`·플래너 경로를 사용합니다. 지도 원점 회전·배율·빈 셀·프레임을 검증합니다.

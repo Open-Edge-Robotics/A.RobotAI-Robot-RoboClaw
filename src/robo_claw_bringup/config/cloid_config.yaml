@@ -58,7 +58,8 @@ robo_claw_agent_node:
     camera_topic: "/rgb_cam_head_front_left/image_raw/compressed"
     # Robot-local OccupancyGrid for map skills and gRPC telemetry.
     map_topic: "/lio/grid_map"
-    # LIO maps remain dynamic even when published with transient-local QoS.
+    # latched 맵은 stamp와 관계없이 수용하며 freshness는 volatile 스트림에만 적용한다.
+    # map_is_static 파라미터는 선언·문서화를 유지하되 freshness 게이트에는 관여하지 않는다.
     map_is_static: false
 
     # 실제 모션 목록은 /task_manager/motion_map 토픽에서 읽는다. 토픽이 비어 있을 때만

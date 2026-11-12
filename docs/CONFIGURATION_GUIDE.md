@@ -58,11 +58,12 @@ robo_claw_agent_node:
 로봇 설정의 토픽을 gRPC 지도 구독에도 전달합니다. 별도 `RC_MAP_TOPIC` 환경변수나
 공통 runtime contract 변경은 필요하지 않습니다.
 
-`map_is_static`의 기본값은 `true`입니다. 정적 지도는 transient-local로 받은
-오래된 latched 샘플을 허용합니다. `false`인 갱신형 지도는 durability와 관계없이
-메시지 시각과 캐시 수신 시각에 10초 freshness 상한을 적용합니다. volatile 샘플은
-정적 설정에서도 같은 상한을 적용합니다. stamp가 없거나 0이면 수신 시각으로 캐시
-수명을 제한합니다. 토픽을 명시적으로 바꿔도 정적·갱신형 정책은 노드 설정을 따릅니다.
+transient-local(latched) 지도는 stamp와 관계없이 "마지막으로 발행된 맵"으로 항상
+수용합니다. CLOiD `/lio/grid_map`처럼 1회 발행 뒤 stamp가 갱신되지 않는 맵도
+차단하지 않습니다. 10초 freshness 상한은 volatile(실시간 스트림) 샘플에만 적용하며
+수신 캐시 나이와 `header.stamp` 나이를 함께 검사합니다. `map_is_static` 파라미터는
+선언·문서화를 유지하되 freshness 게이트에는 관여하지 않습니다. 맵 나이는
+`capture_map`·`get_map_visual`의 `map_metadata.map_age_sec`으로 보고합니다.
 
 선택한 토픽을 수신하지 못하면 다른 지도로 자동 전환하지 않습니다. 지도 메시지의
 `frame_id`는 `map_frame`과 일치해야 하며, 불일치 시 분석·탐색·양보 후보 계산을

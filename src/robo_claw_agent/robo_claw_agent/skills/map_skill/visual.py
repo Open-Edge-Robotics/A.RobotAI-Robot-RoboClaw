@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills.map_messages import map_stamp_age_sec
 
 from ._grid_image import build_map_image
 
@@ -112,6 +113,7 @@ class GetMapVisualSkill(BaseSkill):
                 analysis_text = f"(시각 분석 실패: {e})"
                 vlm_success = False
 
+        map_age = map_stamp_age_sec(self.node, map_msg)
         result = {
             "success": True,
             "message": f"맵 시각화 완료 (VLM 분석: {'성공' if vlm_success else '실패'})",
@@ -124,6 +126,7 @@ class GetMapVisualSkill(BaseSkill):
                 "height": height,
                 "resolution": info.resolution,
                 "origin": {"x": info.origin.position.x, "y": info.origin.position.y},
+                "map_age_sec": round(map_age, 3) if map_age is not None else None,
             },
             "interpretation": analysis_text
             or "맵 이미지가 생성되었습니다.  시각적 분석 결과는 없습니다.",

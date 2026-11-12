@@ -57,7 +57,7 @@
 전송하지 않습니다. 수신 timeout 때 다른 토픽으로 자동 전환하지 않습니다.
 
 자율 행동과 양보 후보 계산도 로봇의 지도 토픽과 freshness 정책을 사용합니다.
-정적·갱신형 설정과 10초 freshness 상한은
+latched 지도 수용과 volatile 10초 freshness 상한은
 [지도 설정](CONFIGURATION_GUIDE.md#로봇별-지도-토픽)을 참고합니다.
 
 | 카테고리 | 스킬 | 공개 범위 | 위험도 | 백엔드 | 설명 |

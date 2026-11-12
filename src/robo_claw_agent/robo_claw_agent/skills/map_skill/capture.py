@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills.map_messages import map_stamp_age_sec
 
 from ._grid_image import build_map_image
 
@@ -116,6 +117,7 @@ class CaptureMapSkill(BaseSkill):
         crop_origin_x = origin_x + crop.col_offset * res
         crop_origin_y = origin_y + crop.row_offset * res
 
+        map_age = map_stamp_age_sec(self.node, map_msg)
         return {
             "success": True,
             "message": "맵 이미지를 캡처했습니다.",
@@ -127,6 +129,7 @@ class CaptureMapSkill(BaseSkill):
                 "height": height,
                 "resolution": info.resolution,
                 "origin": {"x": info.origin.position.x, "y": info.origin.position.y},
+                "map_age_sec": round(map_age, 3) if map_age is not None else None,
                 "crop": {
                     "origin": {"x": crop_origin_x, "y": crop_origin_y},
                     "width": crop.crop_width,

@@ -124,8 +124,11 @@ RC_AGENT_ID=cloi02
 이 토픽을 사용합니다. 스킬 호출에서 `map_topic`을 생략해도 적용합니다. 기존
 로봇의 미설정 기본 토픽은 `/map`으로 유지합니다.
 
-갱신형 지도는 transient-local 또는 volatile 여부와 관계없이 10초 이내 데이터만
-사용합니다. 수신되지 않거나 frame이 맞지 않으면 지도 기반 판단을 차단합니다.
+transient-local(latched) 지도는 stamp와 관계없이 수용합니다. CLOiD `/lio/grid_map`은
+`grid_map_node`가 1회 발행한 뒤 stamp를 갱신하지 않으므로, 10초 freshness 상한을
+적용하면 정지 상태에서 맵을 영구히 놓치게 됩니다. freshness는 volatile 스트림에만
+적용하고, 맵 나이는 `map_metadata.map_age_sec`으로 보고합니다. 수신되지 않거나
+frame이 맞지 않으면 지도 기반 판단을 차단합니다.
 배포 후 `/lio/grid_map`이 `nav_msgs/msg/OccupancyGrid`인지, publisher의 QoS,
 발행 주기, `header.frame_id`와 `map_frame`의 일치를 확인합니다. 자세한 설정은
 [지도 설정](CONFIGURATION_GUIDE.md#로봇별-지도-토픽)을 참고합니다.

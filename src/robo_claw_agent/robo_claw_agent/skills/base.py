@@ -479,7 +479,6 @@ class BaseSkill(ABC):
         allow_best_effort: bool = True,
         max_age_sec: float | None = None,
         fresh_volatile: bool = False,
-        fresh_transient_local: bool = False,
     ) -> T | None:
         """특정 토픽에서 메시지 하나를 수신할 때까지 대기 (One-shot).
 
@@ -492,8 +491,10 @@ class BaseSkill(ABC):
         수신 시점의 age가 max_age_sec보다 큰 것이 정상이며, 이를 stale로
         판단하면 정적 맵(/map)처럼 1회만 발행되는 토픽을 영구히 놓치게 된다.
 
-        fresh_volatile/fresh_transient_local enable map freshness checks for
-        each durability, including the monotonic age of cached samples.
+        fresh_volatile=True이면 VOLATILE(비 latched) 메시지에 한해 max_age_sec를
+        기준으로 수신 캐시 나이와 header.stamp 나이를 검사한다. TRANSIENT_LOCAL
+        (latched) 샘플은 "마지막으로 발행된 맵"이므로 stamp가 오래돼도 항상 수용한다
+        (CLOiD /lio/grid_map처럼 1회 발행 뒤 stamp가 갱신되지 않는 맵 포함).
         """
         if self.node is None:
             logger.error("Node is not configured. wait_for_message unavailable.")
@@ -574,9 +575,9 @@ class BaseSkill(ABC):
 
         registered: list[tuple[_SubscriptionSlot, Callable[[T], None]]] = []
         for qos in qos_profiles:
-            check_map_age = (fresh_volatile and qos.durability == DurabilityPolicy.VOLATILE) or (
-                fresh_transient_local and qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
-            )
+            # freshness는 VOLATILE(실시간 스트림)에만 적용한다. latched 맵은
+            # stamp가 갱신되지 않아도 유일한 최신 데이터이므로 차단하지 않는다.
+            check_map_age = fresh_volatile and qos.durability == DurabilityPolicy.VOLATILE
 
             def on_message(
                 msg: T, received_age_sec: float = 0.0, *, check_age: bool = check_map_age
