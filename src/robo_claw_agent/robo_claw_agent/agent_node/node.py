@@ -21,6 +21,11 @@ from robo_claw_msgs.msg import AgentStatus
 from ..llm_bridge import BaseLLMBridge
 from ..observability import OperationTracker
 from ..skill_manager import SkillManager, SkillResult
+from ..skills.cooperation_skill.envelope import (
+    PEER_MESSAGE_CORRELATION_FIELDS,
+    REBUILD_REQUIRED_ERROR,
+    missing_request_fields,
+)
 from ..skills.fleet_handoff import PEER_COLLAB_SKILLS, maestro_control_active
 from ..skills.limits import load_limits_dict
 from ..types import AgentState
@@ -62,6 +67,11 @@ from .utils import tool_calling_enabled
 
 logger = logging.getLogger(__name__)
 
+# QueryState cooperation 객체는 폴링 응답이므로 압축해서 내보낸다.
+QUERY_STATE_MAX_EVENTS = 50
+QUERY_STATE_CONTENT_LIMIT = 512
+QUERY_STATE_DETAIL_BUDGET = 512
+
 
 class AgentNode(Node, ExecutionMixin):
     """
@@ -81,6 +91,8 @@ class AgentNode(Node, ExecutionMixin):
             self.get_logger().info(f"Gripper camera topic parameter: {p.gripper_camera_topic}")
 
         self._agent_id = p.agent_id
+        # 협동 관측 저널 — 노드 lifecycle 에서 열고 destroy_node 에서 flush/close 한다.
+        self._cooperation_journal = self._initialize_cooperation_journal()
         # 동료의 자리 양보 요청을 수락할지 여부 (yield_slot_enabled 파라미터)
         self._yield_slot_enabled = p.yield_slot_enabled
         self._state = AgentState.IDLE
@@ -217,9 +229,7 @@ class AgentNode(Node, ExecutionMixin):
         # Maestro 관제 중에는 peer 협업 스킬을 항상 차단한다(등록 해제의 백스톱).
         if maestro_control_active():
             blocked = sorted(set(blocked) | PEER_COLLAB_SKILLS)
-            self.get_logger().info(
-                "Maestro enabled: peer collaboration skills blocked by policy"
-            )
+            self.get_logger().info("Maestro enabled: peer collaboration skills blocked by policy")
         self._skills.set_skill_policy(allowed=allowed, blocked=blocked)
 
     def _validate_required_configs(self, p) -> None:
@@ -447,39 +457,85 @@ class AgentNode(Node, ExecutionMixin):
         }
         if self._task_queue is not None:
             state_data["task_queue"] = self._task_queue.metrics.__dict__
+        cooperation = self._cooperation_snapshot()
+        if cooperation is not None:
+            state_data["cooperation"] = cooperation
         response.success, response.state_json = (
             True,
             json.dumps(state_data, ensure_ascii=False),
         )
         return response
 
+    def _cooperation_snapshot(self) -> dict[str, Any] | None:
+        """QueryState 의 cooperation 객체. 실패해도 상태 조회를 막지 않는다."""
+        try:
+            from ..skills.cooperation_skill.journal import get_cooperation_journal
+
+            journal = getattr(self, "_cooperation_journal", None) or get_cooperation_journal()
+            # Maestro 관제 중에는 로봇 간 협동이 비활성이다(우회 경로 없음).
+            # 관측 API 는 압축본만 내보낸다(원본 이벤트/SQLite 는 2048 상세 유지).
+            return journal.snapshot(
+                enabled=not maestro_control_active(),
+                max_events=QUERY_STATE_MAX_EVENTS,
+                content_limit=QUERY_STATE_CONTENT_LIMIT,
+                detail_budget=QUERY_STATE_DETAIL_BUDGET,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warning(f"Cooperation snapshot failed: {exc}")
+            return None
+
     def _handle_peer_message(self, request, response):
-        """자율협동 — 동료 로봇이 보낸 대화 메시지를 협동 인박스로 전달한다."""
-        if maestro_control_active():
-            # Maestro 관제 중에는 로봇끼리 직접 대화하지 않는다. Maestro가 중계한다.
+        """자율협동 — 동료 로봇이 보낸 대화 메시지를 협동 인박스로 전달한다.
+
+        전송 계층이 준 상관 ID(message_id/task_id/session_id/reply_to/status/result/
+        kind)를 그대로 보존한다. 구버전 채널이 필드를 비워 보내는 것은 허용하지만,
+        재빌드 전 생성코드처럼 필드 자체가 없으면 상관 정보 유실을 숨기지 않고
+        명시적 재빌드 오류로 거부한다.
+        """
+        peer_name = str(getattr(request, "peer_name", "") or "")
+        message = str(getattr(request, "message", "") or "")
+        # 재빌드 전 생성코드에는 상관 필드가 없다. 조용히 ID 를 새로 만들면 통신
+        # 내용 상관이 끊기므로 명시적 재빌드 오류로 거부한다.
+        missing_fields = missing_request_fields(request)
+        if missing_fields:
+            self.get_logger().error(
+                f"PeerMessage request is missing correlation fields: {missing_fields}"
+            )
             response.success = False
             response.error_message = (
-                "Maestro 관제 중에는 로봇 간 협동 메시지를 받지 않습니다."
+                f"{REBUILD_REQUIRED_ERROR} (missing: {', '.join(missing_fields)})"
             )
             return response
-        peer_name = request.peer_name
-        message = request.message
+        correlation = {
+            name: str(getattr(request, name, "") or "") for name in PEER_MESSAGE_CORRELATION_FIELDS
+        }
+        if maestro_control_active():
+            # Maestro 관제 중에는 로봇끼리 직접 대화하지 않는다. Maestro가 중계한다.
+            try:
+                from ..skills.cooperation_skill.journal import get_cooperation_journal
 
-        if not peer_name or not message:
+                get_cooperation_journal().record(
+                    "policy",
+                    peer_id=peer_name.strip(),
+                    task_id=correlation["task_id"].strip(),
+                    message_id=correlation["message_id"].strip(),
+                    details={"reason": "maestro_control_active", "unconfirmed": True},
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.get_logger().warning(f"Cooperation journal unavailable: {exc}")
             response.success = False
-            response.error_message = "peer_name과 message가 필요합니다."
+            response.error_message = "Maestro 관제 중에는 로봇 간 협동 메시지를 받지 않습니다."
             return response
 
         try:
-            from ..skills.cooperation_skill.inbox import get_peer_message_inbox
+            from ..skills.cooperation_skill.receive import receive_peer_message
 
-            ok = get_peer_message_inbox().push(peer_name, message)
-            if not ok:
-                response.success = False
-                response.error_message = "협동 인박스가 가득 차 메시지를 수신하지 못했습니다."
+            outcome = receive_peer_message(peer_name=peer_name, message=message, **correlation)
+            response.success = outcome.accepted
+            if not outcome.accepted:
+                response.error_message = outcome.error_message
                 return response
-            response.success = True
-            response.result_message = "메시지를 협동 인박스에 전달했습니다."
+            response.result_message = outcome.result_message
             self._ensure_autonomous_cooperate_for_peer_message(message)
         except Exception as exc:  # noqa: BLE001
             self.get_logger().error(f"PeerMessage handling error: {exc}")
@@ -551,6 +607,19 @@ class AgentNode(Node, ExecutionMixin):
             response.message = f"양보 요청 처리 오류: {exc}"
             return response
 
+    def _initialize_cooperation_journal(self):
+        """협동 관측 저널을 연다 — 기본 경로는 XDG state 디렉터리 아래다."""
+        from ..skills.cooperation_skill.journal import (
+            configure_cooperation_journal,
+            default_cooperation_state_path,
+        )
+
+        robot_id = self._agent_id or self.get_name()
+        return configure_cooperation_journal(
+            local_robot_id=robot_id,
+            path=default_cooperation_state_path(robot_id),
+        )
+
     def _ensure_autonomous_cooperate_for_peer_message(self, message: str) -> None:
         """협동 메시지를 처음 받는 로봇도 목표를 이어받아 자동 참여시킨다."""
         if maestro_control_active():
@@ -576,7 +645,7 @@ class AgentNode(Node, ExecutionMixin):
             self.get_logger().warning(f"Auto-join cooperation failed: {exc}")
 
     def destroy_node(self):
-        """ROS 노드 종료 전에 자율협동 백그라운드 루프를 정리한다."""
+        """ROS 노드 종료 전에 자율협동 백그라운드 루프와 관측 저널을 정리한다."""
         try:
             from ..skills.cooperation_skill.globals import (
                 get_cooperation_thread,
@@ -589,6 +658,12 @@ class AgentNode(Node, ExecutionMixin):
                 thread.join(timeout=2.0)
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warning(f"자율협동 루프 종료 정리 실패: {exc}")
+        try:
+            journal = getattr(self, "_cooperation_journal", None)
+            if journal is not None:
+                journal.close(timeout=2.0)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warning(f"협동 저널 종료 정리 실패: {exc}")
         super().destroy_node()
 
 

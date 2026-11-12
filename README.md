@@ -32,7 +32,7 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 | `robo_claw_grpc`      | **Python** | `robo_mcp` 등 외부 시스템 연동용 `RosGrpc` 서비스(로봇 상태/내비게이션/매니퓰레이션/카메라/스킬 실행/태스크 실행 등). `robo_claw_channel`의 메신저 gRPC와는 별개 |
 | `robo_claw_bringup`   | Python     | 전체 시스템 및 시뮬레이션 통합 런처                                                                                                                              |
 | `robo_claw_vision`    | **C++**    | ONNX Runtime + YOLOv8 실시간 객체 인식, Detection2DArray 발행                                                                                                    |
-| `robo_claw_dashboard` | **Python** | 웹 대시보드 노드 — 상태·지도·로그 조회와 메시지 전송(기본 포트 9090)                                                                                             |
+| `robo_claw_dashboard` | **Python** | 웹 대시보드 노드 — 상태·지도·로그·협동 타임라인 조회와 메시지 전송(기본 포트 9090)                                                                                             |
 | `robo_claw_cli`       | **Go**     | `rclaw` CLI — 설정 동기화, `run`/`launch`/`sim`, 진단, 시나리오 QA 자동화                                                                                        |
 
 ## 🛠️ 설치 및 의존성
@@ -441,7 +441,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/MANIPULATION.md](docs/MANIPULATION.md)                                 | MoveIt 기반 매니퓰레이션 설정, Stretch3 백엔드                            |
 | [docs/HTTP_API.md](docs/HTTP_API.md)                                         | HTTP API 전체 레퍼런스                                                    |
 | [docs/MESSENGER_GUIDE.md](docs/MESSENGER_GUIDE.md)                           | Discord/Slack/Telegram 연동 가이드                                        |
-| [docs/DASHBOARD.md](docs/DASHBOARD.md)                                       | 웹 대시보드(`robo_claw_dashboard`) 상태 조회·메시지 전송                  |
+| [docs/DASHBOARD.md](docs/DASHBOARD.md)                                       | 웹 대시보드(`robo_claw_dashboard`) 상태·협동 관측·메시지 전송                  |
 | [docs/LANGSMITH_INTEGRATION.md](docs/LANGSMITH_INTEGRATION.md)               | LangSmith LLM 트레이싱/모니터링 활성화                                    |
 | [docs/SYSTEM1_FAST_ROUTER.md](docs/SYSTEM1_FAST_ROUTER.md)                   | System 1 Fast Router(Laya) 설정·환경변수·운영 가이드                      |
 | [docs/SYSTEM1_LAYA_DOCKER.md](docs/SYSTEM1_LAYA_DOCKER.md)                   | Laya 서버 Docker 실행(같은 호스트 AGX Orin / 다른 호스트 엣지 서버)       |

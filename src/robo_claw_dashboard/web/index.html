@@ -185,6 +185,50 @@
       </div>
     </section>
 
+    <section class="card mt-3" id="cooperation-panel" aria-labelledby="cooperation-title">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <h2 class="h6 mb-0 text-primary-emphasis" id="cooperation-title">
+          협동 관측 <small class="text-body-secondary fw-normal">(로컬 관측 · 조회 전용)</small>
+        </h2>
+        <div class="d-flex align-items-center gap-2 flex-wrap rc-coop-toolbar">
+          <label class="visually-hidden" for="cooperation-sessions">세션 선택</label>
+          <select id="cooperation-sessions" class="form-select form-select-sm rc-coop-select" aria-label="협동 세션 선택"></select>
+          <label class="visually-hidden" for="cooperation-filter">이벤트 유형 필터</label>
+          <select id="cooperation-filter" class="form-select form-select-sm rc-coop-select" aria-label="협동 이벤트 유형 필터"></select>
+          <button id="cooperation-export" class="btn btn-outline-primary btn-sm rc-coop-action" type="button">
+            JSONL 내보내기
+          </button>
+          <button id="cooperation-fullscreen" class="btn btn-outline-secondary btn-sm rc-coop-action" type="button" aria-pressed="false">
+            전체 화면 (표시 전용)
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="cooperation-summary" class="rc-coop-summary"></div>
+        <div id="cooperation-notice" class="rc-coop-notice rc-coop-info" role="status" aria-live="polite">
+          협동 관측 정보를 기다리는 중입니다…
+        </div>
+        <div id="cooperation-gap" class="rc-coop-gap" role="status" hidden></div>
+        <div id="cooperation-cards" class="rc-coop-cards"></div>
+        <div class="rc-coop-grid">
+          <div>
+            <h3 class="h6 small text-body-secondary mb-2">메시지/태스크 타임라인</h3>
+            <ol id="cooperation-timeline" class="rc-coop-timeline" role="list" aria-label="협동 관측 타임라인"></ol>
+          </div>
+          <div>
+            <h3 class="h6 small text-body-secondary mb-2">태스크 상태 (최근 50건)</h3>
+            <div id="cooperation-tasks" class="rc-coop-tasks"></div>
+          </div>
+        </div>
+        <p class="small text-body-secondary mb-0 mt-2">
+          모든 문구는 이 로봇이 관측한 결과입니다. <b>송신 큐 등록</b>은 상대 수신 미확인,
+          <b>완료</b>는 로컬 실행 완료 또는 상대가 보고한 관측 결과를 뜻하며 상대 로봇의 실제 동작을
+          보증하지 않습니다. <b>세션 종료</b>는 로컬 협동 종료 표시일 뿐 원격 취소가 아닙니다.
+          이 패널에는 로봇을 움직이는 제어 버튼이 없습니다.
+        </p>
+      </div>
+    </section>
+
     <section class="card mt-3">
       <div class="card-header py-2"><h2 class="h6 mb-0 text-primary-emphasis">에이전트에게 메시지</h2></div>
       <div class="card-body">
@@ -297,6 +341,7 @@
 
   <script src="/assets/map_geometry.js"></script>
   <script src="/assets/logs.js"></script>
+  <script src="/assets/cooperation.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

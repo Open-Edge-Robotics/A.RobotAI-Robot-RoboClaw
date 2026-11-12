@@ -42,6 +42,7 @@ from .grpc_server import DEFAULT_DEDUP_PATH, DEFAULT_MAX_FILE_BYTES, GrpcServer
 YIELD_SLOT_CALL_TIMEOUT_SEC = 120.0
 from .http_handlers import make_http_handler
 from .param_helpers import param_bool, param_float, param_int, param_string
+from .peer_envelope import PeerCorrelation, fill_peer_message_request, log_preview
 from .ros_future_utils import (
     await_future_result,
     send_execute_task,
@@ -179,7 +180,7 @@ class ChannelNode(Node):
         if enable_grpc:
 
             def on_msg(text: str, on_assistant=None) -> tuple[bool, str, str]:
-                self.get_logger().info(f"[gRPC call] {text}")
+                self.get_logger().info(f"[gRPC call] {log_preview(text)}")
                 result = self.send_task(text, on_assistant=on_assistant)
                 success = bool(result.get("success"))
                 # 스킬별 result_data 를 result_json 으로 함께 반환한다(진단용).
@@ -240,7 +241,7 @@ class ChannelNode(Node):
 
         # 메시지 수신 시 에이전트 태스크로 연결하는 콜백
         def on_message(text: str) -> str:
-            self.get_logger().info(f"Messenger command received: {text}")
+            self.get_logger().info(f"Messenger command received: {log_preview(text)}")
             result = self.send_task(text)
             return result.get("message", "응답 없음")
 
@@ -267,8 +268,17 @@ class ChannelNode(Node):
         self._http_server.shutdown()
         super().destroy_node()
 
-    def on_peer_message(self, sender_id: str, message: str) -> tuple[bool, str, str]:
-        """인증된 gRPC 협동 메시지를 로컬 에이전트 인박스로 전달한다."""
+    def on_peer_message(
+        self,
+        sender_id: str,
+        message: str,
+        correlation: PeerCorrelation | None = None,
+    ) -> tuple[bool, str, str]:
+        """인증된 gRPC 협동 메시지를 로컬 에이전트 인박스로 전달한다.
+
+        gRPC metadata 의 상관 ID를 ``PeerMessage`` 요청 필드로 옮겨 에이전트가
+        같은 message_id/task_id/session_id/reply_to 로 처리하게 한다.
+        """
         sender_id = str(sender_id or "").strip()
         message = str(message or "").strip()
         if not sender_id or not message or sender_id == "client_node":
@@ -285,6 +295,12 @@ class ChannelNode(Node):
         request = PeerMessage.Request()
         request.peer_name = sender_id
         request.message = message
+        fill_error = fill_peer_message_request(request, correlation or PeerCorrelation())
+        if fill_error:
+            # 재빌드 전 생성코드에서는 상관 ID 를 보존할 수 없다. 조용히 진행하면
+            # 통신 내용 상관이 끊기므로 명시적으로 실패시킨다.
+            self.get_logger().error(fill_error)
+            return False, fill_error, ""
         ok, response = await_future_result(
             self._peer_message_client.call_async(request),
             timeout_sec=10.0,

@@ -13,6 +13,14 @@ import grpc
 # task proto 태스크(generate_protos.sh)로 생성된 파일들을 임포트
 from . import messenger_pb2 as pb2
 from . import messenger_pb2_grpc as pb2_grpc
+from .peer_envelope import (
+    COOPERATION_MESSAGE_TYPE,
+    KIND_REQUEST,
+    call_peer_message_callback_safely,
+    correlation_from_metadata,
+    correlation_summary,
+    log_preview,
+)
 from .task_result import unpack_callback_result
 from .yield_protocol import YIELD_MESSAGE_TYPE
 
@@ -49,7 +57,7 @@ def rpc_error_summary(exc: grpc.RpcError) -> str:
 
 
 # 동료 로봇 사이의 구조화 메시지 타입 — 인증·만료·중복 검사를 공통 적용한다.
-_COOP_MESSAGE_TYPES = frozenset({"peer_cooperation", YIELD_MESSAGE_TYPE})
+_COOP_MESSAGE_TYPES = frozenset({COOPERATION_MESSAGE_TYPE, YIELD_MESSAGE_TYPE})
 
 
 def _is_coop_type(message_type: str) -> bool:
@@ -63,7 +71,7 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
     def __init__(
         self,
         on_message_cb: Callable[[str], str],
-        on_peer_message_cb: Callable[[str, str], object] | None = None,
+        on_peer_message_cb: Callable[..., object] | None = None,
         peer_auth_token: str = "",
         peer_auth_tokens: dict[str, str] | None = None,
         max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
@@ -110,7 +118,12 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                             )
                             continue
 
-                        logger.info("[gRPC received] %s", req.content)
+                        logger.info(
+                            "[gRPC received] type=%s ids=%s body=%s",
+                            req.metadata.get("type", "") or "-",
+                            correlation_summary(req.metadata),
+                            log_preview(req.content),
+                        )
                         if not self._is_authorized(req, context):
                             logger.warning(
                                 "[gRPC] Unauthorized message rejected [%s]",
@@ -163,8 +176,13 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                                 )
                                 continue
                             res_result = self._on_yield_request_cb(req.sender_id, req.content)
-                        elif message_type == "peer_cooperation" and self._on_peer_message_cb:
-                            res_result = self._on_peer_message_cb(req.sender_id, req.content)
+                        elif message_type == COOPERATION_MESSAGE_TYPE and self._on_peer_message_cb:
+                            res_result = call_peer_message_callback_safely(
+                                self._on_peer_message_cb,
+                                req.sender_id,
+                                req.content,
+                                correlation_from_metadata(req.metadata),
+                            )
                         elif self._on_stream_message_cb:
 
                             def emit_assistant(text: str) -> None:
@@ -220,7 +238,12 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
 
     def SendCommand(self, request, context):
         """단발성 명령 전송"""
-        logger.info("[gRPC SendCommand] received: %s", request.content)
+        logger.info(
+            "[gRPC SendCommand] received: type=%s ids=%s body=%s",
+            request.metadata.get("type", "") or "-",
+            correlation_summary(request.metadata),
+            log_preview(request.content),
+        )
         if not self._is_authorized(request, context):
             logger.warning(
                 "[gRPC SendCommand] Unauthorized command rejected [%s]",
@@ -245,8 +268,16 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
                     success=False, message="자리 양보 요청을 처리할 수 없습니다."
                 )
             res_result = self._on_yield_request_cb(request.sender_id, request.content)
-        elif request.metadata.get("type", "") == "peer_cooperation" and self._on_peer_message_cb:
-            res_result = self._on_peer_message_cb(request.sender_id, request.content)
+        elif (
+            request.metadata.get("type", "") == COOPERATION_MESSAGE_TYPE
+            and self._on_peer_message_cb
+        ):
+            res_result = call_peer_message_callback_safely(
+                self._on_peer_message_cb,
+                request.sender_id,
+                request.content,
+                correlation_from_metadata(request.metadata),
+            )
         elif self._on_stream_message_cb:
             assistant_messages: list[str] = []
             res_result = self._on_stream_message_cb(request.content, assistant_messages.append)
@@ -367,8 +398,13 @@ class MessengerServicer(pb2_grpc.RoboMessengerServicer):
             return False
         now = time.time()
         expires = float(request.metadata.get("expires_at", now + 86400) or now + 86400)
+        correlation = correlation_from_metadata(request.metadata)
         keys = [f"message:{message_id}"] if message_id else []
-        if task_id:
+        # task 키는 새 작업 위임(kind=request)만 점유한다. 같은 task 의 결과/회신은
+        # message_id 로만 구분해야 후속 메시지가 중복으로 막히지 않는다. kind 가 없는
+        # 구버전 메시지는 기존처럼 task 키를 함께 쓴다.
+        claims_task = correlation.kind in ("", KIND_REQUEST)
+        if task_id and claims_task:
             keys.append(f"task:{task_id}")
         with self._dedup_lock:
             self._dedup_db.execute("DELETE FROM peer_dedup WHERE expires <= ?", (now,))
@@ -526,7 +562,7 @@ class GrpcServer:
         self,
         port: int,
         on_message_cb: Callable[[str], str],
-        on_peer_message_cb: Callable[[str, str], object] | None = None,
+        on_peer_message_cb: Callable[..., object] | None = None,
         peer_auth_token: str = "",
         peer_auth_tokens: dict[str, str] | None = None,
         max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,

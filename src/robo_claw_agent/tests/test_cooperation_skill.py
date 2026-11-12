@@ -440,7 +440,7 @@ def test_proactive_check_introduces_peer_without_llm(monkeypatch):
     skill.node._llm = None
     skill._goal = "정리"
     monkeypatch.setattr(skill, "_discover_peers", lambda: ["robot_b"])
-    monkeypatch.setattr(skill, "_send_to_peer", lambda peer, message: {"success": True})
+    monkeypatch.setattr(skill, "_send_to_peer", lambda peer, message, **_kwargs: {"success": True})
 
     result = skill._proactive_check()
 
@@ -480,7 +480,7 @@ def test_incoming_decision_without_response_gets_acknowledgement(monkeypatch):
     node = _make_node(llm_resp=json.dumps({"action": "respond", "response": ""}))
     skill = AutonomousCooperateSkill()
     skill.set_node(node)
-    monkeypatch.setattr(skill, "_send_to_peer", lambda peer, message: {"success": True})
+    monkeypatch.setattr(skill, "_send_to_peer", lambda peer, message, **_kwargs: {"success": True})
 
     result = skill._process_incoming("robot_b", "현재 상태를 알려줘")
 

@@ -86,11 +86,11 @@ def test_peer_message_is_rejected_under_maestro(monkeypatch):
     node = node_cls.__new__(node_cls)
     node.get_logger = lambda: _Logger()
 
+    from robo_claw_msgs.srv import PeerMessage
+
     monkeypatch.setenv("MAESTRO_ENABLED", "true")
-    response = SimpleNamespace(success=False, error_message="", result_message="")
-    result = node._handle_peer_message(
-        SimpleNamespace(peer_name="cloid01", message="같이 정리하자"), response
-    )
+    request = PeerMessage.Request(peer_name="cloid01", message="같이 정리하자")
+    result = node._handle_peer_message(request, PeerMessage.Response())
 
     assert result.success is False
     assert "Maestro" in result.error_message

@@ -36,9 +36,10 @@ class PeerConversationManager:
     스레드 세이프(RLock)하며, 동시에 여러 자율협동 루프/스킬이 접근해도 안전하다.
     """
 
-    def __init__(self, max_history_per_peer: int = 30) -> None:
+    def __init__(self, max_history_per_peer: int = 30, max_tasks: int = 200) -> None:
         self._lock = threading.RLock()
         self._max_history = max_history_per_peer
+        self._max_tasks = max(1, int(max_tasks))
         # peer_name -> list[dict{role, content, ts}]
         self._history: dict[str, list[dict[str, Any]]] = {}
         # task_id -> dict{peer, description, status, created_ts, updated_ts, result, note}
@@ -57,9 +58,7 @@ class PeerConversationManager:
             role = _ROLE_PEER
         with self._lock:
             history = self._history.setdefault(peer_name, [])
-            history.append(
-                {"role": role, "content": str(content), "ts": time.time()}
-            )
+            history.append({"role": role, "content": str(content), "ts": time.time()})
             if len(history) > self._max_history:
                 del history[: len(history) - self._max_history]
 
@@ -95,13 +94,17 @@ class PeerConversationManager:
 
     # ── 협업 태스크 ───────────────────────────────────────────────
 
-    def start_task(self, peer_name: str, description: str) -> str:
-        """동료와의 협업 태스크를 시작하고 task_id 를 반환한다."""
-        task_id = uuid.uuid4().hex[:12]
+    def start_task(self, peer_name: str, description: str, task_id: str | None = None) -> str:
+        """동료와의 협업 태스크를 시작하고 task_id 를 반환한다.
+
+        ``task_id`` 를 주면 전송 계층과 같은 ID로 추적한다(관측/회신 상관용).
+        저장소는 ``max_tasks`` 개로 제한해 오래 걸린 루프에서도 무한히 자라지 않는다.
+        """
+        key = str(task_id or "").strip() or uuid.uuid4().hex[:12]
         now = time.time()
         with self._lock:
-            self._tasks[task_id] = {
-                "task_id": task_id,
+            self._tasks[key] = {
+                "task_id": key,
                 "peer": peer_name,
                 "description": str(description),
                 "status": _TASK_ACTIVE,
@@ -110,8 +113,21 @@ class PeerConversationManager:
                 "result": "",
                 "note": "",
             }
-        logger.info("[Coop] Task started: %s (%s) — %s", task_id, peer_name, description)
-        return task_id
+            self._evict_tasks()
+        logger.info("[Coop] Task started: %s (%s) — %s", key, peer_name, description)
+        return key
+
+    def _evict_tasks(self) -> None:
+        """상한을 넘으면 종료된 태스크부터, 없으면 오래된 태스크부터 버린다."""
+        while len(self._tasks) > self._max_tasks:
+            finished = [
+                key
+                for key, task in self._tasks.items()
+                if task["status"] not in (_TASK_ACTIVE, _TASK_CANCEL_REQUESTED)
+            ]
+            candidates = finished or list(self._tasks)
+            oldest = min(candidates, key=lambda key: self._tasks[key]["updated_ts"])
+            self._tasks.pop(oldest, None)
 
     def update_task(self, task_id: str, *, note: str = "", status: str | None = None) -> bool:
         """협업 태스크의 상태/메모를 갱신한다. 없으면 False."""
@@ -153,9 +169,7 @@ class PeerConversationManager:
     def get_active_tasks(self, peer_name: str | None = None) -> list[dict[str, Any]]:
         """진행 중인 협업 태스크 목록을 반환한다."""
         with self._lock:
-            tasks = [
-                dict(t) for t in self._tasks.values() if t["status"] == _TASK_ACTIVE
-            ]
+            tasks = [dict(t) for t in self._tasks.values() if t["status"] == _TASK_ACTIVE]
         if peer_name is not None:
             tasks = [t for t in tasks if t["peer"] == peer_name]
         return tasks

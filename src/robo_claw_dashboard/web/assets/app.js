@@ -28,6 +28,7 @@
     statusInFlight: false,
     pollDelay: STATUS_INTERVAL_MS,
     pollTimer: null,
+    cooperation: null,
     currentScenario: null,
     customScenarioObj: null,
     scenarioPollTimer: null,
@@ -115,6 +116,8 @@
     state.pose = localization.pose || null;
     renderPose();
     syncMap(localization.map || { available: false });
+    // 협동 패널은 같은 스냅샷(state.cooperation)만 소비한다(추가 HTTP/타이머 없음).
+    if (state.cooperation) state.cooperation.applyStatus(snap);
   }
 
   const STATE_BADGE_VARIANTS = {
@@ -606,6 +609,8 @@
       const { data, status } = await fetchJson("/api/status", token);
       if (status === 429) {
         // 분당 요청 한도에 걸리면 화면을 멈추지 않고 간격을 늘려 재시도한다.
+        // 협동 패널도 이 실패 구간에서 "관측 지연"을 표시할 수 있게 다시 그린다(추가 타이머 없음).
+        if (state.cooperation) state.cooperation.renderNow();
         node.textContent = "요청 한도 초과 — " + Math.round(state.pollDelay / 1000) + "초 후 재시도";
         node.className = "small text-warning";
         return Math.min(state.pollDelay * 2, STATUS_MAX_BACKOFF_MS);
@@ -616,6 +621,8 @@
       node.className = "small text-success";
       return STATUS_INTERVAL_MS;
     } catch (err) {
+      // 상태 폴링이 끊기면 협동 패널이 마지막 관측을 "지연"으로 표시하게 한다.
+      if (state.cooperation) state.cooperation.renderNow();
       node.textContent = "오류: " + err.message;
       node.className = "small text-danger";
       return Math.min(state.pollDelay * 2, STATUS_MAX_BACKOFF_MS);
@@ -679,6 +686,13 @@
       getToken: () => loadTokens().readonly,
       intervalMs: LOG_INTERVAL_MS,
       limit: LOG_LIMIT,
+    });
+  }
+
+  function setupCooperationPanel() {
+    if (!window.RcCooperation) return;
+    state.cooperation = window.RcCooperation.mount({
+      getToken: () => getReadToken(),
     });
   }
 
@@ -1199,6 +1213,7 @@
     setupChat();
     setupMapInteraction();
     setupLogPanel();
+    setupCooperationPanel();
     setupScenarios();
     // 저장된 서버 설정이 온전하면 첫 로드부터 원격 시나리오를 가져오고,
     // 아니면 내장 기본값을 보여준 뒤 설정 누락 사유를 경고로 안내한다.

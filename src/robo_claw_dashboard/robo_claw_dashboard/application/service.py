@@ -5,11 +5,19 @@ rclpy / ROS 메시지 import 금지. backend protocol 을 통해 실제 ROS 어�
 """
 
 import logging
+import threading
+import time
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Protocol
 
 from ..domain.builder import build_snapshot
 from ..domain.config_view import build_config_panel
+from ..domain.cooperation import (
+    cooperation_payload,
+    format_cooperation_jsonl,
+    normalize_cooperation,
+)
 from ..domain.localization import (
     INITIAL_POSE_COVARIANCE,
     build_initial_pose,
@@ -69,9 +77,16 @@ class DashboardService:
         *,
         scenario_runner: ScenarioRunnerService | None = None,
         scenario_config: ScenarioConfig | None = None,
+        monotonic: Callable[[], float] | None = None,
     ) -> None:
         self._backend = backend
         self._scenario_runner = scenario_runner or ScenarioRunnerService(backend, scenario_config)
+        self._monotonic = monotonic or time.monotonic
+        self._cooperation_cache: dict[str, Any] | None = None
+        self._cooperation_cached_at = 0.0
+        #: ThreadingHTTPServer 는 요청마다 스레드로 status/cooperation 을 동시에 부른다.
+        #: (payload, cached_at) 을 한 쌍으로 읽고 써서 서로 다른 스냅샷이 섞이지 않게 한다.
+        self._cooperation_lock = threading.Lock()
 
     def get_scenario(self, *, refresh: bool = False) -> dict[str, Any]:
         """현재 로드된 시나리오 또는 새로 고침된 시나리오를 반환한다."""
@@ -98,7 +113,7 @@ class DashboardService:
         return self._scenario_runner.get_report(fmt=fmt)
 
     def status(self, *, now: datetime | None = None) -> dict[str, Any]:
-        return build_snapshot(
+        snapshot = build_snapshot(
             state_json=self._backend.query_state(),
             agent_status=self._backend.latest_agent_status(),
             telemetry=self._backend.latest_telemetry(),
@@ -108,6 +123,35 @@ class DashboardService:
             map_snapshot=self._latest_map(),
             now=now,
         )
+        # 협동 관측은 이 응답의 state.cooperation 을 한 번만 캐시한다(추가 ROS 질의 없음).
+        # raw 값을 그대로 내보내면 방어 정규화를 우회하므로 정규화된 사본으로 교체한다.
+        state = snapshot.get("state")
+        if not isinstance(state, dict):
+            state = {}
+            snapshot["state"] = state
+        state["cooperation"] = self._store_cooperation(state)
+        return snapshot
+
+    def cooperation_snapshot(
+        self,
+        *,
+        after: int | None = None,
+        stream_id: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """마지막 /api/status 응답에서 캐시한 협동 관측을 커서 조건으로 돌려준다."""
+        payload, cached_at = self._read_cooperation()
+        age_ms = None
+        if payload is not None:
+            age_ms = max(0, int(round((self._monotonic() - cached_at) * 1000)))
+        return cooperation_payload(
+            payload, after=after, stream_id=stream_id, limit=limit, age_ms=age_ms
+        )
+
+    def cooperation_export(self) -> tuple[str, str]:
+        """캐시된 최근 협동 관측을 JSON Lines 파일 본문으로 직렬화한다."""
+        payload, _ = self._read_cooperation()
+        return "application/x-ndjson; charset=utf-8", format_cooperation_jsonl(payload)
 
     def config_snapshot(self) -> dict[str, Any]:
         """실행 중인 노드 파라미터를 마스킹해 반환한다(조회 실패는 정상 상태로 처리)."""
@@ -215,6 +259,18 @@ class DashboardService:
         return payload_out
 
     # ---- 내부 헬퍼 ---------------------------------------------------------
+    def _store_cooperation(self, state: Any) -> dict[str, Any]:
+        raw = state.get("cooperation") if isinstance(state, dict) else None
+        journal = normalize_cooperation(raw)
+        with self._cooperation_lock:
+            self._cooperation_cache = journal
+            self._cooperation_cached_at = self._monotonic()
+        return journal
+
+    def _read_cooperation(self) -> tuple[dict[str, Any] | None, float]:
+        with self._cooperation_lock:
+            return self._cooperation_cache, self._cooperation_cached_at
+
     def _latest_map(self) -> dict[str, Any]:
         try:
             snapshot = self._backend.latest_map()

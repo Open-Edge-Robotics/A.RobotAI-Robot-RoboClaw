@@ -134,6 +134,8 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/config` | `GET`  | auth 활성 시 readonly 이상 | 실행 중인 노드 파라미터(시크릿 마스킹)         |
 | `/api/logs`   | `GET`  | auth 활성 시 readonly 이상 | 최근 `/rosout` 로그(레벨·검색어·줄 수 조건)    |
 | `/api/logs/export` | `GET` | auth 활성 시 readonly 이상 | 로그를 `.log`(text) 또는 `.jsonl` 본문으로 반환 |
+| `/api/cooperation` | `GET` | auth 활성 시 readonly 이상 | 마지막 상태 응답에 캐시한 협동 이벤트·작업 조회 |
+| `/api/cooperation/export` | `GET` | auth 활성 시 readonly 이상 | 캐시된 최근 협동 이벤트를 JSONL로 내보내기 |
 | `/api/chat`   | `POST` | control                 | 자연어 메시지를 에이전트에 전달 (`ExecuteTask`) |
 | `/api/initial_pose` | `POST` | control           | AMCL 초기 위치 설정 (`/initialpose` 발행)     |
 | `/api/scenarios` | `GET` | auth 활성 시 readonly 이상 | 활성 테스트 시나리오 조회 (`?refresh=1` 동기화) |
@@ -205,6 +207,57 @@ sudo ufw status | grep 9090   # ufw 사용 시
 `/robo_claw_messenger_client_node/list_peers` 이고, 응답이 없으면 `agent_name` 기준 경로로
 폴백합니다. 응답의 `peer_name`/`host`/`port`/`connected` 를 표시하며, 이름이 비어 있으면
 "동료 N" 으로 표시해 빈 칩이 생기지 않게 합니다.
+
+## 협동 관측과 데모 화면
+
+협동 관측 패널은 `autonomous_cooperate`가 주고받는 메시지와 로컬 작업 실행을
+방향 화살표, 로봇 카드, 타임라인, 작업 상태로 표시합니다. 기존 `/api/status`의
+`state.cooperation`을 재사용하므로 협동 패널 전용 주기 요청은 추가하지 않습니다.
+일반 `/rosout` 로그 문자열을 파싱하지 않고 에이전트의 구조화된 이벤트를 사용합니다.
+
+| 표시 | 의미 |
+| --- | --- |
+| 송신 큐 등록 | 로컬 송신 요청을 기록합니다. 상대 수신이나 실행 완료를 보장하지 않습니다 |
+| 로컬 수신 | 이 로봇의 협동 인박스에 메시지가 들어왔음을 표시합니다 |
+| 로컬 실행 중·완료·실패 | 이 로봇의 실제 스킬 실행 결과를 표시합니다 |
+| 상대 결과 보고 | 원래 송신 메시지와 연결된 상대의 보고입니다. 물리적 결과를 별도 검증한 것은 아닙니다 |
+| 로컬 협동 종료 | 로컬 대화 루프의 종료입니다. 상대 작업 취소나 실행 중 스킬의 정지를 보장하지 않습니다 |
+
+### 사용 방법
+
+1. 협동 로봇의 `robo_claw_msgs`, agent, channel을 함께 재빌드하고 대시보드를 실행합니다.
+2. 읽기 토큰을 입력한 뒤 협동 관측 패널에서 목표·로봇·메시지 방향을 확인합니다.
+3. 세션과 이벤트 유형으로 최근 기록을 필터링하고 상세 항목에서 판단·정책·실행 정보를 확인합니다.
+4. 전체 화면 버튼으로 데모 화면을 확대합니다. 이 버튼은 로봇을 제어하지 않습니다.
+5. JSONL 내보내기 버튼으로 서버에 캐시된 최근 이벤트를 저장합니다.
+
+`MAESTRO_ENABLED=true`는 협동 비활성 상태로 표시합니다. 구버전 에이전트·미수신·조회
+오류·관측 지연·기록 유실·저장 오류도 정상 상태와 구분합니다. 외부 인터넷이나 CDN은
+필요하지 않습니다. 키보드 조작과 애니메이션 축소 설정을 지원합니다.
+
+### 조회와 보관 범위
+
+`/api/cooperation`은 마지막 `/api/status` 응답의 캐시만 읽습니다. 이 API만 호출하면
+에이전트 상태가 갱신되지 않습니다. 캐시가 15초보다 오래되면 `stale=true`를 반환합니다.
+`after`는 마지막으로 처리한 이벤트 순번이고 `stream_id`는 에이전트 프로세스의 식별자입니다.
+`cursor`까지 처리한 뒤 다음 요청의 `after`로 사용합니다. 보관 범위를 놓치면 `gap`,
+프로세스가 바뀌면 `reset`을 확인해야 합니다. 잘못된 숫자 파라미터는 HTTP 400을 반환합니다.
+
+```bash
+# 상태를 갱신한 뒤 캐시된 협동 이벤트를 조회합니다.
+curl -s -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
+  http://127.0.0.1:9090/api/status > /tmp/robo_claw_status.json
+curl -s -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
+  'http://127.0.0.1:9090/api/cooperation?after=0&limit=50'
+curl -s -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
+  http://127.0.0.1:9090/api/cooperation/export > cooperation_recent.jsonl
+```
+
+화면에는 최대 300건을 표시하며, 내보내기는 현재 서버 캐시의 최근 이벤트만 포함합니다.
+전체 세션 이력이나 SQLite에 보존된 과거 기록을 조회·재생하는 기능은 제공하지 않습니다.
+프로세스 재시작 후에는 새 관측 스트림을 사용합니다. 저장 위치·식별자·보존 정책은
+[협동 기록 안내](PEER_COLLABORATION.md#협동-이벤트와-상세-로그)를 참고합니다.
+현재 화면은 로컬 관측만 취합하며 다른 로봇의 대시보드·지도·내부 상태를 자동 수집하지 않습니다.
 
 ## 폴링과 요청 한도
 

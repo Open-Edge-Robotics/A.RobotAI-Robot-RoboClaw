@@ -13,8 +13,11 @@ from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.autonomous_skill.core import BTNode, NodeStatus
 
 from .conversation import get_peer_conversation
+from .envelope import TASK_STATUS_RECEIVED
 from .globals import is_cooperation_active
 from .inbox import get_peer_message_inbox
+from .journal import EVENT_MESSAGE_RECEIVED, get_cooperation_journal
+from .sanitize import preview_text
 
 logger = logging.getLogger(__name__)
 
@@ -40,20 +43,47 @@ class ProcessPeerMessages(BTNode):
             consumer_id = "autonomous_act"
             if not inbox.claim_consumer(consumer_id):
                 return NodeStatus.SUCCESS
-            messages = inbox.drain(consumer=consumer_id)
+            messages = inbox.drain_messages(consumer=consumer_id)
             inbox.release_consumer(consumer_id)
             if not messages:
                 return NodeStatus.SUCCESS
 
             conversation = get_peer_conversation()
-            for peer_name, message in messages:
-                conversation.add_message(peer_name, "peer", message)
-                logger.info("[CoopBT] Received peer message from %s: %s", peer_name, message)
+            journal = get_cooperation_journal()
+            for item in messages:
+                conversation.add_message(item.peer_name, "peer", item.message)
+                if not item.task_id or journal.task_status(item.task_id) is None:
+                    journal.record(
+                        EVENT_MESSAGE_RECEIVED,
+                        peer_id=item.peer_name,
+                        task_id=item.task_id,
+                        message_id=item.message_id,
+                        reply_to=item.reply_to,
+                        session_id=item.session_id,
+                        status=TASK_STATUS_RECEIVED,
+                        content=item.message,
+                    )
+                    journal.upsert_task(
+                        item.task_id,
+                        peer_id=item.peer_name,
+                        session_id=item.session_id,
+                        description=item.message,
+                        status=TASK_STATUS_RECEIVED,
+                    )
+                logger.info(
+                    "[CoopBT] Received peer=%s task=%s msg=%s body=%s",
+                    item.peer_name,
+                    item.task_id or "-",
+                    item.message_id or "-",
+                    preview_text(item.message),
+                )
 
             # blackboard 에 담아 LLM 판단 노드가 참고하게 한다.
             # pending은 현재 BT 사이클에서만 유효하다. 누적하면 같은 메시지가
             # 매 사이클 LLM 프롬프트에 반복 주입된다.
-            self._blackboard["pending_peer_messages"] = messages
+            self._blackboard["pending_peer_messages"] = [
+                (item.peer_name, item.message) for item in messages
+            ]
             return NodeStatus.SUCCESS
         except Exception as exc:  # noqa: BLE001
             logger.debug("[CoopBT] ProcessPeerMessages error (ignored): %s", exc)

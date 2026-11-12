@@ -11,17 +11,40 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 _DEFAULT_MAX_SIZE = 256
 _MAX_MESSAGE_LENGTH = 4096
 
 
+@dataclass(frozen=True)
+class InboxMessage:
+    """수신 메시지 한 건 — 전송 계층에서 받은 상관 ID를 함께 보관한다."""
+
+    peer_name: str
+    message: str
+    message_id: str = ""
+    task_id: str = ""
+    session_id: str = ""
+    reply_to: str = ""
+    status: str = ""
+    result: str = ""
+    kind: str = ""
+    received_at: float = 0.0
+
+
 class PeerMessageInbox:
-    """동료 로봇이 보낸 메시지를 담는 스레드 세이프 인박스(단일 큐)."""
+    """동료 로봇이 보낸 메시지를 담는 스레드 세이프 인박스(단일 큐).
+
+    구조화 API(``push_message``/``drain_messages``)가 ID를 보존하고, legacy
+    tuple API(``push``/``drain``)는 같은 큐를 tuple 로 보여준다. 두 API 를 섞어도
+    한 메시지는 한 번만 소비된다.
+    """
 
     def __init__(self, maxsize: int = 0) -> None:
-        self._queue: queue.Queue[tuple[str, str]] = queue.Queue(maxsize=maxsize)
+        self._queue: queue.Queue[InboxMessage] = queue.Queue(maxsize=maxsize)
         self._lock = threading.Lock()
         self._total_pushed = 0
         self._consumer: str | None = None
@@ -44,12 +67,25 @@ class PeerMessageInbox:
 
     def push(self, peer_name: str, message: str) -> bool:
         """메시지를 인박스에 넣는다. 큐가 가득 차면 False 를 반환한다."""
-        if not peer_name or not message or len(str(message)) > _MAX_MESSAGE_LENGTH:
-            if len(str(message)) > _MAX_MESSAGE_LENGTH:
-                logger.warning("[Coop] Dropping oversized message from %s", peer_name)
+        return self.push_message(
+            InboxMessage(
+                peer_name=str(peer_name or ""),
+                message=str(message or ""),
+                received_at=time.time(),
+            )
+        )
+
+    def push_message(self, item: InboxMessage) -> bool:
+        """상관 ID를 보존한 메시지를 인박스에 넣는다."""
+        peer_name = str(item.peer_name or "")
+        message = str(item.message or "")
+        if not peer_name or not message:
+            return False
+        if len(message) > _MAX_MESSAGE_LENGTH:
+            logger.warning("[Coop] Dropping oversized message from %s", peer_name)
             return False
         try:
-            self._queue.put_nowait((peer_name, str(message)))
+            self._queue.put_nowait(item)
         except queue.Full:
             logger.warning("[Coop] Inbox full — dropping message from %s", peer_name)
             return False
@@ -60,12 +96,20 @@ class PeerMessageInbox:
     def drain(
         self, limit: int | None = None, *, consumer: str | None = None
     ) -> list[tuple[str, str]]:
-        """현재 쌓인 모든 메시지를 꺼내 반환한다. (비어 있으면 빈 리스트)"""
+        """현재 쌓인 메시지를 ``(peer_name, message)`` tuple 로 꺼낸다(legacy view)."""
+        return [
+            (item.peer_name, item.message) for item in self.drain_messages(limit, consumer=consumer)
+        ]
+
+    def drain_messages(
+        self, limit: int | None = None, *, consumer: str | None = None
+    ) -> list[InboxMessage]:
+        """현재 쌓인 메시지를 상관 ID와 함께 꺼낸다. (비어 있으면 빈 리스트)"""
         if consumer is not None:
             with self._lock:
                 if self._consumer != consumer:
                     return []
-        items: list[tuple[str, str]] = []
+        items: list[InboxMessage] = []
         while limit is None or len(items) < limit:
             try:
                 items.append(self._queue.get_nowait())

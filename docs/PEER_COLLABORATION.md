@@ -394,6 +394,71 @@ agent → (ROS) CallPeerYield → messenger client_node → (gRPC SendCommand, t
 - 요청 중계: `src/robo_claw_channel/robo_claw_channel/client_node.py` (`~/call_peer_yield`)
 - 서비스 정의: `robo_claw_msgs/srv/CallPeerYield.srv`
 
+## 협동 이벤트와 상세 로그
+
+`autonomous_cooperate`의 송수신, 판단, 로컬 정책, 스킬 실행·결과 회신을 구조화된
+협동 이벤트로 기록합니다. `QueryState.state_json`의 `cooperation` 객체를 통해 최근
+이벤트와 작업 상태를 조회하며, [대시보드 협동 패널](DASHBOARD.md#협동-관측과-데모-화면)에서
+같은 정보를 시각화합니다. 일반 peer 호출·ROS 직접 위임·자리 양보 전체를 통합하는
+플릿 관측 기능은 포함하지 않습니다.
+
+### 식별자와 상태
+
+| 필드 | 의미 |
+| --- | --- |
+| `stream_id` | 에이전트 프로세스별 관측 스트림 식별자입니다. 재시작 시 바뀝니다 |
+| `sequence` | 해당 스트림의 이벤트 순번입니다 |
+| `session_id` | 협동 세션 식별자입니다. 수신 이벤트는 송신자의 세션 ID를 보존합니다 |
+| `task_id` | 요청과 후속 회신·실행 결과를 연결하는 작업 식별자입니다 |
+| `message_id` | 메시지 한 건의 식별자입니다. 재전송 중복 차단에 사용합니다 |
+| `reply_to` | 회신이 가리키는 원래 송신 메시지의 ID입니다 |
+| `robot_id`, `peer_id` | 관측한 로컬 로봇과 대화 상대를 구분합니다 |
+
+`queued`는 상대 수신 확인이 아니라 로컬 송신 큐 등록을 의미합니다. `received`와
+`running`은 로컬 수신·실행 상태이며, 상대의 구조화된 결과는 원 요청과의 상관을
+검증한 뒤 관측 결과로 기록합니다. 산문 응답만으로 상대 작업을 성공 처리하지 않습니다.
+상관이 맞지 않는 구조화 결과는 작업 지시로 다시 실행하지 않습니다.
+`session_stopped`는 로컬 루프 종료이며 상대 작업 취소를 의미하지 않습니다.
+
+협동 메시지는 기존 gRPC `ChatMessage.metadata`에 ID와 `kind`를 전달합니다.
+`request`는 작업 중복 차단을 유지하고, `reply`·`result`는 같은 작업의 서로 다른
+메시지를 허용하되 같은 `message_id`의 재전송은 차단합니다. 로컬 `PeerMessage` 서비스와
+인박스도 상관 정보를 유지합니다. ID가 없는 기존 평문은 로컬 ID를 생성해 수신합니다.
+
+### 로그와 저장소
+
+- `[CooperationEvent]` JSON 로그에는 메시지 본문, 상관 ID, 판단 요약, 정책 이유와
+  로컬 실행 정보를 제한된 크기로 기록합니다. 전체 LLM 프롬프트나 인증 metadata는 기록하지 않습니다.
+- 토큰·비밀번호·인증 헤더 등 민감 키와 알려진 본문 패턴을 마스킹합니다. 마스킹이
+  임의의 개인정보까지 식별하는 것은 아니므로 메시지에 불필요한 민감정보를 넣지 않습니다.
+- 상세 이벤트 본문과 상세 JSON은 각각 최대 2048자로 제한합니다. 상태 조회용 응답은
+  더 짧은 최근 이벤트 사본을 사용합니다.
+- 에이전트의 메모리 링은 최근 100건, 표시용 작업 스냅샷은 최대 50건을 보관합니다.
+- SQLite는 `$XDG_STATE_HOME/robo-claw/cooperation/<robot_id>.sqlite3`에 저장하며,
+  `XDG_STATE_HOME`이 없으면 `~/.local/state`를 사용합니다. 파일명에 맞게 로봇 ID를 정규화합니다.
+- 저장은 크기가 제한된 별도 큐와 스레드로 처리하고, SQLite 이벤트는 최근 5000행으로
+  제한합니다. 저장 오류나 큐 포화가 협동 실행을 막지 않으며 진단에 오류·유실을 노출합니다.
+- SQLite 행은 재시작 후에도 남지만, 과거 행을 대시보드에 복구하거나 재생하지는 않습니다.
+  기록이 필요한 환경에서는 컨테이너의 해당 상태 디렉터리를 지속 볼륨으로 보존합니다.
+- Python `logging` 이벤트는 `/rosout`으로 자동 전달되지 않습니다. 일반 로그 패널에
+  나타나지 않더라도 협동 패널은 `QueryState`를 통해 표시하며 프로세스 로그에서 JSON을 확인합니다.
+
+### 배포 주의사항
+
+`PeerMessage.srv`에 상관 필드를 추가하므로 배포 시 관련 인터페이스와 소비 패키지를
+함께 재빌드해야 합니다. 재빌드하지 않은 ROS workspace와의 서비스 wire 호환은 보장하지 않습니다.
+실제 로봇에 적용하기 전에 fake/mock 테스트와 ROS 환경의 인터페이스 생성·전달을 검증합니다.
+공통 runtime contract나 기존 원격 실행 권한·allowlist·취소 정책은 변경하지 않습니다.
+Maestro 배포에서는 직접 협동이 계속 비활성화됩니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-up-to \
+  robo_claw_agent robo_claw_channel robo_claw_dashboard
+source install/setup.bash
+ros2 interface show robo_claw_msgs/srv/PeerMessage
+```
+
 ## 3. 내부 구조
 
 - 서비스/메시지 정의: `robo_claw_msgs/srv/CallPeerRobot.srv`, `ListPeers.srv`, `SendMessage.srv`, `msg/PeerInfo.msg`

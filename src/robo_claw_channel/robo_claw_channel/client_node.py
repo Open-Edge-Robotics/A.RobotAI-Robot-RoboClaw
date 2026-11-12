@@ -35,6 +35,15 @@ from . import messenger_pb2 as pb2
 from . import messenger_pb2_grpc as pb2_grpc
 from .grpc_server import HANDSHAKE_CONTENT, HANDSHAKE_SENDER_ID
 from .param_helpers import param_float, param_int, param_string
+from .peer_envelope import (
+    COOPERATION_MESSAGE_TYPE,
+    correlation_from_envelope,
+    correlation_from_metadata,
+    correlation_summary,
+    fill_peer_message_request,
+    log_preview,
+    parse_cooperation_envelope,
+)
 from .ros_future_utils import (
     await_future_result,
     send_execute_task,
@@ -51,6 +60,8 @@ def _maestro_control_active() -> bool:
     if raw is None or not raw.strip():
         return False
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 _MAX_PEER_QUEUE_SIZE = 128
 
 
@@ -370,14 +381,16 @@ class MessengerClientNode(Node):
                 # 상대방으로부터 수신되는 메시지 실시간 중계
                 for response in responses:
                     self.get_logger().info(
-                        f"[{peer_name} -> gRPC received] sender: {response.sender_id}, content: {response.content}"
+                        f"[{peer_name} -> gRPC received] sender={response.sender_id} "
+                        f"ids={correlation_summary(response.metadata)} "
+                        f"body={log_preview(response.content)}"
                     )
                     # "robot"으로부터의 응답이 아닌 외부 발신 메시지만 로컬 에이전트에 중계
                     if response.sender_id != "robot" and response.content:
                         # 로컬 에이전트에 작업을 보내고 비동기로 처리
                         threading.Thread(
                             target=self._process_received_message,
-                            args=(response.content, peer_name),
+                            args=(response.content, peer_name, dict(response.metadata)),
                             daemon=True,
                         ).start()
 
@@ -406,9 +419,19 @@ class MessengerClientNode(Node):
                 if self._running:
                     time.sleep(5.0)
 
-    def _process_received_message(self, message: str, peer_name: str) -> None:
-        """수신한 메시지를 로컬 에이전트의 자율협동 인박스로 전달하고 결과를 피드백"""
-        self.get_logger().info(f"Requesting local agent to handle peer message: {message}")
+    def _process_received_message(
+        self, message: str, peer_name: str, metadata: dict[str, str] | None = None
+    ) -> None:
+        """수신한 메시지를 로컬 에이전트의 자율협동 인박스로 전달하고 결과를 피드백
+
+        gRPC metadata 의 상관 ID(message_id/task_id/session_id/reply_to)를 그대로
+        ``PeerMessage`` 요청에 실어 보낸다. 없으면 빈 값으로 보내고 수신측이 만든다.
+        """
+        self.get_logger().info(
+            f"Requesting local agent to handle peer message: peer={peer_name} "
+            f"ids={correlation_summary(metadata)} body={log_preview(message)}"
+        )
+        correlation = correlation_from_metadata(metadata)
 
         # 자율협동 인박스로 전달 (PeerMessage 서비스). 협동 루프가 비동기로 처리한다.
         response_msg = "메시지 수신"
@@ -420,22 +443,28 @@ class MessengerClientNode(Node):
                 req = PeerMessage.Request()
                 req.peer_name = peer_name
                 req.message = message
-                future = self._peer_message_client.call_async(req)
-                ok, resp = self._await_future_result(
-                    future,
-                    timeout_sec=10.0,
-                    timeout_error="협동 메시지 전달 타임아웃",
-                    none_error="협동 메시지 응답 없음",
-                )
-                if ok and resp.success:
-                    response_msg = resp.result_message or "메시지 수신"
+                fill_error = fill_peer_message_request(req, correlation)
+                if fill_error:
+                    # 상관 ID 를 보존할 수 없는 생성코드에서는 전달하지 않고 명시 실패한다.
+                    self.get_logger().error(fill_error)
+                    response_msg = fill_error
                 else:
-                    response_msg = str(resp) if not ok else (resp.error_message or "수신 실패")
+                    future = self._peer_message_client.call_async(req)
+                    ok, resp = self._await_future_result(
+                        future,
+                        timeout_sec=10.0,
+                        timeout_error="협동 메시지 전달 타임아웃",
+                        none_error="협동 메시지 응답 없음",
+                    )
+                    if ok and resp.success:
+                        response_msg = resp.result_message or "메시지 수신"
+                    else:
+                        response_msg = str(resp) if not ok else (resp.error_message or "수신 실패")
         except Exception as e:
             self.get_logger().error(f"PeerMessage delivery error: {e}")
             response_msg = f"수신 처리 오류: {e}"
 
-        self.get_logger().info(f"Local agent peer-message response: {response_msg}")
+        self.get_logger().info(f"Local agent peer-message response: {log_preview(response_msg)}")
 
         # 해당 피어의 gRPC 서버로 처리 결과를 다시 송신
         if peer_name in self._peer_queues:
@@ -613,7 +642,7 @@ class MessengerClientNode(Node):
             return response
 
         try:
-            self.get_logger().info(f"[{peer_name}] Requesting yield: {content}")
+            self.get_logger().info(f"[{peer_name}] Requesting yield: {log_preview(content)}")
             chat_msg = self._authorized_peer_message(
                 peer_name,
                 pb2.ChatMessage(
@@ -689,14 +718,13 @@ class MessengerClientNode(Node):
         message_type = ""
         envelope: dict[str, Any] = {}
         if instruction.startswith('{"_robo_claw_message_type":'):
-            try:
-                envelope = json.loads(instruction)
-                message_type = str(envelope.get("_robo_claw_message_type", ""))
-                instruction = str(envelope.get("content", ""))
-            except (TypeError, ValueError, json.JSONDecodeError):
+            parsed_envelope = parse_cooperation_envelope(instruction)
+            if parsed_envelope is None:
                 response.success = False
                 response.error_message = "협동 메시지 envelope 형식이 잘못되었습니다."
                 return response
+            message_type, envelope = parsed_envelope
+            instruction = str(envelope.get("content", ""))
 
         file_error = ""
         if file_path:
@@ -719,20 +747,32 @@ class MessengerClientNode(Node):
                 response.result_message = "파일 전송 완료"
             return response
 
+        correlation = correlation_from_envelope(envelope) if envelope else None
         try:
-            self.get_logger().info(f"[{peer_name}] Calling: {instruction}")
+            self.get_logger().info(
+                f"[{peer_name}] Calling: type={message_type or 'general'} "
+                f"ids={correlation_summary(correlation.as_chat_metadata() if correlation else None)} "
+                f"body={log_preview(instruction)}"
+            )
             chat_msg = self._authorized_peer_message(
                 peer_name,
                 pb2.ChatMessage(
-                    sender_id=self._sender_id if message_type == "peer_cooperation" else "robot",
+                    sender_id=(
+                        self._sender_id if message_type == COOPERATION_MESSAGE_TYPE else "robot"
+                    ),
                     content=instruction,
                     timestamp=int(time.time()),
                     metadata={"type": message_type} if message_type else {},
                 ),
             )
-            if message_type == "peer_cooperation":
-                chat_msg.metadata["message_id"] = uuid.uuid4().hex
-                chat_msg.metadata["task_id"] = str(envelope.get("task_id", ""))
+            if message_type == COOPERATION_MESSAGE_TYPE:
+                # 송신측(에이전트)이 만든 message_id/task_id/session_id/reply_to 를
+                # 그대로 보존한다. 여기서 새 message_id 를 만들면 회신 상관이 끊긴다.
+                chat_msg.metadata.update(
+                    correlation.as_chat_metadata(generate_message_id=lambda: uuid.uuid4().hex)
+                    if correlation
+                    else {}
+                )
                 chat_msg.metadata["created_at"] = str(envelope.get("created_at", "0"))
                 chat_msg.metadata["expires_at"] = str(envelope.get("expires_at", "0"))
 

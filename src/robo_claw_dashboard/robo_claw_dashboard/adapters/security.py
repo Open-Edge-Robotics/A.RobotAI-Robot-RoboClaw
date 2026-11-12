@@ -12,6 +12,7 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
 
     - GET  / (static), /health   : 공개
     - GET  /api/status, /api/map, /api/config, /api/logs: auth 활성 시 readonly 이상
+    - GET  /api/cooperation, /api/cooperation/export: readonly 이상 (조회 전용)
     - POST /api/chat             : control
     - POST /api/initial_pose     : control (AMCL 초기 위치 변경)
 
@@ -27,6 +28,8 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
             "/api/config",
             "/api/logs",
             "/api/logs/export",
+            "/api/cooperation",
+            "/api/cooperation/export",
             "/api/scenarios",
             "/api/scenarios/status",
             "/api/scenarios/report",

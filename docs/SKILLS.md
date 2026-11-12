@@ -23,6 +23,14 @@
 임의 스크립트·현재 위치 조회·외부 플러그인은 대체합니다. 자세한 실행 방법은
 [설정 가이드](CONFIGURATION_GUIDE.md#로봇-없이-grpc와-llm을-실행합니다)를 참고합니다.
 
+### 자율협동 관측
+
+`autonomous_cooperate`는 송수신·판단·로컬 정책·실행 결과를 상관 ID와 함께 기록합니다.
+대시보드의 협동 패널에서 메시지 방향과 작업 상태를 확인할 수 있습니다. 송신 큐 등록은
+상대 수신이나 성공을 의미하지 않으며, `stop_autonomous_cooperate`는 상대 작업 취소를
+보장하지 않습니다. 기존 실행 권한과 스킬 입력 스키마는 유지합니다. 자세한 보관 범위와
+배포 절차는 [협동 기록 안내](PEER_COLLABORATION.md#협동-이벤트와-상세-로그)를 참고합니다.
+
 ### 지도 입력과 이미지 전송
 
 `capture_map`, `get_map_visual`, `analyze_map`, `annotate_map`,

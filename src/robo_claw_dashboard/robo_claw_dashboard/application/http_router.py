@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
+from ..domain.cooperation import coerce_cursor, coerce_limit
 from ..domain.paths import mime_type, safe_join_web_path
 
 Status = int
@@ -120,6 +121,32 @@ def _handle_logs_export(query: dict[str, str], service: Any) -> HttpResponse:
     return HttpResponse(200, content_type, text.encode("utf-8"))
 
 
+def _handle_cooperation(query: dict[str, str], service: Any) -> HttpResponse:
+    """GET /api/cooperation - 캐시된 최근 협동 관측을 커서 조건으로 반환한다.
+
+    숫자 파라미터가 정수가 아니면 서비스에 닿기 전에 400 으로 거절한다.
+    """
+    try:
+        after = coerce_cursor(query["after"]) if "after" in query else None
+        limit = coerce_limit(query["limit"]) if "limit" in query else None
+    except ValueError as exc:
+        return _json({"error": str(exc)}, 400)
+    return _json(
+        service.cooperation_snapshot(after=after, stream_id=query.get("stream_id"), limit=limit)
+    )
+
+
+def _handle_cooperation_export(service: Any) -> HttpResponse:
+    """GET /api/cooperation/export - 최근 협동 관측을 JSONL 첨부 파일로 반환한다."""
+    content_type, text = service.cooperation_export()
+    return HttpResponse(
+        200,
+        content_type,
+        text.encode("utf-8"),
+        headers={"Content-Disposition": 'attachment; filename="robo_claw_cooperation.jsonl"'},
+    )
+
+
 def _handle_scenario_run(body: Any, service: Any) -> HttpResponse:
     """POST /api/scenarios/run - 시나리오 테스트 실행."""
     payload: dict[str, Any] = {}
@@ -195,6 +222,10 @@ def route_http(
         return _handle_logs(query, service)
     if method == "GET" and path == "/api/logs/export":
         return _handle_logs_export(query, service)
+    if method == "GET" and path == "/api/cooperation":
+        return _handle_cooperation(query, service)
+    if method == "GET" and path == "/api/cooperation/export":
+        return _handle_cooperation_export(service)
     if method == "POST" and path == "/api/chat":
         return _handle_chat(body, service)
     if method == "POST" and path == "/api/initial_pose":
