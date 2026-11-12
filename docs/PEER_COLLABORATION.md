@@ -396,8 +396,9 @@ agent → (ROS) CallPeerYield → messenger client_node → (gRPC SendCommand, t
 
 ## 협동 이벤트와 상세 로그
 
-`autonomous_cooperate`의 송수신, 판단, 로컬 정책, 스킬 실행·결과 회신을 구조화된
-협동 이벤트로 기록합니다. `QueryState.state_json`의 `cooperation` 객체를 통해 최근
+`autonomous_cooperate`의 송수신·판단·정책·결과 회신과 `tidy_home`·`cleanup_demo`의
+단발 정리·시연 진행을 구조화된 협동 이벤트로 기록합니다.
+`QueryState.state_json`의 `cooperation` 객체를 통해 최근
 이벤트와 작업 상태를 조회하며, [대시보드 협동 패널](DASHBOARD.md#협동-관측과-데모-화면)에서
 같은 정보를 시각화합니다. 일반 peer 호출·ROS 직접 위임·자리 양보 전체를 통합하는
 플릿 관측 기능은 포함하지 않습니다.
@@ -425,6 +426,25 @@ agent → (ROS) CallPeerYield → messenger client_node → (gRPC SendCommand, t
 메시지를 허용하되 같은 `message_id`의 재전송은 차단합니다. 로컬 `PeerMessage` 서비스와
 인박스도 상관 정보를 유지합니다. ID가 없는 기존 평문은 로컬 ID를 생성해 수신합니다.
 
+### 단발 정리·시연의 관측
+
+`tidy_home`은 실행별 `run_id`로 장소 확인·이동·관찰·위임 준비·동료 응답 대기·결과를
+기록합니다. 동료가 없거나 정리 대상이 없을 때도 로컬 진행과 종료 사유를 표시합니다.
+기존 실험 JSONL 설정을 켜야 대시보드 기록이 생기는 것은 아닙니다.
+
+정리 시연의 위임 작업은 버전 관리 요청의 `request_id`를 함께 기록하며,
+`cleanup_demo`는 자기 로봇의 장소 확인·재관찰·모션 요청·거부·실패를 기록합니다.
+`motion_requested`는 물체 정리나 모션 완료가 아닌 요청 수락 상태입니다.
+`waiting_for_peer`는 응답 대기, `cancel_requested`는 중단 요청 관측,
+`reported_to_maestro`는 관제 보고 상태로 구분합니다. 원래 스킬의 성공 판정·동작 순서·
+허용 모션·timeout·재시도·원격 실행 권한은 관측 추가로 변경하지 않습니다.
+
+`cooperation.activity_source`는 표시 중인 작업 종류를 알려주고,
+`direct_cooperation_enabled`는 직접 협동 활성 가능 여부를 별도로 알려줍니다.
+단발 작업을 표시해도 실제 자율협동 세션을 시작하거나 기존 세션을 종료하지 않습니다.
+Maestro의 직접 peer 차단 정책도 유지합니다. 상대 중간 진행을 자동으로 수집하는
+플릿 통합 화면은 제공하지 않습니다.
+
 ### 로그와 저장소
 
 - `[CooperationEvent]` JSON 로그에는 메시지 본문, 상관 ID, 판단 요약, 정책 이유와
@@ -445,8 +465,13 @@ agent → (ROS) CallPeerYield → messenger client_node → (gRPC SendCommand, t
 
 ### 배포 주의사항
 
-`PeerMessage.srv`에 상관 필드를 추가하므로 배포 시 관련 인터페이스와 소비 패키지를
-함께 재빌드해야 합니다. 재빌드하지 않은 ROS workspace와의 서비스 wire 호환은 보장하지 않습니다.
+`PeerMessage.srv`의 상관 필드와 `CallPeerRobot.srv` 응답의 `result_json`을 사용하므로
+배포 시 관련 인터페이스와 소비 패키지를 함께 재빌드해야 합니다.
+`call_peer_robot`은 이 구조화 결과를 `peer_result`로 보존하며, ROS 직접 위임은
+`ExecuteTask.skill_results`의 결과 JSON을 사용합니다. 상대 시연의 `request_id`와
+명시적인 `motion_requested` 상태를 확인해야 시연 요청 수락으로 표시합니다.
+문자 응답이나 송신 큐 등록만 확인한 경우에는 결과 미확인 상태를 유지합니다.
+재빌드하지 않은 ROS workspace와의 서비스 wire 호환은 보장하지 않습니다.
 실제 로봇에 적용하기 전에 fake/mock 테스트와 ROS 환경의 인터페이스 생성·전달을 검증합니다.
 공통 runtime contract나 기존 원격 실행 권한·allowlist·취소 정책은 변경하지 않습니다.
 Maestro 배포에서는 직접 협동이 계속 비활성화됩니다.

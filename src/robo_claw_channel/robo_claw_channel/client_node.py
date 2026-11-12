@@ -784,6 +784,10 @@ class MessengerClientNode(Node):
                 )
                 response.success = cmd_resp.success
                 response.result_message = cmd_resp.message
+                # 동기 호출에서만 상대 실행 결과(JSON)를 보존한다. 비동기 큐 경로는
+                # 아직 결과가 없으므로 빈 문자열로 둔다. (구버전 메시지 호환)
+                if hasattr(response, "result_json"):
+                    response.result_json = str(getattr(cmd_resp, "result_json", "") or "")
             else:
                 peer_queue = self._peer_queues.get(peer_name)
                 if peer_queue is None:

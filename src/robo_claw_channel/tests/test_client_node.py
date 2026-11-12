@@ -364,6 +364,68 @@ class TestMessengerClientNodeUnit:
         queued_msg = self.node._peer_queues["robot_a"].get()
         assert queued_msg.content == "앞으로 1미터 이동해"
 
+    def test_handle_call_peer_wait_for_result_preserves_generated_result_json(self):
+        """동기 호출은 상대 실행 결과 JSON 을 실제 Response.result_json 에 보존한다."""
+        from types import SimpleNamespace
+
+        from robo_claw_channel.task_result import build_task_result_json
+
+        from robo_claw_msgs.srv import CallPeerRobot
+
+        result_json = build_task_result_json(
+            {
+                "skill_results": [
+                    {
+                        "skill_name": "cleanup_demo",
+                        "code": 0,
+                        "message": "motion requested",
+                        "duration_sec": 1.2,
+                        "result_json": json.dumps(
+                            {
+                                "status": "motion_requested",
+                                "request_id": "demo-request-1",
+                                "physical_cleanup_confirmed": False,
+                            }
+                        ),
+                    }
+                ]
+            }
+        )
+        stub = MagicMock()
+        stub.SendCommand.return_value = SimpleNamespace(
+            success=True, message="모션 요청 접수", result_json=result_json
+        )
+        self.node._peer_stubs = {"robot_a": stub}
+
+        request = CallPeerRobot.Request()
+        request.peer_name = "robot_a"
+        request.instruction = "시연 모션을 요청해"
+        request.wait_for_result = True
+        response = CallPeerRobot.Response()
+
+        res = self.node._handle_call_peer(request, response)
+
+        assert res.success is True
+        assert response.result_message == "모션 요청 접수"
+        assert response.result_json == result_json
+
+    def test_handle_call_peer_fire_and_forget_leaves_result_json_empty(self):
+        """비동기 큐 경로는 아직 결과가 없으므로 result_json 을 비워 둔다."""
+        from robo_claw_msgs.srv import CallPeerRobot
+
+        self.node._peer_stubs = {"robot_a": MagicMock()}
+        self.node._peer_queues = {"robot_a": queue.Queue()}
+        request = CallPeerRobot.Request()
+        request.peer_name = "robot_a"
+        request.instruction = "시연 모션을 요청해"
+        request.wait_for_result = False
+        response = CallPeerRobot.Response()
+
+        res = self.node._handle_call_peer(request, response)
+
+        assert res.success is True
+        assert response.result_json == ""
+
     def test_handle_list_peers_no_peers(self):
         """설정된 피어가 없으면 빈 목록을 반환하는지 검증"""
         self.node._peers = []

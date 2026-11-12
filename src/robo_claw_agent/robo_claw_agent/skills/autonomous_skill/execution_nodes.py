@@ -9,6 +9,8 @@ import numpy as np
 
 from robo_claw_agent.skill_manager import BaseSkill
 
+from ..cleanup.observation import safe_observe
+from ..cleanup.peer_result import correlated_peer_result
 from ..cleanup_policy import (
     _CLOID_INDICATOR_MOTIONS,
     _cleanup_target_categories,
@@ -74,6 +76,73 @@ def _record_delegate(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[BT] Cleanup delegate record failed: %s", exc)
+
+
+_UNCERTAIN_RESULT_MARKERS = ("timeout", "시간 초과", "응답 없음", "결과 확인")
+
+
+def _result_is_uncertain(message: str) -> bool:
+    """결과가 확정되지 않은 실패(시간 초과/응답 없음)인지."""
+    lowered = str(message or "").lower()
+    return any(marker in lowered for marker in _UNCERTAIN_RESULT_MARKERS)
+
+
+def _notify_delegate_finished(
+    *,
+    blackboard: dict[str, Any],
+    peer_name: str,
+    request_id: str,
+    success: bool,
+    result: Any,
+    duration_ms: float,
+    error_message: str = "",
+) -> None:
+    """실제 위임 호출 1건의 종료를 정리 관측에 남긴다(성공/실패/예외 공통)."""
+    payload = getattr(result, "result_data", None) if result is not None else None
+    payload = payload if isinstance(payload, dict) else {}
+    expected_request_id = str(blackboard.get("cleanup_handoff_request_id", "") or "")
+    peer_result = correlated_peer_result(
+        payload.get("peer_result"), expected_request_id=expected_request_id
+    )
+    observed = peer_result is not None
+    # 시연 요청은 상대가 실제로 돌려준 result_json 에서 확인된 경우에만
+    # "모션 요청 접수"로 표시한다. 일반 성공/산문/큐 ack 로 추론하지 않는다.
+    motion_requested = bool(
+        success
+        and observed
+        and peer_result.get("status") == "motion_requested"
+        and peer_result.get("physical_cleanup_confirmed") is not True
+    )
+    message = error_message or str(getattr(result, "message", "") or "")
+    failure_reason = ""
+    if not motion_requested and not observed:
+        failure_reason = "result_unconfirmed"
+    elif not success:
+        failure_reason = "peer_reported_failure" if observed else "result_unconfirmed"
+    safe_observe(
+        blackboard.get("cleanup_observer"),
+        "delegate_finished",
+        peer=peer_name,
+        request_id=str(peer_result.get("request_id") or request_id) if observed else request_id,
+        success=bool(success),
+        message=message,
+        duration_ms=duration_ms,
+        motion_requested=motion_requested,
+        observed=observed,
+        failure_reason=failure_reason,
+    )
+
+
+def _demo_request_id(handoff_kind: str, instruction: str) -> str:
+    """버전 관리된 시연 요청에서 실제 request_id 를 읽는다(없으면 빈 문자열)."""
+    if handoff_kind != "cleanup_demo":
+        return ""
+    try:
+        from ..cleanup.protocol import decode_cleanup_demo_request
+
+        return str((decode_cleanup_demo_request(instruction) or {}).get("request_id", ""))
+    except Exception:  # noqa: BLE001 - 상관 키를 못 읽어도 요청은 그대로 보낸다
+        return ""
 
 
 def _phase_ms(blackboard: dict[str, Any]) -> dict[str, float] | None:
@@ -360,8 +429,18 @@ class ResolveCleanupHandoff(BTNode):
         metric_source = "tidy_home" if run_id else "autonomous_patrol"
         phase = _phase_ms(blackboard)
 
+        observer = blackboard.get("cleanup_observer")
+
         def _find_peer(capability: str) -> dict[str, str] | None:
             """동료 탐색 소요 시간을 구간 계측에 누적하며 선택 결과를 돌려준다."""
+            safe_observe(
+                observer,
+                "phase",
+                phase="select_peer",
+                content=f"'{place}' 정리를 요청할 {capability} 동료를 찾습니다.",
+                place=place,
+                details={"capability": capability},
+            )
             started = time.monotonic()
             try:
                 return _find_connected_peer_with_capability(node, capability)
@@ -369,8 +448,10 @@ class ResolveCleanupHandoff(BTNode):
                 if phase is not None:
                     phase["discovery"] = phase.get("discovery", 0.0) + (time.monotonic() - started)
 
-        def _record_handoff(*, place: str, target: str, **fields: Any) -> None:
-            # 계측 실패는 위임 결정과 메시지 전송을 막지 않는다.
+        def _record_handoff(
+            *, place: str, target: str, request_id: str = "", **fields: Any
+        ) -> None:
+            # 계측/관측 실패는 위임 결정과 메시지 전송을 막지 않는다.
             try:
                 record_cleanup_handoff(
                     run_id=run_id,
@@ -383,6 +464,19 @@ class ResolveCleanupHandoff(BTNode):
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[BT] Cleanup handoff record failed: %s", exc)
+            safe_observe(
+                observer,
+                "handoff",
+                place=place,
+                target=target,
+                handoff_kind=str(fields.get("handoff_kind", "") or ""),
+                peer=str(fields.get("peer", "") or ""),
+                transport=str(fields.get("transport", "") or ""),
+                send_path=str(fields.get("send_path", "") or ""),
+                blocked=bool(fields.get("blocked", False)),
+                reason=str(fields.get("reason", "") or ""),
+                request_id=request_id,
+            )
 
         local_cleanup_capable = _has_cleanup_capability(node)
         missing_local_destination = False
@@ -559,6 +653,9 @@ class ResolveCleanupHandoff(BTNode):
             demo_target=demo_target,
             place=place,
         )
+        # 시연 요청은 실제 request_id 를 상대 하위 태스크 상관 키로 쓴다.
+        request_id = _demo_request_id(handoff_kind, instruction)
+        blackboard["cleanup_handoff_request_id"] = request_id
         if reports_to_maestro():
             # Maestro 관제 중: 동료를 직접 부르지 않고 필요한 작업을 보고한다(fleet_handoff.py).
             target = demo_target if handoff_kind == "cleanup_demo" else target_description
@@ -589,6 +686,7 @@ class ResolveCleanupHandoff(BTNode):
                 send_path="maestro_report",
                 blocked=False,
                 reason=status,
+                request_id=request_id,
                 candidates=_peer_candidate_snapshot(node, peer["peer_name"]),
             )
             self._skill.send_user_message(f"정리 대상 '{target}'을 발견했습니다. {status}")
@@ -643,6 +741,7 @@ class ResolveCleanupHandoff(BTNode):
         )
         blackboard["cleanup_handoff_prepared"] = True
         blackboard["cleanup_handoff_kind"] = handoff_kind
+        blackboard["cleanup_handoff_transport"] = str(peer["transport"])
         blackboard["cleanup_handoff_target"] = (
             demo_target if handoff_kind == "cleanup_demo" else target_description
         )
@@ -659,6 +758,7 @@ class ResolveCleanupHandoff(BTNode):
             transport=str(peer["transport"]),
             send_path=skill_name,
             reason=str(blackboard["decided_reason"]),
+            request_id=request_id,
             candidates=_peer_candidate_snapshot(node, peer["peer_name"]),
         )
         logger.info("[BT] Prepared cleanup handoff to %s via %s", peer["peer_name"], skill_name)
@@ -705,8 +805,14 @@ class ExecuteDecidedAction(BTNode):
         )
 
         cleanup_handoff = bool(self._blackboard.get("cleanup_handoff_prepared"))
+        observer = self._blackboard.get("cleanup_observer")
+        peer_name = params.get("peer_name") or params.get("agent_id") or "동료 로봇"
+        request_id = str(self._blackboard.get("cleanup_handoff_request_id", "") or "")
         success = False
         result = None
+        delegate_started = False
+        delegate_started_at = 0.0
+        execution_error = ""
         try:
             from robo_claw_agent.agent_node.nav_safety import ensure_navigation_safety
 
@@ -727,8 +833,22 @@ class ExecuteDecidedAction(BTNode):
                 except (TypeError, ValueError):
                     pass
             for step in chain:
+                step_skill = str(step.get("skill", "") or "")
+                if cleanup_handoff and step_skill in {"delegate_task", "call_peer_robot"}:
+                    # 실제 요청 호출 직전에만 대기 상태를 표시한다. 주행 안전 prelude
+                    # 단계에서는 요청이 나가지 않았으므로 대기로 표시하지 않는다.
+                    delegate_started = True
+                    delegate_started_at = time.monotonic()
+                    safe_observe(
+                        observer,
+                        "delegate_started",
+                        peer=str(peer_name),
+                        transport=str(self._blackboard.get("cleanup_handoff_transport", "") or ""),
+                        skill=step_skill,
+                        request_id=request_id,
+                    )
                 result = node._skills.execute(
-                    step["skill"],
+                    step_skill,
                     step.get("params", {}),
                     timeout_sec=skill_timeout_sec,
                 )
@@ -765,7 +885,20 @@ class ExecuteDecidedAction(BTNode):
             )
         except Exception as exc:
             logger.error("[BT] Skill execution error (%s): %s", skill_name, exc)
+            execution_error = f"{type(exc).__name__}: {exc}"
             self._blackboard["queue_execution_failed"] = True
+
+        if cleanup_handoff and delegate_started:
+            # 성공/실패/예외 모두 관측 종료 이벤트를 남긴다(중복 호출 없이 한 번만).
+            _notify_delegate_finished(
+                blackboard=self._blackboard,
+                peer_name=str(peer_name),
+                request_id=request_id,
+                success=success,
+                result=result,
+                duration_ms=max(0.0, (time.monotonic() - delegate_started_at) * 1000.0),
+                error_message=execution_error,
+            )
 
         if cleanup_handoff:
             peer_name = params.get("peer_name") or params.get("agent_id") or "동료 로봇"

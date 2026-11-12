@@ -12,6 +12,16 @@ from robo_claw_agent.skill_manager import BaseSkill
 logger = logging.getLogger(__name__)
 
 
+def _log_instruction_preview(instruction: object) -> str:
+    """지시문 원문 대신 마스킹/길이 제한 미리보기를 남긴다."""
+    try:
+        from .cooperation_skill.sanitize import preview_text
+
+        return preview_text(instruction)
+    except Exception:  # noqa: BLE001 - 로그 마스킹 실패가 실행을 막지 않는다
+        return str(instruction or "")[:200]
+
+
 class DelegateTaskSkill(BaseSkill):
     """특정 에이전트에게 작업을 위임하는 스킬"""
 
@@ -50,7 +60,9 @@ class DelegateTaskSkill(BaseSkill):
                 "message": "timeout_sec는 10~240초 범위여야 합니다.",
             }
 
-        logger.info("Delegating task to agent [%s]: %s", target_agent, instruction)
+        logger.info(
+            "Delegating task to agent [%s]: %s", target_agent, _log_instruction_preview(instruction)
+        )
 
         from rclpy.action import ActionClient  # type: ignore[import]
 
@@ -105,12 +117,16 @@ class DelegateTaskSkill(BaseSkill):
                 }
 
             result = result_or_message.result
+            from .cleanup.peer_result import peer_result_from_skill_results
+
+            peer_result = peer_result_from_skill_results(getattr(result, "skill_results", None))
 
             return {
                 "success": result.success,
                 "message": f"에이전트 [{target_agent}] 응답: {result.result_message}",
                 "agent_id": target_agent,
                 "response": result.result_message,
+                "peer_result": peer_result,
             }
         finally:
             client.destroy()
@@ -177,7 +193,7 @@ class CallPeerRobotSkill(BaseSkill):
         logger.info(
             "Calling peer robot [%s]: instruction=%s, file=%s, wait_for_result=%s",
             peer_name,
-            instruction,
+            _log_instruction_preview(instruction),
             file_path,
             wait_for_result,
         )
@@ -201,11 +217,17 @@ class CallPeerRobotSkill(BaseSkill):
         if not ok:
             return {"success": False, "message": str(resp)}
 
+        from .cleanup.peer_result import peer_result_from_grpc_json
+
+        # result_message 의 의미(상대 응답 문자열)는 바꾸지 않고, 구조화된 시연
+        # 결과만 별도 peer_result 로 전달한다.
+        peer_result = peer_result_from_grpc_json(getattr(resp, "result_json", ""))
         return {
             "success": bool(resp.success),
             "message": resp.result_message or resp.error_message or "응답 없음",
             "peer_name": peer_name,
             "response": resp.result_message,
+            "peer_result": peer_result,
         }
 
 

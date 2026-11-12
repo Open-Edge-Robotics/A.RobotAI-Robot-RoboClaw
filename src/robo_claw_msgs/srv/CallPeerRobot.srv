@@ -9,3 +9,4 @@ float64 timeout_sec     # 0이면 노드 기본 request_timeout_sec 사용
 bool success
 string result_message   # wait_for_result=true일 때 상대 로봇의 실제 처리 결과
 string error_message    # 실패 시 에러 내용
+string result_json     # wait_for_result=true일 때 상대 실행 결과(skill_results JSON). 비동기/파일 전송은 빈 문자열

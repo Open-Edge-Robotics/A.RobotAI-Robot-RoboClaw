@@ -16,6 +16,13 @@ from .autonomous_skill.globals import (
     is_autonomous_active,
     release_autonomous,
 )
+from .cleanup.observation import (
+    SOURCE_TIDY_HOME,
+    TASK_STATUS_CANCEL_REQUESTED,
+    open_cleanup_observation,
+    phase_label,
+    safe_observe,
+)
 from .cleanup_policy import (
     _cleanup_plan_has_complete_placement,
     _cleanup_target_categories,
@@ -50,6 +57,68 @@ _CLEANUP_OBSERVATION_PROMPT = (
     "보관 장소·폐기 장소·3D 좌표는 추측하지 마세요. 후보가 없다면 이 방향에서 후보가 보이지 않는다고 "
     "말하고, 촬영되지 않은 다른 방향의 상태는 추측하지 마세요."
 )
+
+
+#: ``_handle_cleanup_target`` 반환 상태 → 관측 단계 키. 정책 차단과 로컬 실행을 구분한다.
+_HANDLE_STATUS_PHASES = {
+    "planning_failed": "select_target",
+    "unhandled": "select_peer",
+    "handoff_staging_failed": "stage",
+    "incomplete_placement_plan": "policy",
+    "unsafe_placement_destination": "policy",
+    "action_rejected": "policy",
+    "execution_failed": "local_motion",
+    "partial_action_limit": "local_motion",
+    "demo_motion_executed": "demo_motion",
+    "no_action": "select_target",
+    "handled": "local_motion",
+    "delegated": "peer_result",
+    "delegated_demo": "peer_result",
+    "reported_to_maestro": "peer_result",
+    "cancelled": "cancel",
+}
+
+
+#: 정리 대상 1건이 실제로 처리(또는 위임/보고)된 장소 상태.
+_PROCESSED_PLACE_STATUSES = frozenset(
+    {"handled", "delegated", "delegated_demo", "reported_to_maestro"}
+)
+#: 정리 대상이 확인되지 않아 "정리 완료"로 볼 수 없는 장소 상태.
+_UNCONFIRMED_PLACE_STATUSES = frozenset({"no_target", "needs_clarification", "partial_observation"})
+
+
+def _cleanup_goal_text(scope: str, target_location: str) -> str:
+    """관측 활동에 남길 정리 목표 문장(방 범위는 방 이름 그대로)."""
+    if scope == "room" and target_location:
+        return target_location
+    return "기억된 장소 정리(home)"
+
+
+def _run_observation_status(results: list[dict[str, Any]], run_error: str) -> tuple[str, str]:
+    """장소별 결과에서 정리 실행 root 상태와 실패 사유를 계산한다."""
+    statuses = [str(result.get("status", "")) for result in results]
+    if run_error:
+        return "failed", "run_error"
+    if any(status == "cancelled" for status in statuses):
+        return "cancel_requested", "cancel_requested"
+    if any(status in _PROCESSED_PLACE_STATUSES for status in statuses):
+        if any(
+            status not in _PROCESSED_PLACE_STATUSES | _UNCONFIRMED_PLACE_STATUSES
+            for status in statuses
+        ):
+            return "partial", "partial_failure"
+        return "finished", ""
+    if any(status in _UNCONFIRMED_PLACE_STATUSES for status in statuses):
+        return "unknown", "no_confirmed_target"
+    failed = next((status for status in statuses if status), "")
+    if failed:
+        return "failed", failed
+    return "unknown", "no_confirmed_target"
+
+
+def _observe_phase(observer: Any, phase: str, content: str, **fields: Any) -> None:
+    """단계 관측. 관측 실패는 정리 실행에 영향을 주지 않는다."""
+    safe_observe(observer, "phase", phase=phase, content=content, **fields)
 
 
 def _create_surroundings_observer(active_event: threading.Event) -> Any:
@@ -124,34 +193,64 @@ class TidyHomeSkill(BaseSkill):
         self._run_peer_requests: list[dict[str, Any]] = []
         self._last_run: dict[str, Any] = {}
 
+    def _agent_id(self) -> str:
+        return str(getattr(self.node, "_agent_id", "") or "")
+
+    def _open_cleanup_observer(self, run_id: str, goal: str) -> Any:
+        """정리 실행 관측기를 만든다. 실패해도 정리 실행은 그대로 진행한다."""
+        try:
+            return open_cleanup_observation(source=SOURCE_TIDY_HOME, run_id=run_id, goal=goal)
+        except Exception:  # noqa: BLE001 - 관측 초기화 실패가 정리를 막지 않는다
+            try:
+                logger.debug("[TidyHome] cleanup observation unavailable", exc_info=True)
+            except Exception:  # noqa: BLE001 - broken logging sink must not break execution
+                pass
+            return None
+
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         scope = str(params.get("scope", "home")).strip().lower()
         target_location = str(params.get("target_location", "")).strip()
-        if scope not in {"room", "home"}:
-            return self.fail_result(
-                "scope는 'room' 또는 'home'이어야 합니다.", failure_reason="invalid_scope"
+        run_id = new_run_id(agent_id=self._agent_id())
+        goal_text = _cleanup_goal_text(scope, target_location)
+        observer = self._open_cleanup_observer(run_id, goal_text)
+        safe_observe(
+            observer,
+            "start",
+            content=f"{goal_text} 정리 작업을 시작합니다.",
+            place=target_location,
+        )
+
+        def _reject(reason: str, message: str, **kwargs: Any) -> dict[str, Any]:
+            """검증/시작 실패를 관측에 남기고 기존 실패 결과를 그대로 돌려준다."""
+            safe_observe(
+                observer,
+                "finished",
+                status="failed",
+                failure_reason=reason,
+                content=message,
+                result=message,
             )
+            return self.fail_result(message, failure_reason=reason, **kwargs)
+
+        if scope not in {"room", "home"}:
+            return _reject("invalid_scope", "scope는 'room' 또는 'home'이어야 합니다.")
         if scope == "room" and not target_location:
-            return self.fail_result(
-                "방 범위 정리에는 target_location이 필요합니다.",
-                failure_reason="target_location_required",
+            return _reject(
+                "target_location_required", "방 범위 정리에는 target_location이 필요합니다."
             )
         if scope == "home" and target_location:
-            return self.fail_result(
+            return _reject(
+                "unexpected_target_location",
                 "집 전체 범위에서는 target_location을 지정하지 마세요.",
-                failure_reason="unexpected_target_location",
             )
         try:
             max_places = int(params.get("max_places", 0))
         except (TypeError, ValueError):
-            return self.fail_result(
-                "max_places는 0 이상의 정수여야 합니다.", failure_reason="invalid_max_places"
-            )
+            return _reject("invalid_max_places", "max_places는 0 이상의 정수여야 합니다.")
         if max_places < 0:
-            return self.fail_result(
-                "max_places는 0 이상의 정수여야 합니다.", failure_reason="invalid_max_places"
-            )
+            return _reject("invalid_max_places", "max_places는 0 이상의 정수여야 합니다.")
         if (error := self.require_node()) is not None:
+            _reject("node_unavailable", "ROS 노드에 접근할 수 없습니다.")
             return error
         wait = params.get("wait_for_completion")
         wait_for_completion = reports_to_maestro() if wait is None else bool(wait)
@@ -159,11 +258,11 @@ class TidyHomeSkill(BaseSkill):
         skills = getattr(self.node, "_skills", None)
         if skills is not None and skills.has_skill("run_butler_script"):
             if scope != "home":
-                return self.fail_result(
+                return _reject(
+                    "room_scope_not_supported",
                     "Butler 정리 스크립트에는 방 선택 입력이 없어 특정 방을 보장할 수 없습니다.",
-                    failure_reason="room_scope_not_supported",
                 )
-            return self._start_butler_cleanup()
+            return self._start_butler_cleanup(run_id, observer)
 
         self._places_truncated = False
         self._place_limit = max_places
@@ -180,19 +279,26 @@ class TidyHomeSkill(BaseSkill):
                 "target_location_required": "방 범위 정리에는 target_location이 필요합니다.",
                 "invalid_scope": "scope는 'room' 또는 'home'이어야 합니다.",
             }.get(error, "정리 장소를 확인할 수 없습니다.")
-            return self.fail_result(message, failure_reason=error)
+            return _reject(error, message)
 
         if not claim_autonomous(_AUTONOMOUS_ACTIVE):
-            return self.fail_result(
+            return _reject(
+                "autonomous_busy",
                 "다른 자율 행동이 실행 중입니다. stop_autonomous로 중단한 뒤 다시 요청하세요.",
-                failure_reason="autonomous_busy",
                 recoverable=True,
             )
 
-        run_id = new_run_id(agent_id=str(getattr(self.node, "_agent_id", "") or ""))
+        safe_observe(
+            observer,
+            "phase",
+            phase="resolve_place",
+            content=f"기억된 장소 {len(places)}곳을 확인했습니다.",
+            place=target_location,
+            details={"places": [str(place.get("name", "")) for place in places]},
+        )
         worker = threading.Thread(
             target=self._run_cleanup,
-            args=(scope, places, run_id, target_location),
+            args=(scope, places, run_id, target_location, observer),
             daemon=True,
             name="tidy-home-worker",
         )
@@ -201,9 +307,7 @@ class TidyHomeSkill(BaseSkill):
         except Exception as exc:
             release_autonomous()
             logger.exception("[TidyHome] Failed to start worker")
-            return self.fail_result(
-                f"정리 작업을 시작하지 못했습니다: {exc}", failure_reason="start_failed"
-            )
+            return _reject("start_failed", f"정리 작업을 시작하지 못했습니다: {exc}")
         if wait_for_completion:
             # Maestro가 실제 완료와 결과를 알 수 있도록 끝날 때까지 기다린다.
             # 스킬 timeout은 SkillManager가 관리한다(초과 시 timeout 실패로 응답).
@@ -211,9 +315,7 @@ class TidyHomeSkill(BaseSkill):
             return self._completion_result(run_id)
         start_message = f"{len(places)}개 기억 장소를 대상으로 한 번의 정리 작업을 시작했습니다."
         if self._places_truncated:
-            start_message += (
-                f" max_places={self._place_limit} 설정에 따라 이번 실행에서는 {len(places)}곳만 확인합니다."
-            )
+            start_message += f" max_places={self._place_limit} 설정에 따라 이번 실행에서는 {len(places)}곳만 확인합니다."
         return self.success_result(
             start_message,
             status="started",
@@ -284,8 +386,15 @@ class TidyHomeSkill(BaseSkill):
             places = places[:limit]
         return places, error
 
-    def _start_butler_cleanup(self) -> dict[str, Any]:
+    def _start_butler_cleanup(self, run_id: str = "", observer: Any = None) -> dict[str, Any]:
         if not claim_autonomous(_AUTONOMOUS_ACTIVE):
+            safe_observe(
+                observer,
+                "finished",
+                status="failed",
+                failure_reason="autonomous_busy",
+                result="다른 자율 행동이 실행 중입니다.",
+            )
             return self.fail_result(
                 "다른 자율 행동이 실행 중입니다. stop_autonomous로 중단한 뒤 다시 요청하세요.",
                 failure_reason="autonomous_busy",
@@ -293,6 +402,7 @@ class TidyHomeSkill(BaseSkill):
             )
         worker = threading.Thread(
             target=self._run_butler_script,
+            args=(run_id, observer),
             daemon=True,
             name="tidy-home-butler-worker",
         )
@@ -300,19 +410,32 @@ class TidyHomeSkill(BaseSkill):
             worker.start()
         except Exception as exc:
             release_autonomous()
+            safe_observe(
+                observer,
+                "finished",
+                status="failed",
+                failure_reason="start_failed",
+                result=str(exc),
+            )
             return self.fail_result(
                 f"Butler 정리 스크립트를 시작하지 못했습니다: {exc}",
                 failure_reason="start_failed",
             )
+        _observe_phase(observer, "local_motion", "Butler의 등록된 정리 스크립트를 실행합니다.")
         return self.success_result(
             "Butler의 등록된 정리 스크립트를 실행합니다.",
             status="started",
             scope="home",
         )
 
-    def _run_butler_script(self) -> None:
+    def _run_butler_script(self, run_id: str = "", observer: Any = None) -> None:
+        run_error = ""
+        message = ""
         try:
             self.send_user_message("Butler 정리 스크립트를 실행합니다.")
+            _observe_phase(
+                observer, "local_motion", "Butler 정리 스크립트 56_organizer_req.sh를 실행합니다."
+            )
             result = self.node._skills.execute(
                 "run_butler_script", {"script_name": "56_organizer_req.sh"}, timeout_sec=120.0
             )
@@ -323,11 +446,20 @@ class TidyHomeSkill(BaseSkill):
                     f"Butler 정리 스크립트가 성공 응답을 반환했습니다. {message}".strip()
                 )
             else:
+                run_error = "butler_script_failed"
                 self.send_user_message(f"Butler 정리 스크립트가 실패했습니다. {message}".strip())
         except Exception as exc:  # noqa: BLE001
+            run_error = f"{type(exc).__name__}: {exc}"
             logger.exception("[TidyHome] Butler organizer script failed")
             self.send_user_message(f"Butler 정리 스크립트 실행에 실패했습니다: {exc}")
         finally:
+            safe_observe(
+                observer,
+                "finished",
+                status="failed" if run_error else "finished",
+                result=message or run_error,
+                failure_reason=run_error,
+            )
             release_autonomous()
 
     @staticmethod
@@ -341,6 +473,7 @@ class TidyHomeSkill(BaseSkill):
         places: list[dict[str, Any]],
         run_id: str = "",
         target_location: str = "",
+        observer: Any = None,
     ) -> None:
         results: list[dict[str, Any]] = []
         self._run_peer_requests = []
@@ -351,9 +484,7 @@ class TidyHomeSkill(BaseSkill):
         run_error = ""
         started = time.monotonic()
         try:
-            start_message = (
-                f"정리 작업을 시작합니다. 기억된 장소 {len(places)}곳을 한 차례 확인하면 종료합니다."
-            )
+            start_message = f"정리 작업을 시작합니다. 기억된 장소 {len(places)}곳을 한 차례 확인하면 종료합니다."
             if self._places_truncated:
                 start_message += (
                     f" max_places={self._place_limit} 설정에 따라 {len(places)}곳까지만 확인합니다."
@@ -361,6 +492,14 @@ class TidyHomeSkill(BaseSkill):
             self.send_user_message(start_message)
             for index, place in enumerate(places, start=1):
                 if not is_autonomous_active():
+                    _observe_phase(
+                        observer,
+                        "cancel",
+                        "사용자 중단 요청으로 정리 작업을 멈춥니다.",
+                        place=str(place["name"]),
+                        observed="cancelled",
+                        failure_reason="cancel_requested",
+                    )
                     results.append({"place": place["name"], "status": "cancelled"})
                     break
 
@@ -370,6 +509,12 @@ class TidyHomeSkill(BaseSkill):
                 )
 
                 place_name = str(place["name"])
+                _observe_phase(
+                    observer,
+                    "navigate",
+                    f"[{index}/{len(places)}] '{place_name}' 장소로 이동합니다.",
+                    place=place_name,
+                )
                 nav_started = time.monotonic()
                 try:
                     arrived, nav_message = self._visit_place(place_name)
@@ -379,24 +524,63 @@ class TidyHomeSkill(BaseSkill):
                 finally:
                     self._add_phase_ms(phase_ms, "navigate", time.monotonic() - nav_started)
                 if not is_autonomous_active():
+                    _observe_phase(
+                        observer,
+                        "cancel",
+                        "사용자 중단 요청으로 정리 작업을 멈춥니다.",
+                        place=place_name,
+                        observed="cancelled",
+                        failure_reason="cancel_requested",
+                    )
                     results.append({"place": place_name, "status": "cancelled"})
                     break
                 if not arrived:
+                    _observe_phase(
+                        observer,
+                        "navigate",
+                        f"'{place_name}'에 도착하지 못했습니다. {nav_message}",
+                        place=place_name,
+                        observed="unreachable",
+                        failure_reason="location_unreachable",
+                    )
                     results.append({"place": place_name, "status": "unreachable"})
                     self.send_user_message(
                         f"'{place_name}'에 도착하지 못해 해당 장소를 건너뜁니다. {nav_message}"
                     )
                     continue
 
+                _observe_phase(
+                    observer,
+                    "observe",
+                    f"'{place_name}'에서 주변을 관찰합니다.",
+                    place=place_name,
+                )
                 observe_started = time.monotonic()
                 try:
                     scene_result = self._analyze_current_scene(place_name)
                 finally:
                     self._add_phase_ms(phase_ms, "observe", time.monotonic() - observe_started)
                 if not is_autonomous_active():
+                    _observe_phase(
+                        observer,
+                        "cancel",
+                        "사용자 중단 요청으로 정리 작업을 멈춥니다.",
+                        place=place_name,
+                        observed="cancelled",
+                        failure_reason="cancel_requested",
+                    )
                     results.append({"place": place_name, "status": "cancelled"})
                     break
                 if not scene_result.get("success"):
+                    _observe_phase(
+                        observer,
+                        "observe",
+                        f"'{place_name}'에서 주변을 관찰하지 못했습니다. "
+                        f"{scene_result.get('message', '')}".strip(),
+                        place=place_name,
+                        observed="failed",
+                        failure_reason="observation_failed",
+                    )
                     results.append({"place": place_name, "status": "observation_failed"})
                     self.send_user_message(
                         f"'{place_name}'에서 주변을 관찰하지 못해 정리 작업을 보류합니다. "
@@ -405,6 +589,14 @@ class TidyHomeSkill(BaseSkill):
                     continue
 
                 if scene_result.get("orientation_restored") is False:
+                    _observe_phase(
+                        observer,
+                        "observe",
+                        f"'{place_name}'의 시작 방향 복귀에 실패해 후속 정리 동작을 실행하지 않았습니다.",
+                        place=place_name,
+                        observed="failed",
+                        failure_reason="orientation_unrestored",
+                    )
                     results.append(
                         {
                             "place": place_name,
@@ -450,9 +642,26 @@ class TidyHomeSkill(BaseSkill):
                         )
                     else:
                         results.append({"place": place_name, "status": "no_target"})
+                    _observe_phase(
+                        observer,
+                        "select_target",
+                        f"'{place_name}'에서 정리 대상 후보를 확정하지 못했습니다.",
+                        place=place_name,
+                        observed=(
+                            "needs_clarification"
+                            if _has_ambiguous_cleanup_indication(objects, scene)
+                            else ("partial_observation" if partial_observation else "no_target")
+                        ),
+                    )
                     continue
 
                 found_cleanup_target = True
+                _observe_phase(
+                    observer,
+                    "select_target",
+                    f"'{place_name}' 정리 대상과 처리 주체를 결정합니다.",
+                    place=place_name,
+                )
                 handle_started = time.monotonic()
                 try:
                     status = self._handle_cleanup_target(
@@ -462,9 +671,18 @@ class TidyHomeSkill(BaseSkill):
                         cycle=index,
                         run_id=run_id,
                         phase_ms=phase_ms,
+                        observer=observer,
                     )
                 finally:
                     self._add_phase_ms(phase_ms, "handle", time.monotonic() - handle_started)
+                phase = _HANDLE_STATUS_PHASES.get(status, "select_target")
+                _observe_phase(
+                    observer,
+                    phase,
+                    f"'{place_name}' {phase_label(phase)} 단계 결과: {status}",
+                    place=place_name,
+                    observed=status,
+                )
                 results.append(
                     {
                         "place": place_name,
@@ -502,6 +720,56 @@ class TidyHomeSkill(BaseSkill):
                 "peer_requests": list(self._run_peer_requests),
                 "error": run_error,
             }
+            status_text, failure_reason = _run_observation_status(results, run_error)
+            # 위임 결과 미확인/timeout 같은 구체 사유를 일반 장소 실패로 덮지 않는다.
+            existing = safe_observe(observer, "activity")
+            previous_reason = (
+                str(existing.get("failure_reason", "")) if isinstance(existing, dict) else ""
+            )
+            if previous_reason in {"result_unconfirmed", "peer_reported_failure"} and (
+                failure_reason in {"execution_failed", "partial_failure", "no_confirmed_target"}
+            ):
+                failure_reason = previous_reason
+            cancelled = status_text == "cancel_requested"
+            summary = (
+                ", ".join(
+                    f"{result.get('place', '')}: {result.get('status', '')}" for result in results
+                )
+                or "확인한 장소가 없습니다"
+            )
+            outcome_note = ""
+            if status_text == "unknown":
+                outcome_note = " 정리 대상이 확인되지 않아 정리 완료가 아닙니다."
+            elif status_text == "partial":
+                outcome_note = " 일부 장소만 처리되어 정리 전체 완료가 아닙니다."
+            elif any(
+                str(result.get("status", "")) in {"delegated_demo", "demo_motion_executed"}
+                for result in results
+            ):
+                outcome_note = (
+                    " 시연 요청만 접수되었으며 실제 물체 정리 완료는 확인되지 않았습니다."
+                )
+            elif any(str(result.get("status", "")) == "reported_to_maestro" for result in results):
+                outcome_note = " Maestro 보고는 원격 작업 완료를 뜻하지 않습니다."
+            safe_observe(
+                observer,
+                "finished",
+                status=status_text,
+                content=f"정리 작업이 종료되었습니다. {summary}.{outcome_note}".strip(),
+                result=f"{summary}.{outcome_note}".strip(),
+                failure_reason=failure_reason,
+                # 취소/오류가 아니면 마지막 표시 상태(예: reported_to_maestro)를 보존한다.
+                task_status=TASK_STATUS_CANCEL_REQUESTED if cancelled else None,
+                duration_ms=(time.monotonic() - started) * 1000.0,
+                details={
+                    "scope": scope,
+                    "places": [str(place.get("name", "")) for place in places],
+                    "results": [
+                        f"{result.get('place', '')}:{result.get('status', '')}"
+                        for result in results
+                    ],
+                },
+            )
             release_autonomous()
 
     def _completion_result(self, run_id: str) -> dict[str, Any]:
@@ -534,6 +802,9 @@ class TidyHomeSkill(BaseSkill):
                 **detail,
             )
         message = f"정리 작업을 마쳤습니다. 장소별 결과: {summary}"
+        if not any(item.get("status") in _PROCESSED_PLACE_STATUSES for item in results):
+            # 장소 확인만 끝난 실행은 "정리 완료"가 아니다.
+            message += " 정리 대상은 처리되지 않았습니다(정리 완료 아님)."
         if peer_requests:
             message += f" 동료 작업 {len(peer_requests)}건을 Maestro에 보고합니다."
         return self.success_result(message, status="completed", **detail)
@@ -645,6 +916,7 @@ class TidyHomeSkill(BaseSkill):
         cycle: int,
         run_id: str = "",
         phase_ms: dict[str, float] | None = None,
+        observer: Any = None,
     ) -> str:
         from .autonomous_skill.actions import (
             ExecuteDecidedAction,
@@ -677,6 +949,8 @@ class TidyHomeSkill(BaseSkill):
             # 실험 계측 — 위임 결정·구간 소요를 실행 1회 기록으로 모으기 위한 키.
             "cleanup_run_id": run_id,
             "cleanup_phase_ms": phase_ms if isinstance(phase_ms, dict) else None,
+            # 정리 실행 관측기 — 실행 노드가 위임/결과 이벤트를 같은 실행에 남긴다.
+            "cleanup_observer": observer,
         }
         handoff = ResolveCleanupHandoff(self)
         decide = LLMDecideAction(self)
@@ -715,7 +989,21 @@ class TidyHomeSkill(BaseSkill):
         if prepared_handoff:
             # 위임은 로컬 pick/place 계획이 아니다. 로컬 물리 계획 검사로 거부하지 않는다.
             if blackboard.get("cleanup_handoff_kind") == "cleanup_demo":
+                _observe_phase(
+                    observer,
+                    "stage",
+                    "동료가 접근할 수 있도록 안전하게 비켜섭니다.",
+                    place=place_name,
+                )
                 if not self._move_aside_for_cleanup_demo_handoff():
+                    _observe_phase(
+                        observer,
+                        "stage",
+                        "동료가 접근할 수 있도록 안전하게 비켜서지 못해 정리 시연 요청을 보내지 않았습니다.",
+                        place=place_name,
+                        observed="failed",
+                        failure_reason="handoff_staging_failed",
+                    )
                     self.send_user_message(
                         "동료가 접근할 수 있도록 안전하게 비켜서지 못해 정리 시연 요청을 보내지 않았습니다."
                     )
@@ -903,9 +1191,7 @@ class TidyHomeSkill(BaseSkill):
                 "미관찰 영역에 정리 대상이 없는지는 확인되지 않았습니다."
             )
         if self._places_truncated:
-            ending += (
-                f" max_places={self._place_limit} 설정에 따라 나머지 기억 장소는 이번 실행에서 확인하지 않았습니다."
-            )
+            ending += f" max_places={self._place_limit} 설정에 따라 나머지 기억 장소는 이번 실행에서 확인하지 않았습니다."
         elif results and not any(
             result["status"] in _INCOMPLETE_PLACE_STATES for result in results
         ):

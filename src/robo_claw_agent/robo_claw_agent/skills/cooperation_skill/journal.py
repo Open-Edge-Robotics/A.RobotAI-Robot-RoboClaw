@@ -30,6 +30,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from ..cleanup.activity import CleanupActivityStore
+from ..cleanup.observation import SOURCE_AUTONOMOUS_COOPERATE
 from .envelope import TASK_STATUS_UNKNOWN, normalize_task_status
 from .journal_event import CooperationEvent, log_event
 from .journal_store import (
@@ -88,6 +90,9 @@ class CooperationJournal:
         self._max_tasks = max(1, int(max_tasks))
         self._max_task_records = max(self._max_tasks, int(max_task_records))
         self._events: deque[CooperationEvent] = deque()
+        # 정리 실행(tidy_home/cleanup_demo)의 bounded 활동 상태. 자율협동 세션과
+        # 별도로 유지해 서로의 session_id/goal/active 를 덮어쓰지 않는다.
+        self._cleanup_activities = CleanupActivityStore()
         self._tasks: dict[str, dict[str, Any]] = {}
         # task_id -> 우리가 이 태스크로 보낸 outbound message_id(최근 것만).
         self._task_outbound: dict[str, list[str]] = {}
@@ -133,6 +138,11 @@ class CooperationJournal:
     def active(self) -> bool:
         with self._lock:
             return self._active
+
+    @property
+    def cleanup_activities(self) -> CleanupActivityStore:
+        """정리 실행 관측기가 갱신하는 bounded 활동 상태 저장소."""
+        return self._cleanup_activities
 
     # ── 세션 ─────────────────────────────────────────────────────
 
@@ -425,14 +435,38 @@ class CooperationJournal:
             task_copies = [dict(task) for task in tasks]
             writer = self._writer
             dropped = self._dropped_events + (writer.dropped if writer is not None else 0)
+            activity = self._cleanup_activities.snapshot()
+            # 표시용 projection — 내부 세션 필드(self._active/_goal/_session_id)는 바꾸지
+            # 않는다. 살아 있는 자율협동 세션이 있으면 그것을 우선하고, 없으면 정리
+            # 활동의 진행/마지막 상태를 보여준다.
+            cooperation_live = bool(self._active and enabled)
+            if cooperation_live:
+                view_active = True
+                view_session_id = self._session_id
+                view_goal = self._goal
+                activity_source = SOURCE_AUTONOMOUS_COOPERATE
+            elif activity is not None:
+                view_active = bool(activity["active"])
+                view_session_id = str(activity["session_id"] or activity["run_id"])
+                view_goal = str(activity["goal"])
+                activity_source = str(activity["source"])
+            else:
+                view_active = False
+                view_session_id = self._session_id
+                view_goal = self._goal
+                activity_source = ""
             return {
                 "available": True,
-                "enabled": bool(enabled),
-                "active": bool(self._active and enabled),
+                # 정리 활동은 직접 협동이 꺼져 있어도 표시할 수 있다(Maestro 관제 포함).
+                "enabled": bool(enabled or activity is not None),
+                "direct_cooperation_enabled": bool(enabled),
+                "active": view_active,
                 "local_robot_id": self._local_robot_id,
-                "session_id": self._session_id,
-                "goal": self._goal,
+                "session_id": view_session_id,
+                "goal": view_goal,
                 "stream_id": self._stream_id,
+                "activity": activity,
+                "activity_source": activity_source,
                 "events": events,
                 "tasks": task_copies,
                 "next_cursor": self._next_sequence,

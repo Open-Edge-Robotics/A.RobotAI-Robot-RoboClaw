@@ -38,10 +38,28 @@ MAX_LIMIT = 200
 STALE_AFTER_MS = 15_000
 
 KNOWN_STATUSES = frozenset(
-    {"queued", "received", "running", "completed", "failed", "denied", "partial", "unknown"}
+    {
+        "queued",
+        "received",
+        "running",
+        "completed",
+        "failed",
+        "denied",
+        "partial",
+        "unknown",
+        #: 로컬 정리/시연 진행 상태. 완료를 뜻하지 않으며 화면에서도 중립/경고로만 표시한다.
+        "motion_requested",
+        "waiting_for_peer",
+        "cancel_requested",
+        "reported_to_maestro",
+    }
 )
 #: 결과가 상대 로봇 보고에서 온 것임을 뜻하는 origin 값들.
 OBSERVED_ORIGINS = frozenset({"peer_report", "peer-reported", "peer", "remote", "observed"})
+#: 스냅샷 활동 출처. 이 밖의 값은 표시하지 않는다(저널 사설 값을 화면으로 흘리지 않음).
+ACTIVITY_SOURCES = frozenset({"tidy_home", "cleanup_demo", "autonomous_cooperate"})
+#: activity 를 투영한 뷰 태스크의 source. 실제 원격 실행 태스크가 아님을 표시한다.
+ACTIVITY_TASK_SOURCE = "local_activity"
 
 #: 협동 관측에서만 추가로 숨기는 키 조각(인증 헤더 계열).
 _COOPERATION_SECRET_HINTS = SECRET_HINTS + (
@@ -158,6 +176,122 @@ def _observed_flag(raw: Mapping[str, Any]) -> bool | None:
     return None
 
 
+def normalize_activity_source(raw: Any) -> str:
+    """스냅샷 활동 출처를 화이트리스트로 제한한다(모르는 값은 빈 문자열)."""
+    source = _text(raw, MAX_TEXT_CHARS).strip().lower()
+    return source if source in ACTIVITY_SOURCES else ""
+
+
+def _optional_bool(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def normalize_activity(raw: Any) -> dict[str, Any] | None:
+    """백엔드 ``activity`` 현재 상태를 화면/내보내기용 화이트리스트로 정규화한다.
+
+    ``activity`` 는 로컬 정리/시연의 현재 상태이며 ``journal.tasks`` 가 비어 있어도 이 값으로
+    뷰 태스크를 투영해 보여준다. 모르는 키는 버리고 문자열 길이/시크릿/숫자 유한성을 적용한다.
+    """
+    if not isinstance(raw, Mapping):
+        return None
+    source = normalize_activity_source(raw.get("source"))
+    run_id = _text(raw.get("run_id"))
+    task_id = _text(raw.get("task_id"))
+    session_id = _text(raw.get("session_id"))
+    goal = redact_text(_text(raw.get("goal"), MAX_CONTENT_CHARS))
+    phase = _text(raw.get("phase"))
+    status = normalize_status(raw.get("status"), allow_blank=True)
+    if not any((source, run_id, task_id, session_id, goal, phase, status)):
+        return None
+    return {
+        "source": source,
+        "run_id": run_id,
+        "session_id": session_id,
+        "robot_id": _text(raw.get("robot_id")),
+        "task_id": task_id,
+        "goal": goal,
+        "phase": phase,
+        "phase_label": redact_text(_text(raw.get("phase_label"))),
+        "place": redact_text(_text(raw.get("place"))),
+        "target": redact_text(_text(raw.get("target"))),
+        "peer": _text(raw.get("peer")),
+        "transport": _text(raw.get("transport")),
+        "status": status,
+        "task_status": normalize_status(raw.get("task_status"), allow_blank=True),
+        "result": redact_text(_text(raw.get("result"), MAX_CONTENT_CHARS)),
+        "failure_reason": redact_text(_text(raw.get("failure_reason"), MAX_CONTENT_CHARS)),
+        "observed": _optional_bool(raw.get("observed")),
+        "physical_cleanup_confirmed": raw.get("physical_cleanup_confirmed") is True,
+        "motion_completion_confirmed": raw.get("motion_completion_confirmed") is True,
+        "active": raw.get("active") is True,
+        "started_at": _number(raw.get("started_at")),
+        "updated_at": _number(raw.get("updated_at")),
+        "finished_at": _number(raw.get("finished_at")),
+        "duration_ms": _number(raw.get("duration_ms")),
+    }
+
+
+def _activity_status_value(raw: Any) -> str:
+    """투영 태스크 상태로 쓸 수 있는 유효 상태만 돌려준다(unknown/빈 값은 제외)."""
+    status = normalize_status(raw, allow_blank=True)
+    return status if status and status != "unknown" else ""
+
+
+def _activity_task_status(activity: Mapping[str, Any]) -> str:
+    """activity 의 태스크 표시 상태를 정한다(task_status 우선, 유효 status fallback)."""
+    explicit = _activity_status_value(activity.get("task_status"))
+    if explicit:
+        return explicit
+    status = _activity_status_value(activity.get("status"))
+    if status:
+        # waiting_for_peer 는 실제로 대기 중일 때만 쓴다(종료 후 미확인 결과를 대기로 표시 금지).
+        if status == "waiting_for_peer" and activity.get("active") is not True:
+            return "unknown"
+        return status
+    if activity.get("failure_reason"):
+        return "failed"
+    if activity.get("active") is True:
+        return "running"
+    if (
+        activity.get("physical_cleanup_confirmed") is True
+        and activity.get("motion_completion_confirmed") is not True
+    ):
+        return "partial"
+    return "unknown"
+
+
+def _project_activity_task(activity: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """현재 activity 를 "로컬 활동" 뷰 태스크로 투영한다(원격 실행 태스크 아님)."""
+    if not isinstance(activity, Mapping):
+        return None
+    run_id = _text(activity.get("run_id"))
+    task_id = _text(activity.get("task_id")) or run_id
+    if not task_id:
+        return None
+    description = _text(activity.get("goal"), MAX_CONTENT_CHARS)
+    for value in (_text(activity.get("place")), _text(activity.get("target"))):
+        if value and value not in description:
+            description = f"{description} · {value}" if description else value
+    return {
+        "task_id": task_id,
+        "session_id": _text(activity.get("session_id")) or run_id,
+        "peer_id": _text(activity.get("peer")),
+        "description": description,
+        "status": _activity_task_status(activity),
+        "observed": _optional_bool(activity.get("observed")),
+        "delivery_confirmed": False,
+        "outbound_message_id": "",
+        "created_at": _number(activity.get("started_at")),
+        "updated_at": _number(activity.get("updated_at")),
+        "result": _text(activity.get("result"), MAX_CONTENT_CHARS),
+        "source": ACTIVITY_TASK_SOURCE,
+        "projected": True,
+        "activity_source": _text(activity.get("source")),
+        "physical_cleanup_confirmed": activity.get("physical_cleanup_confirmed") is True,
+        "motion_completion_confirmed": activity.get("motion_completion_confirmed") is True,
+    }
+
+
 def normalize_event(raw: Any) -> dict[str, Any] | None:
     """이벤트 한 건을 정규화한다. sequence 가 없으면 순서를 보장할 수 없어 버린다."""
     if not isinstance(raw, Mapping):
@@ -202,6 +336,11 @@ def normalize_task(raw: Any) -> dict[str, Any] | None:
         "created_at": _number(raw.get("created_at")),
         "updated_at": _number(raw.get("updated_at")),
         "result": redact_text(_text(raw.get("result"), MAX_CONTENT_CHARS)),
+        "source": _text(raw.get("source")),
+        "projected": raw.get("projected") is True,
+        "activity_source": normalize_activity_source(raw.get("activity_source")),
+        "physical_cleanup_confirmed": raw.get("physical_cleanup_confirmed") is True,
+        "motion_completion_confirmed": raw.get("motion_completion_confirmed") is True,
     }
 
 
@@ -226,6 +365,9 @@ def unavailable_cooperation(reason: str = "") -> dict[str, Any]:
         "available": False,
         "enabled": False,
         "active": False,
+        "activity_source": "",
+        "direct_cooperation_enabled": False,
+        "activity": None,
         "local_robot_id": "",
         "session_id": "",
         "goal": "",
@@ -256,21 +398,32 @@ def _normalize_events(raw: Any) -> tuple[list[dict[str, Any]], int]:
     return events, invalid
 
 
-def _normalize_tasks(raw: Any) -> list[dict[str, Any]]:
+def _normalize_tasks(raw: Any, activity: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-        return []
-    tasks = [task for task in (normalize_task(item) for item in raw) if task is not None]
+        tasks: list[dict[str, Any]] = []
+    else:
+        tasks = [task for task in (normalize_task(item) for item in raw) if task is not None]
+    projected = _project_activity_task(activity)
+    if projected is not None and all(task["task_id"] != projected["task_id"] for task in tasks):
+        # 저널 태스크 ID 와 겹치면 원래 저널 태스크를 유지하고 투영을 건너뛴다.
+        tasks.append(projected)
     tasks.sort(key=lambda item: item["updated_at"], reverse=True)
     return tasks[:MAX_TASKS]
 
 
 def normalize_cooperation(raw: Any) -> dict[str, Any]:
-    """에이전트 저널 스냅샷을 대시보드 표시용 구조로 정규화한다."""
+    """에이전트 저널 스냅샷을 대시보드 표시용 구조로 정규화한다.
+
+    ``activity_source``/``direct_cooperation_enabled`` 는 로컬 정리/시연 관측과 직접 협동을
+    구분하기 위한 화이트리스트 메타데이터다(모르는 출처는 빈 문자열로 버린다).
+    ``journal.tasks`` 가 비어 있어도 ``activity`` 가 있으면 "로컬 활동" 뷰 태스크를 투영한다.
+    """
     if not isinstance(raw, Mapping) or raw.get("available") is not True:
         reason = raw.get("error") if isinstance(raw, Mapping) else ""
         return unavailable_cooperation(_text(reason, MAX_CONTENT_CHARS))
 
     enabled = raw.get("enabled") is True
+    activity = normalize_activity(raw.get("activity"))
     events, invalid = _normalize_events(raw.get("events"))
     overflow = max(0, len(events) - MAX_EVENTS)
     if overflow:
@@ -284,12 +437,16 @@ def normalize_cooperation(raw: Any) -> dict[str, Any]:
         #: Maestro 관제로 협동이 꺼지면 active 도 강제로 내린다(우회 없음).
         "enabled": enabled,
         "active": enabled and raw.get("active") is True,
+        #: 로컬 정리/시연 관측은 enabled=true, direct_cooperation_enabled=false 로 올 수 있다.
+        "activity_source": normalize_activity_source(raw.get("activity_source")),
+        "direct_cooperation_enabled": raw.get("direct_cooperation_enabled") is True,
+        "activity": activity,
         "local_robot_id": _text(raw.get("local_robot_id")),
         "session_id": _text(raw.get("session_id")),
         "goal": redact_text(_text(raw.get("goal"), MAX_CONTENT_CHARS)),
         "stream_id": _text(raw.get("stream_id")),
         "events": events,
-        "tasks": _normalize_tasks(raw.get("tasks")),
+        "tasks": _normalize_tasks(raw.get("tasks"), activity),
         "next_cursor": next_cursor,
         "oldest_cursor": oldest_cursor,
         "dropped_events": dropped,
@@ -419,6 +576,11 @@ def cooperation_payload(
         "available": True,
         "enabled": bool(cached.get("enabled")),
         "active": bool(cached.get("active")),
+        "activity_source": normalize_activity_source(cached.get("activity_source")),
+        "direct_cooperation_enabled": cached.get("direct_cooperation_enabled") is True,
+        "activity": (
+            dict(cached.get("activity")) if isinstance(cached.get("activity"), Mapping) else None
+        ),
         "local_robot_id": _text(cached.get("local_robot_id")),
         "session_id": _text(cached.get("session_id")),
         "goal": _text(cached.get("goal"), MAX_CONTENT_CHARS),
