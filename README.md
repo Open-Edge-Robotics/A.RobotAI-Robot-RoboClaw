@@ -427,6 +427,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 
 | 문서                                                                         | 내용                                                                      |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md) | 제출용 통합 기술문서 — 구조·실행·안전·인지·통신·운영·검증 |
 | [docs/opencode/README.md](docs/opencode/README.md) | 패키지 책임, 요청 처리 경로, 메모리·제어 경계 |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md)                                     | 운영 파라미터, 태스크 큐(순차 실행), MCP 서버 연동                        |
 | [docs/SKILLS.md](docs/SKILLS.md)                                             | 전체 스킬 레퍼런스                                                        |

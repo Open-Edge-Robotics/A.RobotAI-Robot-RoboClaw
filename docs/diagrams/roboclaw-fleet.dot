@@ -1,0 +1,28 @@
+digraph RoboClawFleet {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.4"];
+  node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b", fontname="sans-serif", fontsize=12, margin="0.15,0.1"];
+  edge [color="#475569", fontname="sans-serif", fontsize=10];
+  command [label="Fleet command\nIdempotency key or Command ID"];
+  lookup [label="Journal lookup + ACK"];
+  state [label="Existing key?", shape=diamond];
+  replay [label="Replay stored terminal result", fillcolor="#dcfce7"];
+  running [label="Do not re-execute\nRUNNING outcome needs reconciliation", fillcolor="#fef3c7"];
+  begin [label="Journal begin\nNew key only"];
+  execute [label="Handler -> Agent -> Skill / Task"];
+  complete [label="Store terminal result\nSUCCEEDED / FAILED"];
+  send [label="TaskUpdate(final)"];
+  reconnect [label="Reconnect\nReplay undelivered terminal results"];
+  note [label="No end-to-end exactly-once guarantee\nPersist journal outside temporary storage", shape=note, fillcolor="#fef3c7"];
+  command -> lookup;
+  lookup -> state;
+  state -> replay [label="terminal"];
+  state -> running [label="RUNNING"];
+  state -> begin [label="new"];
+  begin -> execute;
+  execute -> complete;
+  complete -> send;
+  replay -> send;
+  complete -> reconnect [style=dashed];
+  reconnect -> send [style=dashed];
+  note -> begin [style=dashed, arrowhead=none];
+}

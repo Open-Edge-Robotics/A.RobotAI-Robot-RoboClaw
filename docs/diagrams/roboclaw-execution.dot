@@ -1,0 +1,33 @@
+digraph RoboClawExecution {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.4"];
+  node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b", fontname="sans-serif", fontsize=12, margin="0.15,0.1"];
+  edge [color="#475569", fontname="sans-serif", fontsize=10];
+  request [label="ExecuteTask / ExecuteSkill"];
+  queue [label="Queue or read-only bypass"];
+  context [label="State / Conversation / Retrieved context"];
+  router [label="Rule OR Laya router", shape=diamond];
+  fixed [label="Fixed response"];
+  tool [label="Native tool loop\nOriginal request + tool history"];
+  json [label="JSON fallback\nOptional TaskDecomposer"];
+  safety [label="Navigation preparation\nWhen required", fillcolor="#fef3c7"];
+  validate [label="SkillManager\nPolicy / Preconditions / Schema", fillcolor="#dcfce7"];
+  execute [label="Execute skill\nROS / Driver / Tool"];
+  result [label="Result / Failure / Partial execution"];
+  request -> queue;
+  queue -> context [label="natural language"];
+  queue -> safety [label="direct skill"];
+  context -> router;
+  router -> fixed [label="no tool"];
+  router -> safety [label="direct skill"];
+  router -> tool [label="supported + enabled"];
+  router -> json [label="disabled / unsupported"];
+  tool -> safety;
+  json -> safety;
+  safety -> validate;
+  validate -> execute [label="allowed"];
+  validate -> result [label="rejected"];
+  execute -> result;
+  result -> tool [style=dashed, label="within loop budget"];
+  result -> json [style=dashed, label="within loop budget"];
+  fixed -> result;
+}

@@ -1,0 +1,32 @@
+digraph RoboClawSystem {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.5", fontname="sans-serif"];
+  node [shape=box, style="rounded,filled", fillcolor="#eff6ff", color="#64748b", fontname="sans-serif", fontsize=12, margin="0.15,0.1"];
+  edge [color="#475569", fontname="sans-serif", fontsize=10];
+  user [label="User / Automation"];
+  channel [label="Channel\nHTTP / Messenger / RoboMessenger"];
+  grpc [label="RosGrpc\nExternal API + Fleet connector"];
+  maestro [label="Maestro\nFleet orchestration", fillcolor="#fef3c7"];
+  config [label="AI Config Server + Contract\nProfile / CLI / Bringup", fillcolor="#fef3c7"];
+  agent [label="Robo-Claw Agent\nContext / Router / Planner / Local BT", fillcolor="#dbeafe"];
+  model [label="LLM / VLM\nLocal or remote"];
+  memory [label="Memory\nSQLite + Local vector / Qdrant"];
+  skill [label="SkillManager\nPolicy / Preconditions / Schema / Execute", fillcolor="#dcfce7"];
+  ros [label="ROS 2\nNav2 / Manipulation backend / Sensors"];
+  core [label="C++ Core\nInternal commands / Watchdog"];
+  hw [label="Robot drivers / Hardware / Simulator", fillcolor="#e2e8f0"];
+  dashboard [label="Dashboard / Discovery\nState / Map / ROS graph"];
+  user -> channel;
+  user -> grpc;
+  channel -> agent [label="Task / Skill / State"];
+  grpc -> agent;
+  grpc -> maestro [label="Robot-initiated stream", dir=both];
+  config -> agent [style=dashed, label="runtime config"];
+  agent -> model [dir=both];
+  agent -> memory [dir=both];
+  agent -> skill;
+  skill -> ros;
+  ros -> hw [label="direct driver paths"];
+  ros -> core;
+  core -> hw [label="internal command path"];
+  dashboard -> ros [dir=both];
+}
