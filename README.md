@@ -459,7 +459,9 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/AI_CONFIG_VIEWER.md](docs/AI_CONFIG_VIEWER.md)                         | AI Config 활성 설정의 LLM·임베딩 하이퍼파라미터 조회(`show_ai_config.py`) |
 | [docs/RESET_ROBOT_STATE.md](docs/RESET_ROBOT_STATE.md)                       | 호스트 SSH 로봇 상태 초기화(`reset_robot_state.sh`)                       |
 | [docs/RESET_ROBOT_STATE_SERVER_DB.md](docs/RESET_ROBOT_STATE_SERVER_DB.md)   | 로봇 상태 + 벡터 DB 완전 초기화(`reset_robot_state_server_db.sh`)         |
+| [docs/SYSTEM1_LAYA_REQUEST_FLOW_ANALYSIS.md](docs/SYSTEM1_LAYA_REQUEST_FLOW_ANALYSIS.md) | 사용자 요청이 규칙·Laya 사전 라우터와 System 2를 거치는 처리 흐름 |
 | [docs/ISSUE_DOMAIN.md](docs/ISSUE_DOMAIN.md)                                 | 미해결: 두 로봇·NERO 팔이 같은 DDS 도메인을 써서 생기는 그래프 혼선       |
+| [docs/NAVI_ISSUE.md](docs/NAVI_ISSUE.md)                                     | 트러블슈팅: Former 실기 Nav2 멈춤/AMCL 크래시 원인과 해결                  |
 | [CHANGE_LOG.md](CHANGE_LOG.md)                                               | 전체 변경 이력 — RAG 위치 지식 개선(P1~P5) 상세는 부록                    |
 | [former/FORMER_GUIDE.md](former/FORMER_GUIDE.md)                             | Former 로봇 구동(SLAM/Nav2) 및 에이전트 연동                              |
 | [cloid/motion_list/MOTION_CATALOG.md](cloid/motion_list/MOTION_CATALOG.md)    | CLOi 모션 카탈로그(83개): 카테고리·id·선행 모션                            |

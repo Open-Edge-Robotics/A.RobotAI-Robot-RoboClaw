@@ -10,13 +10,17 @@ RoboClaw는 ROS 2 기반 로봇 에이전트 런타임입니다.
 | 패키지                | 책임                                       | 주 언어      |
 | --------------------- | ------------------------------------------ | ------------ |
 | `robo_claw_msgs`      | ROS msg/srv/action 및 proto 정의           | IDL/proto    |
+| `task_manager_msgs`   | 태스크 큐용 msg/srv 정의                   | IDL          |
+| `tofu_msgs`           | CLOiD/TOFU 플랫폼 연동 msg/srv 정의        | IDL          |
 | `robo_claw_core`      | 하드웨어 인터페이스, 제어 루프, 속도 제한  | C++          |
 | `robo_claw_agent`     | LLM, planner, skill, memory, safety policy | Python       |
 | `robo_claw_channel`   | HTTP/gRPC/메신저 채널                      | Python       |
+| `robo_claw_dashboard` | 웹 대시보드 노드(상태·지도·로그·협동 관측) | Python       |
 | `robo_claw_discovery` | ROS 그래프 및 peer 탐색                    | Python       |
 | `robo_claw_grpc`      | 외부 시스템용 RosGrpc 서비스               | Python       |
 | `robo_claw_bringup`   | launch/config 및 통합 실행                 | Python/ROS 2 |
 | `robo_claw_vision`    | 실시간 객체 인식                           | C++          |
+| `robo_claw_cli`       | 설정 동기화·시나리오 QA CLI(`rclaw`, Go)   | Go           |
 
 ## 2. 작업 기본 원칙
 

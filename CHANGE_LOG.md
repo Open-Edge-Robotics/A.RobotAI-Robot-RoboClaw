@@ -3,6 +3,20 @@
 ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신 항목이 위에 온다.
 각 항목은 커밋 히스토리와 실기 검증 리포트(`validation/talk/` 리포트)를 근거로 정리했다.
 
+## 2026-11-16 — 안전 가드 보강과 품질 게이트 복구
+
+- **Fixed**: 비상 정지가 매니퓰레이션 경로를 차단하지 않던 문제를 수정합니다. `MoveItManipulationRuntime`이 팔·그리퍼·헤드 명령을 백엔드로 넘기기 전에 `_emergency_stop_latched`/`is_emergency_stopped()`를 검사하고, 스킬 결과에 `stopped_by=emergency_stop`·`failure_reason=emergency_stop_active`를 싣습니다. 이전에는 `emergency_stop`이 `/cmd_vel` 정지와 Nav2 cancel만 수행해 래치 후에도 팔 명령이 발행됐습니다.
+- **Fixed**: 조인트 한계 검증을 fail-closed로 바꿉니다. 관절 값을 지정하는 명령(`move_joints`, 그리퍼 preset, 조인트 맵이 정의된 named pose)은 `ROBOT_LIMITS.json`이 없으면 실행하지 않고 `failure_reason=robot_limits_missing`으로 실패합니다(`ManipulationLimitsUnavailableError`). 근거 데이터 없이 통과시키던 이전 동작을 제거했습니다. MoveIt 측 named pose는 URDF/MoveIt 한계로 검증되므로 차단 대상이 아닙니다.
+- **Fixed**: 대시보드 `POST /api/scenarios/sync`의 권한을 `readonly`에서 `control`로 올립니다. 이 경로는 사용자가 입력한 호스트로 대시보드가 직접 HTTP 요청을 보내는 유일한 지점이었습니다. `config_server_allowlist` 파라미터로 허용 호스트를 고정할 수 있고, 링크로컬·클라우드 메타데이터 주소(`169.254.0.0/16`, `metadata.google.internal`, `fd00:ec2::254`)는 허용 목록과 무관하게 항상 거부합니다.
+- **Fixed**: Maestro 관제 중 자율협동 우회를 차단합니다. 루프가 매 사이클 `MAESTRO_ENABLED`를 재확인해 `reason=maestro_control_active`로 세션을 종료하고, `_send_to_peer`/`_execute_task`도 같은 검사를 거칩니다. 기존에는 시작 시점 검사만 있어 런타임에 관제가 켜지면 실행 중인 루프가 계속 협업했습니다.
+- **Fixed**: `coordinate_peer_task`의 `max_retries`(0~2)와 `timeout_sec`(0~300초)를 검증·상한 처리하고, `total_budget_sec`(기본 600초, 1~1800초) 전체 예산을 추가합니다. 이전에는 `int()`/`float()` 직접 변환이라 비정수 입력이 예외로 번지고 재시도 상한이 없었습니다.
+- **Fixed**: Maestro fleet connector의 무한 성장·무제한 대기를 제거합니다. `CommandJournal`에 행 상한(5000)과 insert 시 prune, `undelivered()` 상한(500)을 두고, 명령 deadline을 1~600초로 클램프(누락 시 60초), 동시 명령 상한(32, `emergency_stop`/`cancel_task`는 예외), reconnect 시도 상한(20)과 backoff 캡(30초), disconnect 대기 상한(30초)을 적용합니다.
+- **Changed**: `task lint`에 `ruff format --check src/`를 포함하고, 저장소 전체 Python 소스를 `ruff format`으로 정렬합니다(141개 파일, 포맷만 변경). `E501` ignore의 전제("line-length는 formatter가 담당")를 실제 게이트로 만족시키기 위함입니다. `task unit-test`는 `task preflight`를 먼저 실행해 빌드 산출물·proto 생성물 누락을 코드 오류로 오해하지 않도록 안내합니다.
+- **Changed**: `pyproject.toml` ↔ `Dockerfile` 역방향 의존성 검사를 `scripts/check_docker_deps.py`에 추가합니다. Dockerfile에 `pytest-asyncio`를 추가해 이미지 안에서 async 테스트가 수집 실패하지 않게 하고, `opencv-python`은 ROS `cv_bridge`/`python3-opencv` 제공 사실을 `PROJECT_ONLY`에 사유와 함께 등록합니다.
+- **Fixed**: `prompts.py`와 `SKILLS.former*.md`의 중복 강제 표현 3건을 정리해 프롬프트 톤 게이트(`check_prompt_tone.py`, 한도 10)를 다시 통과시킵니다. 기준 커밋에서 재현되던 `test_manipulation_grasp_place.py` 10개 실패는 메모리 fake의 `get_object_location` 시그니처(`include_objects`) 미반영이 원인이었으며 대역을 실제 API에 맞춰 해소했습니다.
+- **Removed**: 규칙 위반 문서를 정리합니다. 미구현 설계안 `docs/FUTURE_SYSTEM1_DECOMPOSED_TASK_ROUTING_PROPOSAL.md`, 중복 구조 문서 `docs/gemini/`, 생성물 `docs/TECHNICAL_DOCUMENT.pdf`·`docs/SYSTEM1_LAYA_REQUEST_FLOW_PRESENTATION_v1.pptx`를 삭제하고, `docs/NAVI_ISSUE.md`·`docs/SYSTEM1_LAYA_REQUEST_FLOW_ANALYSIS.md`를 README 상세 가이드 표에 등록합니다. `AGENTS.md` 패키지 표에 `robo_claw_dashboard`·`robo_claw_cli`·`tofu_msgs`·`task_manager_msgs`를 추가합니다.
+- **검증**: `ruff check`·`ruff format --check`·스킬 카탈로그·프롬프트 톤·Dockerfile 의존성·`go vet` 통과, `rclaw contract check` 3항목 통과. 단위 테스트 3137 passed/167 deselected(agent·channel·discovery·grpc·dashboard·bringup, `-m "not ros2 and not hardware"`). 선별 컬럼 빌드(`robo_claw_msgs`·`task_manager_msgs`·`tofu_msgs`·`robo_claw_core`·agent·channel·discovery·grpc·dashboard·bringup) 완료. 실기 로봇 명령·실제 Maestro 연결·대시보드 브라우저 확인은 미검증입니다.
+
 ## 2026-11-12 — CLOiD latched 지도 freshness 차단 수정
 
 - **Fixed**: `map_is_static=false` 갱신형 지도에 적용하던 10초 stamp freshness 상한이 latched(transient-local) 맵까지 차단해 CLOiD `/lio/grid_map`을 "수신 불가"로 실패시키던 문제를 수정합니다. CLOiD `grid_map_node`는 맵을 1회 발행한 뒤 stamp를 갱신하지 않으므로 정지 상태에서 stamp가 수 시간 과거로 남아 모든 지도 스킬이 timeout 됐습니다. latched 맵은 stamp와 관계없이 수용하고 freshness는 volatile 스트림에만 적용합니다.
