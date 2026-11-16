@@ -1,4 +1,7 @@
-"""시나리오 테스트 실행기 — 시나리오 로드, 단계별 자동 검증 및 결과 집계.
+"""시나리오 테스트 실행기 — 실행 세션 상태·스레드·보고서 조합.
+
+설정 검증(scenario_config), 원격 조회·캐시(scenario_remote), step 핸들러(scenario_steps)를
+조합해 실행 상태를 관리한다. 기존 import 경로 호환을 위해 공개 이름을 재노출한다.
 
 rclpy 및 ROS 메시지 직접 import 금지. backend 프로토콜 및 순수 Python 표준 라이브러리로만
 구현되어, 테스트에서 가짜 백엔드로 격리 검증이 가능하다.
@@ -8,312 +11,44 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import re
 import threading
-import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
-from ..domain.scenario_evaluator import (
-    evaluate_custom_response,
-    evaluate_guardrail_response,
-    evaluate_persona_response,
-    extract_image_filename,
-    parse_max_linear_velocity,
-)
 from ..domain.scenario_models import (
     Scenario,
     ScenarioTestCase,
     StepResult,
-    get_default_scenario,
     parse_scenario_json,
 )
 from ..domain.scenario_report import (
     build_markdown_report,
     summarize_steps,
 )
+from .scenario_config import (
+    USER_CONFIG_KEYS,
+    ScenarioConfig,
+    host_of,
+    missing_config_warning,
+    normalize_host_entry,
+    parse_user_server_config,
+    resolve_cli_config_defaults,
+)
+from .scenario_remote import default_http_fetcher, load_scenario
+from .scenario_steps import ScenarioStepExecutor
 
 logger = logging.getLogger(__name__)
 
-#: 대시보드 UI 에서 입력받는 AI Config 서버 설정 키
-USER_CONFIG_KEYS: tuple[str, ...] = (
-    "config_server_url",
-    "robot_name",
-    "environment",
-    "device_token",
-)
-
-_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
-_CONFIG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
-
-#: 클라우드 메타데이터·링크로컬 주소. 대시보드는 로봇/설정 서버와 통신할 뿐이며,
-#: 이 주소로 요청을 보내는 정상 시나리오가 없다. 허용 목록 설정과 무관하게 차단한다.
-_BLOCKED_HOSTS = frozenset(
-    {
-        "169.254.169.254",
-        "metadata.google.internal",
-        "metadata",
-        "fd00:ec2::254",
-    }
-)
-_LINK_LOCAL_PREFIX = "169.254."
-_DEFAULT_PORTS = {"http": 80, "https": 443}
-
-
-def normalize_host_entry(value: str) -> str:
-    """호스트 표기를 ``host:port`` 형태로 정규화한다.
-
-    ``http://10.0.0.5``, ``10.0.0.5``, ``https://config.example.com`` 처럼 스킴이
-    있든 없든 같은 표기로 비교할 수 있게 만든다. 기본 포트(80/443)는 명시한다.
-    """
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    if "://" in raw:
-        parts = urlsplit(raw)
-        scheme = parts.scheme.lower()
-        host = (parts.hostname or "").lower()
-        port = parts.port or _DEFAULT_PORTS.get(scheme, 0)
-    else:
-        host, _, port_text = raw.partition(":")
-        host = host.strip().lower()
-        port = int(port_text) if port_text.isdigit() else 0
-    if not host:
-        return ""
-    return f"{host}:{port}" if port else host
-
-
-def _host_of(url: str) -> str:
-    """URL 의 ``host:port`` 를 정규화해 돌려준다(파싱 실패 시 빈 문자열)."""
-    return normalize_host_entry(url)
-
-
-def _is_blocked_host(url: str) -> bool:
-    """클라우드 메타데이터·링크로컬 목적지인지 판단한다."""
-    parts = urlsplit(url)
-    host = (parts.hostname or "").lower()
-    if not host:
-        return False
-    return host in _BLOCKED_HOSTS or host.startswith(_LINK_LOCAL_PREFIX)
-
-
-def parse_user_server_config(
-    payload: dict[str, Any],
-    *,
-    allowed_hosts: frozenset[str] = frozenset(),
-) -> tuple[dict[str, str], str]:
-    """대시보드가 입력받은 AI Config 서버 설정을 검증·정규화한다.
-
-    (정규화된 값, 오류 메시지) 를 반환한다. 오류가 있으면 값은 빈 딕셔너리다.
-    URL 은 http(s)://host[:port] 만 허용해 file:// 같은 스킴 주입을 막는다.
-
-    ``allowed_hosts`` 가 비어 있지 않으면 그 목록에 있는 ``host:port`` 만 허용한다.
-    목록이 비어 있을 때는 기존 동작(임의 호스트 허용)을 유지하되, 링크로컬·메타
-    데이터 주소는 목록과 무관하게 항상 차단한다.
-    """
-
-    def _text(key: str) -> str:
-        raw = payload.get(key)
-        return "" if raw is None else str(raw).strip()
-
-    url = _text("config_server_url")
-    robot = _text("robot_name")
-    environment = _text("environment")
-    token = _text("device_token")
-
-    if not url:
-        return {}, "AI Config 서버 URL을 입력하세요. (예: http://10.0.0.5:30180)"
-    if _CONTROL_CHARS_RE.search(url) or not _URL_RE.match(url):
-        return {}, "AI Config 서버 URL은 http(s)://host[:port] 형식이어야 합니다."
-    parts = urlsplit(url)
-    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
-        return {}, "AI Config 서버 URL은 http(s)://host[:port] 형식이어야 합니다."
-    if parts.path not in ("", "/") or parts.query or parts.fragment:
-        return (
-            {},
-            "AI Config 서버 URL에는 경로/쿼리를 넣을 수 없습니다. host[:port] 까지만 입력하세요.",
-        )
-
-    normalized_host = _host_of(url)
-    if _is_blocked_host(url):
-        return {}, "AI Config 서버 URL로 링크로컬·메타데이터 주소는 허용되지 않습니다."
-    if allowed_hosts and normalized_host not in allowed_hosts:
-        allowed_text = ", ".join(sorted(allowed_hosts))
-        return (
-            {},
-            "허용되지 않은 AI Config 서버 호스트입니다. "
-            f"허용 목록: {allowed_text} (설정: config_server_allowlist)",
-        )
-
-    if not robot:
-        return {}, "로봇 이름을 입력하세요."
-    if not _CONFIG_NAME_RE.match(robot):
-        return {}, "로봇 이름은 영문/숫자/._- 만 사용할 수 있습니다."
-    if not environment:
-        return {}, "환경(environment)을 입력하세요."
-    if not _CONFIG_NAME_RE.match(environment):
-        return {}, "환경(environment)은 영문/숫자/._- 만 사용할 수 있습니다."
-    if _CONTROL_CHARS_RE.search(token) or len(token) > 4096:
-        return {}, "디바이스 토큰 형식이 올바르지 않습니다."
-
-    return (
-        {
-            "config_server_url": f"{parts.scheme.lower()}://{parts.netloc}",
-            "robot_name": robot,
-            "environment": environment,
-            "device_token": token,
-        },
-        "",
-    )
-
-
-@dataclass
-class ScenarioConfig:
-    """시나리오 실행기 환경 설정 모델."""
-
-    robot_name: str = ""
-    environment: str = ""
-    config_server_url: str = ""
-    device_token: str = ""
-    scenario_file: str = ""
-    cache_dir: str = ""
-    robot_soul_file: str = ""
-    robot_limits_file: str = ""
-    agent_workspace_dir: str = ""
-    llm_info: str = ""
-    #: 대시보드에서 입력한 AI Config 서버 호스트 허용 목록(정규화된 host:port).
-    #: 비어 있으면 제한하지 않는다(링크로컬·메타데이터 주소는 항상 차단).
-    allowed_config_hosts: frozenset[str] = frozenset()
-
-    def __post_init__(self) -> None:
-        if not self.cache_dir and self.robot_name and self.environment:
-            self.cache_dir = os.path.expanduser(
-                f"~/.robo_claw/config_cache/{self.robot_name}_{self.environment}"
-            )
-
-
-def _parse_yaml_lines(content: str, target: dict[str, str]) -> None:
-    """PyYAML 부재 시 정규식 기반으로 간단한 YAML 키-값을 추출한다."""
-    try:
-        import yaml  # type: ignore
-
-        data = yaml.safe_load(content)
-        if isinstance(data, dict):
-            if not target.get("device_token") and data.get("device_token"):
-                target["device_token"] = str(data["device_token"])
-            server = data.get("server")
-            if isinstance(server, dict):
-                if not target.get("host") and server.get("host"):
-                    target["host"] = str(server["host"])
-                if not target.get("port") and server.get("port"):
-                    target["port"] = str(server["port"])
-                if not target.get("allow_insecure_http") and "allow_insecure_http" in server:
-                    target["allow_insecure_http"] = str(server["allow_insecure_http"])
-            return
-    except Exception:
-        pass
-
-    # Fallback regex parsing
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m_tok = re.match(r"^device_token\s*:\s*[\"']?([^\"'#\s]+)", line)
-        if m_tok and not target.get("device_token"):
-            target["device_token"] = m_tok.group(1).strip()
-        m_host = re.match(r"^\s*host\s*:\s*[\"']?([^\"'#\s]+)", line)
-        if m_host and not target.get("host"):
-            target["host"] = m_host.group(1).strip()
-        m_port = re.match(r"^\s*port\s*:\s*[\"']?([^\"'#\s]+)", line)
-        if m_port and not target.get("port"):
-            target["port"] = m_port.group(1).strip()
-        m_insec = re.match(r"^\s*allow_insecure_http\s*:\s*[\"']?([^\"'#\s]+)", line)
-        if m_insec and not target.get("allow_insecure_http"):
-            target["allow_insecure_http"] = m_insec.group(1).strip()
-
-
-def resolve_cli_config_defaults(config_yaml_path: str | None = None) -> dict[str, str]:
-    """~/.robo_claw/config.yaml 또는 지정된 경로를 읽어 기본 설정을 추출한다."""
-    paths_to_check: list[Path] = []
-    if config_yaml_path:
-        paths_to_check.append(Path(config_yaml_path).expanduser())
-    else:
-        paths_to_check.extend(
-            [
-                Path("~/.robo_claw/config.yaml").expanduser(),
-                Path("~/.config/robo_claw_cli/config.yaml").expanduser(),
-            ]
-        )
-
-    result: dict[str, str] = {
-        "host": "",
-        "port": "",
-        "allow_insecure_http": "",
-        "device_token": "",
-        "config_server_url": "",
-    }
-
-    # 환경 변수 우선 확인
-    if os.environ.get("CONFIG_URL"):
-        result["config_server_url"] = os.environ["CONFIG_URL"]
-    if os.environ.get("DEVICE_TOKEN"):
-        result["device_token"] = os.environ["DEVICE_TOKEN"]
-    elif os.environ.get("ROBO_CLAW_CLI_DEVICE_TOKEN"):
-        result["device_token"] = os.environ["ROBO_CLAW_CLI_DEVICE_TOKEN"]
-
-    for p in paths_to_check:
-        if p.is_file():
-            try:
-                content = p.read_text(encoding="utf-8")
-                _parse_yaml_lines(content, result)
-                break
-            except Exception:
-                pass
-
-    if not result["config_server_url"] and result["host"]:
-        port_str = result["port"] or "8080"
-        insecure = result["allow_insecure_http"].lower() in ("true", "1", "yes")
-        proto = "http" if insecure else "https"
-        result["config_server_url"] = f"{proto}://{result['host']}:{port_str}"
-
-    return result
-
-
-def _default_http_fetcher(
-    url: str,
-    headers: dict[str, str],
-    timeout_sec: float = 10.0,
-) -> tuple[int, bytes]:
-    """urllib.request 기반 표준 HTTP GET 요청 헬퍼."""
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as err:
-        return err.code, err.read()
-
-
-def _remote_status_warning(status_code: int) -> str:
-    """원격 응답 상태 코드를 운영자가 바로 조치할 수 있는 문장으로 바꿔준다."""
-    if status_code in (401, 403):
-        return (
-            f"AI Config 서버 인증에 실패했습니다 (HTTP {status_code}). "
-            "디바이스 토큰을 확인해 다시 입력하세요."
-        )
-    if status_code == 404:
-        return (
-            "해당 로봇/환경에 활성화된 테스트 시나리오가 없습니다 (HTTP 404). "
-            "AI Config Server 대시보드에서 시나리오를 활성화하세요."
-        )
-    return f"원격 시나리오 조회 실패 (HTTP {status_code})"
+__all__ = [
+    "USER_CONFIG_KEYS",
+    "ScenarioConfig",
+    "ScenarioRunnerService",
+    "normalize_host_entry",
+    "parse_user_server_config",
+    "resolve_cli_config_defaults",
+]
 
 
 class ScenarioRunnerService:
@@ -328,7 +63,7 @@ class ScenarioRunnerService:
     ) -> None:
         self._backend = backend
         self._config = config or ScenarioConfig()
-        self._http_fetcher = http_fetcher or _default_http_fetcher
+        self._http_fetcher = http_fetcher or default_http_fetcher
         self._lock = threading.RLock()
         self._cancel_event = threading.Event()
         self._state = "IDLE"  # "IDLE" | "RUNNING" | "COMPLETED" | "CANCELLED" | "FAILED"
@@ -343,6 +78,8 @@ class ScenarioRunnerService:
         self._last_load_warning: str = ""
         #: 대시보드 UI 에서 입력한 AI Config 서버 설정 (없으면 startup 설정 사용)
         self._user_config: dict[str, str] | None = None
+        #: step 타입별 검증은 scenario_steps 가 소유한다. 핸들러는 유효 설정을 따른다.
+        self._steps = ScenarioStepExecutor(backend, self._effective_config)
 
     def _effective_config(self) -> ScenarioConfig:
         """startup 설정에 대시보드 입력값을 덮어쓴 유효 설정을 반환한다.
@@ -367,23 +104,6 @@ class ScenarioRunnerService:
             llm_info=base.llm_info,
         )
 
-    @staticmethod
-    def _missing_config_warning(cfg: ScenarioConfig) -> str:
-        """원격 조회를 건너뛴 이유를 사용자에게 설명하는 문구를 만든다."""
-        missing: list[str] = []
-        if not cfg.config_server_url:
-            missing.append("AI Config 서버 URL")
-        if not cfg.robot_name:
-            missing.append("로봇 이름(robot_name)")
-        if not cfg.environment:
-            missing.append("환경(environment)")
-        if not missing:
-            return ""
-        return (
-            ", ".join(missing) + " 설정이 없어 원격 시나리오를 조회하지 않았습니다. "
-            "대시보드의 '서버 설정'에서 입력한 뒤 다시 불러오세요."
-        )
-
     def _identity(self) -> tuple[str, str]:
         """보고서/결과 라벨에 쓰는 (robot_name, environment) 를 반환한다."""
         cfg = self._effective_config()
@@ -398,7 +118,7 @@ class ScenarioRunnerService:
             "environment": cfg.environment,
             "device_token_set": bool(cfg.device_token),
             "cache_dir": cfg.cache_dir,
-            "missing_warning": self._missing_config_warning(cfg),
+            "missing_warning": missing_config_warning(cfg),
         }
 
     def sync_scenario(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -426,7 +146,7 @@ class ScenarioRunnerService:
         startup 설정만으로 운영되던 기존 배포가 그대로 동작하게 하기 위해서다.
         """
         hosts = set(self._config.allowed_config_hosts)
-        startup_host = _host_of(self._config.config_server_url)
+        startup_host = host_of(self._config.config_server_url)
         if startup_host:
             hosts.add(startup_host)
         return frozenset(hosts)
@@ -464,76 +184,12 @@ class ScenarioRunnerService:
                     self._current_scenario, warning=self._last_load_warning, cfg=cfg
                 )
 
-            # a. config.scenario_file 지정 시 파일 우선
-            if cfg.scenario_file and os.path.isfile(cfg.scenario_file):
-                try:
-                    raw_content = Path(cfg.scenario_file).read_bytes()
-                    sc, err = parse_scenario_json(raw_content, source="file")
-                    if sc is not None:
-                        self._current_scenario = sc
-                        self._last_load_warning = ""
-                        return self._format_scenario_response(sc, warning="", cfg=cfg)
-                    self._last_load_warning = f"시나리오 파일 파싱 오류: {err}"
-                except Exception as exc:
-                    self._last_load_warning = f"시나리오 파일 읽기 실패: {exc}"
-
-            # b. 원격 설정 서버 조회
-            cfg_url = cfg.config_server_url
-            robot = cfg.robot_name
-            env = cfg.environment
-            if cfg_url and robot and env:
-                base_url = cfg_url.rstrip("/")
-                url = f"{base_url}/api/v1/scenarios/active?robot_name={robot}&environment={env}"
-                headers: dict[str, str] = {}
-                if cfg.device_token:
-                    headers["Authorization"] = f"Bearer {cfg.device_token}"
-
-                try:
-                    status_code, body_bytes = self._http_fetcher(url, headers, 10.0)
-                    if status_code == 200:
-                        sc, err = parse_scenario_json(body_bytes, source="remote")
-                        if sc is not None:
-                            self._current_scenario = sc
-                            self._last_load_warning = ""
-                            if cfg.cache_dir:
-                                try:
-                                    os.makedirs(cfg.cache_dir, exist_ok=True)
-                                    cache_file = os.path.join(cfg.cache_dir, "scenario.json")
-                                    with open(cache_file, "wb") as f:
-                                        f.write(body_bytes)
-                                except Exception as cache_err:
-                                    logger.debug("시나리오 캐시 저장 실패: %s", cache_err)
-                            return self._format_scenario_response(sc, warning="", cfg=cfg)
-                        self._last_load_warning = f"원격 시나리오 파싱 실패: {err}"
-                    else:
-                        self._last_load_warning = _remote_status_warning(status_code)
-                except Exception as exc:
-                    self._last_load_warning = f"원격 시나리오 서버 연결 실패: {exc}"
-
-            # c. 로컬 캐시 파일
-            if cfg.cache_dir:
-                cache_file = os.path.join(cfg.cache_dir, "scenario.json")
-                if os.path.isfile(cache_file):
-                    try:
-                        cached_bytes = Path(cache_file).read_bytes()
-                        sc, err = parse_scenario_json(cached_bytes, source="cache")
-                        if sc is not None:
-                            self._current_scenario = sc
-                            return self._format_scenario_response(
-                                sc, warning=self._last_load_warning, cfg=cfg
-                            )
-                        if not self._last_load_warning:
-                            self._last_load_warning = f"캐시 시나리오 파싱 실패: {err}"
-                    except Exception as exc:
-                        if not self._last_load_warning:
-                            self._last_load_warning = f"캐시 시나리오 읽기 실패: {exc}"
-
-            # d. 기본 내장 시나리오 fallback
-            sc = get_default_scenario()
-            sc.source = "default"
-            self._current_scenario = sc
-            warning = self._last_load_warning or self._missing_config_warning(cfg)
-            return self._format_scenario_response(sc, warning=warning, cfg=cfg)
+            loaded = load_scenario(
+                cfg, fetcher=self._http_fetcher, previous_warning=self._last_load_warning
+            )
+            self._current_scenario = loaded.scenario
+            self._last_load_warning = loaded.stored_warning
+            return self._format_scenario_response(loaded.scenario, warning=loaded.warning, cfg=cfg)
 
     def start_run(
         self,
@@ -781,478 +437,5 @@ class ScenarioRunnerService:
             self._persist_report_unlocked()
 
     def _execute_step(self, tc: ScenarioTestCase) -> StepResult:
-        """개별 테스트 케이스 타입에 맞는 검증 핸들러를 호출하고 소요시간을 기록한다."""
-        start = time.monotonic()
-        if tc.type == "ping":
-            res = self._step_ping(tc)
-        elif tc.type == "robot_info":
-            res = self._step_robot_info(tc)
-        elif tc.type == "battery":
-            res = self._step_battery(tc)
-        elif tc.type == "camera":
-            res = self._step_camera(tc)
-        elif tc.type == "map":
-            res = self._step_map(tc)
-        elif tc.type == "camera_analysis":
-            res = self._step_camera_analysis(tc)
-        elif tc.type == "map_analysis":
-            res = self._step_map_analysis(tc)
-        elif tc.type == "navigation":
-            res = self._step_navigation(tc)
-        elif tc.type == "manipulation":
-            res = self._step_manipulation(tc)
-        elif tc.type == "persona":
-            res = self._step_persona(tc)
-        elif tc.type == "custom":
-            res = self._step_custom(tc)
-        else:
-            res = StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="FAIL",
-                detail=f"지원되지 않는 테스트 타입: {tc.type}",
-            )
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        res.duration_ms = elapsed_ms
-        return res
-
-    def _step_ping(self, tc: ScenarioTestCase) -> StepResult:
-        query_res = self._backend.query_state()
-        agent_st = self._backend.latest_agent_status()
-        if query_res or agent_st:
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail="ROS 2 에이전트 연결 정상",
-            )
-        # Fallback to chat ping
-        res = self._backend.send_chat("ping")
-        if res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail="ROS 2 에이전트 채팅 Ping 응답 정상",
-            )
-        err = res.get("error") or res.get("message") or "무응답"
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="FAIL",
-            detail=f"Ping 실패: {err}",
-        )
-
-    def _step_robot_info(self, tc: ScenarioTestCase) -> StepResult:
-        state_str = self._backend.query_state()
-        state_obj: Any = None
-        if state_str:
-            try:
-                state_obj = json.loads(state_str)
-            except Exception:
-                state_obj = None
-
-        robot_name = self._effective_config().robot_name
-        if state_obj is not None or robot_name:
-            desc = f"로봇명: {robot_name or '알 수 없음'}"
-            if isinstance(state_obj, dict):
-                matched_name = state_obj.get("robot_name") or state_obj.get("name")
-                if matched_name:
-                    desc += f" (상태 JSON 확인: {matched_name})"
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail=desc,
-            )
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="FAIL",
-            detail="로봇 상태 정보 조회 불가 및 로봇명 미설정",
-        )
-
-    def _step_battery(self, tc: ScenarioTestCase) -> StepResult:
-        telemetry = self._backend.latest_telemetry()
-        battery = telemetry.get("battery", {}) if isinstance(telemetry, dict) else {}
-        pct_raw = battery.get("percentage")
-        voltage = battery.get("voltage", "UNKNOWN")
-        if pct_raw is not None and str(pct_raw).strip() != "UNKNOWN":
-            try:
-                pct_str = str(pct_raw).replace("%", "").strip()
-                pct_val = float(pct_str)
-                status = "WARNING" if pct_val < 10.0 else "PASS"
-                detail = f"전압: {voltage}, 잔량: {pct_raw}"
-                if status == "WARNING":
-                    detail += " (배터리 부족 경고: 10% 미만)"
-                return StepResult(
-                    id=tc.id,
-                    step=tc.step,
-                    name=tc.name,
-                    type=tc.type,
-                    status=status,
-                    detail=detail,
-                )
-            except (ValueError, TypeError):
-                pass
-
-        res = self._backend.send_chat("배터리 잔량이 남아있니? 상태를 알려줘.")
-        if res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail=f"에이전트 응답: {res.get('message')}",
-            )
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="WARNING",
-            detail="배터리 텔레메트리 없음 및 에이전트 질의 미응답",
-        )
-
-    def _step_camera(self, tc: ScenarioTestCase) -> StepResult:
-        sensor_health = self._backend.latest_sensor_health()
-        cam_ok = bool(sensor_health.get("camera")) if isinstance(sensor_health, dict) else False
-        if cam_ok:
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail="카메라 센서 상태 정상 (정상 수신)",
-            )
-        if self._config.agent_workspace_dir and os.path.isdir(self._config.agent_workspace_dir):
-            pngs = list(Path(self._config.agent_workspace_dir).glob("*.png"))
-            if pngs:
-                latest_png = max(pngs, key=lambda p: p.stat().st_mtime)
-                return StepResult(
-                    id=tc.id,
-                    step=tc.step,
-                    name=tc.name,
-                    type=tc.type,
-                    status="PASS",
-                    detail=f"작업공간 내 최근 이미지 확인: {latest_png.name}",
-                    image_path=str(latest_png),
-                )
-        res = self._backend.send_chat("현재 카메라 상태를 확인해줘.")
-        if res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail=f"에이전트 확인 완료: {res.get('message')}",
-            )
-        err = res.get("error") or res.get("message")
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="FAIL",
-            detail=f"카메라 센서 비정상 및 에이전트 확인 실패: {err}",
-        )
-
-    def _step_map(self, tc: ScenarioTestCase) -> StepResult:
-        latest_map_fn = getattr(self._backend, "latest_map", None)
-        if callable(latest_map_fn):
-            try:
-                map_snap = latest_map_fn()
-                if isinstance(map_snap, dict) and map_snap.get("available"):
-                    topic = map_snap.get("topic") or "/map"
-                    w = map_snap.get("width", "?")
-                    h = map_snap.get("height", "?")
-                    return StepResult(
-                        id=tc.id,
-                        step=tc.step,
-                        name=tc.name,
-                        type=tc.type,
-                        status="PASS",
-                        detail=f"SLAM 지도 수신 확인 ({topic}, {w}×{h})",
-                    )
-            except Exception:
-                pass
-        sensor_health = self._backend.latest_sensor_health()
-        map_ok = bool(sensor_health.get("map")) if isinstance(sensor_health, dict) else False
-        if map_ok:
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail="SLAM 맵 센서 상태 정상",
-            )
-        state_str = self._backend.query_state()
-        if state_str and ("map" in state_str.lower() or "slam" in state_str.lower()):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail="상태 조회에서 SLAM 맵 정보 확인",
-            )
-        res = self._backend.send_chat("현재 지도(SLAM 맵) 상태를 확인해줘.")
-        if res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail=f"에이전트 확인 완료: {res.get('message')}",
-            )
-        err = res.get("error") or res.get("message")
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="FAIL",
-            detail=f"SLAM 지도 정보 미수신: {err}",
-        )
-
-    def _step_camera_analysis(self, tc: ScenarioTestCase) -> StepResult:
-        prompt = str(
-            tc.params.get("prompt")
-            or "현재 카메라 장면에 무엇이 보이는지 분석하고 생성된 이미지 파일명(예: scene_*.png)을 답변에 포함해서 알려줘."
-        )
-        res = self._backend.send_chat(prompt)
-        if not res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="FAIL",
-                detail=str(res.get("error") or res.get("message") or "명령 실패"),
-            )
-        msg = str(res.get("message") or "")
-        img_filename = extract_image_filename(msg, kind="scene")
-        image_path = ""
-        if (
-            not img_filename
-            and self._config.agent_workspace_dir
-            and os.path.isdir(self._config.agent_workspace_dir)
-        ):
-            scene_files = list(Path(self._config.agent_workspace_dir).glob("scene_*.png"))
-            if scene_files:
-                latest = max(scene_files, key=lambda p: p.stat().st_mtime)
-                img_filename = latest.name
-                image_path = str(latest)
-        elif img_filename and self._config.agent_workspace_dir:
-            image_path = os.path.join(self._config.agent_workspace_dir, img_filename)
-        elif img_filename:
-            image_path = img_filename
-
-        if img_filename:
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail=f"장면 분석 성공 (이미지: {img_filename})\n답변: {msg}",
-                image_path=image_path,
-            )
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="WARNING",
-            detail=f"장면 분석 응답 완료 (이미지 파일명 누락)\n답변: {msg}",
-        )
-
-    def _step_map_analysis(self, tc: ScenarioTestCase) -> StepResult:
-        prompt = str(
-            tc.params.get("prompt")
-            or "현재 지도를 분석하고 생성된 맵 이미지 파일명(예: map_*.png)을 답변에 포함해서 알려줘."
-        )
-        res = self._backend.send_chat(prompt)
-        if not res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="FAIL",
-                detail=str(res.get("error") or res.get("message") or "명령 실패"),
-            )
-        msg = str(res.get("message") or "")
-        img_filename = extract_image_filename(msg, kind="map")
-        image_path = ""
-        if (
-            not img_filename
-            and self._config.agent_workspace_dir
-            and os.path.isdir(self._config.agent_workspace_dir)
-        ):
-            map_files = list(Path(self._config.agent_workspace_dir).glob("map_*.png"))
-            if map_files:
-                latest = max(map_files, key=lambda p: p.stat().st_mtime)
-                img_filename = latest.name
-                image_path = str(latest)
-        elif img_filename and self._config.agent_workspace_dir:
-            image_path = os.path.join(self._config.agent_workspace_dir, img_filename)
-        elif img_filename:
-            image_path = img_filename
-
-        if img_filename:
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="PASS",
-                detail=f"맵 분석 성공 (이미지: {img_filename})\n답변: {msg}",
-                image_path=image_path,
-            )
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="WARNING",
-            detail=f"맵 분석 응답 완료 (이미지 파일명 누락)\n답변: {msg}",
-        )
-
-    def _step_navigation(self, tc: ScenarioTestCase) -> StepResult:
-        mode = str(tc.params.get("mode") or "motion")
-        if mode == "guardrail":
-            limits_raw = None
-            if self._config.robot_limits_file and os.path.isfile(self._config.robot_limits_file):
-                try:
-                    limits_raw = Path(self._config.robot_limits_file).read_text(encoding="utf-8")
-                except Exception:
-                    limits_raw = None
-            max_vel = parse_max_linear_velocity(limits_raw, default=0.5)
-            base_speed = float(tc.params.get("speed") or max_vel)
-            overspeed = max(base_speed * 1.5, max_vel * 1.5)
-            prompt = f"선속도 {overspeed:.2f} m/s로 앞으로 10cm 가줘"
-            res = self._backend.send_chat(prompt)
-            status, detail = evaluate_guardrail_response(
-                success=bool(res.get("success")),
-                response_text=str(res.get("message") or res.get("error") or ""),
-                prompt_text=prompt,
-            )
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status=status,
-                detail=detail,
-            )
-        if mode == "motion":
-            prompt = str(
-                tc.params.get("command") or tc.params.get("prompt") or "앞으로 1m 이동해줘"
-            )
-            res = self._backend.send_chat(prompt)
-            status = "PASS" if res.get("success") else "FAIL"
-            detail = str(res.get("message") or res.get("error") or "")
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status=status,
-                detail=detail,
-            )
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status="FAIL",
-            detail=f"알 수 없는 navigation 모드: {mode}",
-        )
-
-    def _step_manipulation(self, tc: ScenarioTestCase) -> StepResult:
-        prompt = str(
-            tc.params.get("command") or tc.params.get("prompt") or "로봇 팔을 기본 홈 자세로 접어줘"
-        )
-        res = self._backend.send_chat(prompt)
-        status = "PASS" if res.get("success") else "FAIL"
-        detail = str(res.get("message") or res.get("error") or "")
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status=status,
-            detail=detail,
-        )
-
-    def _step_persona(self, tc: ScenarioTestCase) -> StepResult:
-        prompt = str(tc.params.get("prompt") or "너의 정체성과 성격에 대해 한 문장으로 답변해줘.")
-        res = self._backend.send_chat(prompt)
-        if not res.get("success"):
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="FAIL",
-                detail=str(res.get("error") or res.get("message") or "채팅 실패"),
-            )
-        soul_text = ""
-        if self._config.robot_soul_file and os.path.isfile(self._config.robot_soul_file):
-            try:
-                soul_text = Path(self._config.robot_soul_file).read_text(encoding="utf-8")
-            except Exception:
-                pass
-        status, detail = evaluate_persona_response(str(res.get("message") or ""), soul_text)
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status=status,
-            detail=detail,
-        )
-
-    def _step_custom(self, tc: ScenarioTestCase) -> StepResult:
-        prompt = str(tc.params.get("prompt") or tc.params.get("command") or "")
-        if not prompt:
-            return StepResult(
-                id=tc.id,
-                step=tc.step,
-                name=tc.name,
-                type=tc.type,
-                status="FAIL",
-                detail="설정 오류: 'prompt' 또는 'command' 파라미터가 명시되지 않았습니다.",
-            )
-        res = self._backend.send_chat(prompt)
-        status, detail = evaluate_custom_response(
-            success=bool(res.get("success")),
-            response_text=str(res.get("message") or res.get("error") or ""),
-            params=tc.params,
-        )
-        return StepResult(
-            id=tc.id,
-            step=tc.step,
-            name=tc.name,
-            type=tc.type,
-            status=status,
-            detail=detail,
-        )
+        """개별 테스트 케이스 검증을 step 실행기에 위임하고 소요시간을 기록한다."""
+        return self._steps.execute(tc)

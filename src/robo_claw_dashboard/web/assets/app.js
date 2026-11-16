@@ -57,16 +57,6 @@
     return tokens.control;
   }
 
-  function escapeHtml(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
   function authHeaders(token) {
     return token ? { [HEADER_TOKEN]: token } : {};
   }
@@ -106,16 +96,8 @@
     setText("agent-message", agent.message);
     setText("last-updated", snap.timestamp ? new Date(snap.timestamp).toLocaleTimeString() : "–");
     renderBattery(battery);
-    renderChips("sensor-health", Object.entries(snap.sensor_health || {}).map(([name, ok]) => ({
-      label: name,
-      ok: Boolean(ok),
-      text: ok ? "정상" : "미수신",
-    })));
-    renderChips("peers", (snap.peers || []).map((peer) => ({
-      label: peer.host ? peer.name + " (" + peer.host + ":" + peer.port + ")" : peer.name,
-      ok: Boolean(peer.connected),
-      text: peer.connected ? "연결됨" : "끊김",
-    })));
+    renderChips("sensor-health", RcSnapshotView.sensorChips(snap.sensor_health));
+    renderChips("peers", RcSnapshotView.peerChips(snap.peers));
 
     state.pose = localization.pose || null;
     renderPose();
@@ -125,45 +107,24 @@
     if (state.cooperation) state.cooperation.applyStatus(snap);
   }
 
-  const STATE_BADGE_VARIANTS = {
-    IDLE: "text-bg-success",
-    THINKING: "text-bg-primary",
-    EXECUTING: "text-bg-warning",
-    WAITING: "text-bg-secondary",
-    ERROR: "text-bg-danger",
-  };
-
   function renderStateBadge(value) {
     const badge = el("state-badge");
     if (!badge) return;
-    const stateName = String(value || "UNKNOWN");
-    badge.textContent = stateName === "UNKNOWN" ? "–" : stateName;
-    badge.className =
-      "badge rounded-pill " + (STATE_BADGE_VARIANTS[stateName] || "text-bg-secondary");
+    badge.textContent = RcSnapshotView.stateBadgeText(value);
+    badge.className = RcSnapshotView.stateBadgeClassName(value);
   }
 
   function renderBattery(battery) {
-    const raw = battery.percentage;
-    const percent = typeof raw === "number" ? raw * (raw <= 1 ? 100 : 1) : parseFloat(raw);
     const fill = el("battery-fill");
     if (fill) {
-      const value = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+      const value = RcSnapshotView.batteryFillPercent(battery.percentage);
       fill.style.width = value + "%";
       fill.classList.toggle("bg-success", value >= 25);
       fill.classList.toggle("bg-danger", value < 25);
     }
-    setText(
-      "battery",
-      Number.isFinite(percent) ? percent.toFixed(0) + "%" : raw == null ? "–" : String(raw)
-    );
-    setText(
-      "battery-voltage",
-      typeof battery.voltage === "number" ? battery.voltage.toFixed(2) + " V" : battery.voltage
-    );
-    setText(
-      "battery-charging",
-      battery.is_charging == null ? "–" : battery.is_charging ? "충전 중" : "방전"
-    );
+    setText("battery", RcSnapshotView.batteryText(battery.percentage));
+    setText("battery-voltage", RcSnapshotView.batteryVoltageText(battery.voltage));
+    setText("battery-charging", RcSnapshotView.chargingText(battery.is_charging));
   }
 
   function renderChips(id, entries) {
@@ -585,13 +546,6 @@
     }
   }
 
-  function formatConfigValue(value) {
-    if (value == null) return "–";
-    if (Array.isArray(value)) return value.join(", ");
-    if (typeof value === "boolean") return value ? "true" : "false";
-    return String(value);
-  }
-
   function renderConfigTable(id, rows) {
     const body = el(id);
     if (!body) return;
@@ -608,13 +562,13 @@
     }
     for (const row of rows) {
       const tr = document.createElement("tr");
-      tr.dataset.search = (row.name + " " + formatConfigValue(row.value)).toLowerCase();
+      tr.dataset.search = (row.name + " " + RcRenderUtils.formatConfigValue(row.value)).toLowerCase();
       if (row.source === "default") tr.classList.add("rc-default");
       const nameCell = document.createElement("td");
       nameCell.textContent = row.name;
       const valueCell = document.createElement("td");
       valueCell.className = row.secret ? "rc-secret" : "";
-      valueCell.textContent = formatConfigValue(row.value);
+      valueCell.textContent = RcRenderUtils.formatConfigValue(row.value);
       tr.append(nameCell, valueCell);
       body.appendChild(tr);
     }
@@ -755,7 +709,7 @@
     const config = readScenarioConfigInputs();
     saveScenarioConfig(config);
 
-    if (refresh && !isScenarioConfigComplete(config)) {
+    if (refresh && !RcScenarioView.isScenarioConfigComplete(config)) {
       setScenarioWarning("AI Config 서버 URL·로봇 이름·환경을 먼저 입력하세요. (서버 설정)");
       return;
     }
@@ -769,12 +723,7 @@
         // 디바이스 토큰이 본문에 실리므로 쿼리가 아닌 POST body 로만 전송한다.
         url = "/api/scenarios/sync";
         options.method = "POST";
-        options.body = JSON.stringify({
-          config_server_url: config.url,
-          robot_name: config.robot,
-          environment: config.environment,
-          device_token: config.token,
-        });
+        options.body = JSON.stringify(RcScenarioView.scenarioSyncBody(config));
       }
       const { ok, status, data } = await fetchJson(url, token, options);
       if (!ok) {
@@ -794,21 +743,11 @@
   function renderScenario(data) {
     state.currentScenario = data.scenario || data;
     const source = data.source || state.currentScenario.source || "기본 내장";
-    const sourceLabel =
-      {
-        remote: "AI Config 서버",
-        cache: "로컬 캐시",
-        file: "시나리오 파일",
-        default: "내장 기본값",
-        custom: "커스텀 JSON",
-      }[source] || source;
+    const sourceLabel = RcScenarioView.sourceLabel(source);
     const stamp = new Date().toLocaleTimeString("ko-KR", { hour12: false });
     setText("scenario-source", "(" + sourceLabel + " · " + stamp + ")");
-    setText(
-      "scenario-title",
-      state.currentScenario.title || state.currentScenario.name || "테스트 시나리오"
-    );
-    setText("scenario-desc", state.currentScenario.description || "등록된 설명이 없습니다.");
+    setText("scenario-title", RcScenarioView.scenarioTitle(state.currentScenario));
+    setText("scenario-desc", RcScenarioView.scenarioDescription(state.currentScenario));
     setScenarioWarning(data.warning || "");
     renderScenarioTable(state.currentScenario.test_cases || []);
   }
@@ -837,22 +776,8 @@
     };
   }
 
-  function isScenarioConfigComplete(config) {
-    return Boolean(config.url && config.robot && config.environment);
-  }
-
   function loadScenarioConfig() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(SCENARIO_CONFIG_KEY) || "{}");
-      return {
-        url: String(parsed.url || ""),
-        robot: String(parsed.robot || ""),
-        environment: String(parsed.environment || ""),
-        token: String(parsed.token || ""),
-      };
-    } catch (_err) {
-      return { url: "", robot: "", environment: "", token: "" };
-    }
+    return RcScenarioView.parseScenarioConfig(localStorage.getItem(SCENARIO_CONFIG_KEY) || "{}");
   }
 
   function saveScenarioConfig(config) {
@@ -889,8 +814,7 @@
 
     if (!testCases || !testCases.length) {
       const tr = document.createElement("tr");
-      tr.innerHTML =
-        '<td colspan="7" class="text-center text-body-secondary py-3">등록된 테스트 케이스가 없습니다.</td>';
+      tr.innerHTML = RcScenarioView.emptyScenarioRowHtml();
       tbody.appendChild(tr);
       return;
     }
@@ -902,32 +826,7 @@
       const tr = document.createElement("tr");
       tr.id = "tc-row-" + tc.id;
       tr.dataset.tcId = tc.id;
-
-      let isChecked = tc.enabled !== false;
-      if (tc.type === "navigation" && !runNav) isChecked = false;
-      if (tc.type === "manipulation" && !runManip) isChecked = false;
-
-      const stepNum = tc.step != null ? escapeHtml(tc.step) : String(idx + 1);
-      const safeName = escapeHtml(tc.name || tc.id);
-      const safeId = escapeHtml(tc.id);
-      const safeType = escapeHtml(tc.type || "custom");
-
-      tr.innerHTML = `
-        <td class="text-center">
-          <input type="checkbox" class="form-check-input tc-check" data-id="${safeId}" data-type="${safeType}" ${isChecked ? "checked" : ""}>
-        </td>
-        <td class="text-body-secondary">${stepNum}</td>
-        <td>
-          <div class="d-flex flex-column">
-            <span class="fw-medium">${safeName}</span>
-            <small class="text-body-secondary font-monospace">${safeId}</small>
-          </div>
-        </td>
-        <td><span class="badge text-bg-dark border font-monospace">${safeType}</span></td>
-        <td id="tc-status-${safeId}"><span class="badge text-bg-secondary">PENDING</span></td>
-        <td id="tc-duration-${safeId}" class="font-monospace text-body-secondary">–</td>
-        <td><div class="rc-tc-detail" id="tc-detail-${safeId}">–</div></td>
-      `;
+      tr.innerHTML = RcScenarioView.scenarioRowHtml(tc, idx, runNav, runManip);
       tbody.appendChild(tr);
     });
   }
@@ -971,54 +870,13 @@
 
     const statusBanner = el("scenario-run-status");
     if (statusBanner) {
-      let stateLabel = runState;
-      let badgeVariant = "text-bg-secondary";
-      if (runState === "RUNNING") {
-        stateLabel = "실행 중";
-        badgeVariant = "text-bg-primary";
-      } else if (runState === "COMPLETED") {
-        stateLabel = "완료";
-        badgeVariant = "text-bg-success";
-      } else if (runState === "CANCELLED") {
-        stateLabel = "중단됨";
-        badgeVariant = "text-bg-warning";
-      } else if (runState === "FAILED") {
-        stateLabel = "실패";
-        badgeVariant = "text-bg-danger";
-      } else if (runState === "IDLE") {
-        stateLabel = "대기 중";
-        badgeVariant = "text-bg-secondary";
-      }
-
-      const summary = data.summary || {};
-      const total = summary.total != null ? summary.total : data.total_steps || 0;
-      const pass = summary.pass || 0;
-      const fail = summary.fail || 0;
-      const warn = summary.warning != null ? summary.warning : summary.warn || 0;
-      const skip = summary.skip || 0;
-
-      statusBanner.innerHTML = `
-        <span class="badge ${badgeVariant}">${stateLabel}</span>
-        <span class="ms-2">
-          PASS: <strong>${pass}</strong> · FAIL: <strong>${fail}</strong> · WARN: <strong>${warn}</strong> · SKIP: <strong>${skip}</strong>
-          ${total ? ` (총 ${total}개)` : ""}
-        </span>
-      `;
+      statusBanner.innerHTML = RcScenarioView.statusBannerHtml(data);
     }
 
     const progressFill = document.querySelector("#scenario-progress-bar .progress-fill");
     const progressLabel = document.querySelector("#scenario-progress-bar .progress-label");
     if (progressFill && progressLabel) {
-      let percent = 0;
-      if (data.progress_percent != null) {
-        percent = Math.min(100, Math.max(0, Math.round(data.progress_percent)));
-      } else if (data.total_steps > 0) {
-        const finished =
-          (data.summary
-            ? data.summary.pass + data.summary.fail + (data.summary.warning || 0) + data.summary.skip
-            : data.current_step) || 0;
-        percent = Math.min(100, Math.max(0, Math.round((finished / data.total_steps) * 100)));
-      }
+      const percent = RcScenarioView.progressPercent(data);
       progressFill.style.width = percent + "%";
       progressLabel.textContent = percent + "%";
     }
@@ -1031,22 +889,15 @@
       const detailCell = el("tc-detail-" + res.id);
 
       if (statusCell) {
-        const s = (res.status || "PENDING").toUpperCase();
-        let badgeVariant = "text-bg-secondary";
-        if (s === "PASS") badgeVariant = "text-bg-success";
-        else if (s === "FAIL") badgeVariant = "text-bg-danger";
-        else if (s === "WARNING" || s === "WARN") badgeVariant = "text-bg-warning";
-        else if (s === "SKIP") badgeVariant = "text-bg-dark border";
-        else if (s === "RUNNING") badgeVariant = "text-bg-primary";
-        statusCell.innerHTML = `<span class="badge ${badgeVariant}">${escapeHtml(s)}</span>`;
+        statusCell.innerHTML = RcScenarioView.stepStatusHtml(res.status);
       }
 
       if (durationCell) {
-        durationCell.textContent = res.duration_ms != null ? res.duration_ms + " ms" : "–";
+        durationCell.textContent = RcScenarioView.durationText(res.duration_ms);
       }
 
       if (detailCell) {
-        detailCell.textContent = res.detail || "–";
+        detailCell.textContent = RcScenarioView.detailText(res.detail);
       }
     }
 
@@ -1090,7 +941,7 @@
   function setupScenarios() {
     const storedConfig = loadScenarioConfig();
     applyScenarioConfigToInputs(storedConfig);
-    if (!isScenarioConfigComplete(storedConfig)) toggleScenarioConfigPanel(true);
+    if (!RcScenarioView.isScenarioConfigComplete(storedConfig)) toggleScenarioConfigPanel(true);
 
     const configToggle = el("scenario-config-toggle");
     if (configToggle) {
@@ -1270,7 +1121,7 @@
     setupScenarios();
     // 저장된 서버 설정이 온전하면 첫 로드부터 원격 시나리오를 가져오고,
     // 아니면 내장 기본값을 보여준 뒤 설정 누락 사유를 경고로 안내한다.
-    loadScenario(isScenarioConfigComplete(readScenarioConfigInputs()));
+    loadScenario(RcScenarioView.isScenarioConfigComplete(readScenarioConfigInputs()));
     refreshScenarioStatus();
     startPolling();
     loadConfig().then(() => {

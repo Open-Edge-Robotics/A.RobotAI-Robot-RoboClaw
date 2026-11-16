@@ -195,7 +195,15 @@ sudo ufw status | grep 9090   # ufw 사용 시
 - `web/assets/map_geometry.js`: 월드(m)↔캔버스(px) 좌표 변환(순수 함수, `node`로 회귀 테스트)
 - `web/assets/logs.js`: 로그 패널(레벨 색상·시각·파일명·쿼리 생성 순수 함수 + 패널 배선, `node`로 회귀 테스트)
 - `web/assets/style.css`: Bootstrap 위에 얹는 최소 오버라이드(지도 캔버스, 설정 표 등)
-- `web/assets/app.js`: 외부 JS 의존성 없음(바닐라). Bootstrap JS 번들은 쓰지 않습니다.
+- `web/assets/render_utils.js`: 화면 표시 공용 순수 함수(`escapeHtml`, `formatConfigValue`)
+- `web/assets/snapshot_view.js`: 상태 배지·배터리·센서/피어 chip 포맷(순수 함수, `node`로 회귀 테스트)
+- `web/assets/scenario_view.js`: 시나리오 표 행/배너/진행률/스텝 셀 렌더(순수 함수, 이스케이프 적용, `node`로 회귀 테스트)
+- `web/assets/app.js`: DOM 배선과 패널 상태. 외부 JS 의존성 없음(바닐라), Bootstrap JS 번들은 쓰지 않습니다.
+  표시 모듈을 먼저 로드한 뒤 마지막에 로드합니다(`web/index.html` 순서).
+
+시나리오 실행기(`application/`)는 책임별로 나뉩니다. `scenario_config`(설정 검증·정규화) ·
+`scenario_remote`(원격 조회·캐시) · `scenario_steps`(step 핸들러) · `scenario_runner`(실행 세션
+상태·스레드·보고서). 기존 import 경로는 `scenario_runner` 가 공개 이름을 재노출해 유지합니다.
 
 레이아웃은 상단 고정 헤더(로봇/에이전트 ID, 상태 배지, 연결 상태, 갱신 시각)와 2단 본문으로
 구성됩니다. 넓은 화면에서는 지도(8/12)와 상태 카드(4/12)가 나란히 놓이고, 980 px 이하에서는

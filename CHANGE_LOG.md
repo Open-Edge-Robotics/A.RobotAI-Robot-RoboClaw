@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-16 — 대시보드 대형 파일 분리와 단일 검증 게이트
+
+- **Changed**: `application/scenario_runner.py`(1258줄)를 책임별 4개 모듈로 나눕니다. `scenario_config`(설정 검증·정규화·CLI 기본값), `scenario_remote`(원격 조회·캐시·상태 문구), `scenario_steps`(10개 step 핸들러), `scenario_runner`(실행 세션·스레드·보고서). `scenario_runner` 가 `ScenarioConfig`·`parse_user_server_config`·`normalize_host_entry`·`resolve_cli_config_defaults` 를 재노출해 기존 import 경로를 유지합니다.
+- **Changed**: `web/assets/app.js`(1283줄)에서 표시용 순수 함수를 `render_utils.js`·`snapshot_view.js`·`scenario_view.js` 로 분리하고 `web/index.html` 로드 순서를 갱신합니다. `app.js` 는 DOM 배선과 패널 상태만 담당합니다. 이전에는 정적 정규식 검사만 있던 시나리오 표/배너 렌더를 `node` 실행 테스트로 검증합니다.
+- **Fixed**: 상태 배너가 서버가 보낸 알 수 없는 `state` 문자열을 이스케이프 없이 HTML 로 넣던 문제를 수정합니다(`escapeHtml` 적용). 표 행 템플릿의 이스케이프 적용도 실행 테스트로 고정합니다.
+- **Added**: 커밋/CI 단일 게이트 `task verify`(preflight → lint → contract-check → unit-test)를 추가하고 AGENTS.md §5 에 기록합니다.
+- **검증**: 분리 전후 동작 동등성을 차등 검증했습니다(10개 설정 시나리오 × 조회·동기화·보고서·step 14종 → 응답 JSON·fetcher URL/헤더/타임아웃·캐시 파일 동일, JS 는 구/신 `app.js` DOMContentLoaded 출력 5030바이트 동일). `task verify` 통과(3232 passed/169 deselected, lint·contract-check 포함). `adapters/ros_adapter.py`(689줄)는 rclpy 그래프 의존이 커 동작 불변 증명 비용이 높아 분리하지 않았습니다.
+
 ## 2026-11-16 — 안전 가드 보강과 품질 게이트 복구
 
 - **Fixed**: 비상 정지가 매니퓰레이션 경로를 차단하지 않던 문제를 수정합니다. `MoveItManipulationRuntime`이 팔·그리퍼·헤드 명령을 백엔드로 넘기기 전에 `_emergency_stop_latched`/`is_emergency_stopped()`를 검사하고, 스킬 결과에 `stopped_by=emergency_stop`·`failure_reason=emergency_stop_active`를 싣습니다. 이전에는 `emergency_stop`이 `/cmd_vel` 정지와 Nav2 cancel만 수행해 래치 후에도 팔 명령이 발행됐습니다.
