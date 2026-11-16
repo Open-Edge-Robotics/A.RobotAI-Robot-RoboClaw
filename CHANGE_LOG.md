@@ -5,6 +5,27 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 프로세스 정리 로직이 도구·셸을 죽이던 문제와 런치 고아 노드 수정
+
+- **Fixed**: `rclaw run`/`rclaw sim`/`rclaw kill` 의 정리 로직이 RoboClaw 와 무관한 프로세스를 종료하던 문제를 수정합니다. 이전에는 `pkill -9 -f <노드명>` 으로 전체 명령줄 문자열을 매칭해 해당 문자열을 인자로 가진 셸·래퍼까지 죽였고, `lsof -t -i:<포트>` 로 찾은 점유 프로세스를 무조건 `kill -9` 했습니다. 후자는 50052 를 사용하는 pi-bot-connect(코딩 에이전트)를 즉시 종료시켜, 에이전트가 스스로 실행한 `rclaw sim` 이 자기 자신을 SIGKILL 로 죽이는 경로였습니다(SIGKILL 은 잡을 수 없어 크래시 로그·메시지 없이 세션이 tool call 도중 끊김).
+- **Changed**: 정리 대상 판별을 명령줄 부분 문자열이 아니라 실행 파일/인자 basename 비교로 바꿉니다(`kill_targets.go`). 노드 실행 파일 이름과 RoboClaw launch 파일만 대상으로 삼고, 셸·`pi`·`rclaw`·`ollama` 등 래퍼는 `neverKillExecutables` 로 제외하며, 자기 자신과 조상 프로세스는 항상 보호합니다. 포트 점유 프로세스는 RoboClaw 프로세스로 판별될 때만 종료하고, 아니면 경고만 남기고 그대로 둡니다. `rclaw kill` 대상에 `sim_node` 를 추가했습니다.
+- **Fixed**: 런치가 노드를 일부 기동한 뒤 예외로 종료하면 이미 시작된 노드가 고아 프로세스로 남던 문제를 수정합니다. `runLaunchProcess`(`launch_process.go`)가 런치를 별도 세션/프로세스 그룹에서 실행하고, 정상·비정상 종료 모두 SIGTERM → SIGKILL 로 그룹 전체를 회수합니다(`SIGINT`/`SIGTERM` 은 그룹으로 전달). 고아는 부모가 init 으로 바뀌어 PPid 추적으로 찾을 수 없으므로 그룹 단위 정리가 필요합니다.
+- **검증**: Go 단위 테스트 10개를 추가했습니다(노드/런치 파일 매칭 11개 케이스, 셸·에이전트 제외, self/조상 보호, 포트 점유자 필터, 런치 실패·성공 후 그룹 정리, 세션 분리, SIGTERM 무시 프로세스의 SIGKILL 승격). `task test-cli`(`go test ./...`)·`go vet ./...` 통과. 실제 `rclaw sim --engine stub` 재실행에서 50052 점유 pi(PID 333679)를 건너뛰고 계속 동작함을 확인했고, 런치 실패 후 고아 `sim_node` 0건을 확인했습니다. Gazebo 경로는 이 호스트에 미설치라 미검증입니다.
+- **Fixed**: `sim_engine:=stub` 이 동작하지 않던 런치 구조 결함 2건을 수정합니다. `robo_claw_sim.launch.py` 의 엔진 분기가 `sim_engine == "gz"` … `else`(classic) 였기 때문에 stub 에서도 `turtlebot3_gazebo`/`gazebo_ros` 를 찾다가 `package 'turtlebot3_gazebo' not found` 로 런치 전체가 종료되었습니다. 분기를 `elif sim_engine == "classic"` 으로 명시하고, 같은 파일이 `robo_claw.launch.py` include 에 넘기면서 선언하지 않던 `robot_description_file` 인자를 추가합니다(`launch configuration 'robot_description_file' does not exist` 로 죽던 지점).
+- **Fixed**: stub 엔진에서 하위 스택에 `use_sim_time:=true` 가 전달되어 모든 노드의 ROS 타이머가 멈추고, 30초 뒤 heartbeat watchdog 이 에이전트 노드를 종료하던 문제를 수정합니다. `sim_engine:=stub` 의 `sim_node` 는 실시간(20Hz)으로 동작하고 `/clock` 을 발행하지 않으므로 하위 스택에는 `use_sim_time:=false` 를 넘깁니다.
+- **Added**: 런치 구조 계약 테스트 4개(`test_sim_launch_structure.py`). 엔진 분기의 bare `else` 가 Gazebo Classic 자산을 요구하지 않는지(AST), `sim_engine:=stub` 으로 `launch_setup` 을 평가해도 Gazebo 런치가 섞이지 않는지, include 에 넘기는 `LaunchConfiguration` 이 부모 런치 파일에서 선언되는지(부모 컨텍스트에서 평가되므로), stub 이 `use_sim_time:=false` 를 전달하는지 검증합니다. `pytest src/robo_claw_bringup/tests` 107 passed. `rclaw sim --engine stub` 재 실행에서 `sim_node`·`agent_node`·`discovery_node`·`channel_node`·`object_detector_node` 5개 노드가 50초간 유지되고(heartbeat 종료 0, 노드 사망 0), 종료 후 고아 노드 0건을 확인했습니다. Gazebo(classic/gz) 경로는 이 호스트에 미설치라 미검증입니다.
+
+## 2026-11-16 — Gazebo 없는 전용 시뮬레이터 도입과 시뮬레이션 구조 결함 수정
+
+- **Added**: `robo_claw_sim` 패키지로 RoboClaw 전용 시뮬레이터를 추가합니다. 세계 모델·LaserScan/지도/검출 합성·시나리오 판정은 ROS 비의존 순수 파이썬으로, ROS 계층(노드·액션 서버)은 `nodes/` 아래로 분리합니다. `robo_claw_core`가 `ros2_control`을 쓰지 않고 `cmd_vel` 발행 + `/joint_states` 구독만 하므로 물리 엔진 없이 폐루프 검증이 가능합니다. `/odom`, `/scan`, `/imu`, `/map`(TRANSIENT_LOCAL), `/battery_state`, `/joint_states`, `/amcl_pose`, `/detections` 발행과 `/navigate_to_pose`·`/spin`·`/follow_waypoints` 액션 서버를 제공하며, `map`→`odom`→`base_link` TF로 위치추정을 대체합니다.
+- **Added**: 시나리오 YAML 스키마(`world`/`objects`/`goals`/`expect`/`injections`)와 판정 모듈(`scenario.evaluate`). 객체의 `class_id`가 검출 정답으로 쓰이고, `scan_drop`·`imu_drop`·`battery_drain`·`nav_reject`·`nav_abort` 실패 주입을 지원합니다. `task sim-test`가 `navigate_basic` 시나리오를 실행합니다.
+- **Added**: `sim_engine:=stub` 런치 분기. Gazebo 없이 `robo_claw_sim` 노드만으로 전체 스택을 기동하며, `run_core:=true`로 `robo_claw_core`까지 포함할 수 있습니다. `robo_claw_bringup`이 `robo_claw_sim`을 `exec_depend`로 선언합니다.
+- **Fixed**: jazzy에서 `--nav2`/`--slam`이 무동작이던 문제를 수정합니다. `turtlebot4_gz.launch.py`가 선언한 인자는 `namespace`/`rviz`/`world`/`model`/pose 뿐이어서 `nav2`·`slam`·`localization`·`map`·`params_file`이 launch 단계에서 조용히 무시되었습니다. `turtlebot4_navigation`의 `localization`/`slam`/`nav2` 런치를 직접 include하도록 바꾸고, `nav2_params_gz.yaml`의 `robot_model_type`을 jazzy 플러그인 이름(`nav2_amcl::DifferentialMotionModel`)으로 고칩니다.
+- **Fixed**: `rclaw sim`이 `sim_engine`을 전달하지 않아 launch 기본값(`classic`)이 적용되고, gazebo_ros가 없는 jazzy 호스트에서 즉사하던 문제를 수정합니다. `DetectRosDistro`/`SimEngineForDistro` 헬퍼와 `BuildSimArgs`가 같은 규칙을 사용하며, 사용자가 `sim_engine:=`을 직접 주면 덮어쓰지 않습니다.
+- **Fixed**: 진입점별 ROS 배포판 감지 순서가 반대이던 문제(`sim/run_sim.sh`는 jazzy 우선, `run_in_ros_env.sh`는 humble 우선)를 humble 우선으로 통일합니다. `sim/jazzy/env.sh`의 존재하지 않는 `GZ_SIM_RESOURCE_PATH`(install 경로에 models 디렉터리가 없음)와 선행 `:` 로 CWD가 리소스 경로에 섞이던 문제도 제거합니다. 매 실행 `~/.gz/sim/`을 삭제하던 동작은 `RC_SIM_RESET_GZ_CACHE=1` 옵트인으로 바꿉니다.
+- **Added**: `scripts/check_sim_deps.sh`(+`task sim-check`). Gazebo 패키지 이름이 배포판마다 달라(`gazebo_ros` vs `ros_gz_sim`) `package.xml`에 한쪽만 선언하면 다른 배포판에서 rosdep 해석이 실패하므로, 현재 배포판 기준 누락 패키지와 설치 명령을 출력합니다.
+- **검증**: 신규 테스트 41개(세계 모델·제어기·센서 합성·시나리오 판정·ROS 폐루프)와 런치 구조 계약 테스트 7개. `task sim-test` 통과(목표 2개 도달, 충돌 0, 11.8초). Gazebo/humble 경로는 이 호스트에 미설치라 미검증입니다.
+
 ## 2026-11-16 — JS 테스트 침묵 skip 제거와 이미지 도구 정책 명시
 
 - **Fixed**: 대시보드 표시 로직 테스트가 `node` 부재 시 조용히 skip 되던 문제를 보완합니다. 런타임 Docker 이미지에는 node 가 없어 34개 JS 테스트가 skip 되는데, 출력만 보면 "통과" 로 읽힙니다. 공용 가드(`tests/_js_node.py`)를 추가해 `RC_REQUIRE_JS_TESTS` 가 켜져 있으면 skip 대신 실패하도록 했고, `task unit-test`·`task verify` 가 이 값을 켜고 실행합니다.

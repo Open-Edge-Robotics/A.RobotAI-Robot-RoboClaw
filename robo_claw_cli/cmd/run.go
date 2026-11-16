@@ -230,7 +230,9 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	cmd.Stderr = consoleErr
 	cmd.Stdin = os.Stdin
 
-	return cmd.Run()
+	// 런치를 별도 프로세스 그룹에서 실행하고, 종료 시 그룹 전체를 정리합니다.
+	// 런치가 중간에 실패해도 이미 기동된 노드가 고아로 남지 않습니다.
+	return runLaunchProcess(cmd)
 }
 
 // RunCmd 로컬 설정을 기반으로 RoboClaw 에이전트를 기동합니다.

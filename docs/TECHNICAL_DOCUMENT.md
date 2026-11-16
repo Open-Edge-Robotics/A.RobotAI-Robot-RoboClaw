@@ -524,6 +524,7 @@ CLI 적용 설정 로그는 `~/.robo_claw/config_cache/<robot>_<env>/logs/`에 �
 | 장소가 사라졌습니다. | 실제 구조화 DB 경로·namespace·volume·레거시 이관 여부를 확인합니다. |
 | 지도·위치가 다릅니다. | map topic, frame, TF, static/freshness, DDS와 로봇 격리를 확인합니다. |
 | Maestro에 연결하지 않습니다. | 활성 스위치·use_grpc, IP·50053, Robot ID·mTLS를 확인합니다. |
+| `rclaw run`/`sim`이 포트 바인딩 문제로 기동하지 않습니다. | 50051·50052 점유 프로세스를 확인합니다. CLI는 RoboClaw 프로세스로 판별된 점유자만 종료하고, 다른 도구(예: 같은 호스트의 개발용 gRPC 서버)는 경고만 남기고 그대로 둡니다. |
 | timeout 후 움직입니다. | 재전송을 중단하고 action cancel·로컬 stop·현장 물리 상태를 확인합니다. |
 | 팔 명령을 수락했지만 움직이지 않습니다. | 제어 gate·드라이버·관절 피드백·limits·하드웨어 오류를 확인합니다. |
 
