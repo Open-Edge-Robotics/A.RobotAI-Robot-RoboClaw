@@ -133,7 +133,7 @@ class AgentNode(Node, ExecutionMixin):
             self.get_logger().warning(
                 "peer_message_token 이 설정되지 않아 동료 메시지 출처를 검증하지 않습니다. "
                 "여러 로봇이 같은 DDS 도메인을 쓰면 다른 노드가 peer_name 을 신고해 "
-                "협동 인박스에 메시지를 넣을 수 있습니다(RC_PEER_MESSAGE_TOKEN)."
+                "협동 인박스에 메시지를 넣을 수 있습니다(GRPC_PEER_TOKEN)."
             )
 
         # strict_config 모드: 필수 설정 파일이 지정되었으나 로드 실패한 경우 기동 중단

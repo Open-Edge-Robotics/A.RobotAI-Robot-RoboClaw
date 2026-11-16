@@ -282,8 +282,9 @@ def declare_agent_parameters(node) -> None:
 
     # 동료 메시지 인증 — channel 노드의 peer_message_token 과 같은 값이어야 한다.
     # 같은 DDS 도메인의 다른 노드가 peer_name 을 신고해 협동 인박스에 메시지를 넣는
-    # 것을 막는다. 빈 값이면 검증을 강제하지 않는다(하위 호환).
-    node.declare_parameter("peer_message_token", os.environ.get("RC_PEER_MESSAGE_TOKEN", ""))
+    # 것을 막는다. 토큰을 늘리지 않도록 기존 gRPC peer 토큰(GRPC_PEER_TOKEN)을 그대로
+    # 쓰고, 필요하면 launch 에서 이 파라미터로 덮어쓴다. 빈 값이면 검증하지 않는다.
+    node.declare_parameter("peer_message_token", os.environ.get("GRPC_PEER_TOKEN", ""))
     # peer별 원격 스킬 스코프 {"robot-b": ["navigate_to", ...]}. 전역 allowlist 와
     # 교집합으로 적용되므로 스코프가 권한을 넓힐 수 없다.
     node.declare_parameter("remote_allowed_skills_by_peer_json", "{}")

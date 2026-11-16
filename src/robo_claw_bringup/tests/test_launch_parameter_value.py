@@ -143,3 +143,24 @@ def test_json_params_reach_nodes_as_parseable_raw_strings(payload: str) -> None:
         value = params[node][key]
         assert isinstance(value, str), (node, key, type(value))
         assert json.loads(value) == json.loads(payload)
+
+
+@pytest.mark.parametrize("token", _HOSTILE_TOKENS)
+def test_peer_message_token_reuses_grpc_peer_token_arg(token: str) -> None:
+    """에이전트의 PeerMessage 토큰은 gRPC peer 토큰과 같은 launch 인자를 쓴다.
+
+    토큰을 하나로 유지해야 다른 팀과 협업할 때 배포·회전 관리가 단순해진다.
+    launch 가 이 값을 전달하지 않으면 호스트(rclaw launch) 모드에서 채널만 토큰을
+    갖고 에이전트는 검증을 켜지 못해, 검증 여부가 실행 방식에 따라 달라진다.
+    """
+    params = _run_launch(
+        {
+            "use_channel": "true",
+            "enable_grpc": "true",
+            "robot_config": "former",
+            "grpc_peer_token": token,
+        }
+    )
+
+    assert params["agent"]["peer_message_token"] == token
+    assert isinstance(params["agent"]["peer_message_token"], str)

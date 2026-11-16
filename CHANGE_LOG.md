@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-16 — 동료 메시지 출처 인증과 pose 자세 검증
+
+- **Fixed**: `PeerMessage` ROS 서비스에 출처 인증을 추가합니다. gRPC 계층은 peer 토큰을 검증하지만 이 로컬 ROS 서비스는 검증을 우회해, 같은 DDS 도메인의 다른 노드가 임의의 `peer_name` 을 신고해 협동 인박스에 메시지를 넣을 수 있었습니다. `PeerMessage.srv` 에 `auth_token` 을 추가하고 채널 노드가 주입하면, 에이전트가 SHA-256 다이제스트 상수 시간 비교로 검증합니다. 불일치·누락 메시지는 인박스에 넣지 않고 저널에 `reason=peer_token_missing|peer_token_mismatch` 로 남깁니다.
+- **Changed**: 인증 토큰은 **기존 `GRPC_PEER_TOKEN` 을 그대로 사용**합니다. 토큰을 늘리면 다른 팀과 협업할 때 배포·회전 관리가 어려워지므로 별도 env 를 만들지 않았습니다. 내부 경로에만 다른 값을 쓰려면 launch 에서 `peer_message_token` 파라미터로 덮어씁니다(기본값 = `GRPC_PEER_TOKEN`). 토큰이 없으면 기동 시 경고를 남기고 검증하지 않습니다(하위 호환).
+- **Added**: peer별 원격 스킬 스코프 `remote_allowed_skills_by_peer_json`. 전역 원격 allowlist 와의 교집합만 허용하므로 스코프가 권한을 넓힐 수 없고, 빈 목록(`[]`)이면 해당 peer 는 어떤 스킬도 위임할 수 없습니다.
+- **Fixed**: AGX pose 도달 판정이 위치만 비교해 자세가 크게 틀려도 "도달"로 보고하던 문제를 보완합니다. 자세 오차를 `orientation_error_rad` 로 보고하고, `manipulation_agx_pose_orientation_tolerance_rad`(기본 0)를 설정하면 자세도 도달 조건에 포함합니다. 위치만 확인한 이동은 완료 메시지에 `자세 오차 …, 미검증`을 덧붙입니다.
+- **Fixed**: `arm_pose`·`move_joints`·`move_pose`·`open/close_gripper`·`head_pan_tilt` 실패에 `failed_stage`·`partial_execution`·`executed_steps` 를 추가해 `grasp`/`place` 와 보고 형식을 맞추고, 드라이버의 예상 밖 예외를 스킬 경계에서 구조화된 실패로 변환합니다.
+- **검증**: 신규 테스트 34개(peer 인증·스코프 18, 토큰 출처 3, pose 자세 7, 실패 보고 3, 그 외 3). `task verify` 통과(3232 passed). 재빌드가 필요한 인터페이스 변경(`PeerMessage.srv` 포함)입니다. 실제 다중 로봇 환경·실기 로봇 명령은 미검증입니다.
+
 ## 2026-11-16 — 대시보드 대형 파일 분리와 단일 검증 게이트
 
 - **Changed**: `application/scenario_runner.py`(1258줄)를 책임별 4개 모듈로 나눕니다. `scenario_config`(설정 검증·정규화·CLI 기본값), `scenario_remote`(원격 조회·캐시·상태 문구), `scenario_steps`(10개 step 핸들러), `scenario_runner`(실행 세션·스레드·보고서). `scenario_runner` 가 `ScenarioConfig`·`parse_user_server_config`·`normalize_host_entry`·`resolve_cli_config_defaults` 를 재노출해 기존 import 경로를 유지합니다.

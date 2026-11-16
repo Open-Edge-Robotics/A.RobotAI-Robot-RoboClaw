@@ -51,18 +51,21 @@ GRPC_TARGET_PORT=50052
 
 # 1:N (여러 동료 로봇) 연결 — 설정되어 있으면 위 1:1 설정보다 우선 적용
 GRPC_TARGET_PEERS_JSON=[{"host":"192.168.1.10","port":50052,"agent_name":"butler","auth_token":"butler-to-this-robot-token","description":"집게 팔 장착 매니퓰레이터 로봇","role":"manipulator"},{"host":"192.168.1.11","port":50052,"agent_name":"former","auth_token":"former-to-this-robot-token","description":"이동형 카트 로봇","role":"agv"}]
-# 모든 로봇에서 동일한 값을 사용해야 하는 gRPC peer 인증 토큰
+# 모든 로봇에서 동일한 값을 사용해야 하는 gRPC peer 인증 토큰.
+# 로봇 내부 경로(채널→에이전트 PeerMessage)의 출처 검증에도 함께 쓰인다.
 GRPC_PEER_TOKEN=교체할_랜덤_토큰
-
-# 에이전트<->채널 간 PeerMessage 공유 토큰 (같은 로봇의 두 노드가 같은 값 사용)
-RC_PEER_MESSAGE_TOKEN=교체할_랜덤_토큰
 ```
 
-> `RC_PEER_MESSAGE_TOKEN`은 gRPC 인증과 별개로 **로봇 내부 경로**를 보호합니다. 협동 메시지는
-> 채널 노드가 `robo_claw_msgs/srv/PeerMessage` 로 로컬 에이전트에 전달하는데, 이 ROS 서비스는
-> 같은 DDS 도메인의 다른 노드가 직접 호출할 수 있습니다. 토큰을 설정하면 에이전트가
-> `PeerMessage.auth_token` 을 상수 시간 비교로 검증하고, 불일치·누락 메시지는 인박스에 넣지
-> 않고 거부합니다. 토큰이 없으면 기동 시 경고를 남기고 검증하지 않습니다(하위 호환).
+> 같은 `GRPC_PEER_TOKEN`이 **로봇 내부 경로**도 보호합니다. 협동 메시지는 채널 노드가
+> `robo_claw_msgs/srv/PeerMessage` 로 로컬 에이전트에 전달하는데, 이 ROS 서비스는 같은 DDS
+> 도메인의 다른 노드가 직접 호출할 수 있습니다. 채널 노드가 검증된 출처를 증명하도록
+> `PeerMessage.auth_token` 에 같은 토큰을 실어 보내고, 에이전트가 상수 시간 비교로 확인합니다.
+> 불일치·누락 메시지는 인박스에 넣지 않고 거부하며, 토큰이 없으면 기동 시 경고를 남기고
+> 검증하지 않습니다(하위 호환).
+>
+> 토큰을 따로 만들지 않는 이유는 배포·회전 관리 때문입니다. 다른 팀과 협업할 때 변수를 하나로
+> 유지하려면 `GRPC_PEER_TOKEN`만 설정하세요. 내부 경로에만 다른 값을 쓰고 싶으면 launch 에서
+> `peer_message_token` 파라미터로 덮어쓸 수 있습니다(기본값 = `GRPC_PEER_TOKEN`).
 >
 > peer별 원격 스킬 권한은 `remote_allowed_skills_by_peer_json` 으로 좁힙니다.
 > `{"cloid1": ["navigate_to", "say"]}` 처럼 설정하면 그 peer 는 전역 원격 allowlist 와의

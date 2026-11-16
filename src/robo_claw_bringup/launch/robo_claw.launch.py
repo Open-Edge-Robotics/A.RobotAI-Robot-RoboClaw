@@ -377,6 +377,11 @@ def _launch_setup(context, *args, **kwargs):
         {
             "use_sim_time": LaunchConfiguration("use_sim_time"),
             "agent_id": ParameterValue(LaunchConfiguration("agent_id"), value_type=str),
+            # 채널→에이전트 PeerMessage 출처 검증 토큰. 토큰을 늘리지 않도록
+            # gRPC peer 토큰과 같은 launch 인자를 그대로 전달한다.
+            "peer_message_token": ParameterValue(
+                LaunchConfiguration("grpc_peer_token"), value_type=str
+            ),
             "llm_provider": llm_provider,
             "llm_model": llm_model,
             "compact_skill_prompt": LaunchConfiguration("compact_skill_prompt"),

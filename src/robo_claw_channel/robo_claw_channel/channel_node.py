@@ -82,7 +82,8 @@ class ChannelNode(Node):
         self.declare_parameter("grpc_peer_token", "")
         # 로컬 에이전트 PeerMessage 서비스로 전달할 채널-에이전트 공유 토큰.
         # 같은 DDS 도메인의 다른 노드가 peer_name 을 신고해 인박스에 넣는 것을 막는다.
-        self.declare_parameter("peer_message_token", os.environ.get("RC_PEER_MESSAGE_TOKEN", ""))
+        # 토큰을 늘리지 않도록 기존 gRPC peer 토큰(GRPC_PEER_TOKEN)을 그대로 쓴다.
+        self.declare_parameter("peer_message_token", os.environ.get("GRPC_PEER_TOKEN", ""))
         self.declare_parameter("grpc_peer_tokens_json", "{}")
         self.declare_parameter("grpc_max_file_bytes", DEFAULT_MAX_FILE_BYTES)
         self.declare_parameter("grpc_dedup_path", DEFAULT_DEDUP_PATH)
@@ -112,7 +113,8 @@ class ChannelNode(Node):
         port = param_int(self, "http_port")
         grpc_port = param_int(self, "grpc_port")
         grpc_peer_token = param_string(self, "grpc_peer_token")
-        peer_message_token = param_string(self, "peer_message_token")
+        # 토큰을 하나로 유지한다: 전용 파라미터가 비어 있으면 gRPC peer 토큰을 쓴다.
+        peer_message_token = param_string(self, "peer_message_token") or grpc_peer_token
         grpc_peer_tokens_json = param_string(self, "grpc_peer_tokens_json")
         grpc_max_file_bytes = int(self.get_parameter("grpc_max_file_bytes").value)
         grpc_dedup_path = param_string(self, "grpc_dedup_path")
