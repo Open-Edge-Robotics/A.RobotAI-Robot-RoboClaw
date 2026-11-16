@@ -5,7 +5,12 @@ from typing import Any
 
 from .backend import MoveItPyBackend
 from .config import load_manipulation_config
-from .exceptions import ManipulationConfigError, ManipulationContactError
+from .exceptions import (
+    ManipulationConfigError,
+    ManipulationContactError,
+    ManipulationEmergencyStopError,
+    ManipulationLimitsUnavailableError,
+)
 from .types import ManipulationBackend, PoseGoal
 
 logger = logging.getLogger(__name__)
@@ -49,9 +54,7 @@ def _motion_payload(backend: Any) -> dict[str, Any]:
 class MoveItManipulationRuntime:
     """manipulation skill에서 사용하는 공통 런타임"""
 
-    def __init__(
-        self, node: Any, backend: ManipulationBackend | None = None
-    ) -> None:
+    def __init__(self, node: Any, backend: ManipulationBackend | None = None) -> None:
         self._node = node
         self.config = load_manipulation_config(node)
         self._backend = backend
@@ -76,6 +79,37 @@ class MoveItManipulationRuntime:
 
         return self._backend
 
+    def _assert_not_estopped(self) -> None:
+        """비상 정지 래치 상태면 백엔드 dispatch 전에 명령을 거부한다.
+
+        AGENTS.md §8: emergency stop 은 모든 실행 경로보다 우선한다. 주행 경로는
+        ``nav_safety`` 가 같은 속성을 검사하지만, 팔/그리퍼 명령은 이 런타임을
+        유일한 관문으로 삼아 동일한 규칙을 강제한다.
+
+        Raises:
+            ManipulationEmergencyStopError: 래치가 걸려 있는 경우
+        """
+        node = self._node
+        if node is None:
+            return
+
+        latched = bool(
+            getattr(node, "_emergency_stop_latched", False)
+            or getattr(node, "_emergency_stopped", False)
+        )
+        checker = getattr(node, "is_emergency_stopped", None)
+        if not latched and callable(checker):
+            try:
+                latched = bool(checker())
+            except Exception as exc:  # noqa: BLE001 - 노드 미구현/오류는 무시하고 계속 검사
+                logger.warning("is_emergency_stopped() 확인 실패: %s", exc)
+
+        if latched:
+            raise ManipulationEmergencyStopError(
+                "비상 정지(Emergency Stop) 래치 상태에서는 팔/그리퍼를 움직일 수 없습니다. "
+                "현장 안전 확인 후 reset_emergency_stop 으로 래치를 해제하고 다시 시도하세요."
+            )
+
     def _arm_group(self, group_name: str | None) -> str:
         resolved = str(group_name or self.config.arm_group).strip()
         if not resolved:
@@ -91,12 +125,12 @@ class MoveItManipulationRuntime:
     def move_to_named_pose(
         self, pose_name: str, *, group_name: str | None = None
     ) -> dict[str, Any]:
+        self._assert_not_estopped()
+
         if not str(pose_name).strip():
             raise ManipulationConfigError("pose_name 이 비어 있습니다.")
 
-        target_name = self.config.named_poses.get(
-            str(pose_name).strip(), str(pose_name).strip()
-        )
+        target_name = self.config.named_poses.get(str(pose_name).strip(), str(pose_name).strip())
         joint_map = self.config.named_pose_joint_values.get(target_name)
         if joint_map is not None:
             self._validate_joint_limits(joint_map, f"named pose '{target_name}'")
@@ -117,6 +151,7 @@ class MoveItManipulationRuntime:
             for name, value in joint_values.items()
             if str(name).strip()
         }
+        self._assert_not_estopped()
         if not normalized:
             raise ManipulationConfigError("joint target 이 비어 있습니다.")
 
@@ -138,6 +173,8 @@ class MoveItManipulationRuntime:
         end_effector_link: str = "",
         cartesian: bool = False,
     ) -> dict[str, Any]:
+        self._assert_not_estopped()
+
         ee_link = str(
             end_effector_link or self.config.end_effector_link or self.config.tool_frame
         ).strip()
@@ -163,13 +200,22 @@ class MoveItManipulationRuntime:
             **_motion_payload(backend),
         }
 
-    def _validate_joint_limits(
-        self, joint_map: Mapping[str, Any], label: str
-    ) -> None:
-        """모든 backend dispatch 직전에 robot limits를 강제한다."""
+    def _validate_joint_limits(self, joint_map: Mapping[str, Any], label: str) -> None:
+        """모든 backend dispatch 직전에 robot limits를 강제한다.
+
+        한계 정보를 찾지 못하면 통과시키지 않고 차단한다(fail-closed). 근거
+        데이터 없이 팔을 움직이는 것이 안전 검증을 건너뛰는 것과 같기 때문이다.
+
+        Raises:
+            ManipulationLimitsUnavailableError: robot limits 를 찾지 못한 경우
+            ManipulationConfigError: 목표값이 한계를 벗어난 경우
+        """
         robot_limits = getattr(self._node, "_robot_limits_dict", None)
         if not robot_limits:
-            return
+            raise ManipulationLimitsUnavailableError(
+                f"{label} 실행에 필요한 robot limits 를 찾지 못했습니다. "
+                "ROBOT_LIMITS.json(manipulation.joint_limits)을 설정한 뒤 다시 시도하세요."
+            )
         from robo_claw_agent.skills.limits import check_joint_targets
 
         limit_error = check_joint_targets(dict(joint_map), robot_limits)
@@ -180,11 +226,10 @@ class MoveItManipulationRuntime:
         self, preset_name: str, *, group_name: str | None = None
     ) -> dict[str, Any]:
         preset_key = str(preset_name).strip()
+        self._assert_not_estopped()
         joint_map = self.config.gripper_presets.get(preset_key)
         if not joint_map:
-            raise ManipulationConfigError(
-                f"gripper preset '{preset_key}' 이 설정되지 않았습니다."
-            )
+            raise ManipulationConfigError(f"gripper preset '{preset_key}' 이 설정되지 않았습니다.")
 
         self._validate_joint_limits(joint_map, f"gripper preset '{preset_key}'")
 

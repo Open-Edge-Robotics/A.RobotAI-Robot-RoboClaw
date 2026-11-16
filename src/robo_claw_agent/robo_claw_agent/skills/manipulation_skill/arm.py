@@ -13,7 +13,7 @@ from robo_claw_agent.manipulation_runtime import (
 from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.limits import check_joint_targets
 
-from .core import _get_runtime, _move_sequence_result, _transform_pose_goal
+from .core import _failure_result, _get_runtime, _move_sequence_result, _transform_pose_goal
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,12 @@ class ArmPoseSkill(BaseSkill):
 
     name = "arm_pose"
     side_effects = ("arm_motion",)
-    input_schema = {"type": "object", "properties": {"pose_name": {"type": "string"}}, "required": ["pose_name"], "additionalProperties": True}
+    input_schema = {
+        "type": "object",
+        "properties": {"pose_name": {"type": "string"}},
+        "required": ["pose_name"],
+        "additionalProperties": True,
+    }
     description = (
         "팔을 named pose로 이동합니다. "
         "pose_name 파라미터가 필요하며, 실제 MoveIt target 이름은 설정으로 매핑됩니다. "
@@ -50,7 +55,7 @@ class ArmPoseSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Arm pose move failed ({pose_name}): {exc}")
-            return {"success": False, "message": str(exc)}
+            return _failure_result(exc)
 
         return _move_sequence_result(
             action=f"포즈 이동 완료: {pose_name}",
@@ -64,7 +69,12 @@ class MoveJointsSkill(BaseSkill):
 
     name = "move_joints"
     side_effects = ("arm_motion",)
-    input_schema = {"type": "object", "properties": {"joints": {"type": "object"}}, "required": ["joints"], "additionalProperties": True}
+    input_schema = {
+        "type": "object",
+        "properties": {"joints": {"type": "object"}},
+        "required": ["joints"],
+        "additionalProperties": True,
+    }
     description = (
         "지정한 조인트 값으로 팔 또는 그리퍼를 이동합니다. "
         "joints 파라미터에 {'joint_name': 값} 형태의 맵이 필요합니다."
@@ -101,7 +111,7 @@ class MoveJointsSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Joint move failed: {exc}")
-            return {"success": False, "message": str(exc)}
+            return _failure_result(exc)
 
         return _move_sequence_result(
             action="조인트 이동 완료",
@@ -115,7 +125,18 @@ class MovePoseSkill(BaseSkill):
 
     name = "move_pose"
     side_effects = ("arm_motion",)
-    input_schema = {"type": "object", "properties": {"target_pose": {"type": "object"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}, "frame_id": {"type": "string"}}, "oneOf": [{"required": ["target_pose"]}, {"required": ["x", "y", "z"]}], "additionalProperties": True}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "target_pose": {"type": "object"},
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "z": {"type": "number"},
+            "frame_id": {"type": "string"},
+        },
+        "oneOf": [{"required": ["target_pose"]}, {"required": ["x", "y", "z"]}],
+        "additionalProperties": True,
+    }
     description = (
         "end-effector 를 목표 pose로 이동합니다. "
         "target_pose 또는 x/y/z 좌표(미터, 기본 프레임 base_link: 로봇 x=앞/y=왼쪽/z=위)가 필요하며 "
@@ -157,7 +178,7 @@ class MovePoseSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Pose move failed: {exc}")
-            return {"success": False, "message": str(exc)}
+            return _failure_result(exc)
 
         return _move_sequence_result(
             action="Pose 이동 완료",

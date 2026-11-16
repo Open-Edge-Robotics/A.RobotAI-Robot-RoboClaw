@@ -26,6 +26,23 @@ def _get_runtime(node: Any) -> MoveItManipulationRuntime:
     return runtime
 
 
+def _failure_result(exc: Exception) -> dict[str, Any]:
+    """매니퓰레이션 예외를 스킬 실패 payload 로 변환한다.
+
+    ``reason``/``stopped_by`` 속성을 가진 예외(E-stop 래치, robot limits 부재)는
+    기계가 읽을 수 있는 실패 사유를 함께 보고한다. "정지 때문에 거부됨"과
+    "실행 중 실패"를 상위 계층이 구분할 수 있어야 하기 때문이다.
+    """
+    payload: dict[str, Any] = {"success": False, "message": f"{exc}"}
+    reason = getattr(exc, "reason", None)
+    if reason:
+        payload["failure_reason"] = reason
+    stopped_by = getattr(exc, "stopped_by", None)
+    if stopped_by:
+        payload["stopped_by"] = stopped_by
+    return payload
+
+
 def _transform_pose_goal(node: Any, pose: PoseGoal, target_frame: str) -> PoseGoal:
     """PoseGoal을 target_frame으로 '지금 시점' TF를 이용해 변환한다.
 

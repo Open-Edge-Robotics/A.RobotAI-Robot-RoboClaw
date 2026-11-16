@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from _manip_helpers import _default_robot_limits
 from robo_claw_agent.manipulation_runtime import ManipulationError
 from robo_claw_agent.skills.manipulation_skill import (
     AdaptivePickObjectSkill,
@@ -98,6 +99,7 @@ def _make_stretch_node(params=None, backend=None):
         get_parameter=lambda name: DummyParameter(values[name]),
         create_subscription=lambda *args, **kwargs: SimpleNamespace(destroy=lambda: None),
         destroy_subscription=lambda *args, **kwargs: None,
+        _robot_limits_dict=_default_robot_limits(),
     )
     if backend is not None:
         node._manipulation_backend = backend
@@ -112,6 +114,7 @@ def _make_moveit_node(params=None):
     node = SimpleNamespace(
         has_parameter=lambda name: name in values,
         get_parameter=lambda name: DummyParameter(values[name]),
+        _robot_limits_dict=_default_robot_limits(),
     )
     node._manipulation_backend = backend
     return node
@@ -244,7 +247,6 @@ def test_fixed_pattern_grasp_lift_failure_forbids_carry_and_recovers(monkeypatch
             pytest.fail("Carry should not be called when lift fails")
     # Recovery stow should be called
     assert any(call[0] == "named" and call[2] == "stow" for call in backend.calls)
-
 
 
 @pytest.mark.unit
@@ -412,6 +414,7 @@ def test_adaptive_pick_deadline_budget_passed_to_children(monkeypatch):
 
 
 # ── Tier 4: 능동 탐색의 뷰 재시도 / 접근 재스윕 ─────────────────────────────
+
 
 def _search_node(monkeypatch):
     import robo_claw_agent.skills.manipulation_skill.sequence.search_skill as search_skill

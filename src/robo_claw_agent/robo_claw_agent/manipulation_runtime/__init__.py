@@ -3,7 +3,9 @@ from .config import load_manipulation_config
 from .exceptions import (
     ManipulationConfigError,
     ManipulationContactError,
+    ManipulationEmergencyStopError,
     ManipulationError,
+    ManipulationLimitsUnavailableError,
     ManipulationRuntimeUnavailableError,
 )
 from .math import (
@@ -19,6 +21,8 @@ __all__ = [
     "ManipulationError",
     "ManipulationConfigError",
     "ManipulationContactError",
+    "ManipulationEmergencyStopError",
+    "ManipulationLimitsUnavailableError",
     "ManipulationRuntimeUnavailableError",
     "PoseGoal",
     "ManipulationConfig",

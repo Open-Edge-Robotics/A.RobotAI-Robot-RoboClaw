@@ -10,7 +10,7 @@ from robo_claw_agent.manipulation_runtime import (
 )
 from robo_claw_agent.skill_manager import BaseSkill
 
-from .core import _get_runtime, _move_sequence_result
+from .core import _failure_result, _get_runtime, _move_sequence_result
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,11 @@ class OpenGripperSkill(BaseSkill):
 
     name = "open_gripper"
     side_effects = ("gripper_motion",)
-    input_schema = {"type": "object", "properties": {"preset_name": {"type": "string", "default": "open"}}, "additionalProperties": True}
+    input_schema = {
+        "type": "object",
+        "properties": {"preset_name": {"type": "string", "default": "open"}},
+        "additionalProperties": True,
+    }
     description = (
         "그리퍼를 open preset 으로 이동합니다. "
         "기본 preset 이름은 'open' 이며 preset 값은 설정에서 제공합니다."
@@ -42,7 +46,7 @@ class OpenGripperSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Gripper open failed ({preset_name}): {exc}")
-            return {"success": False, "message": str(exc)}
+            return _failure_result(exc)
 
         return _move_sequence_result(
             action=f"그리퍼 open 완료: {preset_name}",
@@ -55,7 +59,11 @@ class CloseGripperSkill(BaseSkill):
 
     name = "close_gripper"
     side_effects = ("gripper_motion",)
-    input_schema = {"type": "object", "properties": {"preset_name": {"type": "string", "default": "close"}}, "additionalProperties": True}
+    input_schema = {
+        "type": "object",
+        "properties": {"preset_name": {"type": "string", "default": "close"}},
+        "additionalProperties": True,
+    }
     description = (
         "그리퍼를 close preset 으로 이동합니다. "
         "기본 preset 이름은 'close' 이며 preset 값은 설정에서 제공합니다."
@@ -77,7 +85,7 @@ class CloseGripperSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Gripper close failed ({preset_name}): {exc}")
-            return {"success": False, "message": str(exc)}
+            return _failure_result(exc)
 
         return _move_sequence_result(
             action=f"그리퍼 close 완료: {preset_name}",

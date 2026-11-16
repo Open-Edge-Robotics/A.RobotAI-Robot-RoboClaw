@@ -161,6 +161,30 @@ def _grasp_positions(aperture):
     return _positions
 
 
+def _default_robot_limits() -> dict:
+    """테스트 하네스용 기본 ROBOT_LIMITS.
+
+    런타임은 한계 정보가 없으면 팔 명령을 거부한다(fail-closed). 하네스는 "한계가
+    설정된 노드"를 기본값으로 두고, 실제 범위 검증이 필요한 테스트는
+    ``_robot_limits_dict`` 를 직접 넘겨 덮어쓴다. 범위 자체는 넓게 두어 각 테스트가
+    검증하려는 동작(시퀀스, 복구, 실패 처리)을 방해하지 않게 한다.
+    """
+    names = (
+        "joint_lift",
+        "wrist_extension",
+        "joint_wrist_yaw",
+        "joint_wrist_pitch",
+        "joint_wrist_roll",
+        "gripper_aperture",
+        "joint_head_pan",
+        "joint_head_tilt",
+        "finger_joint",
+        *(f"joint{i}" for i in range(1, 8)),
+        "gripper",
+    )
+    return {"manipulation": {"joint_limits": {name: [-10.0, 10.0] for name in names}}}
+
+
 def _make_node(params=None, manipulation_backend="stretch", **extra):
     values = dict(params or {})
     values.setdefault("manipulation_backend", manipulation_backend)
@@ -174,6 +198,7 @@ def _make_node(params=None, manipulation_backend="stretch", **extra):
         ),
         add_entity=lambda *a, **k: None,
         remove_entity=lambda *a, **k: None,
+        _robot_limits_dict=_default_robot_limits(),
     )
     for key, value in extra.items():
         setattr(node, key, value)

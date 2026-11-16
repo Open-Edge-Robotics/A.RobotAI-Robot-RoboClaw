@@ -13,7 +13,7 @@ from robo_claw_agent.manipulation_runtime import (
 from robo_claw_agent.skill_manager import BaseSkill
 from robo_claw_agent.skills.limits import check_joint_targets
 
-from .core import _get_runtime, _move_sequence_result
+from .core import _failure_result, _get_runtime, _move_sequence_result
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,22 @@ class HeadPanTiltSkill(BaseSkill):
     """Stretch3 헤드(카메라 마운트) pan/tilt 제어 스킬."""
 
     name = "head_pan_tilt"
-    input_schema = {"type": "object", "properties": {
-        "pan": {"type": "number"}, "tilt": {"type": "number"},
-        "pose_name": {"type": "string"}, "pan_deg": {"type": "number"}, "tilt_deg": {"type": "number"}
-    }, "oneOf": [{"required": ["pose_name"]}, {"required": ["pan", "tilt"]}, {"required": ["pan_deg", "tilt_deg"]}], "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "pan": {"type": "number"},
+            "tilt": {"type": "number"},
+            "pose_name": {"type": "string"},
+            "pan_deg": {"type": "number"},
+            "tilt_deg": {"type": "number"},
+        },
+        "oneOf": [
+            {"required": ["pose_name"]},
+            {"required": ["pan", "tilt"]},
+            {"required": ["pan_deg", "tilt_deg"]},
+        ],
+        "additionalProperties": False,
+    }
     description = (
         "Stretch3 헤드 카메라의 pan(좌우)/tilt(상하) 각도를 제어합니다. "
         "pose_name(예: search_head_down, gripper_side_head, travel_head)으로 사전 정의된 "
@@ -128,7 +140,7 @@ class HeadPanTiltSkill(BaseSkill):
             TypeError,
         ) as exc:
             logger.warning("Head pan/tilt move failed: %s", exc)
-            return {"success": False, "message": str(exc)}
+            return _failure_result(exc)
 
         return _move_sequence_result(
             action=f"헤드 pan/tilt 이동 완료{f' ({pose_name})' if pose_name else ''}",
