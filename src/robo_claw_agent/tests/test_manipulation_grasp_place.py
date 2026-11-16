@@ -60,7 +60,7 @@ def test_grasp_skill_resolves_pose_from_memory_metadata(monkeypatch):
         ),
     }
     memory = SimpleNamespace(
-        get_object_location=lambda name: (
+        get_object_location=lambda name, *, include_objects=False: (
             {
                 "metadata": {
                     "target_pose": {
@@ -100,7 +100,7 @@ def test_grasp_skill_fails_when_pose_frame_needs_transform_but_no_tf_buffer():
     """TF 버퍼가 없으면 프레임이 다른 저장된 pose를 조용히 잘못 사용하지 않고 명시적으로 실패해야 한다."""
     backend = FakeBackend()
     memory = SimpleNamespace(
-        get_object_location=lambda name: (
+        get_object_location=lambda name, *, include_objects=False: (
             {
                 "metadata": {
                     "target_pose": {
@@ -139,7 +139,7 @@ def _stretch_object_node(monkeypatch, backend, position, *, extra_params=None):
     }
     params.update(extra_params or {})
     memory = SimpleNamespace(
-        get_object_location=lambda name: (
+        get_object_location=lambda name, *, include_objects=False: (
             {
                 "metadata": {
                     "target_pose": {
@@ -194,7 +194,7 @@ def test_grasp_skips_rotation_for_moveit_backend(monkeypatch):
         "manipulation_gripper_presets_json": '{"open":{"gripper_aperture":0.16},"close":{"gripper_aperture":0.0}}',
     }
     memory = SimpleNamespace(
-        get_object_location=lambda name: (
+        get_object_location=lambda name, *, include_objects=False: (
             {
                 "metadata": {
                     "target_pose": {
@@ -320,9 +320,7 @@ def test_grasp_verified_true_proceeds_normally(monkeypatch):
     monkeypatch.setattr(
         EstimateGripperObjectPoseSkill, "execute", lambda self, params: {"success": True}
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.03)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     skill = GraspSkill()
     skill.set_node(node)
@@ -380,9 +378,7 @@ def test_grasp_verified_false_after_retries_exhausted_fails(monkeypatch):
     monkeypatch.setattr(
         EstimateGripperObjectPoseSkill, "execute", lambda self, params: {"success": True}
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.0)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.0))
 
     skill = GraspSkill()
     skill.set_node(node)
@@ -457,9 +453,7 @@ def test_place_skill_executes_release_sequence():
 
 
 def test_runtime_reports_unavailable_backend(monkeypatch):
-    node = _make_node(
-        {"manipulation_end_effector_link": "tool0"}, manipulation_backend="moveit"
-    )
+    node = _make_node({"manipulation_end_effector_link": "tool0"}, manipulation_backend="moveit")
     runtime = MoveItManipulationRuntime(node)
 
     class RaisingBackend:
