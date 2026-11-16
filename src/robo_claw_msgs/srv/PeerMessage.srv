@@ -12,6 +12,9 @@ string reply_to       # 회신일 때 원본 메시지의 message_id
 string status         # 구조화된 실행 결과 상태 (completed/failed/denied/partial, 없으면 빈 값)
 string result         # 구조화된 실행 결과 요약 (status 가 있을 때만 의미 있음)
 string kind           # 메시지 종류 (request/reply/result, 없으면 빈 값)
+string auth_token     # 채널-에이전트 공유 토큰. 로컬 채널 노드가 주입하며,
+                      # 에이전트는 peer_message_token 이 설정된 경우에만
+                      # 상수 시간 비교로 검증한다(빈 값이면 거부).
 ---
 bool success          # 인박스 수신 성공 여부
 string result_message # 처리 결과 메시지

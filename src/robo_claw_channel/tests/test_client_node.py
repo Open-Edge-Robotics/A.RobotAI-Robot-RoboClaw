@@ -520,3 +520,43 @@ class TestMessengerClientNodeUnit:
 
         queued = self.node._peer_queues["Stretch3"].get()
         assert queued.metadata["auth_token"] == "shared-secret"
+
+    def test_process_received_message_forwards_local_peer_token(self):
+        """채널-에이전트 공유 토큰을 PeerMessage.auth_token 으로 전달해야 한다."""
+        self.node._peers = [
+            {"agent_name": "Stretch3", "host": "1.2.3.4", "port": 50052, "auth_token": "tok"}
+        ]
+        self.node._peer_queues = {"Stretch3": queue.Queue()}
+        self.node._peer_message_token = "local-shared-token"
+        peer_response = MagicMock()
+        peer_response.success = True
+        peer_response.result_message = "인박스 수신"
+        self.node._peer_message_client = MagicMock()
+        self.node._peer_message_client.service_is_ready.return_value = True
+        self.node._peer_message_client.call_async.return_value = MagicMock()
+        self.node._await_future_result = MagicMock(return_value=(True, peer_response))
+
+        self.node._process_received_message("하이", "Stretch3")
+
+        request = self.node._peer_message_client.call_async.call_args[0][0]
+        assert request.auth_token == "local-shared-token"
+
+    def test_process_received_message_omits_token_when_not_configured(self):
+        """토큰이 설정되지 않았으면 빈 값으로 보내 하위 호환 동작을 유지한다."""
+        self.node._peers = [
+            {"agent_name": "Stretch3", "host": "1.2.3.4", "port": 50052, "auth_token": "tok"}
+        ]
+        self.node._peer_queues = {"Stretch3": queue.Queue()}
+        self.node._peer_message_token = ""
+        peer_response = MagicMock()
+        peer_response.success = True
+        peer_response.result_message = "인박스 수신"
+        self.node._peer_message_client = MagicMock()
+        self.node._peer_message_client.service_is_ready.return_value = True
+        self.node._peer_message_client.call_async.return_value = MagicMock()
+        self.node._await_future_result = MagicMock(return_value=(True, peer_response))
+
+        self.node._process_received_message("하이", "Stretch3")
+
+        request = self.node._peer_message_client.call_async.call_args[0][0]
+        assert request.auth_token == ""

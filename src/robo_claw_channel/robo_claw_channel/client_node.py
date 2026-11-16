@@ -41,6 +41,7 @@ from .peer_envelope import (
     correlation_from_metadata,
     correlation_summary,
     fill_peer_message_request,
+    fill_peer_message_token,
     log_preview,
     parse_cooperation_envelope,
 )
@@ -160,6 +161,7 @@ class MessengerClientNode(Node):
         self.declare_parameter("target_peers_json", "")
 
         self.declare_parameter("grpc_peer_token", "")
+        self.declare_parameter("peer_message_token", os.environ.get("RC_PEER_MESSAGE_TOKEN", ""))
         self.declare_parameter("grpc_peer_tokens_json", "{}")
 
         self.declare_parameter("agent_name", "robo_claw_agent_node")
@@ -196,6 +198,7 @@ class MessengerClientNode(Node):
         )
 
         # 자율협동 — 로컬 에이전트의 협동 인박스로 메시지를 전달하기 위한 클라이언트
+        self._peer_message_token = param_string(self, "peer_message_token")
         self._peer_message_client = self.create_client(
             PeerMessage,
             f"{self._agent_ns}/peer_message",
@@ -444,6 +447,10 @@ class MessengerClientNode(Node):
                 req.peer_name = peer_name
                 req.message = message
                 fill_error = fill_peer_message_request(req, correlation)
+                if not fill_error:
+                    fill_error = fill_peer_message_token(
+                        req, getattr(self, "_peer_message_token", "")
+                    )
                 if fill_error:
                     # 상관 ID 를 보존할 수 없는 생성코드에서는 전달하지 않고 명시 실패한다.
                     self.get_logger().error(fill_error)

@@ -7,6 +7,7 @@ manipulation_* 파라미터는 여기서 선언만 하고, 실제 값은 manipul
 직접 읽으므로 ``AgentParams`` 에는 포함하지 않는다.
 """
 
+import os
 from dataclasses import dataclass, field
 
 
@@ -105,6 +106,10 @@ class AgentParams:
 
     # 태스크 큐 최대 대기열 크기 (0 = 큐 비활성화, 즉시 병렬 실행)
     task_queue_max_size: int = 8
+
+    # 동료 메시지 인증/스코프 (빈 값이면 기존 동작 유지)
+    peer_message_token: str = ""
+    remote_allowed_skills_by_peer_json: str = "{}"
 
     # 상태 하트비트 감시(초). executor 가 멈춰 상태 퍼블리시가 끊긴 것을 별도
     # 스레드에서 감지해 복구/재기동한다. 0 이하이면 감시를 끈다.
@@ -275,6 +280,14 @@ def declare_agent_parameters(node) -> None:
     # gRPC 피어 목록 JSON (client_node와 공유)
     node.declare_parameter("target_peers_json", "")
 
+    # 동료 메시지 인증 — channel 노드의 peer_message_token 과 같은 값이어야 한다.
+    # 같은 DDS 도메인의 다른 노드가 peer_name 을 신고해 협동 인박스에 메시지를 넣는
+    # 것을 막는다. 빈 값이면 검증을 강제하지 않는다(하위 호환).
+    node.declare_parameter("peer_message_token", os.environ.get("RC_PEER_MESSAGE_TOKEN", ""))
+    # peer별 원격 스킬 스코프 {"robot-b": ["navigate_to", ...]}. 전역 allowlist 와
+    # 교집합으로 적용되므로 스코프가 권한을 넓힐 수 없다.
+    node.declare_parameter("remote_allowed_skills_by_peer_json", "{}")
+
 
 def _s(node, name: str) -> str:
     return node.get_parameter(name).get_parameter_value().string_value
@@ -362,6 +375,8 @@ def read_agent_parameters(node) -> AgentParams:
         llm_fail_fast=_b(node, "llm_fail_fast"),
         strict_config=_b(node, "strict_config"),
         task_queue_max_size=_i(node, "task_queue_max_size"),
+        peer_message_token=_s(node, "peer_message_token"),
+        remote_allowed_skills_by_peer_json=_s(node, "remote_allowed_skills_by_peer_json"),
         status_heartbeat_timeout_sec=_d(node, "status_heartbeat_timeout_sec"),
         enable_task_decomposition=_b(node, "enable_task_decomposition"),
         yield_slot_enabled=_b(node, "yield_slot_enabled"),

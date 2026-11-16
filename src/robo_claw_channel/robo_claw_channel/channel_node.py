@@ -9,6 +9,7 @@
 
 import json
 import logging
+import os
 import threading
 import time
 from http.server import ThreadingHTTPServer
@@ -42,7 +43,12 @@ from .grpc_server import DEFAULT_DEDUP_PATH, DEFAULT_MAX_FILE_BYTES, GrpcServer
 YIELD_SLOT_CALL_TIMEOUT_SEC = 120.0
 from .http_handlers import make_http_handler
 from .param_helpers import param_bool, param_float, param_int, param_string
-from .peer_envelope import PeerCorrelation, fill_peer_message_request, log_preview
+from .peer_envelope import (
+    PeerCorrelation,
+    fill_peer_message_request,
+    fill_peer_message_token,
+    log_preview,
+)
 from .ros_future_utils import (
     await_future_result,
     send_execute_task,
@@ -74,6 +80,9 @@ class ChannelNode(Node):
         self.declare_parameter("http_port", 8080)
         self.declare_parameter("grpc_port", 50052)
         self.declare_parameter("grpc_peer_token", "")
+        # 로컬 에이전트 PeerMessage 서비스로 전달할 채널-에이전트 공유 토큰.
+        # 같은 DDS 도메인의 다른 노드가 peer_name 을 신고해 인박스에 넣는 것을 막는다.
+        self.declare_parameter("peer_message_token", os.environ.get("RC_PEER_MESSAGE_TOKEN", ""))
         self.declare_parameter("grpc_peer_tokens_json", "{}")
         self.declare_parameter("grpc_max_file_bytes", DEFAULT_MAX_FILE_BYTES)
         self.declare_parameter("grpc_dedup_path", DEFAULT_DEDUP_PATH)
@@ -103,6 +112,7 @@ class ChannelNode(Node):
         port = param_int(self, "http_port")
         grpc_port = param_int(self, "grpc_port")
         grpc_peer_token = param_string(self, "grpc_peer_token")
+        peer_message_token = param_string(self, "peer_message_token")
         grpc_peer_tokens_json = param_string(self, "grpc_peer_tokens_json")
         grpc_max_file_bytes = int(self.get_parameter("grpc_max_file_bytes").value)
         grpc_dedup_path = param_string(self, "grpc_dedup_path")
@@ -153,6 +163,7 @@ class ChannelNode(Node):
         self._query_client = self.create_client(
             QueryState, f"{self._agent_ns}/query_state", callback_group=self._cb_group
         )
+        self._peer_message_token = peer_message_token
         self._peer_message_client = self.create_client(
             PeerMessage,
             f"{self._agent_ns}/peer_message",
@@ -301,6 +312,10 @@ class ChannelNode(Node):
             # 통신 내용 상관이 끊기므로 명시적으로 실패시킨다.
             self.get_logger().error(fill_error)
             return False, fill_error, ""
+        token_error = fill_peer_message_token(request, getattr(self, "_peer_message_token", ""))
+        if token_error:
+            self.get_logger().error(token_error)
+            return False, token_error, ""
         ok, response = await_future_result(
             self._peer_message_client.call_async(request),
             timeout_sec=10.0,

@@ -119,6 +119,23 @@ class AgentNode(Node, ExecutionMixin):
         self._robot_limits_dict = load_limits_dict(p.robot_limits_file)
         self._troubleshooting_guide = load_troubleshooting_guide(p.troubleshooting_guide_file)
 
+        # 동료 메시지 인증/스코프. 토큰이 없으면 기존 동작(무검증)을 유지하되,
+        # 기동 시 경고해 노출된 상태를 운영자가 알 수 있게 한다.
+        from ..skills.cooperation_skill.peer_auth import parse_peer_skill_scope
+
+        self._peer_message_token = str(getattr(p, "peer_message_token", "") or "").strip()
+        self._remote_skill_scope, scope_error = parse_peer_skill_scope(
+            str(getattr(p, "remote_allowed_skills_by_peer_json", "") or "")
+        )
+        if scope_error:
+            raise ValueError(scope_error)
+        if not self._peer_message_token:
+            self.get_logger().warning(
+                "peer_message_token 이 설정되지 않아 동료 메시지 출처를 검증하지 않습니다. "
+                "여러 로봇이 같은 DDS 도메인을 쓰면 다른 노드가 peer_name 을 신고해 "
+                "협동 인박스에 메시지를 넣을 수 있습니다(RC_PEER_MESSAGE_TOKEN)."
+            )
+
         # strict_config 모드: 필수 설정 파일이 지정되었으나 로드 실패한 경우 기동 중단
         if p.strict_config:
             self._validate_required_configs(p)
@@ -488,6 +505,42 @@ class AgentNode(Node, ExecutionMixin):
             self.get_logger().warning(f"Cooperation snapshot failed: {exc}")
             return None
 
+    def _authorize_peer_message(self, peer_name: str, request, response) -> bool:
+        """동료 메시지 출처를 검증한다. 거부 시 ``response`` 를 채우고 False 를 돌려준다.
+
+        gRPC 계층은 peer 토큰을 검증하지만 이 ROS 서비스는 로컬 경로라 검증이 없었다.
+        같은 DDS 도메인의 다른 노드가 임의의 ``peer_name`` 을 신고해 협동 인박스에
+        메시지를 넣을 수 있으므로, 채널 노드가 주입한 공유 토큰을 확인한다.
+        """
+        from ..skills.cooperation_skill.peer_auth import verify_peer_message_token
+
+        supplied = str(getattr(request, "auth_token", "") or "")
+        allowed, reason = verify_peer_message_token(
+            expected_common=getattr(self, "_peer_message_token", ""),
+            peer_name=peer_name,
+            supplied=supplied,
+        )
+        if allowed:
+            return True
+
+        self.get_logger().warning(f"PeerMessage rejected: peer={peer_name.strip()} reason={reason}")
+        try:
+            from ..skills.cooperation_skill.journal import get_cooperation_journal
+
+            get_cooperation_journal().record(
+                "policy",
+                peer_id=peer_name.strip(),
+                details={"reason": reason, "unconfirmed": True},
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warning(f"Cooperation journal unavailable: {exc}")
+        response.success = False
+        response.error_message = (
+            "협동 메시지 인증에 실패했습니다. 채널 노드가 PeerMessage.auth_token 을 "
+            "전달하는지(peer_message_token 설정) 확인하세요."
+        )
+        return False
+
     def _handle_peer_message(self, request, response):
         """자율협동 — 동료 로봇이 보낸 대화 메시지를 협동 인박스로 전달한다.
 
@@ -529,6 +582,8 @@ class AgentNode(Node, ExecutionMixin):
                 self.get_logger().warning(f"Cooperation journal unavailable: {exc}")
             response.success = False
             response.error_message = "Maestro 관제 중에는 로봇 간 협동 메시지를 받지 않습니다."
+            return response
+        if not self._authorize_peer_message(peer_name, request, response):
             return response
 
         try:

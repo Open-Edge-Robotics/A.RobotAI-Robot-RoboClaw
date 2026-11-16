@@ -46,6 +46,9 @@ PEER_MESSAGE_FIELDS = (
 #: ChatMessage.metadata 로 옮기는 필드(kind 포함).
 CHAT_METADATA_FIELDS = (*PEER_MESSAGE_FIELDS, "kind")
 
+#: 채널-에이전트 공유 토큰 필드(상관 ID 와 별개로 관리한다).
+PEER_MESSAGE_AUTH_FIELD = "auth_token"
+
 #: 재빌드 전 생성코드로는 상관 정보를 보존할 수 없다는 명시 오류.
 REBUILD_REQUIRED_ERROR = (
     "robo_claw_msgs rebuild required: PeerMessage.srv correlation fields are missing"
@@ -214,6 +217,22 @@ def log_preview(content: object, limit: int = MAX_LOG_PREVIEW_CHARS) -> str:
     for pattern, replacement in _PREVIEW_PATTERNS:
         text = pattern.sub(replacement, text)
     return text[: max(0, int(limit))]
+
+
+def fill_peer_message_token(request: object, token: str) -> str | None:
+    """``PeerMessage.Request`` 에 채널-에이전트 공유 토큰을 채운다.
+
+    토큰이 설정되지 않았으면 아무것도 하지 않는다(하위 호환). 토큰을 운용하는데
+    생성코드에 필드가 없으면, 조용히 인증이 빠지는 것보다 재빌드 오류로 알리는 편이
+    안전하므로 :data:`REBUILD_REQUIRED_ERROR` 를 돌려준다.
+    """
+    value = str(token or "").strip()
+    if not value:
+        return None
+    if not hasattr(request, PEER_MESSAGE_AUTH_FIELD):
+        return f"{REBUILD_REQUIRED_ERROR} (missing: {PEER_MESSAGE_AUTH_FIELD})"
+    setattr(request, PEER_MESSAGE_AUTH_FIELD, value)
+    return None
 
 
 def fill_peer_message_request(request: object, correlation: PeerCorrelation) -> str | None:

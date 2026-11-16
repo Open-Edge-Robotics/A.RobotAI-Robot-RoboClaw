@@ -62,6 +62,7 @@ from .journal import (
     CooperationJournal,
     get_cooperation_journal,
 )
+from .peer_auth import effective_peer_skill_allowlist
 from .peer_transport import send_cooperation_message
 from .remote_task import RESULT_EVENT_TYPES, execute_remote_task
 from .sanitize import preview_text
@@ -230,6 +231,8 @@ class AutonomousCooperateSkill(BaseSkill):
         self._place_sweep_started = False
         self._allow_remote_task_execution = allow_remote_tasks
         self._remote_allowed_skills = remote_allowed_skills
+        # peer별 스코프는 노드 설정(remote_allowed_skills_by_peer_json)에서 온다.
+        self._remote_skill_scope = dict(getattr(self.node, "_remote_skill_scope", {}) or {})
         self._peer_worker_count = peer_worker_count
         self._incoming_executor = ThreadPoolExecutor(
             max_workers=peer_worker_count,
@@ -1025,7 +1028,12 @@ class AutonomousCooperateSkill(BaseSkill):
             skill_name=skill_name,
             skill_params=skill_params,
             allow_remote_execution=bool(getattr(self, "_allow_remote_task_execution", False)),
-            allowed_skills=getattr(self, "_remote_allowed_skills", set()),
+            # peer별 스코프가 설정되어 있으면 전역 allowlist 와의 교집합만 허용한다.
+            allowed_skills=effective_peer_skill_allowlist(
+                global_allowlist=getattr(self, "_remote_allowed_skills", set()),
+                peer_scope=getattr(self, "_remote_skill_scope", {}),
+                peer_name=peer_id,
+            ),
             journal=self._journal(),
             task_id=task_id,
             message_id=message_id,

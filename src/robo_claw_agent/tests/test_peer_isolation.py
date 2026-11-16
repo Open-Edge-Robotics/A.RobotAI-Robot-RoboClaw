@@ -160,3 +160,43 @@ class _Logger:
 
     def error(self, *_args, **_kwargs):
         pass
+
+
+def test_peer_message_without_token_is_rejected_when_auth_configured(monkeypatch):
+    """토큰이 설정된 로봇은 토큰 없는 PeerMessage 를 거부해야 한다(cross-domain 스푸핑 차단)."""
+    pytest.importorskip("robo_claw_msgs")
+    from robo_claw_msgs.srv import PeerMessage
+
+    node_cls = _node_class()
+    node = node_cls.__new__(node_cls)
+    node.get_logger = lambda: _Logger()
+    node._peer_message_token = "shared-secret"
+    node._peer_message_tokens = {}
+
+    monkeypatch.setenv("MAESTRO_ENABLED", "false")
+    request = PeerMessage.Request(peer_name="cloid01", message="같이 정리하자")
+    result = node._handle_peer_message(request, PeerMessage.Response())
+
+    assert result.success is False
+    assert "인증" in result.error_message
+
+
+def test_peer_message_with_matching_token_passes_auth(monkeypatch):
+    """토큰이 일치하면 인증 단계는 통과하고 다음 단계(인박스 전달)로 진행한다."""
+    pytest.importorskip("robo_claw_msgs")
+    from robo_claw_msgs.srv import PeerMessage
+
+    node_cls = _node_class()
+    node = node_cls.__new__(node_cls)
+    node.get_logger = lambda: _Logger()
+    node._peer_message_token = "shared-secret"
+    node._peer_message_tokens = {}
+
+    monkeypatch.setenv("MAESTRO_ENABLED", "false")
+    request = PeerMessage.Request(
+        peer_name="cloid01", message="같이 정리하자", auth_token="shared-secret"
+    )
+    result = node._handle_peer_message(request, PeerMessage.Response())
+
+    # 인증 실패 문구가 나오지 않아야 한다(인박스 상태에 따른 결과는 별개).
+    assert "인증" not in (result.error_message or "")

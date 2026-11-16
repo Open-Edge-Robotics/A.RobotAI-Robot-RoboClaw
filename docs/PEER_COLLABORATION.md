@@ -53,7 +53,21 @@ GRPC_TARGET_PORT=50052
 GRPC_TARGET_PEERS_JSON=[{"host":"192.168.1.10","port":50052,"agent_name":"butler","auth_token":"butler-to-this-robot-token","description":"집게 팔 장착 매니퓰레이터 로봇","role":"manipulator"},{"host":"192.168.1.11","port":50052,"agent_name":"former","auth_token":"former-to-this-robot-token","description":"이동형 카트 로봇","role":"agv"}]
 # 모든 로봇에서 동일한 값을 사용해야 하는 gRPC peer 인증 토큰
 GRPC_PEER_TOKEN=교체할_랜덤_토큰
+
+# 에이전트<->채널 간 PeerMessage 공유 토큰 (같은 로봇의 두 노드가 같은 값 사용)
+RC_PEER_MESSAGE_TOKEN=교체할_랜덤_토큰
 ```
+
+> `RC_PEER_MESSAGE_TOKEN`은 gRPC 인증과 별개로 **로봇 내부 경로**를 보호합니다. 협동 메시지는
+> 채널 노드가 `robo_claw_msgs/srv/PeerMessage` 로 로컬 에이전트에 전달하는데, 이 ROS 서비스는
+> 같은 DDS 도메인의 다른 노드가 직접 호출할 수 있습니다. 토큰을 설정하면 에이전트가
+> `PeerMessage.auth_token` 을 상수 시간 비교로 검증하고, 불일치·누락 메시지는 인박스에 넣지
+> 않고 거부합니다. 토큰이 없으면 기동 시 경고를 남기고 검증하지 않습니다(하위 호환).
+>
+> peer별 원격 스킬 권한은 `remote_allowed_skills_by_peer_json` 으로 좁힙니다.
+> `{"cloid1": ["navigate_to", "say"]}` 처럼 설정하면 그 peer 는 전역 원격 allowlist 와의
+> 교집합만 요청할 수 있고, 빈 목록(`[]`)이면 어떤 스킬도 위임할 수 없습니다. 스코프가 전역
+> allowlist 를 넓힐 수는 없습니다.
 
 > `GRPC_PEER_TOKEN`(또는 `GRPC_PEER_TOKENS_JSON`)을 설정하면 이 로봇의 messenger 서버가 `127.0.0.1`이 아닌 `0.0.0.0`으로 바인딩되어 **다른 PC/로봇에서도 채팅에 접속**할 수 있고, 모든 클라이언트는 인증 토큰을 보내야 합니다. 토큰이 없으면 서버는 루프백 전용으로 동작합니다(같은 호스트에서만 접속 가능).
 >
