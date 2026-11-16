@@ -66,9 +66,7 @@ class _FakeGoalHandle:
 
 def _collect(node: _FakeNode, instruction: str) -> list[dict[str, str]]:
     planner = LLMPlanner(node)
-    messages, _ = asyncio.run(
-        planner.collect_task_context(instruction, _FakeGoalHandle())
-    )
+    messages, _ = asyncio.run(planner.collect_task_context(instruction, _FakeGoalHandle()))
     return messages
 
 

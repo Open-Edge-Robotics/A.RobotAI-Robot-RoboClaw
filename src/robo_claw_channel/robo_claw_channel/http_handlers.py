@@ -94,9 +94,7 @@ def make_http_handler(node) -> type:
                     return
 
                 logger.info(f"[HTTP POST /skill] skill='{skill_name}', params={params}")
-                result = node.call_skill(
-                    skill_name, json.dumps(params, ensure_ascii=False)
-                )
+                result = node.call_skill(skill_name, json.dumps(params, ensure_ascii=False))
                 logger.info(
                     f"[HTTP POST /skill] result: success={result.get('success')}, "
                     f"message='{result.get('message')}'"

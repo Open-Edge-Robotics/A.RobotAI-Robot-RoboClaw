@@ -21,36 +21,40 @@ logger = logging.getLogger(__name__)
 
 
 # 큐를 우회하고 즉시 실행해도 안전한 읽기 전용 스킬들.
-READONLY_SKILLS: frozenset[str] = frozenset({
-    "get_status",
-    "query_state",
-    "list_peer_robots",
-    "query_peer_status",
-    "query_peer_capabilities",
-    "rag_status",
-    "rag_search",
-    "rag_list",
-    "list_files",
-    "list_butler_scripts",
-    "get_detections",
-    "get_distance",
-    "ros_command",
-})
+READONLY_SKILLS: frozenset[str] = frozenset(
+    {
+        "get_status",
+        "query_state",
+        "list_peer_robots",
+        "query_peer_status",
+        "query_peer_capabilities",
+        "rag_status",
+        "rag_search",
+        "rag_list",
+        "list_files",
+        "list_butler_scripts",
+        "get_detections",
+        "get_distance",
+        "ros_command",
+    }
+)
 
 # 큐를 우회해 **즉시** 실행해야 하는 정지/중단 스킬.
 # 단일 워커 큐 뒤에 서면 실행 중인 장기 태스크가 끝날 때까지 정지 명령이 지연된다.
 # 특히 분해된 복합 명령은 "단계 수 × (1+재시도)"만큼 워커를 점유하므로, 정지 요청이
 # 서비스 타임아웃으로 실패할 수 있다. 진행 중인 동작을 멈추는 것이 목적인 스킬이므로
 # 대기열과 무관하게 선점 실행한다.
-PREEMPTIVE_SKILLS: frozenset[str] = frozenset({
-    "emergency_stop",
-    "stop",
-    "stop_patrol",
-    "stop_explore",
-    "stop_monitor",
-    "stop_autonomous",
-    "stop_cloid_motion",
-})
+PREEMPTIVE_SKILLS: frozenset[str] = frozenset(
+    {
+        "emergency_stop",
+        "stop",
+        "stop_patrol",
+        "stop_explore",
+        "stop_monitor",
+        "stop_autonomous",
+        "stop_cloid_motion",
+    }
+)
 
 
 def is_readonly_skill(skill_name: str) -> bool:
@@ -227,10 +231,17 @@ class TaskQueue:
         if not clean_target:
             return False
         with self._lock:
-            if self._current_task is not None and self._current_task.instruction.strip() == clean_target:
+            if (
+                self._current_task is not None
+                and self._current_task.instruction.strip() == clean_target
+            ):
                 return True
             for item in list(self._queue.queue):
-                if item is not None and not item.cancelled and item.instruction.strip() == clean_target:
+                if (
+                    item is not None
+                    and not item.cancelled
+                    and item.instruction.strip() == clean_target
+                ):
                     return True
         return False
 
@@ -278,9 +289,7 @@ class TaskQueue:
             try:
                 task.execute_fn()
             except Exception:
-                logger.exception(
-                    "TaskQueue: unhandled exception in task '%s'", task.task_id
-                )
+                logger.exception("TaskQueue: unhandled exception in task '%s'", task.task_id)
             finally:
                 with self._lock:
                     self._current_task = None

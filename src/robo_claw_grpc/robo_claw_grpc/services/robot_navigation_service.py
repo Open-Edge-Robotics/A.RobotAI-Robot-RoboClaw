@@ -24,7 +24,13 @@ from robo_claw_grpc.utils import (
 
 
 class RobotNavigationService:
-    def __init__(self, repo: RobotHistoryRepository, config: ConfigModel, nav_node: Any | None = None, grpc_node: Any | None = None):
+    def __init__(
+        self,
+        repo: RobotHistoryRepository,
+        config: ConfigModel,
+        nav_node: Any | None = None,
+        grpc_node: Any | None = None,
+    ):
         self._logger = LogHelper(level="DEBUG" if config.debug else "INFO").get_logger(__name__)
         self._repo = repo
         self._robot_id = config.robot_id
@@ -32,7 +38,9 @@ class RobotNavigationService:
         self._grpc_node = grpc_node
 
     @handle_grpc_errors
-    async def GetCurrentRobotPose(self, request: EmptyRequest, context: ServicerContext) -> RobotPose:
+    async def GetCurrentRobotPose(
+        self, request: EmptyRequest, context: ServicerContext
+    ) -> RobotPose:
         self._logger.info("GetCurrentRobotPose request")
         return await self._get_pose_from_node()
 
@@ -43,8 +51,12 @@ class RobotNavigationService:
 
     @handle_grpc_errors
     @log_to_history(include_request=True, include_response=True)
-    async def NavigateToPose(self, request: NavigationGoal, context: ServicerContext) -> ActionResult:
-        self._logger.info(f"NavigateToPose request (x:{request.target_pose.position.x}, y:{request.target_pose.position.y})")
+    async def NavigateToPose(
+        self, request: NavigationGoal, context: ServicerContext
+    ) -> ActionResult:
+        self._logger.info(
+            f"NavigateToPose request (x:{request.target_pose.position.x}, y:{request.target_pose.position.y})"
+        )
 
         if self._grpc_node is None:
             self._logger.error("gRPC ROS node has not been injected.")
@@ -53,7 +65,7 @@ class RobotNavigationService:
         params = {
             "x": float(request.target_pose.position.x),
             "y": float(request.target_pose.position.y),
-            "frame_id": "map"
+            "frame_id": "map",
         }
 
         # robo_claw_agent의 navigate_to 스킬 비동기 호출
@@ -64,7 +76,9 @@ class RobotNavigationService:
 
     @handle_grpc_errors
     @log_to_history(include_request=True, include_response=True)
-    async def FollowWaypoints(self, request: WaypointList, context: ServicerContext) -> ActionResult:
+    async def FollowWaypoints(
+        self, request: WaypointList, context: ServicerContext
+    ) -> ActionResult:
         self._logger.info(f"FollowWaypoints request ({len(request.waypoints)} waypoints)")
 
         if self._grpc_node is None:
@@ -73,18 +87,14 @@ class RobotNavigationService:
 
         waypoints_list = []
         for wp in request.waypoints:
-            waypoints_list.append({
-                "x": float(wp.position.x),
-                "y": float(wp.position.y)
-            })
+            waypoints_list.append({"x": float(wp.position.x), "y": float(wp.position.y)})
 
-        params = {
-            "waypoints": waypoints_list,
-            "frame_id": "map"
-        }
+        params = {"waypoints": waypoints_list, "frame_id": "map"}
 
         # robo_claw_agent의 follow_waypoints 스킬 비동기 호출
-        result = await self._grpc_node.call_execute_skill("follow_waypoints", params, timeout_sec=600.0)
+        result = await self._grpc_node.call_execute_skill(
+            "follow_waypoints", params, timeout_sec=600.0
+        )
         return skill_result_to_action_result(
             result, success_message="웨이포인트 이동 성공", fail_prefix="웨이포인트 이동 실패"
         )
@@ -153,8 +163,12 @@ class RobotNavigationService:
                 init_pose.pose.pose.orientation.w = math.cos(yaw / 2.0)
 
                 self._nav_node.initial_pose_publisher.publish(init_pose)
-                self._logger.info(f"Initial pose published to /initialpose: ({x}, {y}, yaw={yaw:.2f})")
-                return ActionResult(success=True, message=f"초기 위치 설정 성공: ({x}, {y}, yaw={yaw:.2f})")
+                self._logger.info(
+                    f"Initial pose published to /initialpose: ({x}, {y}, yaw={yaw:.2f})"
+                )
+                return ActionResult(
+                    success=True, message=f"초기 위치 설정 성공: ({x}, {y}, yaw={yaw:.2f})"
+                )
             except Exception as e:
                 self._logger.error(f"Failed to publish initial pose: {e}")
                 return ActionResult(success=False, message=f"초기 위치 설정 실패: {e}")

@@ -126,6 +126,8 @@ def _looks_like_broken_json(text: str) -> bool:
     if not rest:
         return True
     return rest[0] in _JSON_ARRAY_START_CHARS
+
+
 def loads_lenient(text: str) -> Any | None:
     """후행 쉼표 정도의 사소한 오류를 보정해 JSON을 파싱한다. 실패 시 None."""
     candidate = (text or "").strip()

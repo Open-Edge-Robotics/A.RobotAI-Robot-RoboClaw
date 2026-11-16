@@ -316,7 +316,9 @@ def test_validate_decided_action_accepts_remembered_motion_coordinate():
 def test_execute_decided_action_treats_none_as_explicit_noop():
     skill = DummySkill()
     called = []
-    skill.set_node(SimpleNamespace(_skills=SimpleNamespace(execute=lambda *a, **k: called.append(a))))
+    skill.set_node(
+        SimpleNamespace(_skills=SimpleNamespace(execute=lambda *a, **k: called.append(a)))
+    )
     node = ExecuteDecidedAction(skill)
     blackboard = {"decided_skill": "none", "decided_params": {}, "decided_reason": "새 작업 없음"}
     node._blackboard = blackboard

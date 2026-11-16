@@ -1,7 +1,5 @@
 """autonomous cleanup handoff"""
 
-
-
 from _autonomous_cleanup_helpers import (  # noqa: F401
     LLMDecideAction,
     MagicMock,
@@ -46,6 +44,8 @@ def test_cleanup_mode_routes_to_demo_peer_when_cushion_is_also_detected(monkeypa
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "안방"
     assert payload["target_object"] == "포장지"
+
+
 def test_cleanup_mode_routes_to_demo_peer_when_cushion_in_objects_and_waste_in_scene(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
@@ -78,6 +78,8 @@ def test_cleanup_mode_routes_to_demo_peer_when_cushion_in_objects_and_waste_in_s
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "안방"
     assert payload["target_object"] == "포장지"
+
+
 def test_household_item_handoff_requires_manipulation_not_cleanup_demo(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
 
@@ -104,6 +106,8 @@ def test_household_item_handoff_requires_manipulation_not_cleanup_demo(monkeypat
     assert handoff._blackboard.get("cleanup_handoff_prepared") is not True
     assert "보관 위치를 지정해 주세요" in handoff._blackboard["cleanup_handoff_status"]
     find_peer.assert_called_once_with(node, "manipulation")
+
+
 def test_household_item_handoff_to_manipulator_preserves_category_safety(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
 
@@ -132,6 +136,8 @@ def test_household_item_handoff_to_manipulator_preserves_category_safety(monkeyp
     assert "수건" in instruction
     assert "쓰레기통" in instruction
     assert "추측하지 마세요" in instruction
+
+
 def test_cleanup_handoff_records_no_connected_capable_peer(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes, helpers
 
@@ -156,6 +162,8 @@ def test_cleanup_handoff_records_no_connected_capable_peer(monkeypatch):
     assert handoff._blackboard["cleanup_handoff_blocked"] is True
     assert handoff._blackboard["decided_skill"] == "none"
     assert "동료" in handoff._blackboard["cleanup_handoff_status"]
+
+
 def test_find_connected_peer_skips_grpc_lookup_when_ros_peer_capable(monkeypatch):
     """ROS 그래프에서 능력이 확인되면 ListPeers gRPC 조회(최대 10초)를 지연시켜야 한다."""
     from robo_claw_agent.skills.autonomous_skill import helpers
@@ -178,6 +186,8 @@ def test_find_connected_peer_skips_grpc_lookup_when_ros_peer_capable(monkeypatch
 
     assert peer == {"peer_name": "butler", "transport": "ros2"}
     assert called == []
+
+
 def test_blocked_cleanup_handoff_skips_llm_replanning():
     llm = MagicMock()
     skill = MagicMock()
@@ -187,12 +197,16 @@ def test_blocked_cleanup_handoff_skips_llm_replanning():
 
     assert decide.tick() == NodeStatus.SUCCESS
     llm.chat.assert_not_called()
+
+
 def test_cleanup_mode_allows_only_registered_cleanup_skills():
     from robo_claw_agent.skills.autonomous_skill.decision_nodes import _CLEANUP_ACTION_SKILLS
 
     assert "adaptive_pick_object" in _CLEANUP_ACTION_SKILLS
     assert "call_peer_robot" not in _CLEANUP_ACTION_SKILLS
     assert "navigate_to" not in _CLEANUP_ACTION_SKILLS
+
+
 def test_cleanup_validator_allows_local_composite_pick_without_navigation_target():
     pick_skill = SimpleNamespace(
         terminal_behavior="sync",
@@ -213,6 +227,8 @@ def test_cleanup_validator_allows_local_composite_pick_without_navigation_target
     }
 
     assert validator.tick() == NodeStatus.SUCCESS
+
+
 def test_stationary_observation_allows_only_prepared_cleanup_handoff():
     peer_skill = SimpleNamespace(
         terminal_behavior="sync",
@@ -237,6 +253,8 @@ def test_stationary_observation_allows_only_prepared_cleanup_handoff():
 
     blackboard["cleanup_handoff_prepared"] = False
     assert validator.tick() == NodeStatus.FAILURE
+
+
 def test_query_grpc_peer_capability_timeout_and_caching(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -274,6 +292,8 @@ def test_query_grpc_peer_capability_timeout_and_caching(monkeypatch):
     res2 = helpers._query_grpc_peer_capability(node, "cloid 1호", "cleanup_demo")
     assert res2 is True
     assert len(calls) == 1
+
+
 def test_query_grpc_peer_capability_negative_caching(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -303,6 +323,8 @@ def test_query_grpc_peer_capability_negative_caching(monkeypatch):
     res2 = helpers._query_grpc_peer_capability(node, "offline_peer", "cleanup_demo")
     assert res2 is False
     assert len(calls) == 1
+
+
 def test_discover_peer_agents_reads_from_node_parameter(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 

@@ -142,7 +142,7 @@ def _timestamp_to_epoch(value: Any) -> float:
 
 
 _MS_MASK = 0xFFFFFFFFFFFF  # 48비트
-_COUNTER_MAX = 0xFFF       # 12비트 (같은 ms 안에서 4096건까지 단조 증가)
+_COUNTER_MAX = 0xFFF  # 12비트 (같은 ms 안에서 4096건까지 단조 증가)
 _ID_LOCK = threading.Lock()
 _last_ms = 0
 _counter = 0
@@ -173,9 +173,7 @@ def new_entry_id() -> str:
                 _last_ms += 1
                 _counter = 0
         ms, counter = _last_ms, _counter
-    value = (
-        (ms << 80) | (0x7 << 76) | (counter << 64) | (0b10 << 62) | secrets.randbits(62)
-    )
+    value = (ms << 80) | (0x7 << 76) | (counter << 64) | (0b10 << 62) | secrets.randbits(62)
     return str(UUID(int=value))
 
 

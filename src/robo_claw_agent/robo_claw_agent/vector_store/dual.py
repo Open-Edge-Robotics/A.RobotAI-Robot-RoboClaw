@@ -54,7 +54,9 @@ class DualVectorStore:
                     id=entry_id,
                 )
             except Exception as exc:
-                logger.warning("Failed to store to remote vector store, written to local mirror only: %s", exc)
+                logger.warning(
+                    "Failed to store to remote vector store, written to local mirror only: %s", exc
+                )
         return True
 
     def search(
@@ -214,7 +216,9 @@ class DualVectorStore:
                     except Exception as exc:
                         logger.warning("Reconcile remote push failed (id=%s): %s", entry_id, exc)
         else:
-            logger.warning("Skipping mirror -> primary push due to remote vector dimension mismatch.")
+            logger.warning(
+                "Skipping mirror -> primary push due to remote vector dimension mismatch."
+            )
 
         pull_entries: list[dict[str, Any]] = []
         for entry in primary_entries:

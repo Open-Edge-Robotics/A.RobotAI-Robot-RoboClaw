@@ -86,7 +86,11 @@ def test_last_pose_aliases_are_recognized():
 def test_remember_last_pose_keeps_single_record():
     store = _Store(
         entries=[
-            {"id": "loc-1", "text": "거실의 위치는 x: 1.0, y: 2.0", "metadata": {"type": "location"}},
+            {
+                "id": "loc-1",
+                "text": "거실의 위치는 x: 1.0, y: 2.0",
+                "metadata": {"type": "location"},
+            },
             _last_pose_entry(entry_id="old-last"),
         ]
     )
@@ -250,7 +254,9 @@ def test_setup_last_pose_tracking_registers_timer_and_persists_rag():
         _tf_buffer=tf_buffer,
         _map_frame="map",
         _robot_base_frame="base_link",
-        create_timer=lambda period, callback, callback_group=None: timers.append((period, callback)),
+        create_timer=lambda period, callback, callback_group=None: timers.append(
+            (period, callback)
+        ),
         get_logger=lambda: SimpleNamespace(info=lambda *_: None, warning=lambda *_: None),
     )
 
@@ -278,7 +284,9 @@ def test_setup_last_pose_tracking_keeps_memory_without_rag():
         _tf_buffer=_node_with_tf(1.0, 1.0, 0.0)._tf_buffer,
         _map_frame="map",
         _robot_base_frame="base_link",
-        create_timer=lambda period, callback, callback_group=None: timers.append((period, callback)),
+        create_timer=lambda period, callback, callback_group=None: timers.append(
+            (period, callback)
+        ),
         get_logger=lambda: SimpleNamespace(info=lambda *_: None, warning=lambda *_: None),
     )
 
@@ -298,7 +306,9 @@ def test_setup_last_pose_tracking_disabled_without_tf():
         _enable_rag=True,
         _memory=_Memory(),
         _tf_buffer=None,
-        create_timer=lambda period, callback, callback_group=None: timers.append((period, callback)),
+        create_timer=lambda period, callback, callback_group=None: timers.append(
+            (period, callback)
+        ),
         get_logger=lambda: SimpleNamespace(info=lambda *_: None, warning=lambda *_: None),
     )
 

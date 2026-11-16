@@ -13,9 +13,20 @@ from robo_claw_grpc.utils import LogHelper, handle_grpc_errors, log_to_history
 # 파이프라인 하위 세그먼트에 허용되는 필터 명령.
 # 임의 프로세스를 띄울 수 있는 도구(awk, sed, xargs, find, tee, sort -o 등)는
 # 의도적으로 제외한다. 여기 있는 명령들은 stdin을 읽어 stdout으로만 출력한다.
-_ALLOWED_PIPE_FILTERS = frozenset({
-    "grep", "egrep", "fgrep", "head", "tail", "wc", "cut", "tr", "nl", "jq",
-})
+_ALLOWED_PIPE_FILTERS = frozenset(
+    {
+        "grep",
+        "egrep",
+        "fgrep",
+        "head",
+        "tail",
+        "wc",
+        "cut",
+        "tr",
+        "nl",
+        "jq",
+    }
+)
 
 # 쉘을 거치지 않으므로 아래 연산자는 해석되지 않는다. 사용자가 동작할 것이라
 # 오해하지 않도록 명시적으로 거부한다.
@@ -76,8 +87,7 @@ def _parse_ros_command(command: str) -> tuple[list[list[str]], str]:
         if segment[0] not in _ALLOWED_PIPE_FILTERS:
             allowed = ", ".join(sorted(_ALLOWED_PIPE_FILTERS))
             return [], (
-                f"보안 위반: 파이프 대상 '{segment[0]}'는 허용되지 않습니다. "
-                f"허용 필터: {allowed}"
+                f"보안 위반: 파이프 대상 '{segment[0]}'는 허용되지 않습니다. 허용 필터: {allowed}"
             )
 
     return segments, ""
@@ -135,7 +145,9 @@ class RobotCommandService:
 
     @handle_grpc_errors
     @log_to_history(include_request=True, include_response=True)
-    async def ExecuteROSCommand(self, request: CommandRequest, context: ServicerContext) -> CommandResponse:
+    async def ExecuteROSCommand(
+        self, request: CommandRequest, context: ServicerContext
+    ) -> CommandResponse:
         command = request.command.strip()
         self._logger.info(f"ExecuteROSCommand: {command}")
 

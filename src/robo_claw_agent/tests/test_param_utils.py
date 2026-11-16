@@ -36,9 +36,7 @@ class TestBoolParam:
 
 class TestBoundedTimeout:
     def test_none_returns_default(self):
-        assert (
-            _param_utils.bounded_timeout(None, default=5.0, minimum=1.0, maximum=10.0) == 5.0
-        )
+        assert _param_utils.bounded_timeout(None, default=5.0, minimum=1.0, maximum=10.0) == 5.0
 
     def test_bool_is_rejected(self):
         assert _param_utils.bounded_timeout(True, default=5.0, minimum=1.0, maximum=10.0) is None
@@ -48,9 +46,7 @@ class TestBoundedTimeout:
         assert _param_utils.bounded_timeout(11.0, default=5.0, minimum=1.0, maximum=10.0) is None
 
     def test_non_numeric_is_rejected(self):
-        assert (
-            _param_utils.bounded_timeout("abc", default=5.0, minimum=1.0, maximum=10.0) is None
-        )
+        assert _param_utils.bounded_timeout("abc", default=5.0, minimum=1.0, maximum=10.0) is None
 
     def test_nan_is_rejected(self):
         assert (
@@ -66,9 +62,7 @@ class TestSingleImplementation:
     def test_cloid_skills_share_bounded_timeout(self):
         from robo_claw_agent.skills import cloid_motion_skill, cloid_packing_pose_skill
 
-        assert (
-            cloid_motion_skill._bounded_timeout is cloid_packing_pose_skill._bounded_timeout
-        )
+        assert cloid_motion_skill._bounded_timeout is cloid_packing_pose_skill._bounded_timeout
         assert cloid_motion_skill._bounded_timeout is _param_utils.bounded_timeout
 
     def test_sequence_params_delegates_to_shared_bool_param(self):

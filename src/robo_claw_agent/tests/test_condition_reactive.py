@@ -21,6 +21,7 @@ def mock_skill():
 
 # ── SkillChainNode 테스트 ──────────────────────────────────────────────────
 
+
 def test_skill_chain_node_empty_chain(mock_skill):
     node = SkillChainNode(mock_skill, [])
     node._blackboard = {}
@@ -135,9 +136,11 @@ def test_skill_chain_node_running_before_done(mock_skill):
 
 # ── ConditionReactiveSkill 테스트 ─────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def reset_autonomous_active():
     from robo_claw_agent.skills.autonomous_skill import globals as ag
+
     ag._AUTONOMOUS_ACTIVE.clear()
     yield
     ag._AUTONOMOUS_ACTIVE.clear()

@@ -237,9 +237,7 @@ def evaluate_yield_request(request: YieldRequest, state: YieldReceiverState) -> 
     # 사이에 넘기지 않으므로 맵 공유가 필요 없고, 판정하지 않았으면 보수적으로
     # 동시 점유로 본다.
     contested = (
-        bool(request.requester_at_target)
-        if request.requester_at_target is not None
-        else True
+        bool(request.requester_at_target) if request.requester_at_target is not None else True
     )
 
     if contested:

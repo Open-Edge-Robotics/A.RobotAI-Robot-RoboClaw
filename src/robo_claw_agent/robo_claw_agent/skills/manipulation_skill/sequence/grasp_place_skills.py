@@ -56,19 +56,24 @@ class GraspSkill(BaseSkill):
         "type": "object",
         "properties": {
             "object_name": {"type": "string", "description": "메모리에 저장된 물체명"},
-            "target_pose": {"type": "object", "description": "pose 목표(frame_id, position, orientation)"},
-            "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
+            "target_pose": {
+                "type": "object",
+                "description": "pose 목표(frame_id, position, orientation)",
+            },
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "z": {"type": "number"},
             "frame_id": {"type": "string", "default": "base_link"},
             "approach_distance_m": {"type": "number"},
             "retreat_distance_m": {"type": "number"},
             "require_gripper_confirmation": {"type": "boolean", "default": True},
             "require_ready": {"type": "boolean", "default": True},
-            "max_grasp_retries": {"type": "integer", "default": 1}
+            "max_grasp_retries": {"type": "integer", "default": 1},
         },
         "oneOf": [
             {"required": ["object_name"]},
             {"required": ["target_pose"]},
-            {"required": ["x", "y", "z"]}
+            {"required": ["x", "y", "z"]},
         ],
         "additionalProperties": True,
     }
@@ -341,18 +346,20 @@ class PlaceSkill(BaseSkill):
         "type": "object",
         "properties": {
             "target_object": {"type": "string", "description": "내려놓을 표면/위치 이름"},
-            "target_pose": {"type": "object", "description": "pose 목표(frame_id, position, orientation)"},
-            "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
+            "target_pose": {
+                "type": "object",
+                "description": "pose 목표(frame_id, position, orientation)",
+            },
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "z": {"type": "number"},
             "frame_id": {"type": "string", "default": "base_link"},
             "approach_distance_m": {"type": "number"},
             "retreat_distance_m": {"type": "number"},
             "require_gripper_confirmation": {"type": "boolean", "default": True},
-            "require_ready": {"type": "boolean", "default": True}
+            "require_ready": {"type": "boolean", "default": True},
         },
-        "oneOf": [
-            {"required": ["target_pose"]},
-            {"required": ["x", "y", "z"]}
-        ],
+        "oneOf": [{"required": ["target_pose"]}, {"required": ["x", "y", "z"]}],
         "additionalProperties": True,
     }
     side_effects = ("arm_motion", "gripper_motion")

@@ -303,17 +303,12 @@ def _launch_setup(context, *args, **kwargs):
     cleanup_demo_enabled = LaunchConfiguration("cloid_cleanup_demo_enabled").perform(
         context
     ).strip().lower() in ("1", "true", "yes", "on")
-    cloid_expression_enabled = (
-        LaunchConfiguration("cloid_expression_enabled").perform(context).strip().lower()
-        in ("1", "true", "yes", "on")
-    )
-    cloid_navigation_pose_enabled = (
-        LaunchConfiguration("cloid_navigation_pose_enabled")
-        .perform(context)
-        .strip()
-        .lower()
-        in ("1", "true", "yes", "on")
-    )
+    cloid_expression_enabled = LaunchConfiguration("cloid_expression_enabled").perform(
+        context
+    ).strip().lower() in ("1", "true", "yes", "on")
+    cloid_navigation_pose_enabled = LaunchConfiguration("cloid_navigation_pose_enabled").perform(
+        context
+    ).strip().lower() in ("1", "true", "yes", "on")
     cleanup_demo_agent_id = "".join(
         character
         for character in LaunchConfiguration("agent_id").perform(context).casefold()
@@ -400,47 +395,80 @@ def _launch_setup(context, *args, **kwargs):
     agent_parameters[-1].update(
         _optional_overrides(
             {
-                'llm_embedding_model': (llm_embedding_model, llm_embedding_model),
-                'llm_embedding_provider': (llm_embedding_provider, llm_embedding_provider),
-                'llm_embedding_base_url': (llm_embedding_base_url, llm_embedding_base_url),
-                'llm_embedding_api_key': (llm_embedding_api_key, llm_embedding_api_key),
-                'llm_base_url': (llm_base_url, llm_base_url),
-                'robot_soul_file': (robot_soul_file, robot_soul_file),
-                'system_prompt_file': (system_prompt_file, system_prompt_file),
-                'skills_guide_file': (skills_guide_file, skills_guide_file),
-                'robot_limits_file': (robot_limits_file, robot_limits_file),
-                'troubleshooting_guide_file': (troubleshooting_guide_file, troubleshooting_guide_file),
-                'butler_script_dir': (resolved_butler_script_dir, resolved_butler_script_dir),
-                'agent_workspace_dir': (agent_workspace_dir, agent_workspace_dir),
-                'ollama_options_json': (ollama_options_json, ollama_options_json),
-                'enable_rag': (enable_rag, enable_rag.lower() in ('1', 'true', 'yes', 'on')),
-                'rag_vector_backend': (rag_vector_backend, rag_vector_backend),
-                'rag_top_k': (rag_top_k, _safe_int(rag_top_k)),
-                'rag_score_threshold': (rag_score_threshold, _safe_float(rag_score_threshold)),
-                'enable_skill_learning': (enable_skill_learning, enable_skill_learning.lower() in ('1', 'true', 'yes', 'on')),
-                'skill_learning_success_sample_rate': (skill_learning_success_sample_rate, _safe_float(skill_learning_success_sample_rate)),
-                'skill_learning_reflect_interval_sec': (skill_learning_reflect_interval_sec, _safe_float(skill_learning_reflect_interval_sec)),
-                'qdrant_url': (qdrant_url, qdrant_url),
-                'qdrant_api_key': (qdrant_api_key, qdrant_api_key),
-                'qdrant_collection': (qdrant_collection, qdrant_collection),
-                'qdrant_timeout_sec': (qdrant_timeout_sec, _safe_float(qdrant_timeout_sec)),
-                'rag_local_mirror': (rag_local_mirror, rag_local_mirror.lower() in ('1', 'true', 'yes', 'on')),
-                'memory_path': (memory_path, memory_path),
-                'task_queue_max_size': (task_queue_max_size, _safe_int(task_queue_max_size)),
-                'llm_fail_fast': (llm_fail_fast, llm_fail_fast.lower() in ('1', 'true', 'yes', 'on')),
-                'llm_tool_calling': (llm_tool_calling, llm_tool_calling.lower() in ('1', 'true', 'yes', 'on')),
-                'strict_config': (strict_config, strict_config.lower() in ('1', 'true', 'yes', 'on')),
-                'enable_task_decomposition': (enable_task_decomposition, enable_task_decomposition.lower() in ('1', 'true', 'yes', 'on')),
-                'task_decomposition_max_steps': (task_decomposition_max_steps, _safe_int(task_decomposition_max_steps)),
-                'task_step_max_retries': (task_step_max_retries, _safe_int(task_step_max_retries)),
-                'task_decomposition_wait_margin_cap_sec': (task_decomposition_wait_margin_cap_sec, _safe_float(task_decomposition_wait_margin_cap_sec)),
-                'camera_topic': (camera_topic, camera_topic),
-                'depth_topic': (depth_topic, depth_topic),
-                'camera_info_topic': (camera_info_topic, camera_info_topic),
-                'gripper_camera_topic': (gripper_camera_topic, gripper_camera_topic),
-                'gripper_depth_topic': (gripper_depth_topic, gripper_depth_topic),
-                'gripper_camera_info_topic': (gripper_camera_info_topic, gripper_camera_info_topic),
-                'gripper_pointcloud_topic': (gripper_pointcloud_topic, gripper_pointcloud_topic),
+                "llm_embedding_model": (llm_embedding_model, llm_embedding_model),
+                "llm_embedding_provider": (llm_embedding_provider, llm_embedding_provider),
+                "llm_embedding_base_url": (llm_embedding_base_url, llm_embedding_base_url),
+                "llm_embedding_api_key": (llm_embedding_api_key, llm_embedding_api_key),
+                "llm_base_url": (llm_base_url, llm_base_url),
+                "robot_soul_file": (robot_soul_file, robot_soul_file),
+                "system_prompt_file": (system_prompt_file, system_prompt_file),
+                "skills_guide_file": (skills_guide_file, skills_guide_file),
+                "robot_limits_file": (robot_limits_file, robot_limits_file),
+                "troubleshooting_guide_file": (
+                    troubleshooting_guide_file,
+                    troubleshooting_guide_file,
+                ),
+                "butler_script_dir": (resolved_butler_script_dir, resolved_butler_script_dir),
+                "agent_workspace_dir": (agent_workspace_dir, agent_workspace_dir),
+                "ollama_options_json": (ollama_options_json, ollama_options_json),
+                "enable_rag": (enable_rag, enable_rag.lower() in ("1", "true", "yes", "on")),
+                "rag_vector_backend": (rag_vector_backend, rag_vector_backend),
+                "rag_top_k": (rag_top_k, _safe_int(rag_top_k)),
+                "rag_score_threshold": (rag_score_threshold, _safe_float(rag_score_threshold)),
+                "enable_skill_learning": (
+                    enable_skill_learning,
+                    enable_skill_learning.lower() in ("1", "true", "yes", "on"),
+                ),
+                "skill_learning_success_sample_rate": (
+                    skill_learning_success_sample_rate,
+                    _safe_float(skill_learning_success_sample_rate),
+                ),
+                "skill_learning_reflect_interval_sec": (
+                    skill_learning_reflect_interval_sec,
+                    _safe_float(skill_learning_reflect_interval_sec),
+                ),
+                "qdrant_url": (qdrant_url, qdrant_url),
+                "qdrant_api_key": (qdrant_api_key, qdrant_api_key),
+                "qdrant_collection": (qdrant_collection, qdrant_collection),
+                "qdrant_timeout_sec": (qdrant_timeout_sec, _safe_float(qdrant_timeout_sec)),
+                "rag_local_mirror": (
+                    rag_local_mirror,
+                    rag_local_mirror.lower() in ("1", "true", "yes", "on"),
+                ),
+                "memory_path": (memory_path, memory_path),
+                "task_queue_max_size": (task_queue_max_size, _safe_int(task_queue_max_size)),
+                "llm_fail_fast": (
+                    llm_fail_fast,
+                    llm_fail_fast.lower() in ("1", "true", "yes", "on"),
+                ),
+                "llm_tool_calling": (
+                    llm_tool_calling,
+                    llm_tool_calling.lower() in ("1", "true", "yes", "on"),
+                ),
+                "strict_config": (
+                    strict_config,
+                    strict_config.lower() in ("1", "true", "yes", "on"),
+                ),
+                "enable_task_decomposition": (
+                    enable_task_decomposition,
+                    enable_task_decomposition.lower() in ("1", "true", "yes", "on"),
+                ),
+                "task_decomposition_max_steps": (
+                    task_decomposition_max_steps,
+                    _safe_int(task_decomposition_max_steps),
+                ),
+                "task_step_max_retries": (task_step_max_retries, _safe_int(task_step_max_retries)),
+                "task_decomposition_wait_margin_cap_sec": (
+                    task_decomposition_wait_margin_cap_sec,
+                    _safe_float(task_decomposition_wait_margin_cap_sec),
+                ),
+                "camera_topic": (camera_topic, camera_topic),
+                "depth_topic": (depth_topic, depth_topic),
+                "camera_info_topic": (camera_info_topic, camera_info_topic),
+                "gripper_camera_topic": (gripper_camera_topic, gripper_camera_topic),
+                "gripper_depth_topic": (gripper_depth_topic, gripper_depth_topic),
+                "gripper_camera_info_topic": (gripper_camera_info_topic, gripper_camera_info_topic),
+                "gripper_pointcloud_topic": (gripper_pointcloud_topic, gripper_pointcloud_topic),
             }
         )
     )

@@ -2,10 +2,7 @@ import importlib.util
 from pathlib import Path
 
 _DIRECT_SKILLS_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "robo_claw_agent"
-    / "agent_node"
-    / "direct_skills.py"
+    Path(__file__).resolve().parents[1] / "robo_claw_agent" / "agent_node" / "direct_skills.py"
 )
 _SPEC = importlib.util.spec_from_file_location(
     "robo_claw_agent.agent_node.direct_skills", _DIRECT_SKILLS_PATH
@@ -55,15 +52,11 @@ def test_direct_relative_move_ignores_manipulation_request():
     이 경로는 LLM을 우회하므로, 오라우팅되면 파지 대신 베이스가 주행한다.
     """
     assert _DIRECT_SKILLS.direct_relative_move_skill(None, "2미터 앞에 있는 컵 잡아줘") is None
-    assert (
-        _DIRECT_SKILLS.direct_relative_move_skill(None, "1미터 앞 테이블 위 컵 집어줘") is None
-    )
+    assert _DIRECT_SKILLS.direct_relative_move_skill(None, "1미터 앞 테이블 위 컵 집어줘") is None
 
 
 def test_direct_relative_move_ignores_non_move_reference():
-    assert (
-        _DIRECT_SKILLS.direct_relative_move_skill(None, "2미터 앞에 있는 물체 보여줘") is None
-    )
+    assert _DIRECT_SKILLS.direct_relative_move_skill(None, "2미터 앞에 있는 물체 보여줘") is None
 
 
 def test_check_direct_skill_prefers_pick_over_relative_move():

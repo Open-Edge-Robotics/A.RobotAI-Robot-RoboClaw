@@ -29,6 +29,8 @@ def test_without_aruco_residual_head_reports_ready(monkeypatch):
 
     assert result["ready_source"] == "head_camera"
     assert backend.calls == []
+
+
 def test_aruco_residual_shifts_head_guidance(monkeypatch):
     """잔차가 헤드 3D 관측에 실제로 더해져 유도 명령을 바꾸는지 확인한다."""
     # 헤드가 물체를 실제보다 0.10m 낮게 본다고 보정 -> 파지 반경(0.05) 밖이 되어
@@ -40,6 +42,8 @@ def test_aruco_residual_shifts_head_guidance(monkeypatch):
     # lift_delta = clamp(0.10, ±max_lift_step_m 0.06) = 0.06
     assert lift_calls[0][2]["joint_lift"] == pytest.approx(0.46)
     assert result["head_assist"]["guided_steps"] == 1
+
+
 def test_head_camera_params_force_head_routing():
     """그리퍼용 params 가 섞여 들어와도 헤드 depth 토픽으로 라우팅되어야 한다."""
     routed = head_vision._head_camera_params(
@@ -57,21 +61,29 @@ def test_head_camera_params_force_head_routing():
     assert "depth_topic" not in routed
     assert "camera_info_topic" not in routed
     assert routed["target_object"] == "cup"
+
+
 def test_head_camera_params_honor_explicit_head_overrides():
     routed = head_vision._head_camera_params(
         {"head_depth_topic": "/head/depth", "head_camera_info_topic": "/head/info"}
     )
     assert routed["depth_topic"] == "/head/depth"
     assert routed["camera_info_topic"] == "/head/info"
+
+
 def test_object_base_xyz_extracts_tuple():
     assert head_vision._object_base_xyz(_head_obs(1.0, 2.0, 3.0)) == (1.0, 2.0, 3.0)
     assert head_vision._object_base_xyz({"success": False}) is None
     assert head_vision._object_base_xyz({"success": True}) is None
+
+
 def test_grasp_center_prefers_tf():
     fresh = 9_500_000_000
     skill = _aruco_skill({"link_grasp_center": (0.01, -0.67, 0.71, fresh)})
 
     assert ee_state._grasp_center_base_xyz(skill) == pytest.approx((0.01, -0.67, 0.71))
+
+
 def test_grasp_center_falls_back_to_fk(monkeypatch):
     """TF 가 없으면 joint_states + FK 로 계산한다."""
     skill = ServoGripperToObjectSkill()
@@ -90,12 +102,16 @@ def test_grasp_center_falls_back_to_fk(monkeypatch):
 
     # FK 검증값: lift=0.6, ext=0.26 -> (-0.0213, -0.6749, 0.7097)
     assert xyz == pytest.approx((-0.0213, -0.6749, 0.7097), abs=1e-3)
+
+
 def test_grasp_center_returns_none_without_tf_or_joints(monkeypatch):
     skill = ServoGripperToObjectSkill()
     skill.set_node(_make_node({}))
     monkeypatch.setattr(ee_state, "_joint_positions", lambda s, names: None)
 
     assert ee_state._grasp_center_base_xyz(skill) is None
+
+
 def test_adaptive_pick_places_head_between_prepare_and_gripper_observe(monkeypatch):
     """헤드는 준비자세 직후, 그리퍼 확인 직전에 파지 감시 자세로 이동해야 한다."""
     calls = []
@@ -111,6 +127,8 @@ def test_adaptive_pick_places_head_between_prepare_and_gripper_observe(monkeypat
     assert ("head", "gripper_side_head") in calls
     # 주행 안전을 위한 travel_head 복귀는 그대로 유지되어야 한다.
     assert calls[-1] == ("head", "travel_head")
+
+
 def test_adaptive_pick_marks_head_ready_for_servo(monkeypatch):
     """서보가 헤드를 다시 움직이지 않도록 head_assist_ready 를 내려보낸다."""
     calls = []
@@ -122,6 +140,8 @@ def test_adaptive_pick_marks_head_ready_for_servo(monkeypatch):
 
     pick_calls = [value for name, value in calls if name == "pick"]
     assert pick_calls == [True]
+
+
 def test_adaptive_pick_continues_when_head_move_fails(monkeypatch):
     """헤드 이동 실패는 치명적이지 않다 — 파지 시퀀스가 계속 진행되어야 한다."""
     calls = []
@@ -133,6 +153,8 @@ def test_adaptive_pick_continues_when_head_move_fails(monkeypatch):
 
     assert result["success"] is True
     assert "observe_gripper" in [name for name, _ in calls]
+
+
 def test_adaptive_pick_skips_head_assist_when_disabled(monkeypatch):
     """use_head_assist=False 면 gripper_side_head 이동/헤드 관측이 없어야 한다."""
     calls = []
@@ -149,6 +171,8 @@ def test_adaptive_pick_skips_head_assist_when_disabled(monkeypatch):
     assert "observe_head" not in [name for name, _ in calls]
     # travel_head 복귀는 여전히 수행된다.
     assert calls[-1] == ("head", "travel_head")
+
+
 def test_adaptive_pick_lateral_aligns_while_arm_is_retracted(monkeypatch):
     """헤드가 물체를 보면 팔이 접힌 지금(ready pose) 좌우 정렬을 시도해야 한다."""
     calls = []
@@ -156,7 +180,9 @@ def test_adaptive_pick_lateral_aligns_while_arm_is_retracted(monkeypatch):
     monkeypatch.setattr(
         head_assist.HeadAssist,
         "observe",
-        lambda self: (calls.append(("observe_head", None)) or ((0.05, -0.60, 0.70), {"success": True})),
+        lambda self: (
+            calls.append(("observe_head", None)) or ((0.05, -0.60, 0.70), {"success": True})
+        ),
     )
     aligned = {}
 

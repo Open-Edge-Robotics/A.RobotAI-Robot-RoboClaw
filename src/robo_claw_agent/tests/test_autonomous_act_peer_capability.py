@@ -28,6 +28,8 @@ def test_self_capabilities_detects_manipulation(mock_node):
     assert "manipulation" in caps
     assert "navigation" in caps
     assert _has_manipulation_capability(mock_node) is True
+
+
 def test_self_capabilities_no_manipulation(mock_node):
     """grasp/place 스킬이 없으면 manipulation 능력이 없다."""
     mock_node._skills.list_skills.return_value = [
@@ -37,6 +39,8 @@ def test_self_capabilities_no_manipulation(mock_node):
     caps = _self_capabilities(mock_node)
     assert "manipulation" not in caps
     assert _has_manipulation_capability(mock_node) is False
+
+
 def test_discover_peer_agents_reads_capabilities(monkeypatch):
     """GRPC_TARGET_PEERS_JSON의 capabilities 필드가 파싱된다."""
 
@@ -68,6 +72,8 @@ def test_discover_peer_agents_reads_capabilities(monkeypatch):
     assert "former" in agents
     assert "manipulation" in agents["butler"]["capabilities"]
     assert "navigation" in agents["former"]["capabilities"]
+
+
 def test_find_peer_with_capability_finds_manipulation(monkeypatch):
     """manipulation 능력을 가진 동료를 찾는다."""
 
@@ -96,6 +102,8 @@ def test_find_peer_with_capability_finds_manipulation(monkeypatch):
 
     peer = _find_peer_with_capability(node, "manipulation")
     assert peer == "butler"
+
+
 def test_find_peer_with_capability_returns_none_when_no_match(monkeypatch):
     """매칭되는 동료가 없으면 None을 반환한다."""
     peers_json = json.dumps(
@@ -117,6 +125,8 @@ def test_find_peer_with_capability_returns_none_when_no_match(monkeypatch):
 
     peer = _find_peer_with_capability(node, "manipulation")
     assert peer is None
+
+
 def test_llm_decide_action_includes_capabilities_in_prompt(mock_node):
     """LLMDecideAction 프롬프트에 capabilities와 위임 강제 가이드가 포함된다."""
     mock_node._skills.list_skills.return_value = [

@@ -69,9 +69,7 @@ def test_cancel_cmd_vel_rotation_stops_worker_and_publishes_zero():
     result: list[tuple[bool, str]] = []
 
     worker = threading.Thread(
-        target=lambda: result.append(
-            _rotate_via_cmd_vel(node, target_yaw=1.0, timeout_sec=5.0)
-        )
+        target=lambda: result.append(_rotate_via_cmd_vel(node, target_yaw=1.0, timeout_sec=5.0))
     )
     worker.start()
     for _ in range(20):

@@ -64,6 +64,7 @@ class RoboClawGrpcBatteryNode(Node):
 
     def _read_sysfs_battery(self) -> float:
         from pathlib import Path
+
         for bat_dir in Path("/sys/class/power_supply").glob("BAT*"):
             try:
                 cap_file = bat_dir / "capacity"

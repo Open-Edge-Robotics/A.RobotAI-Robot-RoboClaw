@@ -35,6 +35,8 @@ def _ready_failure_future():
     future = Future()
     future.set_result(SimpleNamespace(success=False, error_message="no peers", peers=[]))
     return future
+
+
 @pytest.fixture
 def mock_node():
     node = MagicMock()

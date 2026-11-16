@@ -395,7 +395,9 @@ class _LastPoseMemory(_PlaceMemory):
 
     def __init__(self, entries=None, places=None):
         super().__init__(places or {})
-        self._vector_store = SimpleNamespace(list_entries=lambda with_vectors=False: list(entries or []))
+        self._vector_store = SimpleNamespace(
+            list_entries=lambda with_vectors=False: list(entries or [])
+        )
 
 
 @pytest.mark.unit

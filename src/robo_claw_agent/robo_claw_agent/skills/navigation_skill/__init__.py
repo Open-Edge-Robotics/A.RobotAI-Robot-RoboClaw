@@ -45,5 +45,3 @@ __all__ = [
     "_rotate_via_cmd_vel",
     "_rotate_via_navigation",
 ]
-
-

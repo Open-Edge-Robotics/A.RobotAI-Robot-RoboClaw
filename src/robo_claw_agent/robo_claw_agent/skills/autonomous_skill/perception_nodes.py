@@ -41,6 +41,7 @@ class MonitorObjectNode(BTNode):
 
     def tick(self) -> NodeStatus:
         from robo_claw_agent.skills.perception_skill.globals import _VISION_MSGS_AVAILABLE
+
         if not _VISION_MSGS_AVAILABLE:
             return NodeStatus.FAILURE
 
@@ -66,7 +67,9 @@ class MonitorObjectNode(BTNode):
 
                 class_name = _resolve_class_name(r.hypothesis.class_id)
                 if self._target_object in class_name.lower():
-                    logger.info("[BT] MonitorObjectNode: '%s' detected! (score=%.2f)", class_name, score)
+                    logger.info(
+                        "[BT] MonitorObjectNode: '%s' detected! (score=%.2f)", class_name, score
+                    )
 
                     pose = self._skill.get_map_pose()
                     if not pose:
@@ -85,9 +88,7 @@ class MonitorObjectNode(BTNode):
                     scan = self._skill.wait_for_message(
                         LaserScan, self._lidar_topic, timeout_sec=0.3
                     )
-                    distance_m = (
-                        _distance_at_bearing(scan, bearing_offset) if scan else None
-                    )
+                    distance_m = _distance_at_bearing(scan, bearing_offset) if scan else None
                     estimated = distance_m is None
                     if estimated:
                         distance_m = self._fallback_distance_m

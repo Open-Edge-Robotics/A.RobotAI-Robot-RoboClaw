@@ -133,13 +133,16 @@ def test_vlm_parse_coordinate_reconstruction(annotate_skill):
     img = np.full((10, 10, 3), 127, dtype=np.uint8)
     free_mask = np.ones((10, 10), dtype=bool)  # 전부 free
     crop = CropInfo(
-        row_offset=0, col_offset=0, crop_height=10, crop_width=10,
-        scale=1.0, full_width=10, full_height=10,
+        row_offset=0,
+        col_offset=0,
+        crop_height=10,
+        crop_width=10,
+        scale=1.0,
+        full_width=10,
+        full_height=10,
     )
 
-    detected = annotate_skill._parse_vlm_objects(
-        vlm_json_text, img, msg.info, free_mask, crop
-    )
+    detected = annotate_skill._parse_vlm_objects(vlm_json_text, img, msg.info, free_mask, crop)
 
     assert len(detected) == 2
 
@@ -173,8 +176,13 @@ def test_vlm_point_on_obstacle_snaps_to_nearest_free_cell(annotate_skill):
     free_mask[5, 5] = False
 
     crop = CropInfo(
-        row_offset=0, col_offset=0, crop_height=10, crop_width=10,
-        scale=1.0, full_width=10, full_height=10,
+        row_offset=0,
+        col_offset=0,
+        crop_height=10,
+        crop_width=10,
+        scale=1.0,
+        full_width=10,
+        full_height=10,
     )
     img = np.full((10, 10, 3), 127, dtype=np.uint8)
 
@@ -183,9 +191,7 @@ def test_vlm_point_on_obstacle_snaps_to_nearest_free_cell(annotate_skill):
     OBJECTS: [{"name": "OnObstacle", "x_rel": 0.55, "y_rel": 0.45}]
     """
 
-    detected = annotate_skill._parse_vlm_objects(
-        vlm_json_text, img, msg.info, free_mask, crop
-    )
+    detected = annotate_skill._parse_vlm_objects(vlm_json_text, img, msg.info, free_mask, crop)
 
     assert len(detected) == 1
     assert detected[0]["snapped"] is True
@@ -205,8 +211,13 @@ def test_vlm_point_far_from_free_area_is_discarded(annotate_skill):
 
     free_mask = np.zeros((10, 10), dtype=bool)
     crop = CropInfo(
-        row_offset=0, col_offset=0, crop_height=10, crop_width=10,
-        scale=1.0, full_width=10, full_height=10,
+        row_offset=0,
+        col_offset=0,
+        crop_height=10,
+        crop_width=10,
+        scale=1.0,
+        full_width=10,
+        full_height=10,
     )
     img = np.full((10, 10, 3), 127, dtype=np.uint8)
 
@@ -214,8 +225,6 @@ def test_vlm_point_far_from_free_area_is_discarded(annotate_skill):
     OBJECTS: [{"name": "InUnknownVoid", "x_rel": 0.5, "y_rel": 0.5}]
     """
 
-    detected = annotate_skill._parse_vlm_objects(
-        vlm_json_text, img, msg.info, free_mask, crop
-    )
+    detected = annotate_skill._parse_vlm_objects(vlm_json_text, img, msg.info, free_mask, crop)
 
     assert detected == []

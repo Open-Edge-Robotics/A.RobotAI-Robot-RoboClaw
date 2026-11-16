@@ -26,11 +26,14 @@ class MockNode:
         class Parameter:
             def __init__(self, val):
                 self.val = val
+
             def get_parameter_value(self):
                 class Value:
                     def __init__(self, v):
                         self.string_value = v
+
                 return Value(self.val)
+
         if name == "butler_script_dir":
             return Parameter(self._butler_script_dir)
         return None
@@ -73,7 +76,9 @@ def test_write_and_read_text_file(tmp_path):
     assert os.path.exists(os.path.join(workspace, file_name))
 
     # 2. overwrite=False 검증
-    write_res_dup = writer.execute({"file_path": file_name, "content": "New Content", "overwrite": False})
+    write_res_dup = writer.execute(
+        {"file_path": file_name, "content": "New Content", "overwrite": False}
+    )
     assert write_res_dup["success"] is False
 
     # 3. 전체 파일 읽기
@@ -104,29 +109,35 @@ def test_edit_text_file(tmp_path):
     writer.execute({"file_path": file_name, "content": initial_content})
 
     # 1. 단일 매칭 부분 치환
-    edit_res = editor.execute({
-        "file_path": file_name,
-        "target_content": "param_b: 20",
-        "replacement_content": "param_b: 99"
-    })
+    edit_res = editor.execute(
+        {
+            "file_path": file_name,
+            "target_content": "param_b: 20",
+            "replacement_content": "param_b: 99",
+        }
+    )
     assert edit_res["success"] is True
 
     # 2. 다중 매칭 시 안전 에러 반환 검증
-    edit_res_dup = editor.execute({
-        "file_path": file_name,
-        "target_content": "param_a: ",
-        "replacement_content": "param_a_new: "
-    })
+    edit_res_dup = editor.execute(
+        {
+            "file_path": file_name,
+            "target_content": "param_a: ",
+            "replacement_content": "param_a_new: ",
+        }
+    )
     assert edit_res_dup["success"] is False
     assert "교체 대상" in edit_res_dup["message"] or "allow_multiple" in edit_res_dup["message"]
 
     # 3. allow_multiple=True 일괄 치환 검증
-    edit_res_multi = editor.execute({
-        "file_path": file_name,
-        "target_content": "param_a: ",
-        "replacement_content": "param_a_new: ",
-        "allow_multiple": True
-    })
+    edit_res_multi = editor.execute(
+        {
+            "file_path": file_name,
+            "target_content": "param_a: ",
+            "replacement_content": "param_a_new: ",
+            "allow_multiple": True,
+        }
+    )
     assert edit_res_multi["success"] is True
 
 

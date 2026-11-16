@@ -38,9 +38,7 @@ def build_skill_result_msg(clock: Any, skill_result: Any) -> SkillResultMsg:
     return msg
 
 
-def build_failure_skill_result_msg(
-    clock: Any, skill_name: str, message: str
-) -> SkillResultMsg:
+def build_failure_skill_result_msg(clock: Any, skill_name: str, message: str) -> SkillResultMsg:
     """실패 응답용 ``SkillResultMsg`` 를 간편 생성.
 
     ExecuteSkill 핸들러에서 파라미터 검증 실패 등 실행 전 단계의 실패 응답에 사용.

@@ -161,7 +161,9 @@ class HeadAssist:
 
     def object_error(
         self,
-    ) -> tuple[tuple[float, float, float] | None, tuple[float, float, float] | None, dict[str, Any]]:
+    ) -> tuple[
+        tuple[float, float, float] | None, tuple[float, float, float] | None, dict[str, Any]
+    ]:
         """(물체 base 좌표, 오차 벡터 obj-ee, 관측 결과) 를 반환한다."""
         obj_xyz, observation = self.observe()
         if obj_xyz is None:
@@ -195,9 +197,7 @@ class HeadAssist:
 
     # ── 유도 (그리퍼 관측 실패 / depth 소실 시) ────────────────────────────
 
-    def assist_step(
-        self, runtime: Any, bounds: ArmBounds, *, move: bool = True
-    ) -> dict[str, Any]:
+    def assist_step(self, runtime: Any, bounds: ArmBounds, *, move: bool = True) -> dict[str, Any]:
         """헤드 관측 1회로 파지 도달 여부를 판정하고, 미도달이면 한 스텝 보정한다.
 
         기존의 "눈감고 ``joint_lift`` 를 흔드는" 재획득을 대체한다. 헤드 관측은
@@ -323,9 +323,7 @@ class HeadAssist:
             **base_result,
         }
 
-    def disagrees_with(
-        self, gripper_target_pose: Any, obj_xyz: tuple[float, float, float]
-    ) -> bool:
+    def disagrees_with(self, gripper_target_pose: Any, obj_xyz: tuple[float, float, float]) -> bool:
         """헤드 관측이 그리퍼 관측과 너무 다르면(=다른 물체) True."""
         from collections.abc import Mapping
 
@@ -377,9 +375,7 @@ def lateral_align(
         _float_param(params, "lateral_deadband_deg", _DEFAULT_LATERAL_DEADBAND_DEG)
     )
     max_correction_rad = math.radians(
-        _float_param(
-            params, "max_lateral_correction_deg", _DEFAULT_MAX_LATERAL_CORRECTION_DEG
-        )
+        _float_param(params, "max_lateral_correction_deg", _DEFAULT_MAX_LATERAL_CORRECTION_DEG)
     )
 
     bearing_rad = math.atan2(obj_base_xyz[1], obj_base_xyz[0])

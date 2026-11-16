@@ -344,9 +344,7 @@ class FixedPatternGraspSkill(BaseSkill):
 
     # ── 헬퍼 ────────────────────────────────────────────────────────────────
 
-    def _resolve_object_xyz(
-        self, params: dict[str, Any]
-    ) -> tuple[float, float, float] | None:
+    def _resolve_object_xyz(self, params: dict[str, Any]) -> tuple[float, float, float] | None:
         """object_base_xyz 파라미터 또는 헤드 카메라 관측으로 물체 3D 좌표를 얻는다."""
         raw = params.get("object_base_xyz")
         if isinstance(raw, Mapping):

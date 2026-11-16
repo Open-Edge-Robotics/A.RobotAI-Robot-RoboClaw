@@ -14,10 +14,7 @@ def test_load_robot_limits_valid_file(tmp_path):
     limits_content = {
         "max_linear_velocity": 1.5,
         "max_angular_velocity": 1.0,
-        "workspace_bounds": {
-            "x_min": -5.0,
-            "x_max": 5.0
-        }
+        "workspace_bounds": {"x_min": -5.0, "x_max": 5.0},
     }
     limits_file = tmp_path / "ROBOT_LIMITS.json"
     limits_file.write_text(json.dumps(limits_content, indent=2), encoding="utf-8")
@@ -27,6 +24,7 @@ def test_load_robot_limits_valid_file(tmp_path):
     assert parsed["max_linear_velocity"] == 1.5
     assert parsed["workspace_bounds"]["x_min"] == -5.0
 
+
 def test_load_robot_limits_empty_or_missing():
     """파일이 없거나 설정되지 않았을 때 빈 문자열 반환 확인"""
     assert load_robot_limits("") == ""
@@ -34,6 +32,7 @@ def test_load_robot_limits_empty_or_missing():
     assert load_robot_limits("/invalid/path/ROBOT_LIMITS.json") == ""
     # 유효하지 않은 JSON 형식인 경우의 예외 처리
     assert load_robot_limits("/tmp/nonexistent_limits_file.json") == ""
+
 
 def test_load_troubleshooting_guide_valid_file(tmp_path):
     """지정된 경로의 TROUBLESHOOTING.md 파일을 정상적으로 로드하는지 확인"""
@@ -44,14 +43,17 @@ def test_load_troubleshooting_guide_valid_file(tmp_path):
     loaded = load_troubleshooting_guide(str(guide_file))
     assert loaded == guide_content
 
+
 def test_load_troubleshooting_guide_empty_or_missing():
     """파일이 없거나 설정되지 않았을 때 빈 문자열 반환 확인"""
     assert load_troubleshooting_guide("") == ""
     assert load_troubleshooting_guide(None) == ""
     assert load_troubleshooting_guide("/invalid/path/TROUBLESHOOTING.md") == ""
 
+
 def test_build_system_prompt_integration_limits_and_troubleshooting():
     """AgentNode의 _build_system_prompt 내부에서 로봇 한계 사양 및 장애 조치가 프롬프트에 조립되는지 검증"""
+
     class MockAgentNode:
         def __init__(self):
             self._system_prompt = "Base Prompt {skill_list}"
@@ -82,7 +84,10 @@ def test_build_system_prompt_integration_limits_and_troubleshooting():
                 base = base + f"\n\n[로봇 구동 한계 스펙 (ROBOT_LIMITS)]\n{self._robot_limits}"
             # 장애 조치 가이드 주입
             if self._troubleshooting_guide:
-                base = base + f"\n\n[장애 조치 가이드 (TROUBLESHOOTING)]\n{self._troubleshooting_guide}"
+                base = (
+                    base
+                    + f"\n\n[장애 조치 가이드 (TROUBLESHOOTING)]\n{self._troubleshooting_guide}"
+                )
 
             if self._robot_soul:
                 return f"{self._robot_soul}\n\n---\n\n{base}"
@@ -96,8 +101,10 @@ def test_build_system_prompt_integration_limits_and_troubleshooting():
     assert "[장애 조치 가이드 (TROUBLESHOOTING)]" in prompt
     assert "Troubleshoot navigation issues here." in prompt
 
+
 def test_get_robot_health_state():
     """자가진단 데이터(RobotHealthState) 생성 및 필수 필드 정상 탑재 여부 검증"""
+
     class MockAgentNode:
         def __init__(self, state):
             self._state = state
@@ -107,14 +114,11 @@ def test_get_robot_health_state():
                 "battery_percent": 100.0,
                 "localization_status": "OK",
                 "active_errors": [],
-                "sensor_status": {
-                    "lidar": "OK",
-                    "camera": "OK",
-                    "imu": "OK"
-                }
+                "sensor_status": {"lidar": "OK", "camera": "OK", "imu": "OK"},
             }
             # AgentState.ERROR를 간접 체크
             from robo_claw_agent.types import AgentState
+
             if self._state == AgentState.ERROR:
                 state["localization_status"] = "ERROR"
                 state["active_errors"].append("AGENT_INTERNAL_ERROR")

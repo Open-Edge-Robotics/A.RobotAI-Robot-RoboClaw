@@ -37,7 +37,14 @@ class TestSmallTalkIsStillDetected:
             assert _is_likely_conversational(text) is True, text
 
     def test_self_introduction_and_capability_questions(self):
-        for text in ("너 누구야", "뭐야?", "뭐하는 로봇이야", "뭐 할 수 있어?", "뭐해?", "할 일 있어?"):
+        for text in (
+            "너 누구야",
+            "뭐야?",
+            "뭐하는 로봇이야",
+            "뭐 할 수 있어?",
+            "뭐해?",
+            "할 일 있어?",
+        ):
             assert _is_likely_conversational(text) is True, text
 
     def test_empty_input(self):

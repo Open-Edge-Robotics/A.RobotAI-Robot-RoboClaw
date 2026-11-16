@@ -36,9 +36,7 @@ def test_pick_from_right_side_zone_runs_calibrated_sequence(monkeypatch):
         },
         _manipulation_backend=backend,
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.03)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
     skill = PickFromRightSideZoneSkill()
     skill.set_node(node)
 

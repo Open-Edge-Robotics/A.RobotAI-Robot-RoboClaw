@@ -74,10 +74,10 @@ class EmergencyStopSkill(BaseSkill):
                     check=False,
                     timeout=3.0,
                 )
-                action_cancelled = (
-                    nav_result.returncode == 0 and waypoint_result.returncode == 0
+                action_cancelled = nav_result.returncode == 0 and waypoint_result.returncode == 0
+                cancel_message = (
+                    "CLI action cancel 완료" if action_cancelled else "CLI action cancel 실패"
                 )
-                cancel_message = "CLI action cancel 완료" if action_cancelled else "CLI action cancel 실패"
         except Exception as e:
             cancel_message = f"action cancel 오류: {e}"
             logger.error(cancel_message)
@@ -115,9 +115,7 @@ class ResetEmergencyStopSkill(BaseSkill):
     name = "reset_emergency_stop"
     input_schema = {
         "type": "object",
-        "properties": {
-            "confirm": {"type": "boolean", "default": True}
-        },
+        "properties": {"confirm": {"type": "boolean", "default": True}},
         "required": ["confirm"],
         "additionalProperties": False,
     }

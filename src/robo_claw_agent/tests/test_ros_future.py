@@ -45,9 +45,7 @@ class TestWaitForFuture:
         assert value == "done"
 
     def test_timeout_returns_failure_with_timeout_value(self):
-        ok, value = ros_future.wait_for_future(
-            _pending_future(), 0.01, timeout_value="시간 초과"
-        )
+        ok, value = ros_future.wait_for_future(_pending_future(), 0.01, timeout_value="시간 초과")
         assert ok is False
         assert value == "시간 초과"
 

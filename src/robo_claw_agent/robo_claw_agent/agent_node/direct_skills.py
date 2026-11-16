@@ -42,7 +42,9 @@ def direct_cup_pick_skill(node: Any, instruction: str) -> dict[str, Any] | None:
     )
     if not (has_cup and has_pick):
         return None
-    if re.search(r"(왜|분석|확인|보여|설명|어떻게|로그|상태|준비자세|준비 자세|prepare|ready\s*pose)", text):
+    if re.search(
+        r"(왜|분석|확인|보여|설명|어떻게|로그|상태|준비자세|준비 자세|prepare|ready\s*pose)", text
+    ):
         return None
     return {
         "skill": "adaptive_pick_object",
@@ -56,8 +58,25 @@ def direct_map_capture_skill(node: Any, instruction: str) -> dict[str, Any] | No
     if not text:
         return None
     has_map = any(token in text for token in ("맵", "지도", "map"))
-    has_action = any(token in text for token in ("보내", "캡처", "사진", "이미지", "show", "get", "capture"))
-    has_complex = any(token in text for token in ("분석", "좌표", "이동", "찾아", "마킹", "표시", "가라", "갈 수", "analyze", "annotate", "find"))
+    has_action = any(
+        token in text for token in ("보내", "캡처", "사진", "이미지", "show", "get", "capture")
+    )
+    has_complex = any(
+        token in text
+        for token in (
+            "분석",
+            "좌표",
+            "이동",
+            "찾아",
+            "마킹",
+            "표시",
+            "가라",
+            "갈 수",
+            "analyze",
+            "annotate",
+            "find",
+        )
+    )
     if has_map and has_action and not has_complex:
         return {
             "skill": "capture_map",
@@ -72,7 +91,10 @@ def direct_camera_capture_skill(node: Any, instruction: str) -> dict[str, Any] |
     if not text:
         return None
     has_cam = any(token in text for token in ("카메라", "전방", "앞쪽", "camera", "view"))
-    has_action = any(token in text for token in ("보내", "캡처", "캡쳐", "사진", "이미지", "show", "get", "capture"))
+    has_action = any(
+        token in text
+        for token in ("보내", "캡처", "캡쳐", "사진", "이미지", "show", "get", "capture")
+    )
     compact_text = re.sub(r"\s+", "", text)
     # 정보 조회나 복수 카메라 요청을 기본 카메라 한 장 캡처로 축약하지 않는다.
     # 특히 '카메라 이미지 관련 토픽'은 촬영이 아니라 ROS 그래프 조회 의도다.
@@ -91,9 +113,21 @@ def direct_camera_capture_skill(node: Any, instruction: str) -> dict[str, Any] |
     has_complex = any(
         token in text
         for token in (
-            "분석", "찾아", "인식", "감지", "좌표",
-            "이동", "가서", "가라", "갈 수", "간 뒤", "간 다음",
-            "analyze", "detect", "describe", "find",
+            "분석",
+            "찾아",
+            "인식",
+            "감지",
+            "좌표",
+            "이동",
+            "가서",
+            "가라",
+            "갈 수",
+            "간 뒤",
+            "간 다음",
+            "analyze",
+            "detect",
+            "describe",
+            "find",
         )
     )
     if has_cam and has_action and not has_complex:
@@ -139,9 +173,7 @@ def direct_relative_move_skill(node: Any, instruction: str) -> dict[str, Any] | 
     else:
         # 2) 거리가 방향을 선행하는 형태.
         # 2a) "3m 전진" — 방향어 자체가 이동 동사라 추가 동사가 필요 없다.
-        match = re.search(
-            rf"(\d+(?:\.\d+)?)\s*(?:{_DISTANCE_UNIT})\s*(전진|후진)", text
-        )
+        match = re.search(rf"(\d+(?:\.\d+)?)\s*(?:{_DISTANCE_UNIT})\s*(전진|후진)", text)
         if not match:
             # 2b) "2미터 앞으로 가줘" — 이동 동사를 필수로 요구해
             #     "2미터 앞에 있는 ~" 같은 수식 표현을 배제한다.
@@ -196,12 +228,12 @@ def check_direct_skill(node: Any, instruction: str) -> dict[str, Any] | None:
 def start_background_direct_skill(
     node: Any, instruction: str, skill_name: str, params: dict[str, Any]
 ) -> SkillResult:
-    message = f"[{skill_name}] 컵 집기 작업을 백그라운드에서 시작했습니다. 완료되면 다시 알려드릴게요."
+    message = (
+        f"[{skill_name}] 컵 집기 작업을 백그라운드에서 시작했습니다. 완료되면 다시 알려드릴게요."
+    )
 
     def _work() -> None:
-        node.get_logger().info(
-            f"Starting background direct skill: {skill_name} (params={params})"
-        )
+        node.get_logger().info(f"Starting background direct skill: {skill_name} (params={params})")
         node._set_state(AgentState.EXECUTING, skill_name, f"{skill_name} 실행 중")
         try:
             # LLM 계획 경로와 동일한 주행 안전 게이트를 직접 라우팅에도 적용한다.
@@ -213,9 +245,7 @@ def start_background_direct_skill(
             )
             res = None
             for item in chain:
-                res = node._skills.execute(
-                    item["skill"], item.get("params", {}), timeout_sec=0.0
-                )
+                res = node._skills.execute(item["skill"], item.get("params", {}), timeout_sec=0.0)
                 if not res.success:
                     break
             if res is None:

@@ -45,7 +45,9 @@ class RoboClawGrpcCameraNode(Node):
             self._latest_compressed: bytes | None = None
             self._latest_compressed_timestamp: float = 0.0
 
-            self.get_logger().info(f"Camera node started — raw: {camera_topic}, compressed: {camera_compressed_topic}")
+            self.get_logger().info(
+                f"Camera node started — raw: {camera_topic}, compressed: {camera_compressed_topic}"
+            )
 
         except Exception as e:
             self.get_logger().error(f"Camera node initialization error: {e}")
@@ -67,7 +69,9 @@ class RoboClawGrpcCameraNode(Node):
             image_data = bytes(msg.data)
             with self._lock:
                 self._latest_compressed = image_data
-                self._latest_compressed_timestamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+                self._latest_compressed_timestamp = (
+                    msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+                )
         except Exception as e:
             self.get_logger().error(f"Compressed image callback error: {e}")
 

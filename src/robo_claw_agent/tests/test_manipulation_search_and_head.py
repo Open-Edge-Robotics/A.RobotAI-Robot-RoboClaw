@@ -50,7 +50,9 @@ def _stretch_head_node(backend=None):
 
 def test_head_pan_tilt_rejects_non_stretch_backend():
     backend = FakeBackend()
-    node = _make_node({}, manipulation_backend="moveit", _manipulation_backend=backend)  # manipulation_backend 미지정(기본 moveit)
+    node = _make_node(
+        {}, manipulation_backend="moveit", _manipulation_backend=backend
+    )  # manipulation_backend 미지정(기본 moveit)
     skill = HeadPanTiltSkill()
     skill.set_node(node)
 
@@ -293,7 +295,9 @@ def test_search_object_gives_up_after_max_body_rotations(monkeypatch):
 
 def test_search_object_skips_head_when_not_stretch_backend(monkeypatch):
     backend = FakeBackend()
-    node = _make_node({}, manipulation_backend="moveit", _manipulation_backend=backend)  # moveit 기본
+    node = _make_node(
+        {}, manipulation_backend="moveit", _manipulation_backend=backend
+    )  # moveit 기본
 
     def fail_if_called(self, params):
         raise AssertionError("non-stretch 백엔드에서는 헤드 제어를 시도하면 안 됩니다")

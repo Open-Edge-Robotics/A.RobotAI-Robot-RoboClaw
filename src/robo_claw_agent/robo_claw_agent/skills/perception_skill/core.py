@@ -157,6 +157,7 @@ def target_is_coco(target_object: str) -> bool:
     """대상이 COCO 80개 클래스 어휘에 매핑되는지 여부 (오픈어휘 라우팅 신호)."""
     return bool(resolve_target_variants(target_object))
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -203,11 +204,7 @@ def _distance_at_bearing(scan: LaserScan, bearing_rad: float) -> float | None:
     ranges = np.array(scan.ranges)
     angles = np.linspace(scan.angle_min, scan.angle_max, len(ranges))
     diffs = (angles - bearing_rad + np.pi) % (2 * np.pi) - np.pi
-    mask = (
-        (np.abs(diffs) < threshold)
-        & (ranges > scan.range_min)
-        & (ranges < scan.range_max)
-    )
+    mask = (np.abs(diffs) < threshold) & (ranges > scan.range_min) & (ranges < scan.range_max)
     valid = ranges[mask]
     if len(valid) == 0:
         return None
@@ -243,9 +240,7 @@ def _fetch_depth_frame(skill: Any, params: dict[str, Any]) -> DepthFrame | None:
     if not bool(params.get("use_depth", True)):
         return None
 
-    camera_source = str(
-        params.get("camera") or params.get("camera_source") or ""
-    ).strip().lower()
+    camera_source = str(params.get("camera") or params.get("camera_source") or "").strip().lower()
     use_gripper_camera = camera_source in {
         "gripper",
         "wrist",
@@ -254,9 +249,7 @@ def _fetch_depth_frame(skill: Any, params: dict[str, Any]) -> DepthFrame | None:
         "eoa",
     }
     depth_param = "gripper_depth_topic" if use_gripper_camera else "depth_topic"
-    info_param = (
-        "gripper_camera_info_topic" if use_gripper_camera else "camera_info_topic"
-    )
+    info_param = "gripper_camera_info_topic" if use_gripper_camera else "camera_info_topic"
     depth_topic = str(params.get("depth_topic") or "").strip()
     camera_info_topic = str(params.get("camera_info_topic") or "").strip()
     if not depth_topic:
@@ -273,9 +266,7 @@ def _fetch_depth_frame(skill: Any, params: dict[str, Any]) -> DepthFrame | None:
     if camera_model is None:
         return None
 
-    depth_msg = skill.wait_for_message(
-        Image, depth_topic, timeout_sec=1.0, max_age_sec=1.0
-    )
+    depth_msg = skill.wait_for_message(Image, depth_topic, timeout_sec=1.0, max_age_sec=1.0)
     if depth_msg is None:
         return None
 
@@ -389,7 +380,9 @@ def _compute_depth_point_base(
     return _depth_point_for_pixel(skill, depth_frame, params, cx, cy)
 
 
-def _target_pose_metadata(skill: Any, depth_point_map: tuple[float, float, float]) -> dict[str, Any]:
+def _target_pose_metadata(
+    skill: Any, depth_point_map: tuple[float, float, float]
+) -> dict[str, Any]:
     """depth3d로 계산한 map 프레임 3D 포인트를 물체 메모리 metadata["target_pose"] 형태로 변환."""
     map_frame = getattr(skill.node, "_map_frame", "map")
     return {

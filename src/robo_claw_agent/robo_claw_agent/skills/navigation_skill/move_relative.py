@@ -38,7 +38,7 @@ class MoveRelativeSkill(BaseSkill):
     side_effects = ("base_motion",)
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        if (err := self.require_node()):
+        if err := self.require_node():
             return err
 
         forward = params.get("forward", 0.0)
@@ -121,16 +121,13 @@ class MoveRelativeSkill(BaseSkill):
             target_y,
         )
 
-        accepted, message, goal_handle = _send_navigation_goal(
-            self.node, target_x, target_y, frame
-        )
+        accepted, message, goal_handle = _send_navigation_goal(self.node, target_x, target_y, frame)
         if not accepted:
             logger.error("Failed to send relative move goal: %s", message)
             return self.fail_result(message, failure_reason="goal_rejected", recoverable=True)
 
         self.send_user_message(
-            f"📍 {move_desc} 이동을 시작합니다. "
-            f"(목표 좌표: {target_x:.2f}, {target_y:.2f})"
+            f"📍 {move_desc} 이동을 시작합니다. (목표 좌표: {target_x:.2f}, {target_y:.2f})"
         )
 
         success, result_message = _wait_for_goal_result(
@@ -139,7 +136,9 @@ class MoveRelativeSkill(BaseSkill):
             label="상대 이동",
         )
         notify_goal_outcome(
-            self, success, result_message,
+            self,
+            success,
+            result_message,
             label="상대 이동",
             success_message=f"✅ {move_desc} 이동 완료!",
             cancel_message=f"🛑 {move_desc} 이동이 취소되었습니다.",

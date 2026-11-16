@@ -37,8 +37,7 @@ def check_sensors_cached(node: Any) -> dict[str, bool] | None:
         imu_topic = getattr(node, "_imu_topic", "/imu") or "/imu"
         # 하드웨어 센서 주기가 느릴 수 있으므로 1.0초 대기
         lidar_ok = (
-            status_skill.wait_for_message(LaserScan, lidar_topic, timeout_sec=1.0)
-            is not None
+            status_skill.wait_for_message(LaserScan, lidar_topic, timeout_sec=1.0) is not None
         )
         imu_ok = status_skill.wait_for_message(Imu, imu_topic, timeout_sec=1.0) is not None
         # 카메라 점검: 노드에 설정된 camera_topic을 실제로 타도록 params 전달

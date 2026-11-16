@@ -107,9 +107,7 @@ def _is_hidden_topic(topic_name: str) -> bool:
 def _is_camera_topic(topic_name: str) -> bool:
     """카메라 네임스페이스(camera, cam, rgb_cam, depth_cam)를 가진 토픽인지 판별한다."""
     return (
-        re.search(
-            r"(?:^|[/_])(?:rgb_|depth_)?cam(?:era)?(?:[/_]|$)", str(topic_name).lower()
-        )
+        re.search(r"(?:^|[/_])(?:rgb_|depth_)?cam(?:era)?(?:[/_]|$)", str(topic_name).lower())
         is not None
     )
 

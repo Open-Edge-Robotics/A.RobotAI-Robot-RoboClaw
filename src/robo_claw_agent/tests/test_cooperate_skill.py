@@ -84,9 +84,7 @@ class TestCallPeerRobotSkill:
         node = _make_dummy_node(_call_peer_client=client)
         skill = _make_skill(CallPeerRobotSkill, node)
 
-        result = skill.execute(
-            {"peer_name": "robot_a", "instruction": "앞으로 1미터 이동해"}
-        )
+        result = skill.execute({"peer_name": "robot_a", "instruction": "앞으로 1미터 이동해"})
 
         assert result["success"] is True
         assert result["message"] == "작업 완료"
@@ -122,15 +120,17 @@ class TestCallPeerRobotSkill:
         client = MagicMock()
         client.wait_for_service.return_value = True
 
-        resp = SimpleNamespace(success=False, result_message="", error_message="연결된 피어를 찾을 수 없습니다: robot_a")
+        resp = SimpleNamespace(
+            success=False,
+            result_message="",
+            error_message="연결된 피어를 찾을 수 없습니다: robot_a",
+        )
         client.call_async.return_value = _future_with_result(resp)
 
         node = _make_dummy_node(_call_peer_client=client)
         skill = _make_skill(CallPeerRobotSkill, node)
 
-        result = skill.execute(
-            {"peer_name": "robot_a", "instruction": "앞으로 1미터 이동해"}
-        )
+        result = skill.execute({"peer_name": "robot_a", "instruction": "앞으로 1미터 이동해"})
 
         assert result["success"] is False
         assert "연결된 피어를 찾을 수 없습니다" in result["message"]
@@ -159,8 +159,12 @@ class TestListPeerRobotsSkill:
         client = MagicMock()
         client.wait_for_service.return_value = True
 
-        peer_a = SimpleNamespace(peer_name="robot_a", host="192.168.1.10", port=50051, connected=True)
-        peer_b = SimpleNamespace(peer_name="robot_b", host="192.168.1.11", port=50051, connected=False)
+        peer_a = SimpleNamespace(
+            peer_name="robot_a", host="192.168.1.10", port=50051, connected=True
+        )
+        peer_b = SimpleNamespace(
+            peer_name="robot_b", host="192.168.1.11", port=50051, connected=False
+        )
         resp = SimpleNamespace(success=True, peers=[peer_a, peer_b], error_message="")
         client.call_async.return_value = _future_with_result(resp)
 
@@ -240,7 +244,9 @@ class TestQueryPeerStatusSkill:
         client = MagicMock()
         client.wait_for_service.return_value = True
 
-        resp = SimpleNamespace(success=True, result_message="배터리 87%, 주방에 있음", error_message="")
+        resp = SimpleNamespace(
+            success=True, result_message="배터리 87%, 주방에 있음", error_message=""
+        )
         client.call_async.return_value = _future_with_result(resp)
 
         node = _make_dummy_node(_call_peer_client=client)
@@ -280,9 +286,7 @@ class TestPeerCallTimeoutWiring:
         node = _make_dummy_node(_call_peer_client=client)
         skill = _make_skill(CallPeerRobotSkill, node)
 
-        with patch.object(
-            ros_future, "call_service", wraps=ros_future.call_service
-        ) as spy:
+        with patch.object(ros_future, "call_service", wraps=ros_future.call_service) as spy:
             skill.execute({"peer_name": "robot_a", "instruction": "상태 확인"})
 
         call_timeout_sec = spy.call_args.kwargs["call_timeout_sec"]
@@ -297,12 +301,8 @@ class TestPeerCallTimeoutWiring:
         node = _make_dummy_node(_call_peer_client=client)
         skill = _make_skill(CallPeerRobotSkill, node)
 
-        with patch.object(
-            ros_future, "call_service", wraps=ros_future.call_service
-        ) as spy:
-            skill.execute(
-                {"peer_name": "robot_a", "instruction": "이동해", "timeout_sec": 120.0}
-            )
+        with patch.object(ros_future, "call_service", wraps=ros_future.call_service) as spy:
+            skill.execute({"peer_name": "robot_a", "instruction": "이동해", "timeout_sec": 120.0})
 
         call_timeout_sec = spy.call_args.kwargs["call_timeout_sec"]
         assert call_timeout_sec == 120.0 + ros_future.SERVICE_CALL_MARGIN_SEC
@@ -316,9 +316,7 @@ class TestPeerCallTimeoutWiring:
         node = _make_dummy_node(_call_peer_client=client)
         skill = _make_skill(QueryPeerStatusSkill, node)
 
-        with patch.object(
-            ros_future, "call_service", wraps=ros_future.call_service
-        ) as spy:
+        with patch.object(ros_future, "call_service", wraps=ros_future.call_service) as spy:
             skill.execute({"peer_name": "robot_a"})
 
         call_timeout_sec = spy.call_args.kwargs["call_timeout_sec"]
@@ -481,14 +479,16 @@ class TestCoordinatePeerTaskSkill:
     def test_decompose_and_sequential_send(self):
         """LLM이 분해한 단계를 동료에게 순차 전달한다."""
         llm = MagicMock()
-        llm.chat.return_value = json.dumps({
-            "steps": [
-                {"instruction": "거실로 이동해줘"},
-                {"instruction": "컵을 들어줘"},
-                {"instruction": "주방으로 가줘"},
-                {"instruction": "싱크대에 놔줘"},
-            ]
-        })
+        llm.chat.return_value = json.dumps(
+            {
+                "steps": [
+                    {"instruction": "거실로 이동해줘"},
+                    {"instruction": "컵을 들어줘"},
+                    {"instruction": "주방으로 가줘"},
+                    {"instruction": "싱크대에 놔줘"},
+                ]
+            }
+        )
         node = _make_dummy_node(_llm=llm, get_node_names=MagicMock(return_value=[]))
 
         client = MagicMock()
@@ -502,7 +502,9 @@ class TestCoordinatePeerTaskSkill:
         node._send_msg_client.service_is_ready.return_value = False
 
         skill = _make_skill(CoordinatePeerTaskSkill, node)
-        result = skill.execute({"peer_name": "robot_a", "instruction": "거실로 이동해 컵을 들고 주방에 놔줘"})
+        result = skill.execute(
+            {"peer_name": "robot_a", "instruction": "거실로 이동해 컵을 들고 주방에 놔줘"}
+        )
 
         assert result["success"] is True
         assert result["steps_completed"] == 4
@@ -526,12 +528,14 @@ class TestCoordinatePeerTaskSkill:
     def test_step_failure_aborts(self):
         """중간 단계 실패 시 후속 단계를 전달하지 않고 중단한다."""
         llm = MagicMock()
-        llm.chat.return_value = json.dumps({
-            "steps": [
-                {"instruction": "거실로 이동해줘"},
-                {"instruction": "컵을 들어줘"},
-            ]
-        })
+        llm.chat.return_value = json.dumps(
+            {
+                "steps": [
+                    {"instruction": "거실로 이동해줘"},
+                    {"instruction": "컵을 들어줘"},
+                ]
+            }
+        )
         node = _make_dummy_node(_llm=llm, get_node_names=MagicMock(return_value=[]))
 
         client = MagicMock()
@@ -545,11 +549,13 @@ class TestCoordinatePeerTaskSkill:
         node._send_msg_client.service_is_ready.return_value = False
 
         skill = _make_skill(CoordinatePeerTaskSkill, node)
-        result = skill.execute({
-            "peer_name": "robot_a",
-            "instruction": "거실로 이동해 컵을 들어줘",
-            "max_retries": 0,
-        })
+        result = skill.execute(
+            {
+                "peer_name": "robot_a",
+                "instruction": "거실로 이동해 컵을 들어줘",
+                "max_retries": 0,
+            }
+        )
 
         assert result["success"] is False
         assert result["steps_completed"] == 0
@@ -559,9 +565,7 @@ class TestCoordinatePeerTaskSkill:
     def test_decompose_string_steps(self):
         """LLM이 문자열 리스트로 응답해도 정상 처리된다."""
         llm = MagicMock()
-        llm.chat.return_value = json.dumps({
-            "steps": ["거실로 이동해줘", "컵을 들어줘"]
-        })
+        llm.chat.return_value = json.dumps({"steps": ["거실로 이동해줘", "컵을 들어줘"]})
         node = _make_dummy_node(_llm=llm, get_node_names=MagicMock(return_value=[]))
 
         client = MagicMock()

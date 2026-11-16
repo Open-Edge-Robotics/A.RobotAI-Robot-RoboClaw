@@ -20,9 +20,7 @@ class RobotSkillService:
     """robo_claw_agent의 ExecuteSkill ROS 서비스를 gRPC로 노출하는 서비스."""
 
     def __init__(self, config: ConfigModel, grpc_node: Any | None = None) -> None:
-        self._logger = LogHelper(
-            level="DEBUG" if config.debug else "INFO"
-        ).get_logger(__name__)
+        self._logger = LogHelper(level="DEBUG" if config.debug else "INFO").get_logger(__name__)
         self._config = config
         self._grpc_node = grpc_node
 

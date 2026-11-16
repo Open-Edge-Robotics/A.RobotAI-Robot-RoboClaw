@@ -19,7 +19,9 @@ def handle_grpc_errors(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awa
     """gRPC 예외 처리 데코레이터"""
 
     @functools.wraps(func)
-    async def wrapper(self, request: Any, context: grpc.aio.ServicerContext, *args, **kwargs) -> Any:
+    async def wrapper(
+        self, request: Any, context: grpc.aio.ServicerContext, *args, **kwargs
+    ) -> Any:
         logger = getattr(self, "_logger", logging.getLogger(__name__))
         try:
             return await func(self, request, context, *args, **kwargs)
@@ -48,7 +50,9 @@ def log_to_history(
 
     def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         @functools.wraps(func)
-        async def wrapper(self, request: Any, context: grpc.aio.ServicerContext, *args, **kwargs) -> Any:
+        async def wrapper(
+            self, request: Any, context: grpc.aio.ServicerContext, *args, **kwargs
+        ) -> Any:
             import json
             import time
 

@@ -50,9 +50,7 @@ class StorageMixin:
             )
             conn.commit()
 
-    def _get_persisted_events(
-        self, limit: int | None = None
-    ) -> list[dict[str, Any]]:
+    def _get_persisted_events(self, limit: int | None = None) -> list[dict[str, Any]]:
         if self._backend == "json":
             return self._long_term if limit is None else self._long_term[-limit:]
 

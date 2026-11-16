@@ -118,9 +118,7 @@ def _marker_tf_residual(
     max_residual_m = _node_float_param(
         skill, params, "aruco_max_residual_m", _DEFAULT_MAX_RESIDUAL_M
     )
-    agree_m = _node_float_param(
-        skill, params, "aruco_residual_agree_m", _DEFAULT_RESIDUAL_AGREE_M
-    )
+    agree_m = _node_float_param(skill, params, "aruco_residual_agree_m", _DEFAULT_RESIDUAL_AGREE_M)
 
     residuals: list[tuple[float, float, float]] = []
     used_pairs: list[str] = []

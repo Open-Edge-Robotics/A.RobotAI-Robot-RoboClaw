@@ -1,7 +1,5 @@
 """autonomous cleanup demo routing"""
 
-
-
 from _autonomous_cleanup_helpers import (  # noqa: F401
     MagicMock,
     NodeStatus,
@@ -17,6 +15,8 @@ def test_peer_has_capability_matches_cleanup_demo_role():
     assert helpers._peer_has_capability({"capabilities": ["cleanup_demo"]}, "cleanup_demo") is True
     assert helpers._peer_has_capability({"role": "청소 로봇"}, "cleanup_demo") is True
     assert helpers._peer_has_capability({"role": "cleanup_demo"}, "cleanup_demo") is True
+
+
 def test_query_grpc_peer_capability_classifies_cloi_humanoid_as_cleanup_demo_not_manipulation(
     monkeypatch,
 ):
@@ -55,6 +55,8 @@ def test_query_grpc_peer_capability_classifies_cloi_humanoid_as_cleanup_demo_not
     assert helpers._query_grpc_peer_capability(node, "cloid 1호", "manipulation") is False
     # CLOi peer must be recognized as cleanup_demo peer
     assert helpers._query_grpc_peer_capability(node, "cloid 1호", "cleanup_demo") is True
+
+
 def test_cleanup_mode_routes_to_demo_peer_when_single_towel_is_detected(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
@@ -87,6 +89,8 @@ def test_cleanup_mode_routes_to_demo_peer_when_single_towel_is_detected(monkeypa
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "안방"
     assert payload["target_object"] == "수건"
+
+
 def test_cleanup_mode_routes_to_demo_peer_when_single_cushion_is_detected(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
@@ -119,6 +123,8 @@ def test_cleanup_mode_routes_to_demo_peer_when_single_cushion_is_detected(monkey
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "거실"
     assert payload["target_object"] == "쿠션"
+
+
 def test_cleanup_mode_routes_to_demo_peer_when_multiple_household_items_detected(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
@@ -151,6 +157,8 @@ def test_cleanup_mode_routes_to_demo_peer_when_multiple_household_items_detected
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "안방"
     assert payload["target_object"] == "수건"
+
+
 def test_cleanup_mode_routes_to_demo_peer_when_cushion_and_pillow_detected(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
@@ -183,6 +191,8 @@ def test_cleanup_mode_routes_to_demo_peer_when_cushion_and_pillow_detected(monke
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "거실"
     assert payload["target_object"] == "쿠션"
+
+
 def test_cleanup_mode_extracts_towel_when_scene_mentions_trash_bin(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request
@@ -215,6 +225,8 @@ def test_cleanup_mode_extracts_towel_when_scene_mentions_trash_bin(monkeypatch):
     payload = decode_cleanup_demo_request(handoff._blackboard["decided_params"]["instruction"])
     assert payload["target_location"] == "안방"
     assert payload["target_object"] == "수건"
+
+
 def test_local_robot_executes_demo_directly_when_capable(monkeypatch):
     """로컬 로봇이 cleanup_demo 스킬과 허용 모션 ID를 보유한 경우 동료에게 위임하지 않고 로컬에서 모션을 실행한다."""
     node = _node_with_skills(
@@ -240,6 +252,8 @@ def test_local_robot_executes_demo_directly_when_capable(monkeypatch):
     assert handoff._blackboard.get("cleanup_handoff_prepared") is not True
     assert handoff._blackboard.get("decided_skill") == "execute_cloid_motion"
     assert "motion_id" in handoff._blackboard.get("decided_params", {})
+
+
 def test_robot_without_cleanup_demo_skill_delegates_to_demo_peer(monkeypatch):
     """cleanup_demo 스킬이 없는 로봇은 로컬 모션을 실행하지 않고 시연 가능한 동료에게 위임한다."""
     from robo_claw_agent.skills.autonomous_skill import execution_nodes

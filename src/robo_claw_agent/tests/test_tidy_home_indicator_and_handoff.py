@@ -23,10 +23,14 @@ def test_cleanup_demo_allows_operator_allowlisted_wipe_ids_without_prerequisite(
 
     assert selected_59 is not None and selected_59["motion_id"] == 59
     assert selected_60 is not None and selected_60["motion_id"] == 60
+
+
 def test_cleanup_demo_still_rejects_motion_with_catalog_prerequisite():
     motions = [_motion(60, "wipe_2", pre_id=59)]
 
     assert _select_cleanup_demo_motion(motions, [60]) is None
+
+
 def test_cloid_indicator_avoids_immediate_repeat_when_an_alternative_exists():
     motions = [
         _motion(22, "scan"),
@@ -38,10 +42,14 @@ def test_cloid_indicator_avoids_immediate_repeat_when_an_alternative_exists():
     )
 
     assert selected["motion_id"] == 128
+
+
 def test_cloid_indicator_returns_none_when_allowlist_has_no_current_safe_motion():
     motions = [_motion(60, "wipe_2", pre_id=59)]
 
     assert _select_cloid_indicator_motion(motions, [60], rng=random.Random(0)) is None
+
+
 def test_home_cleanup_visits_each_remembered_place_once_and_stops_on_cancel(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import globals as autonomous_globals
 
@@ -82,6 +90,8 @@ def test_home_cleanup_visits_each_remembered_place_once_and_stops_on_cancel(monk
     assert any("정리 작업이 종료됐습니다" in message for message in messages)
     assert any("완료 여부를 확정할 수 없습니다" in message for message in messages)
     assert not original_event.is_set()
+
+
 def test_cleanup_demo_handoff_stages_requester_and_skips_local_pick_place_guard(monkeypatch):
     import threading
     from types import SimpleNamespace
@@ -143,6 +153,8 @@ def test_cleanup_demo_handoff_stages_requester_and_skips_local_pick_place_guard(
     assert executed_skills == ["call_peer_robot"]
     assert calls[0][1]["forward"] == 0.0
     assert calls[0][1]["lateral"] > 0.0
+
+
 def test_cleanup_demo_handoff_is_not_sent_if_requester_cannot_stage_safely(monkeypatch):
     import threading
     from types import SimpleNamespace
@@ -200,6 +212,8 @@ def test_cleanup_demo_handoff_is_not_sent_if_requester_cannot_stage_safely(monke
     assert status == "handoff_staging_failed"
     assert [name for name, _params in calls] == ["move_relative"]
     assert executed == []
+
+
 def test_cloid_activity_indicator_executes_one_allowlisted_motion_and_avoids_repeat():
     from types import SimpleNamespace
 
@@ -233,6 +247,8 @@ def test_cloid_activity_indicator_executes_one_allowlisted_motion_and_avoids_rep
     assert executed[0][1]["motion_id"] != executed[1][1]["motion_id"]
     assert all(call[1]["confirm"] is True for call in executed)
     assert all("실제 정리 완료는 확인되지 않았습니다" in message for message in messages)
+
+
 def test_tidy_home_multiview_analysis_uses_only_confirmed_direction_observations(monkeypatch):
     calls = []
 
@@ -282,6 +298,8 @@ def test_tidy_home_multiview_analysis_uses_only_confirmed_direction_observations
     assert calls[0]["capture_4way"] is True
     assert calls[0]["return_to_start"] is True
     assert "일반 옷" in calls[0]["observation_prompt"]
+
+
 def test_tidy_home_multiview_analysis_fails_closed_without_valid_directions(monkeypatch):
     class FakeObserver:
         def set_node(self, _node):

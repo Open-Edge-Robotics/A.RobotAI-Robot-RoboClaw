@@ -40,7 +40,15 @@ from robo_claw_grpc.utils import LogHelper
 class RoboClawGrpcServicer(RosGrpcServicer):
     """robo_claw_grpc gRPC Servicer"""
 
-    def __init__(self, config: ConfigModel, manipulation_node=None, camera_node=None, nav_node=None, battery_node=None, grpc_node=None):
+    def __init__(
+        self,
+        config: ConfigModel,
+        manipulation_node=None,
+        camera_node=None,
+        nav_node=None,
+        battery_node=None,
+        grpc_node=None,
+    ):
         super().__init__()
         self._logger = LogHelper().get_logger(__name__)
         self._db = RoboClawGrpcDatabase(config=config)
@@ -48,11 +56,21 @@ class RoboClawGrpcServicer(RosGrpcServicer):
 
         self._ping_svc = PingService(config=config)
         self._robot_info_svc = RobotInfoService(config=config)
-        self._robot_history_svc = RobotHistoryService(repo=self._repo, config=config, battery_node=battery_node)
-        self._robot_camera_svc = RobotCameraService(repo=self._repo, config=config, camera_node=camera_node, nav_node=nav_node)
-        self._robot_navigation_svc = RobotNavigationService(repo=self._repo, config=config, nav_node=nav_node, grpc_node=grpc_node)
-        self._robot_manipulation_svc = RobotManipulationService(repo=self._repo, config=config, node=manipulation_node, grpc_node=grpc_node)
-        self._robot_status_svc = RobotStatusService(config=config, battery_node=battery_node, camera_node=camera_node, nav_node=nav_node)
+        self._robot_history_svc = RobotHistoryService(
+            repo=self._repo, config=config, battery_node=battery_node
+        )
+        self._robot_camera_svc = RobotCameraService(
+            repo=self._repo, config=config, camera_node=camera_node, nav_node=nav_node
+        )
+        self._robot_navigation_svc = RobotNavigationService(
+            repo=self._repo, config=config, nav_node=nav_node, grpc_node=grpc_node
+        )
+        self._robot_manipulation_svc = RobotManipulationService(
+            repo=self._repo, config=config, node=manipulation_node, grpc_node=grpc_node
+        )
+        self._robot_status_svc = RobotStatusService(
+            config=config, battery_node=battery_node, camera_node=camera_node, nav_node=nav_node
+        )
         self._robot_command_svc = RobotCommandService(config=config)
         self._file_transfer_svc = FileTransferService(config=config)
         self._robot_skill_svc = RobotSkillService(config=config, grpc_node=grpc_node)
@@ -84,7 +102,9 @@ class RoboClawGrpcServicer(RosGrpcServicer):
     async def GetLatestRobotHistory(self, request: EmptyRequest, context: ServicerContext):
         return await self._robot_history_svc.GetLatestRobotHistory(request, context)
 
-    async def GetRobotHistoryList(self, request: EmptyRequest, context: ServicerContext) -> RobotHistoryList:
+    async def GetRobotHistoryList(
+        self, request: EmptyRequest, context: ServicerContext
+    ) -> RobotHistoryList:
         return await self._robot_history_svc.GetRobotHistoryList(request, context)
 
     async def NavigateToPose(self, request, context):
@@ -102,7 +122,9 @@ class RoboClawGrpcServicer(RosGrpcServicer):
     async def GetRobotMap(self, request: EmptyRequest, context: ServicerContext) -> OccupancyGrid:
         return await self._robot_navigation_svc.GetRobotMap(request, context)
 
-    async def ControlJoints(self, request: JointControlRequest, context: ServicerContext) -> ActionResult:
+    async def ControlJoints(
+        self, request: JointControlRequest, context: ServicerContext
+    ) -> ActionResult:
         return await self._robot_manipulation_svc.ControlJoints(request, context)
 
     async def GetRobotStatus(self, request: EmptyRequest, context: ServicerContext) -> RobotStatus:
@@ -112,7 +134,9 @@ class RoboClawGrpcServicer(RosGrpcServicer):
         async for status in self._robot_status_svc.GetRobotStatusStream(request, context):
             yield status
 
-    async def ExecuteROSCommand(self, request: CommandRequest, context: ServicerContext) -> CommandResponse:
+    async def ExecuteROSCommand(
+        self, request: CommandRequest, context: ServicerContext
+    ) -> CommandResponse:
         return await self._robot_command_svc.ExecuteROSCommand(request, context)
 
     async def ExecuteROSCommandStream(self, request: CommandRequest, context: ServicerContext):
@@ -126,8 +150,12 @@ class RoboClawGrpcServicer(RosGrpcServicer):
         async for chunk in self._file_transfer_svc.DownloadFile(request, context):
             yield chunk
 
-    async def ExecuteSkill(self, request: ExecuteSkillRequest, context: ServicerContext) -> ExecuteSkillResponse:
+    async def ExecuteSkill(
+        self, request: ExecuteSkillRequest, context: ServicerContext
+    ) -> ExecuteSkillResponse:
         return await self._robot_skill_svc.ExecuteSkill(request, context)
 
-    async def ExecuteTask(self, request: ExecuteTaskRequest, context: ServicerContext) -> ExecuteTaskResponse:
+    async def ExecuteTask(
+        self, request: ExecuteTaskRequest, context: ServicerContext
+    ) -> ExecuteTaskResponse:
         return await self._robot_task_svc.ExecuteTask(request, context)

@@ -102,14 +102,20 @@ class TestEstimateWaitMargin:
 class TestDecompose:
     async def test_decompose_dict_steps(self):
         node = _make_node()
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [
-                {"instruction": "회의실로 이동해"},
-                {"instruction": "카메라로 관찰해서 쓰레기가 있으면 정리해"},
-            ]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps(
+                {
+                    "steps": [
+                        {"instruction": "회의실로 이동해"},
+                        {"instruction": "카메라로 관찰해서 쓰레기가 있으면 정리해"},
+                    ]
+                }
+            )
+        )
         decomposer = TaskDecomposer(node)
-        steps = await decomposer._decompose("회의실로 이동해 카메라를 보고 쓰레기가 있으면 정리해", _messages("x"), 6)
+        steps = await decomposer._decompose(
+            "회의실로 이동해 카메라를 보고 쓰레기가 있으면 정리해", _messages("x"), 6
+        )
         assert steps == ["회의실로 이동해", "카메라로 관찰해서 쓰레기가 있으면 정리해"]
 
     async def test_decompose_string_steps(self):
@@ -134,9 +140,7 @@ class TestDecompose:
 
         await decomposer._decompose("A하고 B해", _messages("x"), 6)
 
-        assert node._llm.chat.call_args.kwargs.get("response_format") == {
-            "type": "json_object"
-        }
+        assert node._llm.chat.call_args.kwargs.get("response_format") == {"type": "json_object"}
 
     async def test_decompose_no_llm_returns_empty(self):
         node = _make_node()
@@ -149,13 +153,22 @@ class TestDecompose:
 class TestRun:
     async def test_all_steps_succeed(self):
         node = _make_node()
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "회의실로 이동해"}, {"instruction": "쓰레기가 있으면 정리해"}]
-        }))
-        node._planner.run_llm_planning_loop = AsyncMock(side_effect=[
-            ("이동 완료", [SimpleNamespace(success=True)], True, []),
-            ("정리 완료", [SimpleNamespace(success=True)], True, []),
-        ])
+        node._llm.chat = MagicMock(
+            return_value=json.dumps(
+                {
+                    "steps": [
+                        {"instruction": "회의실로 이동해"},
+                        {"instruction": "쓰레기가 있으면 정리해"},
+                    ]
+                }
+            )
+        )
+        node._planner.run_llm_planning_loop = AsyncMock(
+            side_effect=[
+                ("이동 완료", [SimpleNamespace(success=True)], True, []),
+                ("정리 완료", [SimpleNamespace(success=True)], True, []),
+            ]
+        )
         decomposer = TaskDecomposer(node)
 
         result_msg, skill_results, task_success, events = await decomposer.run(
@@ -176,9 +189,16 @@ class TestRun:
         """분해된 각 하위 단계는 전체 원본 명령을 시스템 컨텍스트로 함께 받아야 한다."""
         node = _make_node()
         original = "회의실로 이동해 카메라를 보고 쓰레기가 있으면 정리해"
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "회의실로 이동해"}, {"instruction": "쓰레기가 있으면 정리해"}]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps(
+                {
+                    "steps": [
+                        {"instruction": "회의실로 이동해"},
+                        {"instruction": "쓰레기가 있으면 정리해"},
+                    ]
+                }
+            )
+        )
         node._planner.run_llm_planning_loop = AsyncMock(
             return_value=("완료", [SimpleNamespace(success=True)], True, [])
         )
@@ -209,14 +229,18 @@ class TestRun:
         from robo_claw_agent.agent_node.task_planner import _STEP_RESULT_SUMMARY_CHARS
 
         node = _make_node()
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "카메라로 촬영해"}, {"instruction": "이미지를 전송해"}]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps(
+                {"steps": [{"instruction": "카메라로 촬영해"}, {"instruction": "이미지를 전송해"}]}
+            )
+        )
         huge = "카메라 이미지를 캡처했습니다. (" + "A" * 3_000_000 + ")"
-        node._planner.run_llm_planning_loop = AsyncMock(side_effect=[
-            (huge, [SimpleNamespace(success=True)], True, []),
-            ("전송 완료", [SimpleNamespace(success=True)], True, []),
-        ])
+        node._planner.run_llm_planning_loop = AsyncMock(
+            side_effect=[
+                (huge, [SimpleNamespace(success=True)], True, []),
+                ("전송 완료", [SimpleNamespace(success=True)], True, []),
+            ]
+        )
 
         await TaskDecomposer(node).run(
             goal_handle=MagicMock(),
@@ -228,7 +252,9 @@ class TestRun:
         )
 
         step2_messages = node._planner.run_llm_planning_loop.await_args_list[1].args[2]
-        summaries = [m["content"] for m in step2_messages if "[이전 단계 요약]" in m.get("content", "")]
+        summaries = [
+            m["content"] for m in step2_messages if "[이전 단계 요약]" in m.get("content", "")
+        ]
         assert summaries, "2단계에 이전 단계 요약이 없음"
         assert len(summaries[0]) < _STEP_RESULT_SUMMARY_CHARS + 200
         assert "…(생략)" in summaries[0]
@@ -256,14 +282,16 @@ class TestRun:
 
     async def test_step_failure_aborts_after_retries(self):
         node = _make_node(max_retries=1)
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps({"steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]})
+        )
         # 1단계는 시도 2번(초기+재시도 1회) 모두 실패 -> 중단, 2단계는 호출되지 않아야 함
-        node._planner.run_llm_planning_loop = AsyncMock(side_effect=[
-            ("1단계 실패", [SimpleNamespace(success=False)], False, []),
-            ("1단계 재시도도 실패", [SimpleNamespace(success=False)], False, []),
-        ])
+        node._planner.run_llm_planning_loop = AsyncMock(
+            side_effect=[
+                ("1단계 실패", [SimpleNamespace(success=False)], False, []),
+                ("1단계 재시도도 실패", [SimpleNamespace(success=False)], False, []),
+            ]
+        )
         decomposer = TaskDecomposer(node)
 
         result_msg, skill_results, task_success, events = await decomposer.run(
@@ -282,14 +310,16 @@ class TestRun:
 
     async def test_step_retry_then_succeed_continues_to_next_step(self):
         node = _make_node(max_retries=1)
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]
-        }))
-        node._planner.run_llm_planning_loop = AsyncMock(side_effect=[
-            ("1단계 첫 시도 실패", [SimpleNamespace(success=False)], False, []),
-            ("1단계 재시도 성공", [SimpleNamespace(success=True)], True, []),
-            ("2단계 성공", [SimpleNamespace(success=True)], True, []),
-        ])
+        node._llm.chat = MagicMock(
+            return_value=json.dumps({"steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]})
+        )
+        node._planner.run_llm_planning_loop = AsyncMock(
+            side_effect=[
+                ("1단계 첫 시도 실패", [SimpleNamespace(success=False)], False, []),
+                ("1단계 재시도 성공", [SimpleNamespace(success=True)], True, []),
+                ("2단계 성공", [SimpleNamespace(success=True)], True, []),
+            ]
+        )
         decomposer = TaskDecomposer(node)
 
         result_msg, skill_results, task_success, events = await decomposer.run(
@@ -309,18 +339,27 @@ class TestRun:
     async def test_previous_step_result_data_is_visible_to_next_step(self):
         """조건부 명령의 판단 근거가 되도록 앞 단계의 결과 데이터를 넘겨야 한다."""
         node = _make_node()
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "컵을 찾아"}, {"instruction": "컵을 집어"}]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps(
+                {"steps": [{"instruction": "컵을 찾아"}, {"instruction": "컵을 집어"}]}
+            )
+        )
         found = SimpleNamespace(
             success=True,
             skill_name="find_object",
             result_data={"object": "cup", "x": 1.2, "image_base64": "AAAA"},
         )
-        node._planner.run_llm_planning_loop = AsyncMock(side_effect=[
-            ("컵 발견", [found], True, []),
-            ("집기 완료", [SimpleNamespace(success=True, skill_name="grasp", result_data={})], True, []),
-        ])
+        node._planner.run_llm_planning_loop = AsyncMock(
+            side_effect=[
+                ("컵 발견", [found], True, []),
+                (
+                    "집기 완료",
+                    [SimpleNamespace(success=True, skill_name="grasp", result_data={})],
+                    True,
+                    [],
+                ),
+            ]
+        )
         decomposer = TaskDecomposer(node)
 
         await decomposer.run(
@@ -344,11 +383,16 @@ class TestRun:
     async def test_robot_state_is_refreshed_from_second_step(self):
         """단계가 진행되면 태스크 시작 시점의 낡은 위치/배터리를 그대로 쓰면 안 된다."""
         node = _make_node()
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps({"steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]})
+        )
         node._planner.run_llm_planning_loop = AsyncMock(
-            return_value=("완료", [SimpleNamespace(success=True, skill_name="s", result_data={})], True, [])
+            return_value=(
+                "완료",
+                [SimpleNamespace(success=True, skill_name="s", result_data={})],
+                True,
+                [],
+            )
         )
         node._skills = SimpleNamespace(
             _skills={
@@ -385,11 +429,16 @@ class TestRun:
     async def test_robot_state_refresh_failure_keeps_previous_context(self):
         """상태 재조회가 실패해도 분해 자체를 실패시키지 않는다."""
         node = _make_node()  # _skills / _get_robot_health_state 없음 -> 조회 실패
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps({"steps": [{"instruction": "1단계"}, {"instruction": "2단계"}]})
+        )
         node._planner.run_llm_planning_loop = AsyncMock(
-            return_value=("완료", [SimpleNamespace(success=True, skill_name="s", result_data={})], True, [])
+            return_value=(
+                "완료",
+                [SimpleNamespace(success=True, skill_name="s", result_data={})],
+                True,
+                [],
+            )
         )
         stale = {"role": "system", "content": '[로봇 현재 상태]\n{"pose": {"x": 0.0}}'}
         decomposer = TaskDecomposer(node)
@@ -409,12 +458,18 @@ class TestRun:
 
     async def test_max_steps_cap_enforced(self):
         node = _make_node(max_steps=2)
-        node._llm.chat = MagicMock(return_value=json.dumps({
-            "steps": [
-                {"instruction": "1단계"}, {"instruction": "2단계"},
-                {"instruction": "3단계"}, {"instruction": "4단계"},
-            ]
-        }))
+        node._llm.chat = MagicMock(
+            return_value=json.dumps(
+                {
+                    "steps": [
+                        {"instruction": "1단계"},
+                        {"instruction": "2단계"},
+                        {"instruction": "3단계"},
+                        {"instruction": "4단계"},
+                    ]
+                }
+            )
+        )
         node._planner.run_llm_planning_loop = AsyncMock(
             return_value=("완료", [SimpleNamespace(success=True)], True, [])
         )

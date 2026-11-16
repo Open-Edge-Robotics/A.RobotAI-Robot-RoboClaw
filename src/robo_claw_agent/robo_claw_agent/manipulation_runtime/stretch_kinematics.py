@@ -63,10 +63,7 @@ def _validate_joint_names(joint_values: Mapping[str, float]) -> str | None:
         return "joint target 이 비어 있습니다."
     for name in joint_values:
         if name not in _VALID_JOINTS:
-            return (
-                f"지원하지 않는 joint 이름 '{name}'. "
-                f"허용: {sorted(_VALID_JOINTS)}"
-            )
+            return f"지원하지 않는 joint 이름 '{name}'. 허용: {sorted(_VALID_JOINTS)}"
     return None
 
 
@@ -87,29 +84,67 @@ def _check_exclusive(joint_names: list[str]) -> str | None:
 # 각 원소: (joint_name, type, xyz, rpy, axis). l0~l3 는 wrist_extension 을 4등분.
 # fixed joint 의 axis 는 미사용(더미 0).
 _STRETCH_CHAIN: tuple[
-    tuple[str, str, tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
+    tuple[
+        str, str, tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]
+    ],
     ...,
 ] = (
     ("joint_mast", "fixed", (-0.067, 0.135, 0.0284), (1.5707963, 0.0, 0.0), (0.0, 0.0, 0.0)),
-    ("joint_lift", "prismatic", (-0.0374, 0.1666, 0.0), (-1.5707963, 1.5707963, 0.0), (0.0, 0.0, 1.0)),
+    (
+        "joint_lift",
+        "prismatic",
+        (-0.0374, 0.1666, 0.0),
+        (-1.5707963, 1.5707963, 0.0),
+        (0.0, 0.0, 1.0),
+    ),
     ("joint_arm_l4", "fixed", (-0.2547, 0.0, 0.0), (1.5707963, 0.0, -1.5707963), (0.0, 0.0, 0.0)),
     ("joint_arm_l3", "prismatic", (0.0, 0.0, 0.013), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
     ("joint_arm_l2", "prismatic", (0.0, 0.0, 0.013), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
     ("joint_arm_l1", "prismatic", (0.0, 0.0, 0.013), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
     ("joint_arm_l0", "prismatic", (0.0, 0.0, -0.0137), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
-    ("joint_wrist_yaw", "revolute", (0.083, -0.0308, 0.0), (-1.5707963, 0.0, 3.1415927), (0.0, 0.0, -1.0)),
-    ("joint_wrist_yaw_bottom", "fixed", (0.0, 0.0, 0.0), (-3.1415927, 0.0, -1.5707963), (0.0, 0.0, 0.0)),
-    ("joint_wrist_pitch", "revolute", (0.0, -0.0195, -0.0305), (1.5707963, 0.0, 3.1415927), (0.0, 0.0, -1.0)),
-    ("joint_wrist_roll", "revolute", (-0.0189, -0.024, 0.0196), (3.1415927, 1.5707963, 0.0), (0.0, 0.0, 1.0)),
+    (
+        "joint_wrist_yaw",
+        "revolute",
+        (0.083, -0.0308, 0.0),
+        (-1.5707963, 0.0, 3.1415927),
+        (0.0, 0.0, -1.0),
+    ),
+    (
+        "joint_wrist_yaw_bottom",
+        "fixed",
+        (0.0, 0.0, 0.0),
+        (-3.1415927, 0.0, -1.5707963),
+        (0.0, 0.0, 0.0),
+    ),
+    (
+        "joint_wrist_pitch",
+        "revolute",
+        (0.0, -0.0195, -0.0305),
+        (1.5707963, 0.0, 3.1415927),
+        (0.0, 0.0, -1.0),
+    ),
+    (
+        "joint_wrist_roll",
+        "revolute",
+        (-0.0189, -0.024, 0.0196),
+        (3.1415927, 1.5707963, 0.0),
+        (0.0, 0.0, 1.0),
+    ),
     ("joint_gripper_s3_body", "fixed", (0.0, 0.0, 0.021), (0.0, 0.0, -3.1415927), (0.0, 0.0, 0.0)),
-    ("joint_grasp_center", "fixed", (0.0, 0.0, 0.23), (-1.5707963, -1.5707963, 0.0), (0.0, 0.0, 0.0)),
+    (
+        "joint_grasp_center",
+        "fixed",
+        (0.0, 0.0, 0.23),
+        (-1.5707963, -1.5707963, 0.0),
+        (0.0, 0.0, 0.0),
+    ),
 )
 
 # position IK (lift, ext, yaw) 가동 범위 (raw 단위).
 _IK_LIMITS = (
-    (0.0, 1.1),     # joint_lift (m)
-    (0.0, 0.52),    # wrist_extension (m)
-    (-1.75, 4.0),   # joint_wrist_yaw (rad)
+    (0.0, 1.1),  # joint_lift (m)
+    (0.0, 0.52),  # wrist_extension (m)
+    (-1.75, 4.0),  # joint_wrist_yaw (rad)
 )
 _IK_MAX_ITER = 80
 _IK_TOL = 1e-3
@@ -234,9 +269,7 @@ def _ik_position(
         for i, (lo, hi) in enumerate(_IK_LIMITS):
             q[i] = max(lo, min(hi, q[i]))
 
-    final = _fk_position(
-        {"joint_lift": q[0], "wrist_extension": q[1], "joint_wrist_yaw": q[2]}
-    )
+    final = _fk_position({"joint_lift": q[0], "wrist_extension": q[1], "joint_wrist_yaw": q[2]})
     if np.linalg.norm(tgt - final) > fail_tol:
         return None
     return float(q[0]), float(q[1]), float(q[2])
@@ -255,9 +288,7 @@ def _normalize_angle(angle_rad: float) -> float:
     return (angle_rad + math.pi) % (2.0 * math.pi) - math.pi
 
 
-def _rotate_xy(
-    xyz: Sequence[float], theta_rad: float
-) -> tuple[float, float, float]:
+def _rotate_xy(xyz: Sequence[float], theta_rad: float) -> tuple[float, float, float]:
     """베이스가 theta_rad 만큼 회전(z축 기준, CCW+)한 뒤의 base_link 좌표계에서
     같은 월드 지점이 어떤 좌표로 보이는지 반환한다(회전 중심 = base_link 원점).
 

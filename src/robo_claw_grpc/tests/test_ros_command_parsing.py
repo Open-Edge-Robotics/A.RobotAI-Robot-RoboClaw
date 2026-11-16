@@ -7,10 +7,7 @@ gRPC로 노출된 엔드포인트이므로, 'ros2'로 시작하기만 하면 쉘
 from pathlib import Path
 
 _SERVICE_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "robo_claw_grpc"
-    / "services"
-    / "robot_command_service.py"
+    Path(__file__).resolve().parents[1] / "robo_claw_grpc" / "services" / "robot_command_service.py"
 )
 
 
@@ -58,14 +55,10 @@ def test_splits_pipe_without_surrounding_spaces():
 
 
 def test_preserves_pipe_inside_quotes():
-    segments, error = _parse(
-        "ros2 topic pub /chatter std_msgs/String \"data: 'a|b'\""
-    )
+    segments, error = _parse("ros2 topic pub /chatter std_msgs/String \"data: 'a|b'\"")
 
     assert error == ""
-    assert segments == [
-        ["ros2", "topic", "pub", "/chatter", "std_msgs/String", "data: 'a|b'"]
-    ]
+    assert segments == [["ros2", "topic", "pub", "/chatter", "std_msgs/String", "data: 'a|b'"]]
 
 
 def test_rejects_command_chaining():

@@ -28,16 +28,22 @@ def _patch_navigate_deps(monkeypatch, wait_result):
         "robo_claw_agent.skills.navigation_skill.navigate._wait_for_goal_result",
         lambda goal_handle, timeout_sec, label: wait_result,
     )
+
+
 def _attach_fake_node(skill):
     """테스트용 더미 노드를 부착한다(BaseSkill.node는 AgentNode 타입이지만 테스트에선 불필요)."""
     skill.node = object()
     return skill
+
+
 def _attach_fake_node_with_limits(skill, limits):
     """ROBOT_LIMITS dict를 가진 더미 노드를 부착한다."""
     from types import SimpleNamespace
 
     skill.node = SimpleNamespace(_robot_limits_dict=limits)
     return skill
+
+
 from types import SimpleNamespace
 
 from robo_claw_agent.skills.navigation_skill import SelfLocalizeSkill
@@ -62,6 +68,8 @@ def _make_amcl_pose(x_var, y_var, yaw_var, x=1.0, y=2.0, yaw_deg=0.0):
             ),
         )
     )
+
+
 class _FakeNode:
     """create_subscription 시 준비된 amcl_pose를 즉시 콜백으로 전달하는 노드 스텁."""
 

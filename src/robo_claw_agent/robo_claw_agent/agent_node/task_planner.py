@@ -39,11 +39,33 @@ _CONNECTIVE_RE = re.compile(
 _EOJEOL_GO_RE = re.compile(r"(?:(?<=\s)|^)(?P<word>[가-힣]+고)\s")
 
 # "-고"로 끝나지만 연결어미가 아닌 명사/부사 어절.
-_GO_ENDING_NON_CONNECTIVES: frozenset[str] = frozenset({
-    "냉장고", "창고", "참고", "최고", "사고", "말고", "광고", "중고", "신고",
-    "경고", "예고", "공고", "원고", "재고", "금고", "서고", "차고", "천고",
-    "삼고", "회고", "완고", "빙고", "만고",
-})
+_GO_ENDING_NON_CONNECTIVES: frozenset[str] = frozenset(
+    {
+        "냉장고",
+        "창고",
+        "참고",
+        "최고",
+        "사고",
+        "말고",
+        "광고",
+        "중고",
+        "신고",
+        "경고",
+        "예고",
+        "공고",
+        "원고",
+        "재고",
+        "금고",
+        "서고",
+        "차고",
+        "천고",
+        "삼고",
+        "회고",
+        "완고",
+        "빙고",
+        "만고",
+    }
+)
 
 
 def _has_connective_ending(text: str) -> bool:
@@ -158,9 +180,7 @@ class TaskDecomposer:
             return _SINGLE_TASK_WAIT_MARGIN_SEC
 
         node = self.node
-        max_steps = max(
-            1, int(getattr(node, "_task_decomposition_max_steps", _DEFAULT_MAX_STEPS))
-        )
+        max_steps = max(1, int(getattr(node, "_task_decomposition_max_steps", _DEFAULT_MAX_STEPS)))
         max_retries = max(
             0, int(getattr(node, "_task_step_max_retries", _DEFAULT_STEP_MAX_RETRIES))
         )
@@ -270,7 +290,9 @@ class TaskDecomposer:
         )
 
         # 마지막 사용자 메시지(원본 복합 명령)를 제외한 컨텍스트만 베이스로 재사용한다.
-        base_messages = messages[:-1] if messages and messages[-1].get("role") == "user" else list(messages)
+        base_messages = (
+            messages[:-1] if messages and messages[-1].get("role") == "user" else list(messages)
+        )
 
         all_skill_results: list[Any] = []
         all_pending_events: list[threading.Event] = []
@@ -286,19 +308,23 @@ class TaskDecomposer:
 
             step_messages = await self._with_fresh_robot_state(base_messages, refresh=i > 0)
             if total > 1:
-                step_messages.append({
-                    "role": "system",
-                    "content": (
-                        f"[전체 명령]\n{instruction}\n"
-                        f"(현재 {i + 1}/{total}번째 하위 단계를 수행 중입니다. "
-                        "이 단계에만 집중하되 전체 맥락을 참고하세요.)"
-                    ),
-                })
+                step_messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            f"[전체 명령]\n{instruction}\n"
+                            f"(현재 {i + 1}/{total}번째 하위 단계를 수행 중입니다. "
+                            "이 단계에만 집중하되 전체 맥락을 참고하세요.)"
+                        ),
+                    }
+                )
             if step_summaries:
-                step_messages.append({
-                    "role": "system",
-                    "content": "[이전 단계 요약]\n" + "\n".join(step_summaries),
-                })
+                step_messages.append(
+                    {
+                        "role": "system",
+                        "content": "[이전 단계 요약]\n" + "\n".join(step_summaries),
+                    }
+                )
             step_messages.append({"role": "user", "content": step})
 
             step_success = False
@@ -319,10 +345,18 @@ class TaskDecomposer:
             attempt = 0
             while attempt <= max_retries and not step_success:
                 attempt += 1
-                step_msg, step_results, step_success, step_events = (
-                    await node._planner.run_llm_planning_loop(
-                        goal_handle, step, list(step_messages), robot_summary, timeout, send_fb,
-                    )
+                (
+                    step_msg,
+                    step_results,
+                    step_success,
+                    step_events,
+                ) = await node._planner.run_llm_planning_loop(
+                    goal_handle,
+                    step,
+                    list(step_messages),
+                    robot_summary,
+                    timeout,
+                    send_fb,
                 )
                 all_pending_events.extend(step_events)
                 if not step_success and attempt <= max_retries:
@@ -353,7 +387,9 @@ class TaskDecomposer:
                 send_fb(f"단계 {i + 1} 실패로 중단", 90)
                 break
         else:
-            final_msg = f"모든 단계({total}) 완료. " + (step_summaries[-1] if step_summaries else "")
+            final_msg = f"모든 단계({total}) 완료. " + (
+                step_summaries[-1] if step_summaries else ""
+            )
 
         return final_msg, all_skill_results, overall_success, all_pending_events
 

@@ -171,9 +171,7 @@ class HttpSecurityPolicy:
                 role=role,
             )
 
-        return HttpAccessResult(
-            allowed=True, status_code=200, payload={"ok": True}, role=role
-        )
+        return HttpAccessResult(allowed=True, status_code=200, payload={"ok": True}, role=role)
 
     def _extract_token(self, headers: Any) -> str:
         auth_header = headers.get("Authorization", "").strip()

@@ -58,9 +58,7 @@ def _joint_positions(skill: BaseSkill, joint_names: list[str]) -> dict[str, floa
     return positions
 
 
-def _log_achieved_gripper_aperture(
-    skill: BaseSkill, logger: logging.Logger, context: str
-) -> None:
+def _log_achieved_gripper_aperture(skill: BaseSkill, logger: logging.Logger, context: str) -> None:
     """gripper open 명령 직후 실제 도달한 aperture를 로그로 남긴다.
 
     stretch_core가 범위를 벗어난 목표를 에러 없이 실제 하드웨어 상한으로

@@ -52,9 +52,7 @@ def test_vla_pick_front_object_runs_safe_sequence(monkeypatch):
         "execute",
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.03)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     skill = VLABasedPickFrontObjectSkill()
     skill.set_node(node)
@@ -152,9 +150,7 @@ def test_vla_pick_front_object_uses_active_search_when_requested(monkeypatch):
         "execute",
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.03)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     skill = VLABasedPickFrontObjectSkill()
     skill.set_node(node)
@@ -247,9 +243,7 @@ def test_vla_pick_gripper_object_does_not_align_or_move_ready_by_default(monkeyp
         "execute",
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.03)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     skill = VLABasedPickGripperObjectSkill()
     skill.set_node(node)
@@ -281,9 +275,7 @@ def test_vla_pick_gripper_object_uses_loose_close_for_cup(monkeypatch):
         "execute",
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.04)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.04))
 
     skill = VLABasedPickGripperObjectSkill()
     skill.set_node(node)
@@ -312,9 +304,7 @@ def test_vla_pick_gripper_object_explicit_close_preset_wins(monkeypatch):
         "execute",
         lambda self, params: {"success": True, "ready_to_grasp": True},
     )
-    monkeypatch.setattr(
-        grasp_verification, "_joint_positions", _grasp_positions(0.03)
-    )
+    monkeypatch.setattr(grasp_verification, "_joint_positions", _grasp_positions(0.03))
 
     skill = VLABasedPickGripperObjectSkill()
     skill.set_node(node)

@@ -39,7 +39,9 @@ def direction_to_yaw_rad(direction: Any) -> float | None:
     return math.radians(yaw_deg)
 
 
-def yaw_to_point_rad(current_x: float, current_y: float, target_x: float, target_y: float) -> float | None:
+def yaw_to_point_rad(
+    current_x: float, current_y: float, target_x: float, target_y: float
+) -> float | None:
     dx = float(target_x) - float(current_x)
     dy = float(target_y) - float(current_y)
     if math.hypot(dx, dy) < 0.05:

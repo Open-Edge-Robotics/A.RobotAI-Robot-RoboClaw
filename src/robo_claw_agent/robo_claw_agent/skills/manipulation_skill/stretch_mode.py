@@ -120,9 +120,12 @@ class SwitchStretchModeSkill(BaseSkill):
     """Stretch3 driver mode 전환 스킬."""
 
     name = "switch_stretch_mode"
-    input_schema = {"type": "object", "properties": {
-        "mode": {"type": "string", "enum": ["position", "navigation"]}
-    }, "required": ["mode"], "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {"mode": {"type": "string", "enum": ["position", "navigation"]}},
+        "required": ["mode"],
+        "additionalProperties": False,
+    }
     requires_manipulation_backend = "stretch"
     description = (
         "Stretch3 driver 모드를 전환합니다. mode 파라미터는 'position' 또는 "
@@ -174,11 +177,15 @@ class StowForNavigationSkill(BaseSkill):
     """Stretch3 팔/그리퍼를 주행 안전 자세로 접고 navigation 모드로 복귀."""
 
     name = "stow_for_navigation"
-    input_schema = {"type": "object", "properties": {
-        "stow_timeout_sec": {"type": "number", "default": 30.0},
-        "mode_timeout_sec": {"type": "number", "default": 5.0},
-        "switch_navigation": {"type": "boolean", "default": True}
-    }, "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "stow_timeout_sec": {"type": "number", "default": 30.0},
+            "mode_timeout_sec": {"type": "number", "default": 5.0},
+            "switch_navigation": {"type": "boolean", "default": True},
+        },
+        "additionalProperties": False,
+    }
     requires_manipulation_backend = "stretch"
     description = (
         "Stretch3 팔과 그리퍼를 mobile base footprint 안으로 접는 /stow_the_robot "

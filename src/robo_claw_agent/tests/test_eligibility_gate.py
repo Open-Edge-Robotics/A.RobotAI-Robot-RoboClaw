@@ -97,7 +97,12 @@ def _make_node(mode, route=None, router_error=None, direct_result=None):
     node._llm = MagicMock()
     node._llm.chat = MagicMock(
         return_value=json.dumps(
-            {"steps": [{"instruction": "카메라로 촬영해"}, {"instruction": "촬영한 이미지를 전송해"}]}
+            {
+                "steps": [
+                    {"instruction": "카메라로 촬영해"},
+                    {"instruction": "촬영한 이미지를 전송해"},
+                ]
+            }
         )
     )
     node._task_decomposition_max_steps = 6
@@ -126,7 +131,12 @@ def _make_node(mode, route=None, router_error=None, direct_result=None):
     node._router = router
     node._execute_direct_route = AsyncMock(
         return_value=direct_result
-        or ("카메라 이미지를 캡처했습니다.", [SimpleNamespace(success=True, result_data={})], True, [])
+        or (
+            "카메라 이미지를 캡처했습니다.",
+            [SimpleNamespace(success=True, result_data={})],
+            True,
+            [],
+        )
     )
     return node
 
@@ -201,7 +211,12 @@ class TestDecomposerFastPath:
         assert _gate_records(node)[0]["would"] == "llm"
 
     async def test_direct_failure_falls_back_to_llm(self):
-        failed = ("capture_camera_image 실행 실패", [SimpleNamespace(success=False, result_data={})], False, [])
+        failed = (
+            "capture_camera_image 실행 실패",
+            [SimpleNamespace(success=False, result_data={})],
+            False,
+            [],
+        )
         node = _make_node("on", route=_direct(), direct_result=failed)
 
         _msg, results, success, _events = await _run(node)
@@ -209,7 +224,9 @@ class TestDecomposerFastPath:
         assert success is True
         assert node._planner.run_llm_planning_loop.await_count == 2
         assert node._planner.run_llm_planning_loop.await_args_list[0].args[1] == "카메라로 촬영해"
-        assert any(getattr(r, "success", True) is False for r in results), "실패한 빠른 경로 기록 보존"
+        assert any(getattr(r, "success", True) is False for r in results), (
+            "실패한 빠른 경로 기록 보존"
+        )
 
     async def test_router_error_falls_back_to_llm(self):
         node = _make_node("on", router_error=RuntimeError("boom"))
@@ -220,7 +237,9 @@ class TestDecomposerFastPath:
         assert "RuntimeError" in _gate_records(node)[0]["error"]
 
     async def test_simple_reply_route_completes_step_without_llm(self):
-        node = _make_node("on", route=RouteDecision(kind="simple_reply", reply="네, 무엇을 도와드릴까요?"))
+        node = _make_node(
+            "on", route=RouteDecision(kind="simple_reply", reply="네, 무엇을 도와드릴까요?")
+        )
 
         await _run(node)
 

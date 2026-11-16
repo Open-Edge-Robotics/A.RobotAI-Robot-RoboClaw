@@ -117,7 +117,7 @@ def test_rag_ttl_expiration_and_archiving(tmp_path):
         text="10일 전 발견된 쓰레기통 위치 x=1.0 y=1.0",
         metadata={"type": "observation", "x": 1.0, "y": 1.0},
         vector=[0.1, 0.2, 0.3],
-        timestamp=ten_days_ago
+        timestamp=ten_days_ago,
     )
 
     # 지식 2: 오늘 생성된 관찰 데이터 (보관 대상)
@@ -126,7 +126,7 @@ def test_rag_ttl_expiration_and_archiving(tmp_path):
         text="오늘 감지된 테이블 위치 x=2.0 y=2.0",
         metadata={"type": "observation", "x": 2.0, "y": 2.0},
         vector=[0.1, 0.2, 0.3],
-        timestamp=today
+        timestamp=today,
     )
 
     # 지식 3: 10일 전 생성된 매뉴얼 가이드 (보관 대상 - metadata.type이 'observation'이 아님)
@@ -134,7 +134,7 @@ def test_rag_ttl_expiration_and_archiving(tmp_path):
         text="로봇 하드웨어 안전 수칙",
         metadata={"type": "manual"},
         vector=[0.1, 0.2, 0.3],
-        timestamp=ten_days_ago
+        timestamp=ten_days_ago,
     )
 
     # 초기 상태 검증
@@ -163,4 +163,3 @@ def test_rag_ttl_expiration_and_archiving(tmp_path):
         assert meta["type"] == "observation"
         assert meta["x"] == 1.0
         assert rows[0][3] == ten_days_ago
-

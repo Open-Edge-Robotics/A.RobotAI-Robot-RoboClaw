@@ -29,6 +29,8 @@ def _place(name, x, y, **metadata):
         "position": {"x": x, "y": y},
         "metadata": metadata,
     }
+
+
 def _motion(motion_id, name, *, pre_id=None, intent="", description="", mask=""):
     return {
         "motion_id": motion_id,

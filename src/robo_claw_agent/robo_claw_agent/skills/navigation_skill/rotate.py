@@ -55,7 +55,7 @@ class RotateSkill(BaseSkill):
         _cancel_active_goal()
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        if (err := self.require_node()):
+        if err := self.require_node():
             return err
 
         angle_deg = math.fmod(self.get_float_param(params, "angle_deg", 90.0), 360.0)
@@ -65,9 +65,7 @@ class RotateSkill(BaseSkill):
 
         from robo_claw_agent.agent_node.nav_safety import check_navigation_safety_gate
 
-        gate_ok, gate_err = check_navigation_safety_gate(
-            self.node, rotation_deg=angle_deg
-        )
+        gate_ok, gate_err = check_navigation_safety_gate(self.node, rotation_deg=angle_deg)
         if not gate_ok:
             logger.warning("rotate safety gate rejection: %s", gate_err)
             return self.fail_result(gate_err)
@@ -93,7 +91,9 @@ class RotateSkill(BaseSkill):
         cmd_ok, cmd_msg = _rotate_via_cmd_vel(self, target_yaw, timeout_sec=10.0)
         if cmd_ok:
             notify_goal_outcome(
-                self, True, cmd_msg,
+                self,
+                True,
+                cmd_msg,
                 label="회전",
                 success_message=f"✅ 회전을 완료했습니다 ({angle_deg:.1f}도).",
                 cancel_message="🛑 회전 작업이 취소되었습니다.",
@@ -124,7 +124,9 @@ class RotateSkill(BaseSkill):
 
         if success:
             notify_goal_outcome(
-                self, True, result_message,
+                self,
+                True,
+                result_message,
                 label="회전",
                 success_message=f"✅ 회전을 완료했습니다 ({angle_deg:.1f}도).",
                 cancel_message="🛑 회전 작업이 취소되었습니다.",
@@ -142,7 +144,9 @@ class RotateSkill(BaseSkill):
             self, target_yaw, timeout_sec=20.0, label="상대 회전 내비게이션"
         )
         notify_goal_outcome(
-            self, nav_ok, nav_msg,
+            self,
+            nav_ok,
+            nav_msg,
             label="회전",
             success_message=f"✅ 회전을 완료했습니다 ({angle_deg:.1f}도).",
             cancel_message="🛑 회전 작업이 취소되었습니다.",

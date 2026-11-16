@@ -26,9 +26,7 @@ def _is_safe_path(file_path: str, node: Any) -> bool:
         try:
             if node.has_parameter("butler_script_dir"):
                 butler_dir = (
-                    node.get_parameter("butler_script_dir")
-                    .get_parameter_value()
-                    .string_value
+                    node.get_parameter("butler_script_dir").get_parameter_value().string_value
                 )
                 if butler_dir:
                     allowed_dirs.append(os.path.realpath(butler_dir))

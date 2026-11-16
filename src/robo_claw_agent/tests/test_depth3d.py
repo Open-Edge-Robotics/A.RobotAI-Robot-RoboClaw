@@ -25,9 +25,7 @@ _DEPTH3D_PATH = os.path.join(
 try:
     import numpy as np
 
-    _spec = importlib.util.spec_from_file_location(
-        "robo_claw_agent_test_depth3d", _DEPTH3D_PATH
-    )
+    _spec = importlib.util.spec_from_file_location("robo_claw_agent_test_depth3d", _DEPTH3D_PATH)
     depth3d = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(depth3d)
 
@@ -211,7 +209,7 @@ def test_unrotate_pixel_swap_minus_90_inverse_of_forward_cw():
     # 이를 역회전(-90)하면 원래 (40, 30)으로 돌아와야 한다.
     raw_x, raw_y = 40.0, 30.0
     x_u = (480 - 1) - raw_y  # 449
-    y_u = raw_x              # 40
+    y_u = raw_x  # 40
     rx, ry = depth3d.unrotate_pixel(x_u, y_u, -90, 640, 480, up_w=480, up_h=640)
     assert rx == pytest.approx(raw_x)
     assert ry == pytest.approx(raw_y)

@@ -43,6 +43,8 @@ def test_goal_planner_node_decomposes_goal(mock_node):
     assert len(blackboard["task_queue"]) == 2
     assert blackboard["task_queue"][0]["skill"] == "navigate_to"
     assert blackboard["goal_achieved"] is False
+
+
 def test_goal_planner_node_empty_plan_marks_achieved(mock_node):
     """goal_achieved=true이면 task_queue를 비우고 goal_achived를 설정한다."""
     mock_node._llm.chat.return_value = json.dumps({"plan": [], "goal_achieved": True})
@@ -59,6 +61,8 @@ def test_goal_planner_node_empty_plan_marks_achieved(mock_node):
     assert status == NodeStatus.SUCCESS
     assert blackboard["task_queue"] == []
     assert blackboard["goal_achieved"] is True
+
+
 def test_goal_planner_node_skips_llm_when_queue_has_items(mock_node):
     """task_queue에 잔여 항목이 있으면 LLM 호출 없이 SUCCESS를 반환한다."""
     mock_node._llm.chat.return_value = "should-not-be-called"

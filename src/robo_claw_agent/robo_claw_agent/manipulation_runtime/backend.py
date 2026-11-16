@@ -60,9 +60,7 @@ class MoveItPyBackend:
         if not res.success:
             raise ManipulationError(f"named pose '{target_name}' 실행 실패: {res.message}")
 
-    def move_to_joint_target(
-        self, group_name: str, joint_values: Mapping[str, float]
-    ) -> None:
+    def move_to_joint_target(self, group_name: str, joint_values: Mapping[str, float]) -> None:
         req = ExecuteManipulator.Request()
         req.type = "joint"
         req.group_name = group_name
@@ -101,4 +99,3 @@ class MoveItPyBackend:
         res = self._call_service(req)
         if not res.success:
             raise ManipulationError(f"pose target 실행 실패: {res.message}")
-

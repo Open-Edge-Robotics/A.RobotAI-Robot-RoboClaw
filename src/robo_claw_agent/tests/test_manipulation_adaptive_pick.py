@@ -26,6 +26,7 @@ def test_adaptive_pick_approach_vector_moves_toward_distant_object():
 def test_adaptive_pick_approach_vector_skips_already_reachable_object():
     assert adaptive_pick_skill._approach_vector_to_reach((0.0, -0.42, 0.1)) is None
 
+
 def test_adaptive_pick_object_full_flow_uses_search_result_to_align(monkeypatch):
     calls = []
 
@@ -114,7 +115,9 @@ def test_adaptive_pick_object_skips_align_when_search_angle_negligible(monkeypat
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
-    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False, "restore_head_after": False})
+    result = skill.execute(
+        {"target_object": "cup", "use_fixed_pattern_grasp": False, "restore_head_after": False}
+    )
 
     assert result["success"] is True
     assert calls == ["search", "prepare", "observe", "pick"]
@@ -146,7 +149,12 @@ def test_adaptive_pick_object_can_skip_search(monkeypatch):
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
     result = skill.execute(
-        {"target_object": "cup", "skip_search": True, "use_fixed_pattern_grasp": False, "restore_head_after": False}
+        {
+            "target_object": "cup",
+            "skip_search": True,
+            "use_fixed_pattern_grasp": False,
+            "restore_head_after": False,
+        }
     )
 
     assert result["success"] is True
@@ -168,7 +176,9 @@ def test_adaptive_pick_object_fails_when_search_fails(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
-    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False, "restore_head_after": False})
+    result = skill.execute(
+        {"target_object": "cup", "use_fixed_pattern_grasp": False, "restore_head_after": False}
+    )
 
     assert result["success"] is False
     assert "탐색 실패" in result["message"]
@@ -210,7 +220,12 @@ def test_adaptive_pick_object_fails_when_observe_fails_and_restores_heading(monk
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
     result = skill.execute(
-        {"target_object": "cup", "return_to_start_on_fail": True, "use_fixed_pattern_grasp": False, "restore_head_after": False}
+        {
+            "target_object": "cup",
+            "return_to_start_on_fail": True,
+            "use_fixed_pattern_grasp": False,
+            "restore_head_after": False,
+        }
     )
 
     assert result["success"] is False
@@ -283,7 +298,9 @@ def test_adaptive_pick_object_default_max_attempts_does_not_retry(monkeypatch):
 
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
-    result = skill.execute({"target_object": "cup", "use_fixed_pattern_grasp": False, "restore_head_after": False})
+    result = skill.execute(
+        {"target_object": "cup", "use_fixed_pattern_grasp": False, "restore_head_after": False}
+    )
 
     assert result["success"] is False
     assert calls == ["search"]
@@ -332,7 +349,12 @@ def test_adaptive_pick_object_retries_full_sequence_after_pick_failure(monkeypat
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
     result = skill.execute(
-        {"target_object": "cup", "restore_head_after": False, "use_fixed_pattern_grasp": False, "max_attempts": 2}
+        {
+            "target_object": "cup",
+            "restore_head_after": False,
+            "use_fixed_pattern_grasp": False,
+            "max_attempts": 2,
+        }
     )
 
     assert result["success"] is True
@@ -362,7 +384,12 @@ def test_adaptive_pick_object_reports_attempts_when_all_retries_exhausted(monkey
     skill = AdaptivePickObjectSkill()
     skill.set_node(_make_node())
     result = skill.execute(
-        {"target_object": "cup", "restore_head_after": False, "use_fixed_pattern_grasp": False, "max_attempts": 3}
+        {
+            "target_object": "cup",
+            "restore_head_after": False,
+            "use_fixed_pattern_grasp": False,
+            "max_attempts": 3,
+        }
     )
 
     assert result["success"] is False

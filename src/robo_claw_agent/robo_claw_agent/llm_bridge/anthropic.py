@@ -165,7 +165,9 @@ class AnthropicBridge(BaseLLMBridge):
                 if not name:
                     continue
                 tool_calls.append(
-                    ToolCall(name=name, arguments=parse_tool_arguments(getattr(block, "input", None)))
+                    ToolCall(
+                        name=name, arguments=parse_tool_arguments(getattr(block, "input", None))
+                    )
                 )
 
         content = "\n".join(part for part in content_parts if part).strip()

@@ -1,7 +1,6 @@
 """robo_claw_grpc 예외 클래스"""
 
 
-
 class RoboClawGrpcError(Exception):
     def __init__(self, message: str = "An error occurred in robo_claw_grpc"):
         self.message = message

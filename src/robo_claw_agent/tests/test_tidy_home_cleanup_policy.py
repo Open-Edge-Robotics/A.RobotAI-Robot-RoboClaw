@@ -33,6 +33,8 @@ def test_home_scope_returns_unique_places_with_coordinates():
 
     assert error is None
     assert [place["name"] for place in selected] == ["안방", "주방"]
+
+
 def test_room_scope_resolves_exact_name_before_aliases():
     places = [_place("침실", 1.0, 2.0), _place("안방", 5.0, 6.0)]
 
@@ -40,6 +42,8 @@ def test_room_scope_resolves_exact_name_before_aliases():
 
     assert error is None
     assert [place["name"] for place in selected] == ["안방"]
+
+
 def test_room_scope_reports_missing_or_ambiguous_location():
     missing, missing_error = _resolve_cleanup_places("room", "서재", [_place("안방", 1, 2)])
     ambiguous, ambiguous_error = _resolve_cleanup_places(
@@ -50,6 +54,8 @@ def test_room_scope_reports_missing_or_ambiguous_location():
     assert missing_error == "requested_location_not_found"
     assert ambiguous == []
     assert ambiguous_error == "requested_location_ambiguous"
+
+
 def test_cleanup_detection_includes_household_items_without_treating_them_as_waste():
     assert _has_cleanup_indication([{"name": "wrapper"}], "테이블 아래 포장지가 있습니다.") is True
     assert _has_cleanup_indication([{"name": "towel"}], "바닥에 수건이 있습니다.") is True
@@ -70,6 +76,8 @@ def test_cleanup_detection_includes_household_items_without_treating_them_as_was
     assert _has_cleanup_indication([], "쓰레기는 없고 바닥에 수건이 보입니다.") is True
     assert _has_cleanup_indication([], "바닥에 수건이 보이지 않습니다.") is False
     assert _has_cleanup_indication(["person"], "사람이 서 있습니다.") is False
+
+
 def test_ambiguous_or_hazardous_items_require_user_clarification():
     assert _has_ambiguous_cleanup_indication([{"name": "cup"}], "테이블 위 컵이 보입니다.") is True
     assert _has_ambiguous_cleanup_indication([{"name": "clothes"}], "바닥에 옷이 있습니다.") is True
@@ -82,6 +90,8 @@ def test_ambiguous_or_hazardous_items_require_user_clarification():
         _has_ambiguous_cleanup_indication([{"name": "cup"}], "정리할 대상이 보이지 않습니다.")
         is False
     )
+
+
 def test_cleanup_disposal_destination_requires_curated_nonestimated_pose():
     from types import SimpleNamespace
 
@@ -111,6 +121,8 @@ def test_cleanup_disposal_destination_requires_curated_nonestimated_pose():
     assert _safe_cleanup_disposal_targets(memory) == [
         {"name": "쓰레기통", "target_pose": pose, "categories": ["waste"]}
     ]
+
+
 def test_cleanup_storage_targets_require_explicit_category_and_curated_pose():
     from types import SimpleNamespace
 
@@ -148,6 +160,8 @@ def test_cleanup_storage_targets_require_explicit_category_and_curated_pose():
     assert _safe_cleanup_storage_targets(memory) == [
         {"name": "빨래 바구니", "target_pose": pose, "categories": ["laundry"]}
     ]
+
+
 def test_cleanup_plan_rejects_waste_destination_for_household_item():
     pose = {
         "frame_id": "map",
@@ -162,6 +176,8 @@ def test_cleanup_plan_rejects_waste_destination_for_household_item():
 
     assert _resolve_cleanup_plan_destinations(actions, destinations) is False
     assert actions[1]["params"]["target_pose"] == {"x": 999}
+
+
 def test_cleanup_plan_does_not_infer_household_category_for_ambiguous_object():
     pose = {
         "frame_id": "map",
@@ -181,6 +197,8 @@ def test_cleanup_plan_does_not_infer_household_category_for_ambiguous_object():
         )
         is False
     )
+
+
 def test_cleanup_plan_uses_category_matched_storage_destination():
     pose = {
         "frame_id": "map",
@@ -200,6 +218,8 @@ def test_cleanup_plan_uses_category_matched_storage_destination():
         is True
     )
     assert actions[1]["params"]["target_pose"] == pose
+
+
 def test_cleanup_plan_replaces_planner_pose_with_curated_disposal_pose():
     pose = {
         "frame_id": "map",
@@ -219,6 +239,8 @@ def test_cleanup_plan_replaces_planner_pose_with_curated_disposal_pose():
     assert (
         _resolve_cleanup_plan_destinations(actions, [{"name": "컵", "target_pose": pose}]) is False
     )
+
+
 def test_cleanup_plan_requires_a_placement_after_every_pick():
     assert (
         _cleanup_plan_has_complete_placement(
@@ -239,6 +261,8 @@ def test_cleanup_plan_requires_a_placement_after_every_pick():
         _cleanup_plan_has_complete_placement([{"skill": "place", "params": {"target_pose": {}}}])
         is False
     )
+
+
 def test_cloid_indicator_selects_only_approved_prerequisite_free_motion():
     motions = [
         _motion(22, "scan", intent="탐색 모션", description="좌우 탐색", mask="WH"),
@@ -253,6 +277,8 @@ def test_cloid_indicator_selects_only_approved_prerequisite_free_motion():
     assert selected["motion_id"] in {22, 128}
     assert selected["pre_id"] is None
     assert selected["motion_id"] not in {59, 60, 147}
+
+
 def test_cleanup_demo_uses_only_explicit_prerequisite_free_ids():
     motions = [
         _motion(77, "cleanup_demo"),

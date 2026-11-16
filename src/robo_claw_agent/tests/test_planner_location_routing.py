@@ -73,7 +73,9 @@ def test_initial_pose_chain_for_known_place_without_llm_plan():
 def test_initial_pose_request_without_known_place_keeps_llm_chain():
     chain = [{"skill": "get_status", "params": {}}]
 
-    routed = _route_location_query(chain, "초기 위치를 0,0으로 지정해줘", SimpleNamespace(_memory=None), _Logger())
+    routed = _route_location_query(
+        chain, "초기 위치를 0,0으로 지정해줘", SimpleNamespace(_memory=None), _Logger()
+    )
 
     assert routed == chain
 

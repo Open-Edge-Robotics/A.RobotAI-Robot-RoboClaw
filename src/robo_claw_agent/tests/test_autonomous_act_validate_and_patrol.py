@@ -30,6 +30,8 @@ def test_validate_decided_action_rejects_unregistered_skill():
     assert status == NodeStatus.FAILURE
     assert blackboard["decided_skill"] == ""
     assert "decision_invalid_reason" in blackboard
+
+
 def test_validate_decided_action_rejects_unresolvable_target():
     node = MagicMock()
     node._skills.has_skill.return_value = True
@@ -52,6 +54,8 @@ def test_validate_decided_action_rejects_unresolvable_target():
 
     assert status == NodeStatus.FAILURE
     assert blackboard["decided_skill"] == ""
+
+
 def test_validate_decided_action_accepts_resolvable_target():
     node = MagicMock()
     node._skills.has_skill.return_value = True
@@ -82,6 +86,8 @@ def test_validate_decided_action_accepts_resolvable_target():
 
     assert status == NodeStatus.SUCCESS
     assert blackboard["decided_skill"] == "navigate_to"
+
+
 def test_validate_decided_action_rejects_resolvable_but_unremembered_target():
     node = MagicMock()
     node._skills.has_skill.return_value = True
@@ -106,6 +112,8 @@ def test_validate_decided_action_rejects_resolvable_but_unremembered_target():
 
     assert status == NodeStatus.FAILURE
     assert "기억된 순찰 장소" in blackboard["decision_invalid_reason"]
+
+
 def test_patrol_next_place_node_picks_oldest_last_seen():
     node = MagicMock()
     memory = MagicMock()
@@ -144,6 +152,8 @@ def test_patrol_next_place_node_picks_oldest_last_seen():
     # last_seen 갱신을 위해 재등록되었는지 확인
     memory.add_object_location.assert_called_once()
     assert memory.add_object_location.call_args[0][0] == "오래된곳"
+
+
 def test_patrol_next_place_node_no_candidates_returns_success():
     node = MagicMock()
     memory = MagicMock()
@@ -163,6 +173,8 @@ def test_patrol_next_place_node_no_candidates_returns_success():
     assert blackboard["patrol_last_success"] is False
     assert blackboard["patrol_has_destination"] is False
     assert blackboard["stationary_observation_only"] is True
+
+
 def test_patrol_next_place_node_uses_remembered_rag_coordinates():
     node = MagicMock()
     memory = MagicMock()
@@ -212,6 +224,8 @@ def test_patrol_next_place_node_uses_remembered_rag_coordinates():
     mock_visit.assert_called_once_with(node, "거실")
     assert blackboard["patrol_has_destination"] is True
     assert blackboard["stationary_observation_only"] is False
+
+
 def test_patrol_next_place_node_cools_down_failed_destination():
     node = MagicMock()
     memory = MagicMock()

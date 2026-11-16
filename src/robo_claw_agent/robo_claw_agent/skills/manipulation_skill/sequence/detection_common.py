@@ -64,7 +64,11 @@ def _best_detection(
                 class_name = _resolve_class_name(result.hypothesis.class_id)
                 score = float(result.hypothesis.score)
                 candidates.append((class_name, score))
-                if any(target in class_name.lower() for target in target_variants) and score >= min_score and score > best_score:
+                if (
+                    any(target in class_name.lower() for target in target_variants)
+                    and score >= min_score
+                    and score > best_score
+                ):
                     best_det = det
                     best_class = class_name
                     best_score = score

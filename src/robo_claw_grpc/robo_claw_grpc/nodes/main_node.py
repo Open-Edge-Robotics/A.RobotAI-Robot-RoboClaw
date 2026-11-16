@@ -48,7 +48,9 @@ class RoboClawGrpcNode(Node):
             self.get_logger().error(f"Node initialization error: {e}")
             raise e
 
-    async def call_execute_skill(self, skill_name: str, params: dict, timeout_sec: float = 30.0) -> Any:
+    async def call_execute_skill(
+        self, skill_name: str, params: dict, timeout_sec: float = 30.0
+    ) -> Any:
         """robo_claw_agent의 execute_skill 서비스를 비동기 호출합니다."""
         import asyncio
         import json

@@ -135,15 +135,11 @@ def test_observe_target_vlm_success_builds_3d(monkeypatch):
     )
     monkeypatch.setattr(
         "robo_claw_agent.manipulation_runtime.pose_goal_from_params",
-        lambda params, default_frame: SimpleNamespace(
-            position={"x": 0.0, "y": 0.0, "z": 0.0}
-        ),
+        lambda params, default_frame: SimpleNamespace(position={"x": 0.0, "y": 0.0, "z": 0.0}),
     )
     monkeypatch.setattr(
         "robo_claw_agent.skills.manipulation_skill.core._transform_pose_goal",
-        lambda node, pose, frame: SimpleNamespace(
-            position={"x": 0.5, "y": 0.6, "z": 0.2}
-        ),
+        lambda node, pose, frame: SimpleNamespace(position={"x": 0.5, "y": 0.6, "z": 0.2}),
     )
 
     result = _observe_target_vlm(skill, {"target_object": "물통"})
@@ -155,9 +151,7 @@ def test_observe_target_vlm_success_builds_3d(monkeypatch):
 
 def test_observe_target_vlm_fails_cleanly_without_center(monkeypatch):
     skill = _FakeSkill(_FakeLLM("dummy"))
-    monkeypatch.setattr(
-        vlm_localize, "_vlm_object_center_px", lambda skill, params, target: None
-    )
+    monkeypatch.setattr(vlm_localize, "_vlm_object_center_px", lambda skill, params, target: None)
     result = _observe_target_vlm(skill, {"target_object": "물통"})
     assert result["success"] is False
     assert "중심을 얻지 못했습니다" in result["message"]

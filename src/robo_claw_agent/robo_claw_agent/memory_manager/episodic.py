@@ -35,11 +35,7 @@ class EpisodicMixin:
         messages = []
         for e in combined:
             if e["type"] == "task_received":
-                messages.append(
-                    {"role": "user", "content": e["data"].get("instruction", "")}
-                )
+                messages.append({"role": "user", "content": e["data"].get("instruction", "")})
             elif e["type"] == "task_completed":
-                messages.append(
-                    {"role": "assistant", "content": e["data"].get("result", "")}
-                )
+                messages.append({"role": "assistant", "content": e["data"].get("result", "")})
         return messages

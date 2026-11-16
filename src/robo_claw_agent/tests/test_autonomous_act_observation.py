@@ -28,6 +28,8 @@ def test_interesting_scene_gate_suppresses_repeated_scene_events():
     assert node.tick() == NodeStatus.FAILURE
     blackboard["detected_objects"] = ["trash"]
     assert node.tick() == NodeStatus.SUCCESS
+
+
 def test_local_observation_scans_once_until_patrol_destination_returns():
     scan_skill = MagicMock()
     scan_skill.execute.return_value = {"success": True, "message": "스캔 완료"}
@@ -47,6 +49,8 @@ def test_local_observation_scans_once_until_patrol_destination_returns():
     assert node.tick() == NodeStatus.SUCCESS
     assert blackboard["stationary_scan_done"] is False
     assert blackboard["stationary_observation_only"] is False
+
+
 def test_scan_room_does_not_send_goal_when_cancelled_before_start(monkeypatch):
     from robo_claw_agent.skills.perception_skill import scan as scan_module
     from robo_claw_agent.skills.perception_skill.scan import ScanRoomSkill
@@ -71,6 +75,8 @@ def test_scan_room_does_not_send_goal_when_cancelled_before_start(monkeypatch):
     assert result["success"] is False
     assert "취소" in result["message"]
     assert sent_goals == []
+
+
 def test_scan_room_stops_after_current_goal_is_cancelled(monkeypatch):
     from robo_claw_agent.skills.perception_skill import scan as scan_module
     from robo_claw_agent.skills.perception_skill.scan import ScanRoomSkill

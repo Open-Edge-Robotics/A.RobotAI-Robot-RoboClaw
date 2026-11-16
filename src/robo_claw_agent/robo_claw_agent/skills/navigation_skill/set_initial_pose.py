@@ -89,7 +89,7 @@ class SetInitialPoseSkill(BaseSkill):
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        if (err := self.require_node()):
+        if err := self.require_node():
             return err
 
         target_name = str(params.get("target_name") or "").strip()
@@ -139,10 +139,14 @@ class SetInitialPoseSkill(BaseSkill):
                 yaw = 0.0
                 yaw_defaulted = True
         except (TypeError, ValueError):
-            return self.fail_result(f"초기 위치 좌표값이 올바르지 않습니다: x={x_raw!r}, y={y_raw!r}")
+            return self.fail_result(
+                f"초기 위치 좌표값이 올바르지 않습니다: x={x_raw!r}, y={y_raw!r}"
+            )
 
         if not all(math.isfinite(v) for v in (x, y, yaw)):
-            return self.fail_result(f"초기 위치 좌표값이 올바르지 않습니다: x={x}, y={y}, yaw={yaw}")
+            return self.fail_result(
+                f"초기 위치 좌표값이 올바르지 않습니다: x={x}, y={y}, yaw={yaw}"
+            )
 
         from robo_claw_agent.agent_node.nav_safety import check_navigation_safety_gate
 
@@ -171,21 +175,17 @@ class SetInitialPoseSkill(BaseSkill):
 
             # 위치 공분산 (AMCL이 파티클을 좁은 영역에 집중하도록 작은 값 설정)
             covariance = (
-                _COVARIANCE_LAST_POSE
-                if pose_source == "last_pose"
-                else _COVARIANCE_EXPLICIT
+                _COVARIANCE_LAST_POSE if pose_source == "last_pose" else _COVARIANCE_EXPLICIT
             )
-            init_pose.pose.covariance[0] = covariance   # x
-            init_pose.pose.covariance[7] = covariance   # y
+            init_pose.pose.covariance[0] = covariance  # x
+            init_pose.pose.covariance[7] = covariance  # y
             init_pose.pose.covariance[35] = covariance  # yaw
 
             # /initialpose 퍼블리셔 생성 및 발행
             from rclpy.qos import QoSProfile, ReliabilityPolicy
 
             qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
-            pub = self.node.create_publisher(
-                PoseWithCovarianceStamped, "/initialpose", qos
-            )
+            pub = self.node.create_publisher(PoseWithCovarianceStamped, "/initialpose", qos)
 
             # 구독자 준비 대기 (최대 _SUBSCRIBER_WAIT_SEC). rclpy Publisher 에는
             # wait_for_subscribers 가 없으므로 get_subscription_count 로 확인한다.

@@ -109,9 +109,7 @@ def _grasp_center_base_xyz(
     if base_frame is None:
         base_frame = skill.get_string_param({}, "manipulation_base_frame", _DEFAULT_BASE_FRAME)
     if ee_frame is None:
-        ee_frame = skill.get_string_param(
-            {}, "manipulation_end_effector_link", _DEFAULT_EE_FRAME
-        )
+        ee_frame = skill.get_string_param({}, "manipulation_end_effector_link", _DEFAULT_EE_FRAME)
     origin = _lookup_frame_origin(getattr(skill, "node", None), base_frame, ee_frame)
     if origin is not None:
         return origin[0]

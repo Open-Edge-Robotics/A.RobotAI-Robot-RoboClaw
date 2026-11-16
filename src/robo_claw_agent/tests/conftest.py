@@ -109,12 +109,12 @@ def _install_ros2_stubs() -> None:
 # 모듈 로드 시 stub 설치
 _install_ros2_stubs()
 
+
 # pytest 마커 등록
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "ros2: ROS2 환경(rclpy, nav_msgs 등)이 필요한 테스트. "
-        "ROS2 미설치 시 자동 skip.",
+        "ros2: ROS2 환경(rclpy, nav_msgs 등)이 필요한 테스트. ROS2 미설치 시 자동 skip.",
     )
     config.addinivalue_line(
         "markers",

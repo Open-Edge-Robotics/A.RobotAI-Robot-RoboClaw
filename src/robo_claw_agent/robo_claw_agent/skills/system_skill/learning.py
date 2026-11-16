@@ -10,7 +10,11 @@ class ReflectSkillsSkill(BaseSkill):
     """수집된 스킬 경험을 분석해 교훈을 추출·갱신하는 스킬"""
 
     name = "reflect_skills"
-    input_schema = {"type": "object", "properties": {"limit": {"type": "integer"}}, "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {"limit": {"type": "integer"}},
+        "additionalProperties": False,
+    }
     risk_level = "action"
     allow_with_others = False
     description = (

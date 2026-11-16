@@ -51,9 +51,7 @@ class OperationTracker:
                 name: {
                     **stat,
                     "avg_duration_sec": (
-                        stat["total_duration_sec"] / stat["count"]
-                        if stat["count"]
-                        else 0.0
+                        stat["total_duration_sec"] / stat["count"] if stat["count"] else 0.0
                     ),
                 }
                 for name, stat in self._stats.items()

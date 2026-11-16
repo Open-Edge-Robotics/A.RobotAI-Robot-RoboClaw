@@ -57,8 +57,9 @@ def test_get_map_visual_success(skill, tmp_path):
     # 상하 반전되었으므로:
     # 원본 data[0] (좌하단) -> reshape 후 [0,0] -> flip(0) 후 [9,0]
     # 원본 data[99] (우상단) -> reshape 후 [9,9] -> flip(0) 후 [0,9]
-    assert img[9, 0] == 0      # flip된 장애물 (좌하단)
-    assert img[0, 9] == UNKNOWN_VALUE    # flip된 미탐사 (우상단)
+    assert img[9, 0] == 0  # flip된 장애물 (좌하단)
+    assert img[0, 9] == UNKNOWN_VALUE  # flip된 미탐사 (우상단)
+
 
 def test_get_map_visual_timeout(skill):
     # wait_for_message가 None을 반환하도록 설정

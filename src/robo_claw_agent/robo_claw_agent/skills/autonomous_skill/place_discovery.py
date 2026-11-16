@@ -5,7 +5,6 @@ OccupancyGrid와 현재 pose를 입력받아 로봇이 돌아다닐 만한 대�
 가능하다.
 """
 
-
 import numpy as np
 
 

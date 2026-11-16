@@ -3,11 +3,7 @@ import math
 from pathlib import Path
 
 _ORIENTATION_MODULE_PATH = (
-    Path(__file__).parents[1]
-    / "robo_claw_agent"
-    / "skills"
-    / "navigation_skill"
-    / "orientation.py"
+    Path(__file__).parents[1] / "robo_claw_agent" / "skills" / "navigation_skill" / "orientation.py"
 )
 _ORIENTATION_SPEC = importlib.util.spec_from_file_location(
     "test_navigation_orientation", _ORIENTATION_MODULE_PATH

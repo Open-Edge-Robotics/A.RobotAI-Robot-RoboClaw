@@ -451,9 +451,7 @@ def test_cloid_expression_skill_is_registered_only_when_enabled() -> None:
         agent = _evaluated_params(context, _find_node(entities, "agent_node"))
         return agent["skill_modules"]
 
-    assert "robo_claw_agent.skills.cloid_express_skill" not in _modules(
-        {"robot_config": "cloid"}
-    )
+    assert "robo_claw_agent.skills.cloid_express_skill" not in _modules({"robot_config": "cloid"})
     assert "robo_claw_agent.skills.cloid_express_skill" in _modules(
         {"robot_config": "cloid", "cloid_expression_enabled": "true"}
     )

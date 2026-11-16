@@ -43,14 +43,19 @@ class FaceDirectionSkill(BaseSkill):
         "properties": {
             "yaw_deg": {"type": "number", "description": "절대 yaw(도)"},
             "yaw_rad": {"type": "number", "description": "절대 yaw(라디안)"},
-            "direction": {"type": "string", "enum": ["north", "east", "south", "west", "북쪽", "동쪽", "남쪽", "서쪽"]},
+            "direction": {
+                "type": "string",
+                "enum": ["north", "east", "south", "west", "북쪽", "동쪽", "남쪽", "서쪽"],
+            },
             "target_name": {"type": "string", "description": "기억된 장소명"},
             "x": {"type": "number"},
             "y": {"type": "number"},
         },
         "oneOf": [
-            {"required": ["yaw_deg"]}, {"required": ["yaw_rad"]},
-            {"required": ["direction"]}, {"required": ["target_name"]},
+            {"required": ["yaw_deg"]},
+            {"required": ["yaw_rad"]},
+            {"required": ["direction"]},
+            {"required": ["target_name"]},
             {"required": ["x", "y"]},
         ],
         "additionalProperties": False,
@@ -71,12 +76,14 @@ class FaceDirectionSkill(BaseSkill):
         _cancel_active_goal()
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        if (err := self.require_node()):
+        if err := self.require_node():
             return err
 
         pose = self.get_map_pose()
         if not pose:
-            return self.fail_result("현재 로봇 위치/방향을 가져올 수 없습니다. TF 또는 /odom을 확인하세요.")
+            return self.fail_result(
+                "현재 로봇 위치/방향을 가져올 수 없습니다. TF 또는 /odom을 확인하세요."
+            )
 
         target = self._resolve_target_yaw(params, pose)
         if not target["success"]:
@@ -96,9 +103,7 @@ class FaceDirectionSkill(BaseSkill):
 
         from robo_claw_agent.agent_node.nav_safety import check_navigation_safety_gate
 
-        gate_ok, gate_err = check_navigation_safety_gate(
-            self.node, rotation_deg=angle_deg
-        )
+        gate_ok, gate_err = check_navigation_safety_gate(self.node, rotation_deg=angle_deg)
         if not gate_ok:
             logger.warning("face_direction safety gate rejection: %s", gate_err)
             return self.fail_result(gate_err)
@@ -117,7 +122,9 @@ class FaceDirectionSkill(BaseSkill):
         cmd_ok, cmd_msg = _rotate_via_cmd_vel(self, target_yaw, timeout_sec=10.0)
         if cmd_ok:
             notify_goal_outcome(
-                self, True, cmd_msg,
+                self,
+                True,
+                cmd_msg,
                 label="방향 정렬",
                 success_message=f"✅ {target['description']} 방향 정렬을 완료했습니다.",
                 cancel_message="🛑 방향 정렬 회전이 취소되었습니다.",
@@ -155,7 +162,9 @@ class FaceDirectionSkill(BaseSkill):
 
         if success:
             notify_goal_outcome(
-                self, True, result_message,
+                self,
+                True,
+                result_message,
                 label="방향 정렬",
                 success_message=f"✅ {target['description']} 방향 정렬을 완료했습니다.",
                 cancel_message="🛑 방향 정렬 회전이 취소되었습니다.",
@@ -177,7 +186,9 @@ class FaceDirectionSkill(BaseSkill):
             self, target_yaw, timeout_sec=20.0, label="방향 정렬 내비게이션"
         )
         notify_goal_outcome(
-            self, nav_ok, nav_msg,
+            self,
+            nav_ok,
+            nav_msg,
             label="방향 정렬",
             success_message=f"✅ {target['description']} 방향 정렬을 완료했습니다.",
             cancel_message="🛑 방향 정렬 회전이 취소되었습니다.",
@@ -200,9 +211,7 @@ class FaceDirectionSkill(BaseSkill):
             result["message"] = f"{target['description']} 방향 정렬 실패: {nav_msg}"
         return result
 
-    def _resolve_target_yaw(
-        self, params: dict[str, Any], pose: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _resolve_target_yaw(self, params: dict[str, Any], pose: dict[str, Any]) -> dict[str, Any]:
         if "yaw_rad" in params:
             try:
                 return {

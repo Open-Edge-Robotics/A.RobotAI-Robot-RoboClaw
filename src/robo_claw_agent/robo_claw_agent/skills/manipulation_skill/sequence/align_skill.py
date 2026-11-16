@@ -26,10 +26,18 @@ class AlignRightArmToFrontSkill(BaseSkill):
 
     name = "align_right_arm_to_front"
     is_internal = True
-    input_schema = {"type": "object", "properties": {
-        "angle_deg": {"type": "number", "default": 90.0}, "target_pose": {"type": "object"},
-        "object_name": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}
-    }, "additionalProperties": True}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "angle_deg": {"type": "number", "default": 90.0},
+            "target_pose": {"type": "object"},
+            "object_name": {"type": "string"},
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "z": {"type": "number"},
+        },
+        "additionalProperties": True,
+    }
     description = (
         "Stretch3는 팔이 몸통 오른쪽에 있어 정면 물체를 잡기 전 베이스를 회전해야 "
         "합니다. target_pose/x,y,z 또는 object_name(메모리에 3D pose가 있는 경우)을 "
@@ -59,7 +67,9 @@ class AlignRightArmToFrontSkill(BaseSkill):
                     self.node, params, default_frame=runtime.config.base_frame
                 )
             except ManipulationConfigError as exc:
-                logger.warning("Failed to resolve target pose for rotation angle computation: %s", exc)
+                logger.warning(
+                    "Failed to resolve target pose for rotation angle computation: %s", exc
+                )
                 return {
                     "success": False,
                     "message": f"회전각 계산용 목표 pose 확인 실패: {exc}",
@@ -84,7 +94,9 @@ class AlignRightArmToFrontSkill(BaseSkill):
         robot_limits = getattr(self.node, "_robot_limits_dict", None)
         limit_error = check_rotation(angle_deg, robot_limits)
         if limit_error:
-            logger.warning("Right arm work-axis alignment rotation limit violation: %s", limit_error)
+            logger.warning(
+                "Right arm work-axis alignment rotation limit violation: %s", limit_error
+            )
             return {
                 "success": False,
                 "message": limit_error,

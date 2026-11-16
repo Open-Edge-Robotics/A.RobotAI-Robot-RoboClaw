@@ -75,9 +75,7 @@ def get_max_rotation_deg(limits: dict[str, Any] | None) -> float:
         return _DEFAULT_MAX_ROTATION_DEG
 
 
-def get_forbidden_zones(
-    limits: dict[str, Any] | None
-) -> list[dict[str, Any]]:
+def get_forbidden_zones(limits: dict[str, Any] | None) -> list[dict[str, Any]]:
     """금지 구역 목록을 반환한다."""
     if not limits:
         return []
@@ -103,9 +101,7 @@ def check_relative_move(
     distance = math.hypot(float(forward), float(lateral))
     max_dist = get_max_relative_distance(limits)
     if distance > max_dist:
-        return (
-            f"상대 이동 거리({distance:.2f}m)가 최대 한계({max_dist:.1f}m)를 초과했습니다."
-        )
+        return f"상대 이동 거리({distance:.2f}m)가 최대 한계({max_dist:.1f}m)를 초과했습니다."
     return None
 
 
@@ -121,9 +117,7 @@ def check_rotation(
     abs_angle = abs(float(angle_deg))
     max_rot = get_max_rotation_deg(limits)
     if abs_angle > max_rot:
-        return (
-            f"회전 각도({abs_angle:.1f}°)가 최대 한계({max_rot:.1f}°)를 초과했습니다."
-        )
+        return f"회전 각도({abs_angle:.1f}°)가 최대 한계({max_rot:.1f}°)를 초과했습니다."
     return None
 
 
@@ -156,9 +150,7 @@ def check_target_in_forbidden_zone(
 # ── Manipulation 검증 ──
 
 
-def get_joint_limits_deg(
-    limits: dict[str, Any] | None
-) -> dict[str, tuple[float, float]]:
+def get_joint_limits_deg(limits: dict[str, Any] | None) -> dict[str, tuple[float, float]]:
     """조인트별 허용 각도 범위(deg)를 반환한다.
 
     Returns:
@@ -183,9 +175,7 @@ def get_joint_limits_deg(
     return result
 
 
-def get_joint_limits_raw(
-    limits: dict[str, Any] | None
-) -> dict[str, tuple[float, float]]:
+def get_joint_limits_raw(limits: dict[str, Any] | None) -> dict[str, tuple[float, float]]:
     """조인트별 허용 범위(raw, m/rad 등 deg 아닌 단위)를 반환한다.
 
     Stretch처럼 deg가 아닌 m/rad 단위를 쓰는 로봇은 ``joint_limits`` 키로

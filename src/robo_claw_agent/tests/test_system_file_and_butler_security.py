@@ -43,7 +43,11 @@ def test_analyze_stored_file_rejects_unsafe_path():
 
     res = skill.execute({"file_path": "/etc/shadow"})
     assert res["success"] is False
-    assert "권한" in res["message"] or "허용되지" in res["message"] or "찾을 수 없습니다" in res["message"]
+    assert (
+        "권한" in res["message"]
+        or "허용되지" in res["message"]
+        or "찾을 수 없습니다" in res["message"]
+    )
 
 
 @pytest.mark.unit
@@ -54,7 +58,9 @@ def test_delete_file_rejects_unsafe_path():
 
     res = skill.execute({"file_path": "/etc/passwd"})
     assert res["success"] is False
-    assert "권한" in res["message"] or "허용되지" in res["message"] or "찾을 수 없" in res["message"]
+    assert (
+        "권한" in res["message"] or "허용되지" in res["message"] or "찾을 수 없" in res["message"]
+    )
 
 
 @pytest.mark.unit
@@ -77,7 +83,12 @@ def test_hri_send_message_does_not_silently_fallback():
     # User explicitly requested a missing file
     res = skill.execute({"message": "report", "file_path": "/tmp/non_existent_file_12345.png"})
     assert res["success"] is False
-    assert "존재하지" in res["message"] or "찾을 수" in res["message"] or "오류" in res["message"] or "허용되지" in res["message"]
+    assert (
+        "존재하지" in res["message"]
+        or "찾을 수" in res["message"]
+        or "오류" in res["message"]
+        or "허용되지" in res["message"]
+    )
 
 
 @pytest.mark.unit

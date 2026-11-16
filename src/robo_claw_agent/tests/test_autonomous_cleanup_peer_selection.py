@@ -1,7 +1,5 @@
 """autonomous cleanup peer selection"""
 
-
-
 from _autonomous_cleanup_helpers import (  # noqa: F401
     MagicMock,
     NodeStatus,
@@ -32,6 +30,8 @@ def test_connected_peer_selection_ignores_offline_manipulator(monkeypatch):
     node = _node_with_skills(["navigate_to"])
 
     assert _find_connected_peer_with_capability(node, "manipulation") is None
+
+
 def test_connected_peer_selection_uses_live_grpc_peer(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -54,6 +54,8 @@ def test_connected_peer_selection_uses_live_grpc_peer(monkeypatch):
         "peer_name": "butler",
         "transport": "grpc",
     }
+
+
 def test_connected_peer_selection_queries_capabilities_when_configured_unknown(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -71,6 +73,8 @@ def test_connected_peer_selection_queries_capabilities_when_configured_unknown(m
         "peer_name": "butler",
         "transport": "grpc",
     }
+
+
 def test_connected_peer_selection_detects_ros_peer(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -93,6 +97,8 @@ def test_connected_peer_selection_detects_ros_peer(monkeypatch):
         "peer_name": "butler",
         "transport": "ros2",
     }
+
+
 def test_cleanup_handoff_routes_for_manipulation_peer_and_includes_observation(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -131,10 +137,14 @@ def test_cleanup_handoff_routes_for_manipulation_peer_and_includes_observation(m
     assert "포장지" in instruction
     assert "주방" in instruction
     assert "x=1.25" in instruction
+
+
 def test_cleanup_capability_requires_pick_and_place_or_pick_sequence():
     assert _has_cleanup_capability(_node_with_skills(["grasp", "place"])) is True
     assert _has_cleanup_capability(_node_with_skills(["adaptive_pick_object"])) is True
     assert _has_cleanup_capability(_node_with_skills(["arm_pose", "open_gripper"])) is False
+
+
 def test_cleanup_handoff_uses_ros_action_for_same_network_peer(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -168,6 +178,8 @@ def test_cleanup_handoff_uses_ros_action_for_same_network_peer(monkeypatch):
     assert handoff.tick() == NodeStatus.SUCCESS
     assert handoff._blackboard["decided_skill"] == "delegate_task"
     assert handoff._blackboard["decided_params"]["agent_id"] == "butler"
+
+
 def test_cleanup_handoff_does_not_delegate_when_self_can_manipulate(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import helpers
 
@@ -189,6 +201,8 @@ def test_cleanup_handoff_does_not_delegate_when_self_can_manipulate(monkeypatch)
     assert handoff.tick() == NodeStatus.SUCCESS
     assert handoff._blackboard.get("cleanup_handoff_prepared") is not True
     assert handoff._blackboard.get("decided_skill") is None
+
+
 def test_cleanup_handoff_does_not_delegate_ambiguous_household_item(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
 
@@ -207,6 +221,8 @@ def test_cleanup_handoff_does_not_delegate_ambiguous_household_item(monkeypatch)
     assert handoff.tick() == NodeStatus.SUCCESS
     assert handoff._blackboard.get("cleanup_handoff_prepared") is not True
     find_peer.assert_not_called()
+
+
 def test_cleanup_mode_delegates_when_local_disposal_pose_is_not_curated(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
 
@@ -232,6 +248,8 @@ def test_cleanup_mode_delegates_when_local_disposal_pose_is_not_curated(monkeypa
     assert handoff._blackboard["cleanup_handoff_prepared"] is True
     assert handoff._blackboard["decided_params"]["peer_name"] == "butler"
     assert "안전한 지정 폐기 장소" in handoff._blackboard["decided_params"]["instruction"]
+
+
 def test_cleanup_mode_routes_to_demo_capable_peer_when_no_manipulator_exists(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
     from robo_claw_agent.skills.cleanup_demo_protocol import decode_cleanup_demo_request

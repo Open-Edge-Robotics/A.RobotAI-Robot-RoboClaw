@@ -35,7 +35,9 @@ class RobotCameraService:
 
     @handle_grpc_errors
     @log_to_history(include_request=True, include_response=False, capture_image=True)
-    async def GetRobotCameraImage(self, request: CameraRequest, context: ServicerContext) -> RobotCameraImage:
+    async def GetRobotCameraImage(
+        self, request: CameraRequest, context: ServicerContext
+    ) -> RobotCameraImage:
         self._logger.info("GetRobotCameraImage request")
 
         if self._camera_node is None:
@@ -73,7 +75,9 @@ class RobotCameraService:
             while not context.done():
                 # 클라이언트가 타입을 명시하지 않은 경우(기본값 0) 기본으로 COMPRESSED(1)를 요청하여 가져옴
                 requested_type = request.image_type if request.image_type != 0 else 1
-                image_data, image_format, timestamp = self._camera_node.get_latest_image(requested_type)
+                image_data, image_format, timestamp = self._camera_node.get_latest_image(
+                    requested_type
+                )
 
                 if image_data and timestamp > last_timestamp:
                     last_timestamp = timestamp

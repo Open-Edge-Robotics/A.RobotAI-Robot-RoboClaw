@@ -25,9 +25,7 @@ class TestBuildTaskResultJson:
         inner = {
             "success": True,
             "message": "지식 1건을 검색했습니다.",
-            "referenced": [
-                {"id": "abc-123", "score": 0.71, "type": "location", "text": "충전대"}
-            ],
+            "referenced": [{"id": "abc-123", "score": 0.71, "type": "location", "text": "충전대"}],
         }
         out = build_task_result_json(
             {
@@ -69,8 +67,7 @@ class TestBuildTaskResultJson:
             "count": 1,
         }
         out = build_task_result_json(
-            {"skill_results": [{"skill_name": "capture_map",
-                                "result_json": json.dumps(inner)}]}
+            {"skill_results": [{"skill_name": "capture_map", "result_json": json.dumps(inner)}]}
         )
         data = json.loads(out)["skill_results"][0]["result_data"]
         assert data["_omitted"] is True

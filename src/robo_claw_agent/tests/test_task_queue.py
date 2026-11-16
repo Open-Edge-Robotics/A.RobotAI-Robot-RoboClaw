@@ -14,9 +14,7 @@ import time
 _tq_path = os.path.join(
     os.path.dirname(__file__), "..", "robo_claw_agent", "agent_node", "task_queue.py"
 )
-_spec = importlib.util.spec_from_file_location(
-    "robo_claw_agent.agent_node.task_queue", _tq_path
-)
+_spec = importlib.util.spec_from_file_location("robo_claw_agent.agent_node.task_queue", _tq_path)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 QueuedTask = _mod.QueuedTask
@@ -56,6 +54,7 @@ class TestTaskQueueSequential:
                     time.sleep(0.05)
                     with lock:
                         results.append(f"{label}-end")
+
                 return _fn
 
             t1 = _make_task("task1", make_fn("A"))

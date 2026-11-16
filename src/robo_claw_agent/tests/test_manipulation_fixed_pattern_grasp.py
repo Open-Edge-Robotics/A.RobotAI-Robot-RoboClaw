@@ -19,6 +19,7 @@ from _manip_helpers import (  # noqa: F401
 
 # ── 고정 패턴 파지 / 표면 분류 스킬 (옵션 B) ────────────────────────────────
 
+
 def _expect_joints(xyz):
     """FixedPatternGraspSkill._ik_reach와 동일한 클램프 적용 기대 관절값."""
     from robo_claw_agent.manipulation_runtime.stretch_kinematics import _ik_position
@@ -215,12 +216,16 @@ def test_adaptive_pick_object_default_uses_fixed_pattern_grasp(monkeypatch):
     monkeypatch.setattr(
         sequence.ObserveGripperTargetSkill,
         "execute",
-        lambda self, params: (_ for _ in ()).throw(AssertionError("기본 경로에서 observe가 호출되면 안 됩니다")),
+        lambda self, params: (_ for _ in ()).throw(
+            AssertionError("기본 경로에서 observe가 호출되면 안 됩니다")
+        ),
     )
     monkeypatch.setattr(
         sequence.VLABasedPickGripperObjectSkill,
         "execute",
-        lambda self, params: (_ for _ in ()).throw(AssertionError("기본 경로에서 vla_pick이 호출되면 안 됩니다")),
+        lambda self, params: (_ for _ in ()).throw(
+            AssertionError("기본 경로에서 vla_pick이 호출되면 안 됩니다")
+        ),
     )
     monkeypatch.setattr(
         sequence.FixedPatternGraspSkill,

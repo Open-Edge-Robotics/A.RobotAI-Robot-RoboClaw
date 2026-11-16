@@ -388,9 +388,7 @@ def _route_location_query(
         allowed = _LOC_READ_SKILLS | {_INITIAL_POSE_SKILL}
         if chain and not all(str(item.get("skill") or "") in allowed for item in chain):
             return chain
-        logger_obj.info(
-            f"Routing initial pose request to set_initial_pose(target_name='{place}')"
-        )
+        logger_obj.info(f"Routing initial pose request to set_initial_pose(target_name='{place}')")
         return forced
 
     # 조회 라우팅: 순수 조회 계획일 때만 교정한다(빈 계획은 호출부에서 따로 처리).

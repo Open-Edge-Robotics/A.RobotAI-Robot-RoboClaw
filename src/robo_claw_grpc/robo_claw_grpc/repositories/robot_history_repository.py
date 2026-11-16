@@ -85,10 +85,16 @@ class RobotHistoryRepository:
                     db_size_mb = db_size_bytes / (1024 * 1024)
 
                     if db_size_mb > self._config.max_db_size_mb:
-                        self._logger.warning(f"DB size exceeded ({db_size_mb:.2f}MB), cleaning up...")
+                        self._logger.warning(
+                            f"DB size exceeded ({db_size_mb:.2f}MB), cleaning up..."
+                        )
                         async with self._session_scope() as session:
-                            subquery = select(RobotHistory.id).order_by(col(RobotHistory.id)).limit(1000)
-                            await session.exec(delete(RobotHistory).where(col(RobotHistory.id).in_(subquery)))
+                            subquery = (
+                                select(RobotHistory.id).order_by(col(RobotHistory.id)).limit(1000)
+                            )
+                            await session.exec(
+                                delete(RobotHistory).where(col(RobotHistory.id).in_(subquery))
+                            )
                             await session.commit()
 
                 async with self._session_scope() as session:
@@ -98,8 +104,14 @@ class RobotHistoryRepository:
                     if count > self._config.max_history_count:
                         delete_count = count - self._config.max_history_count
                         self._logger.info(f"Deleting {delete_count} history records...")
-                        subquery = select(RobotHistory.id).order_by(col(RobotHistory.id)).limit(delete_count)  # type: ignore
-                        await session.exec(delete(RobotHistory).where(col(RobotHistory.id).in_(subquery)))  # type: ignore
+                        subquery = (
+                            select(RobotHistory.id)
+                            .order_by(col(RobotHistory.id))
+                            .limit(delete_count)
+                        )  # type: ignore
+                        await session.exec(
+                            delete(RobotHistory).where(col(RobotHistory.id).in_(subquery))
+                        )  # type: ignore
                         await session.commit()
 
             except Exception as e:

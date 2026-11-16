@@ -25,9 +25,7 @@ class _Logger:
 def test_preserve_user_navigation_target_when_llm_translates_place_name():
     chain = [{"skill": "navigate_to", "params": {"target_name": "거실"}}]
 
-    result = _PLANNER._preserve_user_navigation_target(
-        chain, "메인룸으로 이동해줘", _Logger()
-    )
+    result = _PLANNER._preserve_user_navigation_target(chain, "메인룸으로 이동해줘", _Logger())
 
     assert result == [{"skill": "navigate_to", "params": {"target_name": "메인룸"}}]
 
@@ -35,9 +33,7 @@ def test_preserve_user_navigation_target_when_llm_translates_place_name():
 def test_keep_navigation_target_when_it_matches_instruction():
     chain = [{"skill": "navigate_to", "params": {"target_name": "메인룸"}}]
 
-    result = _PLANNER._preserve_user_navigation_target(
-        chain, "메인룸으로 이동해줘", _Logger()
-    )
+    result = _PLANNER._preserve_user_navigation_target(chain, "메인룸으로 이동해줘", _Logger())
 
     assert result == chain
 

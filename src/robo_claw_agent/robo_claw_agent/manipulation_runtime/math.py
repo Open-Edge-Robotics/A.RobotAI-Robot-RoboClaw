@@ -115,9 +115,7 @@ def pose_goal_from_params(
     try:
         position = {"x": float(x), "y": float(y), "z": float(z)}
     except (TypeError, ValueError) as exc:
-        raise ManipulationConfigError(
-            "pose target에는 x, y, z 숫자값이 필요합니다."
-        ) from exc
+        raise ManipulationConfigError("pose target에는 x, y, z 숫자값이 필요합니다.") from exc
 
     orientation_source = source.get("orientation")
     orientation_explicit = True

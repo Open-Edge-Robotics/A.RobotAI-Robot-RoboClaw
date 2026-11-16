@@ -195,9 +195,7 @@ def transform_point_to_frame(
         ps.header.frame_id = source_frame
         ps.header.stamp = stamp
         ps.point.x, ps.point.y, ps.point.z = point_xyz
-        transformed = tf_buffer.transform(
-            ps, target_frame, timeout=Duration(seconds=timeout_sec)
-        )
+        transformed = tf_buffer.transform(ps, target_frame, timeout=Duration(seconds=timeout_sec))
         return (transformed.point.x, transformed.point.y, transformed.point.z)
     except Exception as exc:  # noqa: BLE001
         logger.warning(

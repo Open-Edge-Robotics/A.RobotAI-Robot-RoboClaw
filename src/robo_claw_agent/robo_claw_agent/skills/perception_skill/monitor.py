@@ -19,10 +19,17 @@ class MonitorDetectionSkill(BaseSkill):
 
     name = "monitor_detection"
     terminal_behavior = "background"
-    input_schema = {"type": "object", "properties": {
-        "target_object": {"type": "string"}, "min_score": {"type": "number", "default": 0.5},
-        "alert_interval_sec": {"type": "number", "default": 30.0}, "camera": {"type": "string"}
-    }, "required": ["target_object"], "additionalProperties": False}
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "target_object": {"type": "string"},
+            "min_score": {"type": "number", "default": 0.5},
+            "alert_interval_sec": {"type": "number", "default": 30.0},
+            "camera": {"type": "string"},
+        },
+        "required": ["target_object"],
+        "additionalProperties": False,
+    }
     description = (
         "백그라운드에서 ONNX 객체 인식을 폴링하여 target_object가 감지되면 "
         "즉시 사용자에게 알림을 전송합니다. "
@@ -64,9 +71,7 @@ class MonitorDetectionSkill(BaseSkill):
             )
 
             while globals._MONITOR_ACTIVE.is_set():
-                msg = self.wait_for_message(
-                    Detection2DArray, detections_topic, timeout_sec=1.5
-                )
+                msg = self.wait_for_message(Detection2DArray, detections_topic, timeout_sec=1.5)
                 if not msg:
                     continue
 

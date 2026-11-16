@@ -50,19 +50,26 @@ def mock_node():
 
 def test_goal_planner_node_decomposes_goal(mock_node):
     """GoalPlannerNode가 LLM에서 다단계 plan을 받아 task_queue에 저장한다."""
-    mock_node._llm.chat.return_value = json.dumps({
-        "plan": [
-            {"skill": "navigate_to", "params": {"target_name": "거실"}, "reason": "이동"},
-            {"skill": "get_status", "params": {}, "reason": "완료 확인"},
-        ],
-        "goal_achieved": False,
-    })
+    mock_node._llm.chat.return_value = json.dumps(
+        {
+            "plan": [
+                {"skill": "navigate_to", "params": {"target_name": "거실"}, "reason": "이동"},
+                {"skill": "get_status", "params": {}, "reason": "완료 확인"},
+            ],
+            "goal_achieved": False,
+        }
+    )
 
     skill = MagicMock()
     skill.node = mock_node
 
     node = GoalPlannerNode(skill, goal="거실 쓰레기 버리기")
-    blackboard = {"cycle_count": 0, "task_queue": [], "task_history": [], "goal": "거실 쓰레기 버리기"}
+    blackboard = {
+        "cycle_count": 0,
+        "task_queue": [],
+        "task_history": [],
+        "goal": "거실 쓰레기 버리기",
+    }
     node._blackboard = blackboard
 
     status = node.tick()
@@ -153,10 +160,22 @@ def test_self_capabilities_no_manipulation(mock_node):
 
 def test_discover_peer_agents_reads_capabilities(monkeypatch):
     """GRPC_TARGET_PEERS_JSON의 capabilities 필드가 파싱된다."""
-    peers_json = json.dumps([
-        {"name": "butler", "description": "팔 로봇", "role": "매니퓰레이션", "capabilities": ["manipulation", "navigation"]},
-        {"name": "former", "description": "이동 로봇", "role": "탐색", "capabilities": ["navigation"]},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "butler",
+                "description": "팔 로봇",
+                "role": "매니퓰레이션",
+                "capabilities": ["manipulation", "navigation"],
+            },
+            {
+                "name": "former",
+                "description": "이동 로봇",
+                "role": "탐색",
+                "capabilities": ["navigation"],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -173,10 +192,22 @@ def test_discover_peer_agents_reads_capabilities(monkeypatch):
 
 def test_find_peer_with_capability_finds_manipulation(monkeypatch):
     """manipulation 능력을 가진 동료를 찾는다."""
-    peers_json = json.dumps([
-        {"name": "former", "description": "이동 로봇", "role": "탐색", "capabilities": ["navigation"]},
-        {"name": "butler", "description": "팔 로봇", "role": "매니퓰레이션", "capabilities": ["manipulation"]},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "former",
+                "description": "이동 로봇",
+                "role": "탐색",
+                "capabilities": ["navigation"],
+            },
+            {
+                "name": "butler",
+                "description": "팔 로봇",
+                "role": "매니퓰레이션",
+                "capabilities": ["manipulation"],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -190,9 +221,16 @@ def test_find_peer_with_capability_finds_manipulation(monkeypatch):
 
 def test_find_peer_with_capability_returns_none_when_no_match(monkeypatch):
     """매칭되는 동료가 없으면 None을 반환한다."""
-    peers_json = json.dumps([
-        {"name": "former", "description": "이동 로봇", "role": "탐색", "capabilities": ["navigation"]},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "former",
+                "description": "이동 로봇",
+                "role": "탐색",
+                "capabilities": ["navigation"],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -206,9 +244,16 @@ def test_find_peer_with_capability_returns_none_when_no_match(monkeypatch):
 
 def test_find_peer_with_capability_role_keyword_fallback(monkeypatch):
     """capabilities 배열이 비어 있어도 role 문자열에서 키워드 매칭으로 찾는다."""
-    peers_json = json.dumps([
-        {"name": "butler", "description": "팔 로봇", "role": "매니퓰레이션 가능", "capabilities": []},
-    ])
+    peers_json = json.dumps(
+        [
+            {
+                "name": "butler",
+                "description": "팔 로봇",
+                "role": "매니퓰레이션 가능",
+                "capabilities": [],
+            },
+        ]
+    )
     monkeypatch.setenv("GRPC_TARGET_PEERS_JSON", peers_json)
 
     node = MagicMock()
@@ -279,19 +324,23 @@ def test_coord_peer_task_missing_instruction():
 def test_coord_peer_task_decompose_and_sequential_send():
     from robo_claw_agent.skills.cooperate_skill import CoordinatePeerTaskSkill
 
-    llm_resp = json.dumps({
-        "steps": [
-            {"instruction": "거실로 이동해줘"},
-            {"instruction": "컵을 들어줘"},
-            {"instruction": "주방으로 가줘"},
-            {"instruction": "싱크대에 놔줘"},
-        ]
-    })
+    llm_resp = json.dumps(
+        {
+            "steps": [
+                {"instruction": "거실로 이동해줘"},
+                {"instruction": "컵을 들어줘"},
+                {"instruction": "주방으로 가줘"},
+                {"instruction": "싱크대에 놔줘"},
+            ]
+        }
+    )
     node = _make_coord_node(llm_resp=llm_resp)
     skill = CoordinatePeerTaskSkill()
     skill.set_node(node)
 
-    result = skill.execute({"peer_name": "robot_a", "instruction": "거실로 이동해 컵을 들고 주방에 놔줘"})
+    result = skill.execute(
+        {"peer_name": "robot_a", "instruction": "거실로 이동해 컵을 들고 주방에 놔줘"}
+    )
 
     assert result["success"] is True
     assert result["steps_completed"] == 4
@@ -330,12 +379,14 @@ def test_coord_peer_task_decompose_fails():
 def test_coord_peer_task_step_failure_aborts():
     from robo_claw_agent.skills.cooperate_skill import CoordinatePeerTaskSkill
 
-    llm_resp = json.dumps({
-        "steps": [
-            {"instruction": "거실로 이동해줘"},
-            {"instruction": "컵을 들어줘"},
-        ]
-    })
+    llm_resp = json.dumps(
+        {
+            "steps": [
+                {"instruction": "거실로 이동해줘"},
+                {"instruction": "컵을 들어줘"},
+            ]
+        }
+    )
     node = _make_coord_node(llm_resp=llm_resp)
 
     # 첫 단계 실패 응답으로 교체
@@ -352,11 +403,13 @@ def test_coord_peer_task_step_failure_aborts():
     skill = CoordinatePeerTaskSkill()
     skill.set_node(node)
 
-    result = skill.execute({
-        "peer_name": "robot_a",
-        "instruction": "거실로 이동해 컵을 들어줘",
-        "max_retries": 0,
-    })
+    result = skill.execute(
+        {
+            "peer_name": "robot_a",
+            "instruction": "거실로 이동해 컵을 들어줘",
+            "max_retries": 0,
+        }
+    )
 
     assert result["success"] is False
     assert result["steps_completed"] == 0

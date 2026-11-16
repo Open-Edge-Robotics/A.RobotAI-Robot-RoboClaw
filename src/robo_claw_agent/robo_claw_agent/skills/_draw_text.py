@@ -59,7 +59,9 @@ def _resolve_font_path() -> str | None:
     if _font_path:
         logger.info("Korean label font: %s", _font_path)
     else:
-        logger.warning("Korean font not found, falling back to cv2 (Korean text may render incorrectly)")
+        logger.warning(
+            "Korean font not found, falling back to cv2 (Korean text may render incorrectly)"
+        )
     return _font_path
 
 
@@ -97,9 +99,7 @@ def draw_label(
 
             if bg_color is not None:
                 pil_bg = (bg_color[2], bg_color[1], bg_color[0])  # BGR→RGB
-                draw.rectangle(
-                    [left - 3, top - 2, right + 3, bottom + 2], fill=pil_bg
-                )
+                draw.rectangle([left - 3, top - 2, right + 3, bottom + 2], fill=pil_bg)
 
             pil_text = (text_color[2], text_color[1], text_color[0])  # BGR→RGB
             draw.text((x, y), text, font=font, fill=pil_text)
@@ -115,10 +115,6 @@ def draw_label(
     thickness = max(1, int(scale * 2))
     (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
     if bg_color is not None:
-        cv2.rectangle(
-            img_bgr, (x - 3, y - 2), (x + tw + 3, y + th + 4), bg_color, -1
-        )
-    cv2.putText(
-        img_bgr, text, (x, y + th), font, scale, text_color, thickness, cv2.LINE_AA
-    )
+        cv2.rectangle(img_bgr, (x - 3, y - 2), (x + tw + 3, y + th + 4), bg_color, -1)
+    cv2.putText(img_bgr, text, (x, y + th), font, scale, text_color, thickness, cv2.LINE_AA)
     return img_bgr

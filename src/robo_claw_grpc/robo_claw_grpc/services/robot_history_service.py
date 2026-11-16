@@ -17,7 +17,9 @@ from robo_claw_grpc.utils import LogHelper, handle_grpc_errors
 
 
 class RobotHistoryService:
-    def __init__(self, repo: RobotHistoryRepository, config: ConfigModel, battery_node: Any | None = None):
+    def __init__(
+        self, repo: RobotHistoryRepository, config: ConfigModel, battery_node: Any | None = None
+    ):
         self._logger = LogHelper(level="DEBUG" if config.debug else "INFO").get_logger(__name__)
         self._repo = repo
         self._robot_id = config.robot_id
@@ -42,20 +44,26 @@ class RobotHistoryService:
         )
 
     @handle_grpc_errors
-    async def GetRobotHistoryList(self, request: EmptyRequest, context: ServicerContext) -> RobotHistoryList:
+    async def GetRobotHistoryList(
+        self, request: EmptyRequest, context: ServicerContext
+    ) -> RobotHistoryList:
         self._logger.info("GetRobotHistoryList request")
         history_models = await self._repo.get_history_list()
         return RobotHistoryList(history=[self._convert_to_proto(h) for h in history_models])
 
     @handle_grpc_errors
-    async def GetCurrentRobotBattery(self, request: EmptyRequest, context: ServicerContext) -> RobotBattery:
+    async def GetCurrentRobotBattery(
+        self, request: EmptyRequest, context: ServicerContext
+    ) -> RobotBattery:
         self._logger.info("GetCurrentRobotBattery request")
         if self._battery_node is None:
             return RobotBattery(percentage=0.0)
         return RobotBattery(percentage=self._battery_node.get_battery_status())
 
     @handle_grpc_errors
-    async def GetLatestRobotHistory(self, request: EmptyRequest, context: ServicerContext) -> RobotHistoryProto:
+    async def GetLatestRobotHistory(
+        self, request: EmptyRequest, context: ServicerContext
+    ) -> RobotHistoryProto:
         self._logger.info("GetLatestRobotHistory request")
         status = await self._repo.get_latest_history(self._robot_id)
 

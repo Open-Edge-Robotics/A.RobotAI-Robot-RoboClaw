@@ -175,6 +175,7 @@ def test_dual_vector_store_merges_mirror_when_primary_empty(tmp_path):
     검색에서 누락되는 문제를 방지한다.
     """
     mirror = LocalVectorStore(tmp_path / "kb.json")
+
     # primary는 정상 동작하지만 항상 빈 결과를 반환하는 스텁
     class _EmptyPrimary:
         def add(self, **kwargs):
@@ -274,18 +275,10 @@ def test_local_vector_store_spatial_filter(tmp_path):
 
     # 2. 반경 필터 구성 (중심 1.0, 1.0 / 반경 1.0 -> x: [0.0, 2.0], y: [0.0, 2.0])
     # A는 범위에 포함되지만 B는 포함되지 않아야 함
-    filters = {
-        "x_min": 0.0,
-        "x_max": 2.0,
-        "y_min": 0.0,
-        "y_max": 2.0
-    }
+    filters = {"x_min": 0.0, "x_max": 2.0, "y_min": 0.0, "y_max": 2.0}
 
     results = store.search(
-        query_vector=[1.0, 0.0, 0.0],
-        top_k=2,
-        score_threshold=0.1,
-        filter_metadata=filters
+        query_vector=[1.0, 0.0, 0.0], top_k=2, score_threshold=0.1, filter_metadata=filters
     )
 
     assert len(results) == 1
@@ -314,18 +307,10 @@ def test_qdrant_vector_store_spatial_filter():
     )
 
     # 2. 반경 필터 구성
-    filters = {
-        "x_min": 0.0,
-        "x_max": 2.0,
-        "y_min": 0.0,
-        "y_max": 2.0
-    }
+    filters = {"x_min": 0.0, "x_max": 2.0, "y_min": 0.0, "y_max": 2.0}
 
     results = store.search(
-        query_vector=[1.0, 0.0, 0.0],
-        top_k=2,
-        score_threshold=0.1,
-        filter_metadata=filters
+        query_vector=[1.0, 0.0, 0.0], top_k=2, score_threshold=0.1, filter_metadata=filters
     )
 
     assert len(results) == 1

@@ -126,11 +126,10 @@ async def test_history_service_get_battery_with_node(config):
 async def test_servicer_handles_ping_inline(config):
     from robo_claw_grpc.servicer import RoboClawGrpcServicer
 
-    with mock.patch(
-        "robo_claw_grpc.servicer.RoboClawGrpcDatabase"
-    ) as MockDB, mock.patch(
-        "robo_claw_grpc.servicer.RobotHistoryRepository"
-    ) as MockRepo:
+    with (
+        mock.patch("robo_claw_grpc.servicer.RoboClawGrpcDatabase") as MockDB,
+        mock.patch("robo_claw_grpc.servicer.RobotHistoryRepository") as MockRepo,
+    ):
         mock_db = mock.Mock()
         mock_db.init_database = mock.AsyncMock()
         MockDB.return_value = mock_db
@@ -149,16 +148,19 @@ async def test_servicer_delegates_get_robot_info(config):
     from robo_claw_grpc.robo_pb2 import Robot
     from robo_claw_grpc.servicer import RoboClawGrpcServicer
 
-    with mock.patch("robo_claw_grpc.servicer.RoboClawGrpcDatabase") as MockDB, mock.patch(
-        "robo_claw_grpc.servicer.RobotHistoryRepository"
-    ) as MockRepo:
+    with (
+        mock.patch("robo_claw_grpc.servicer.RoboClawGrpcDatabase") as MockDB,
+        mock.patch("robo_claw_grpc.servicer.RobotHistoryRepository") as MockRepo,
+    ):
         MockDB.return_value = mock.Mock(init_database=mock.AsyncMock())
         MockRepo.return_value = mock.Mock()
 
         servicer = RoboClawGrpcServicer(config=config)
 
     expected = Robot(id="robot-1", name="TestBot")
-    with mock.patch.object(servicer._robot_info_svc, "GetRobotInfo", new=mock.AsyncMock(return_value=expected)) as m:
+    with mock.patch.object(
+        servicer._robot_info_svc, "GetRobotInfo", new=mock.AsyncMock(return_value=expected)
+    ) as m:
         result = await servicer.GetRobotInfo(EmptyRequest(), mock.Mock())
         assert result.id == "robot-1"
         m.assert_awaited_once()

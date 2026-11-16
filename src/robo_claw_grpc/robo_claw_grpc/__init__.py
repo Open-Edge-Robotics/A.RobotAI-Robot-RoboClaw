@@ -5,9 +5,11 @@
 # 이를 통해 테스트 등 ROS2 환경 없이도 하위 모듈(config/repositories/services)
 # 를 개별적으로 import 할 수 있다.
 
+
 def __getattr__(name: str):
     if name == "serve":
         from robo_claw_grpc.server import serve as _serve
+
         return _serve
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

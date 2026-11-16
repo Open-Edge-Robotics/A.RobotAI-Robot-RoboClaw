@@ -148,9 +148,7 @@ class QdrantVectorStore:
         start = time.monotonic()
         try:
             if not self._client.collection_exists(self._collection_name):
-                self._metrics.record(
-                    "search", success=True, duration_sec=time.monotonic() - start
-                )
+                self._metrics.record("search", success=True, duration_sec=time.monotonic() - start)
                 return []
 
             self._validate_collection_size(len(query_vector))
@@ -172,36 +170,31 @@ class QdrantVectorStore:
                     elif k == "x_min":
                         must_conditions.append(
                             models.FieldCondition(
-                                key="metadata.x",
-                                range=models.Range(gte=float(v))
+                                key="metadata.x", range=models.Range(gte=float(v))
                             )
                         )
                     elif k == "x_max":
                         must_conditions.append(
                             models.FieldCondition(
-                                key="metadata.x",
-                                range=models.Range(lte=float(v))
+                                key="metadata.x", range=models.Range(lte=float(v))
                             )
                         )
                     elif k == "y_min":
                         must_conditions.append(
                             models.FieldCondition(
-                                key="metadata.y",
-                                range=models.Range(gte=float(v))
+                                key="metadata.y", range=models.Range(gte=float(v))
                             )
                         )
                     elif k == "y_max":
                         must_conditions.append(
                             models.FieldCondition(
-                                key="metadata.y",
-                                range=models.Range(lte=float(v))
+                                key="metadata.y", range=models.Range(lte=float(v))
                             )
                         )
                     else:
                         must_conditions.append(
                             models.FieldCondition(
-                                key=f"metadata.{k}",
-                                match=models.MatchValue(value=v)
+                                key=f"metadata.{k}", match=models.MatchValue(value=v)
                             )
                         )
                 if must_conditions or must_not_conditions:
@@ -242,9 +235,7 @@ class QdrantVectorStore:
                     "id": str(point.id),
                 }
             )
-        self._metrics.record(
-            "search", success=True, duration_sec=time.monotonic() - start
-        )
+        self._metrics.record("search", success=True, duration_sec=time.monotonic() - start)
         return _sort_by_score_and_recency(results)[:top_k]
 
     def count(self) -> int:
@@ -261,9 +252,7 @@ class QdrantVectorStore:
         start = time.monotonic()
         if self._client.collection_exists(self._collection_name):
             self._client.delete_collection(self._collection_name)
-        self._metrics.record(
-            "clear", success=True, duration_sec=time.monotonic() - start
-        )
+        self._metrics.record("clear", success=True, duration_sec=time.monotonic() - start)
 
     def delete_entries(
         self,
@@ -390,9 +379,7 @@ class QdrantVectorStore:
                 vectors = info.config.params.vectors
                 if isinstance(vectors, models.VectorParams):
                     vector_dim = int(vectors.size)
-                points_count = int(
-                    self._client.count(self._collection_name, exact=True).count
-                )
+                points_count = int(self._client.count(self._collection_name, exact=True).count)
             return {
                 "backend": "qdrant",
                 "healthy": True,

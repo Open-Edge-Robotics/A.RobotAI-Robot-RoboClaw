@@ -145,8 +145,7 @@ class ServoGripperToObjectSkill(BaseSkill):
         # 헤드 카메라 보조는 Stretch3 전용이다(head_pan_tilt 자체가 Stretch 전용이고,
         # gripper_side_head 자세/팔 작업축 분해가 Stretch 운동학에 묶여 있다).
         use_head_assist = (
-            _bool_param(params.get("use_head_assist"), True)
-            and runtime.config.backend == "stretch"
+            _bool_param(params.get("use_head_assist"), True) and runtime.config.backend == "stretch"
         )
         ros_logger = self.node.get_logger() if hasattr(self.node, "get_logger") else logger
         observations: list[dict[str, Any]] = []

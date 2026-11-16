@@ -17,9 +17,7 @@ _DATETIME_MODULE_PATH = os.path.join(
     "datetime.py",
 )
 
-_spec = importlib.util.spec_from_file_location(
-    "_datetime_skill_under_test", _DATETIME_MODULE_PATH
-)
+_spec = importlib.util.spec_from_file_location("_datetime_skill_under_test", _DATETIME_MODULE_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 GetDatetimeSkill = _mod.GetDatetimeSkill
@@ -162,8 +160,13 @@ class TestGetDatetimeLocale:
         assert result["success"] is True
         info = result["datetime_info"]
         weekdays_en = [
-            "Monday", "Tuesday", "Wednesday",
-            "Thursday", "Friday", "Saturday", "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
         ]
         assert info["weekday"] in weekdays_en
 
@@ -184,8 +187,13 @@ class TestGetDatetimeLocale:
         assert result["success"] is True
         info = result["datetime_info"]
         weekdays_en = [
-            "Monday", "Tuesday", "Wednesday",
-            "Thursday", "Friday", "Saturday", "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
         ]
         assert info["weekday"] in weekdays_en
 

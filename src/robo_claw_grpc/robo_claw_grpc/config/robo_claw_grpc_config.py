@@ -40,7 +40,9 @@ class RoboClawGrpcConfig:
         else:
             self._config = self.__load_config()
 
-        if hasattr(self._config, "file_transfer_dir") and not os.path.exists(self._config.file_transfer_dir):
+        if hasattr(self._config, "file_transfer_dir") and not os.path.exists(
+            self._config.file_transfer_dir
+        ):
             os.makedirs(self._config.file_transfer_dir, exist_ok=True)
 
     def __create_default_config(self) -> ConfigModel:

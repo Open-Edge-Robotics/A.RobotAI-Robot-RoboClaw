@@ -61,9 +61,7 @@ class OpenAIBridge(BaseLLMBridge):
     def chat(self, messages, system_prompt=None, **kwargs):
         # Ollama의 호출별 thinking 옵션은 OpenAI API로 전달하지 않습니다.
         kwargs.pop("think", None)
-        payload = (
-            [{"role": "system", "content": system_prompt}] if system_prompt else []
-        )
+        payload = [{"role": "system", "content": system_prompt}] if system_prompt else []
         payload.extend(messages)
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
@@ -86,9 +84,7 @@ class OpenAIBridge(BaseLLMBridge):
     @traceable(name="OpenAIBridge.chat_with_tools")
     def chat_with_tools(self, messages, system_prompt=None, tools=None, **kwargs) -> ToolTurn:
         """도구 목록을 전달해 호출 요청을 받고, 호출 목록을 구조화해 반환한다."""
-        payload = (
-            [{"role": "system", "content": system_prompt}] if system_prompt else []
-        )
+        payload = [{"role": "system", "content": system_prompt}] if system_prompt else []
         payload.extend(messages)
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
@@ -142,9 +138,7 @@ class OpenAIBridge(BaseLLMBridge):
                         {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            },
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
                         },
                     ],
                 }

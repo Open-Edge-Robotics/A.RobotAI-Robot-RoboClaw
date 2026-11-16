@@ -29,6 +29,8 @@ def test_self_localize_fails_when_amcl_service_unavailable(monkeypatch):
     result = skill.execute({})
     assert result["success"] is False
     assert "AMCL" in result["message"]
+
+
 def test_self_localize_succeeds_when_covariance_converges(monkeypatch):
     skill = SelfLocalizeSkill()
     skill.node = _FakeNode(_make_amcl_pose(0.01, 0.01, 0.01, x=1.5, y=-2.0))
@@ -45,6 +47,8 @@ def test_self_localize_succeeds_when_covariance_converges(monkeypatch):
     assert result["success"] is True
     assert result["pose"]["x"] == 1.5
     assert result["pose"]["y"] == -2.0
+
+
 def test_self_localize_reports_nonzero_yaw_via_geo_utils(monkeypatch):
     """geo_utils.yaw_from_quaternion 재사용 회귀 테스트 (yaw != 0 케이스)."""
     skill = SelfLocalizeSkill()
@@ -61,6 +65,8 @@ def test_self_localize_reports_nonzero_yaw_via_geo_utils(monkeypatch):
 
     assert result["success"] is True
     assert result["pose"]["yaw_deg"] == pytest.approx(90.0)
+
+
 def test_self_localize_fails_when_never_converges(monkeypatch):
     skill = SelfLocalizeSkill()
     skill.node = _FakeNode(_make_amcl_pose(1.0, 1.0, 1.0))
@@ -78,11 +84,15 @@ def test_self_localize_fails_when_never_converges(monkeypatch):
     assert result["success"] is False
     # max_attempts=3 이면 마지막 시도 제외 2회 전진 유도
     assert len(nudges) == 2
+
+
 def test_self_localize_check_converged_handles_none():
     skill = SelfLocalizeSkill()
     converged, xy_std, yaw_std = skill._check_converged(None, 0.35, 0.35)
     assert converged is False
     assert xy_std is None and yaw_std is None
+
+
 def test_approach_object_handles_none_lidar_distance_with_depth_fallback(monkeypatch):
     from types import SimpleNamespace
 
@@ -126,6 +136,8 @@ def test_approach_object_handles_none_lidar_distance_with_depth_fallback(monkeyp
     result = skill.execute({"target_object": "cup", "stop_distance_m": 0.5})
     assert result["success"] is True
     assert result["measured_distance_m"] == 1.5
+
+
 def test_approach_object_fails_gracefully_when_all_sensors_none(monkeypatch):
     from types import SimpleNamespace
 
@@ -159,6 +171,8 @@ def test_approach_object_fails_gracefully_when_all_sensors_none(monkeypatch):
     result = skill.execute({"target_object": "cup"})
     assert result["success"] is False
     assert "측정하지 못했습니다" in result["message"] or "실패" in result["message"]
+
+
 def test_navigate_to_supports_explicit_yaw(monkeypatch):
     """명시적 yaw 파라미터 전달 시 computed_yaw 대신 지정된 yaw가 전달된다."""
     skill = _attach_fake_node(NavigateToSkill())
@@ -188,6 +202,8 @@ def test_navigate_to_supports_explicit_yaw(monkeypatch):
 
     assert result["success"] is True
     assert captured["yaw"] == pytest.approx(1.57)
+
+
 def test_navigate_to_early_abort_diagnostics_when_robot_barely_moved(monkeypatch):
     """출발 직후 로봇이 거의 이동하지 못한 상태에서 ABORTED 발생 시 진행검사(progress checker) 진단 메시지를 제공한다."""
     skill = _attach_fake_node(NavigateToSkill())
@@ -208,6 +224,8 @@ def test_navigate_to_early_abort_diagnostics_when_robot_barely_moved(monkeypatch
         "progress_checker_timeout",
         "early_rotation_abort",
     ) or "progress_checker" in str(result)
+
+
 def test_navigate_to_align_heading_first_performs_spin(monkeypatch):
     """align_heading_first=True일 때 큰 회전각이 필요하면 _send_spin_goal로 사전 정렬 후 이동한다."""
     import math
