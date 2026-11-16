@@ -21,6 +21,28 @@ from .journal import CommandJournal, JournalResult
 
 logger = logging.getLogger(__name__)
 
+# Maestro 가 deadline 을 비우거나(0) 비정상 값을 보낼 때의 실행 timeout 정책.
+# 예전에는 조용히 1초로 깎아 정상 명령까지 즉시 잘렸으므로, 명시적 기본값을 쓰고
+# 계산된 남은 시간은 [MIN, MAX] 로 클램프하며 클램프 이유를 로그로 남긴다.
+DEFAULT_COMMAND_DEADLINE_SEC = 60.0
+MIN_COMMAND_DEADLINE_SEC = 1.0
+MAX_COMMAND_DEADLINE_SEC = 600.0
+
+# 동시에 실행 중인 command 상한. Maestro 가 몰아서 보낼 때 로봇측 task 무한 증식을
+# 막는다. emergency_stop/cancel_task 는 안전 경로이므로 이 상한을 우회한다.
+MAX_ACTIVE_COMMANDS = 32
+
+# disconnect policy COMPLETE 에서 활성 command 완료를 기다리는 최대 시간.
+DISCONNECT_WAIT_SEC = 30.0
+
+# 재연결 backoff: 시작 1초, 2배씩 증가, 최대 30초, 연속 실패 상한까지 시도한다.
+RECONNECT_INITIAL_DELAY_SEC = 1.0
+RECONNECT_MAX_DELAY_SEC = 30.0
+MAX_RECONNECT_ATTEMPTS = 20
+
+_DEADLINE_PAYLOADS = frozenset({"execute_task", "execute_skill"})
+_UNCAPPED_COMMAND_PAYLOADS = frozenset({"emergency_stop", "cancel_task"})
+
 
 class RobotCommandHandlers(Protocol):
     async def execute_task(self, instruction: str, timeout_sec: float) -> dict[str, Any]: ...
@@ -43,6 +65,9 @@ class FleetConnector:
         sleep=asyncio.sleep,
         capability_wait_sec: float = 60.0,
         capability_poll_sec: float = 2.0,
+        max_active_commands: int = MAX_ACTIVE_COMMANDS,
+        disconnect_wait_sec: float = DISCONNECT_WAIT_SEC,
+        max_reconnect_attempts: int = MAX_RECONNECT_ATTEMPTS,
     ) -> None:
         self.config = config
         self.handlers = handlers
@@ -52,6 +77,9 @@ class FleetConnector:
         self._sleep = sleep
         self._capability_wait_sec = capability_wait_sec
         self._capability_poll_sec = capability_poll_sec
+        self._max_active_commands = max(1, int(max_active_commands))
+        self._disconnect_wait_sec = max(0.0, float(disconnect_wait_sec))
+        self._max_reconnect_attempts = max(1, int(max_reconnect_attempts))
         self._outbound: asyncio.Queue = asyncio.Queue(maxsize=128)
         self._running = False
         self._active_commands: set[asyncio.Task] = set()
@@ -73,18 +101,27 @@ class FleetConnector:
         if not self.config.enabled:
             return
         self._running = True
-        backoff = 1.0
+        backoff = RECONNECT_INITIAL_DELAY_SEC
+        failures = 0
         while self._running:
             try:
                 await self._connect_once()
-                backoff = 1.0
+                backoff = RECONNECT_INITIAL_DELAY_SEC
+                failures = 0
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.warning("FleetControl disconnected: %s; retrying in %.1fs", exc, backoff)
+                failures += 1
                 await self._apply_disconnect_policy()
+                if failures >= self._max_reconnect_attempts:
+                    logger.error(
+                        "FleetControl giving up after %d reconnect attempts: %s", failures, exc
+                    )
+                    self._running = False
+                    return
+                logger.warning("FleetControl disconnected: %s; retrying in %.1fs", exc, backoff)
                 await self._sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+                backoff = min(backoff * 2, RECONNECT_MAX_DELAY_SEC)
 
     async def stop(self) -> None:
         self._running = False
@@ -139,9 +176,7 @@ class FleetConnector:
                     "request_snapshot",
                     "cancel_task",
                 }:
-                    task = asyncio.create_task(self._handle_command(message))
-                    self._active_commands.add(task)
-                    task.add_done_callback(self._active_commands.discard)
+                    await self._start_command(message)
             raise ConnectionError("FleetControl stream ended")
         finally:
             producer.cancel()
@@ -210,6 +245,87 @@ class FleetConnector:
             )
             await self._sleep(self.config.heartbeat_sec)
 
+    async def _start_command(self, message) -> None:
+        """동시 실행 상한 안에서만 새 command task 를 띄운다.
+
+        emergency_stop/cancel_task 는 안전 경로이므로 상한에 걸려도 거부하지 않는다.
+        상한 초과는 accepted=False ack 로 Maestro 에게 명시적으로 알린다.
+        """
+        payload = message.WhichOneof("payload")
+        if (
+            payload not in _UNCAPPED_COMMAND_PAYLOADS
+            and len(self._active_commands) >= self._max_active_commands
+        ):
+            logger.warning(
+                "FleetControl rejecting command %s: command limit %d reached (%d running)",
+                message.command_id,
+                self._max_active_commands,
+                len(self._active_commands),
+            )
+            await self._outbound.put(
+                self._envelope(
+                    command_ack=pb2.CommandAck(
+                        command_id=message.command_id,
+                        accepted=False,
+                        error_code="COMMAND_LIMIT_REACHED",
+                        message=f"command limit {self._max_active_commands} reached",
+                    )
+                )
+            )
+            return
+        task = asyncio.create_task(self._handle_command(message))
+        self._active_commands.add(task)
+        task.add_done_callback(self._active_commands.discard)
+
+    def _command_timeout(self, deadline_ms: int) -> tuple[float, str]:
+        """Maestro deadline 을 실행 timeout 과 거부 사유로 바꾼다.
+
+        반환하는 거부 사유가 비어 있지 않으면 호출자는 명령을 실행하지 않고 실패
+        결과로 남긴다. deadline 은 지난 시점이면 거부하고, 범위를 벗어난 값은
+        클램프하면서 이유를 로그로 남긴다.
+        """
+        if deadline_ms <= 0:
+            logger.warning(
+                "FleetControl command has no deadline; using default %.0fs",
+                DEFAULT_COMMAND_DEADLINE_SEC,
+            )
+            return DEFAULT_COMMAND_DEADLINE_SEC, ""
+        remaining = (deadline_ms / 1000.0) - time.time()
+        if remaining <= 0:
+            logger.warning(
+                "FleetControl command rejected: DEADLINE_EXPIRED (%.1fs past deadline)",
+                -remaining,
+            )
+            return 0.0, "DEADLINE_EXPIRED"
+        if remaining > MAX_COMMAND_DEADLINE_SEC:
+            logger.warning(
+                "FleetControl command deadline %.0fs clamped to %.0fs",
+                remaining,
+                MAX_COMMAND_DEADLINE_SEC,
+            )
+            return MAX_COMMAND_DEADLINE_SEC, ""
+        if remaining < MIN_COMMAND_DEADLINE_SEC:
+            logger.warning(
+                "FleetControl command deadline %.2fs clamped to %.0fs",
+                remaining,
+                MIN_COMMAND_DEADLINE_SEC,
+            )
+            return MIN_COMMAND_DEADLINE_SEC, ""
+        return remaining, ""
+
+    async def _reject_command(self, key: str, command_id: str, reason: str) -> None:
+        """계약을 위반한 명령을 실행하지 않고 사유가 남은 실패 결과로 기록한다."""
+        self.journal.complete(
+            key,
+            status="FAILED",
+            message=f"command rejected: {reason}",
+            result={"success": False, "error_code": reason, "message": reason},
+            error_code=reason,
+        )
+        rejected = self.journal.get(key)
+        if rejected:
+            await self._send_result(rejected, command_id=command_id)
+
     async def _handle_command(self, message) -> None:
         payload = message.WhichOneof("payload")
         command = getattr(message, payload)
@@ -224,12 +340,16 @@ class FleetConnector:
             return
         if not self.journal.begin(key, message.command_id, task_id):
             return
+        timeout = 0.0
+        if payload in _DEADLINE_PAYLOADS:
+            timeout, rejection = self._command_timeout(command.deadline_ms)
+            if rejection:
+                await self._reject_command(key, message.command_id, rejection)
+                return
         try:
             if payload == "execute_task":
-                timeout = max(1.0, (command.deadline_ms / 1000) - time.time())
                 result = await self.handlers.execute_task(command.instruction, timeout)
             elif payload == "execute_skill":
-                timeout = max(1.0, (command.deadline_ms / 1000) - time.time())
                 result = await self.handlers.execute_skill(
                     command.skill_name, json.loads(command.params_json or "{}"), timeout
                 )
@@ -289,8 +409,30 @@ class FleetConnector:
         }:
             # A FleetControl command is the connector's atomic execution unit.
             # Local multi-step policies remain owned by the Robo-Claw agent.
-            await asyncio.gather(*tuple(self._active_commands), return_exceptions=True)
+            await self._wait_for_active_commands()
         else:
             await self.handlers.emergency_stop("Maestro disconnected")
             for task in tuple(self._active_commands):
                 task.cancel()
+
+    async def _wait_for_active_commands(self) -> None:
+        """활성 command 완료를 유한 시간까지만 기다리고, 남은 task 는 취소한다.
+
+        무제한 대기는 Maestro 가 사라진 뒤 connector 종료를 영원히 막으므로 상한을 둔다.
+        """
+        tasks = tuple(self._active_commands)
+        if not tasks:
+            return
+        completed, pending = await asyncio.wait(tasks, timeout=self._disconnect_wait_sec)
+        # 완료된 task 의 예외를 회수해 asyncio 의 "never retrieved" 경고를 막는다.
+        await asyncio.gather(*completed, return_exceptions=True)
+        if not pending:
+            return
+        logger.warning(
+            "FleetControl disconnect wait timed out after %.0fs; cancelling %d command(s)",
+            self._disconnect_wait_sec,
+            len(pending),
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
