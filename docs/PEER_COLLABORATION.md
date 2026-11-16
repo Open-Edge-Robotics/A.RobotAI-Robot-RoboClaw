@@ -13,6 +13,9 @@ Maestro가 로봇 명령의 단일 경로인 배포에서는 아래 기능이 **
   `false`/`[]`로 정규화하며, 값이 남아 있어도 client_node가 연결을 열지 않습니다.
 - 동료 작업이 필요하면 스킬 결과의 `peer_requests`로 보고하고, Maestro가 해당
   동료에게 후속 작업을 보냅니다. `RC_PEER_HANDOFF_MODE=direct`는 무시됩니다.
+- 이미 실행 중인 자율협동 루프도 매 사이클마다 `MAESTRO_ENABLED`를 다시 확인해
+  스스로 종료합니다. 위임 전송(`_send_to_peer`)과 원격 작업 실행(`_execute_task`)도
+  같은 검사를 거치므로, 관제가 런타임에 켜져도 기존 세션이 협업을 계속하지 않습니다.
 
 **예외**: `request_yield_slot`(`~/yield_slot`)은 LLM 판단이 없는 결정론적 충돌
 방지 프로토콜이므로 Maestro 사용 중에도 유지합니다.

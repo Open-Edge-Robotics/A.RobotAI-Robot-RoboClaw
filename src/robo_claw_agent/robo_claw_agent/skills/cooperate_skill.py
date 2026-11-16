@@ -4,12 +4,61 @@
 
 import logging
 import math
+import time
 from typing import Any
 
 from robo_claw_agent import ros_future
 from robo_claw_agent.skill_manager import BaseSkill
 
 logger = logging.getLogger(__name__)
+
+#: 단조 시각. 테스트에서 예산 초과를 결정적으로 재현하려고 모듈 수준에 둔다.
+_monotonic = time.monotonic
+
+#: coordinate_peer_task 파라미터 한도. 로봇을 움직이는 위임이므로 재시도·시간 모두 상한을 둔다.
+_MAX_STEP_TIMEOUT_SEC = 300.0
+_MAX_RETRIES = 2
+_MIN_TOTAL_BUDGET_SEC = 1.0
+_MAX_TOTAL_BUDGET_SEC = 1800.0
+_DEFAULT_TOTAL_BUDGET_SEC = 600.0
+
+
+def _coordination_limits(params: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """coordinate_peer_task 의 수치 파라미터를 검증·클램프한다.
+
+    잘못된 입력은 예외로 번지지 않고 호출자에게 오류 메시지로 돌려준다(스킬 경계의
+    검증 규칙). 재시도·시간은 임의 값이 아니라 명시된 범위 안에서만 허용한다.
+    """
+    raw_timeout = params.get("timeout_sec", 0.0)
+    try:
+        timeout_sec = float(raw_timeout if raw_timeout is not None else 0.0)
+    except (TypeError, ValueError):
+        return {}, "timeout_sec 은 숫자여야 합니다."
+    if not math.isfinite(timeout_sec) or not 0.0 <= timeout_sec <= _MAX_STEP_TIMEOUT_SEC:
+        return {}, f"timeout_sec 은 0~{_MAX_STEP_TIMEOUT_SEC:.0f}초 사이여야 합니다."
+
+    raw_retries = params.get("max_retries", 1)
+    if isinstance(raw_retries, bool) or not isinstance(raw_retries, int):
+        return {}, f"max_retries 는 0~{_MAX_RETRIES} 사이의 정수여야 합니다."
+    if not 0 <= raw_retries <= _MAX_RETRIES:
+        return {}, f"max_retries 는 0~{_MAX_RETRIES} 사이의 정수여야 합니다."
+
+    raw_budget = params.get("total_budget_sec", _DEFAULT_TOTAL_BUDGET_SEC)
+    try:
+        budget = float(raw_budget if raw_budget is not None else _DEFAULT_TOTAL_BUDGET_SEC)
+    except (TypeError, ValueError):
+        return {}, "total_budget_sec 은 숫자여야 합니다."
+    if not math.isfinite(budget) or not _MIN_TOTAL_BUDGET_SEC <= budget <= _MAX_TOTAL_BUDGET_SEC:
+        return (
+            {},
+            f"total_budget_sec 은 {_MIN_TOTAL_BUDGET_SEC:.0f}~{_MAX_TOTAL_BUDGET_SEC:.0f}초 사이여야 합니다.",
+        )
+
+    return {
+        "timeout_sec": timeout_sec,
+        "max_retries": int(raw_retries),
+        "total_budget_sec": budget,
+    }, ""
 
 
 def _log_instruction_preview(instruction: object) -> str:
@@ -539,7 +588,8 @@ class CoordinatePeerTaskSkill(BaseSkill):
             "peer_name": {"type": "string"},
             "instruction": {"type": "string"},
             "timeout_sec": {"type": "number"},
-            "max_retries": {"type": "integer", "default": 1},
+            "max_retries": {"type": "integer", "default": 1, "minimum": 0, "maximum": 2},
+            "total_budget_sec": {"type": "number", "default": 600, "minimum": 1, "maximum": 1800},
         },
         "required": ["peer_name", "instruction"],
         "additionalProperties": False,
@@ -549,14 +599,24 @@ class CoordinatePeerTaskSkill(BaseSkill):
         "지시 로봇(자신)이 LLM으로 명령을 분해하고, 각 단계를 동료에게 단순 명령으로 전달합니다. "
         "동료의 SLM으로도 단순 명령은 처리 가능하도록 설계되었습니다. "
         "파라미터: peer_name(필수), instruction(복합 명령, 필수), "
-        "timeout_sec(선택, 각 단계 대기 시간), max_retries(선택, 단계 실패 시 재시도, 기본 1)"
+        "timeout_sec(선택, 각 단계 대기 시간, 최대 300초), max_retries(선택, 단계 실패 시 재시도, 0~2, 기본 1), "
+        "total_budget_sec(선택, 전체 단계 시간 예산, 1~1800초, 기본 600)"
     )
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         peer_name = params.get("peer_name", "")
         instruction = params.get("instruction", "")
-        timeout_sec = float(params.get("timeout_sec", 0.0) or 0.0)
-        max_retries = int(params.get("max_retries", 1))
+
+        limits, error = _coordination_limits(params)
+        if error:
+            return {
+                "success": False,
+                "message": error,
+                "failure_reason": "invalid_parameter",
+            }
+        timeout_sec = limits["timeout_sec"]
+        max_retries = limits["max_retries"]
+        deadline = _monotonic() + limits["total_budget_sec"]
 
         if not peer_name:
             return {"success": False, "message": "peer_name이 필요합니다."}
@@ -599,6 +659,22 @@ class CoordinatePeerTaskSkill(BaseSkill):
             attempt = 0
             last_msg = ""
             while attempt <= max_retries and not success:
+                if _monotonic() >= deadline:
+                    logger.error(
+                        "CoordinatePeerTask budget exceeded before step %d — aborting", i + 1
+                    )
+                    self.send_user_message(
+                        f"[협업] 전체 시간 예산({limits['total_budget_sec']:.0f}초)을 초과해 중단합니다."
+                    )
+                    return {
+                        "success": False,
+                        "message": "단계 전체 시간 예산을 초과해 중단했습니다.",
+                        "failure_reason": "coordinate_budget_exceeded",
+                        "peer_name": peer_name,
+                        "steps_completed": i,
+                        "steps_total": len(steps),
+                        "results": results,
+                    }
                 attempt += 1
                 result = self._send_to_peer(peer_name, step_instruction, timeout_sec)
                 success = result.get("success", False)

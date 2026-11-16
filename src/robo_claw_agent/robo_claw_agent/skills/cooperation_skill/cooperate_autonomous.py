@@ -26,6 +26,7 @@ from typing import Any
 
 from robo_claw_agent import ros_future
 from robo_claw_agent.skill_manager import BaseSkill
+from robo_claw_agent.skills.fleet_handoff import maestro_control_active
 from robo_claw_agent.skills.yield_precheck import precheck_yield_for_move
 
 from .conversation import get_peer_conversation
@@ -171,6 +172,25 @@ class AutonomousCooperateSkill(BaseSkill):
         """로컬 런 관측 저널(전역 공유)."""
         return get_cooperation_journal()
 
+    @staticmethod
+    def _maestro_block(action: str) -> dict[str, Any] | None:
+        """Maestro 관제 중이면 협동 동작을 거부할 결과를 돌려준다.
+
+        루프 시작 여부와 무관하게, 위임·전송 같은 개별 진입점에서도 재검사해
+        런타임에 관제가 켜진 경우의 우회를 막는다.
+        """
+        if not maestro_control_active():
+            return None
+        return {
+            "success": False,
+            "message": (
+                f"Maestro 관제 중에는 {action}을(를) 수행할 수 없습니다. "
+                "동료 작업은 Maestro에 보고하세요."
+            ),
+            "failure_reason": "maestro_control_active",
+            "reported_to_maestro": True,
+        }
+
     # ── 스킬 진입점 ───────────────────────────────────────────────
 
     def execute(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -270,9 +290,17 @@ class AutonomousCooperateSkill(BaseSkill):
             return
         pending: set[Future[Any]] = set()
         last_proactive = 0.0
+        stop_reason = "cooperation_loop_ended"
         try:
             while is_cooperation_active():
                 cycle += 1
+                # Maestro 가 런타임에 명령 단일 경로가 되면 이미 돌고 있는 루프도 중단한다.
+                # 시작 시점 검사만으로는 MAESTRO_ENABLED 런타임 변경을 막지 못한다.
+                if maestro_control_active():
+                    logger.warning("[Coop] Maestro 관제 활성화 감지 — 자율협동을 종료합니다.")
+                    self.send_user_message("Maestro 관제가 시작되어 자율협동을 종료합니다.")
+                    stop_reason = "maestro_control_active"
+                    break
                 if max_cycles > 0 and cycle > max_cycles:
                     logger.info("[Coop] Reached max cycles (%d). Stopping.", max_cycles)
                     self.send_user_message("설정된 최대 사이클에 도달해 자율협동을 종료합니다.")
@@ -321,7 +349,7 @@ class AutonomousCooperateSkill(BaseSkill):
             release_cooperation(wake=False)
             clear_cooperation_thread_if_current()
             # 세션 종료는 로컬 정지 표시다. 실행 중/알 수 없는 태스크 상태는 바꾸지 않는다.
-            self._journal().stop_session(reason="cooperation_loop_ended")
+            self._journal().stop_session(reason=stop_reason)
             logger.info("[Coop] autonomous_cooperate loop ended")
             self.send_user_message("자율협동을 종료했습니다.")
 
@@ -988,6 +1016,9 @@ class AutonomousCooperateSkill(BaseSkill):
         session_id: str | None = None,
     ) -> dict[str, Any]:
         """동료가 위임한 작업을 실행하고 결과를 저널에 남긴다(``remote_task`` 위임)."""
+        blocked = self._maestro_block("동료 위임 작업 실행")
+        if blocked is not None:
+            return blocked
         return execute_remote_task(
             node=self.node,
             instruction=instruction,
@@ -1015,6 +1046,9 @@ class AutonomousCooperateSkill(BaseSkill):
         kind: str = "",
     ) -> dict[str, Any]:
         """동료 로봇에게 메시지를 전달한다(``peer_transport`` 위임)."""
+        blocked = self._maestro_block("동료 로봇 메시지 전송")
+        if blocked is not None:
+            return blocked
         return send_cooperation_message(
             node=self.node,
             peer_name=peer_name,
