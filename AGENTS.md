@@ -100,6 +100,17 @@ task unit-test -- -k "test_skill_manager"
 
 `unit-test`는 ROS2/hardware 테스트를 제외하고 Python 테스트만 실행한다. 현재 일부 레거시 테스트는 collection 단계에서 ROS generated service를 import하므로, ROS2 관련 테스트 파일은 fast loop에서 제외된다.
 
+### 커밋/CI 단일 게이트
+
+```bash
+# preflight → lint(ruff check/format, 스킬 카탈로그, 프롬프트 톤, 의존성, go vet)
+# → contract-check → unit-test 를 한 번에 실행한다.
+task verify
+```
+
+`task lint` 는 `ruff format --check src/` 를 포함합니다. 포맷만 어긋난 변경도 실패하므로
+`uv run ruff format src/` 로 맞춘 뒤 다시 실행합니다.
+
 ### 전체 Python 및 ROS2 테스트
 
 ```bash

@@ -182,6 +182,14 @@ tasks:
     cmds:
       - ./scripts/preflight_test_env.sh
 
+  verify:
+    desc: 커밋/CI 단일 검증 게이트 (lint → contract-check → unit-test)
+    cmds:
+      - task: preflight
+      - task: lint
+      - task: contract-check
+      - task: unit-test
+
   unit-test:
     desc: 빠른 단위 테스트 실행 (ROS 2/하드웨어 제외, coverage 없음)
     deps: [preflight]
