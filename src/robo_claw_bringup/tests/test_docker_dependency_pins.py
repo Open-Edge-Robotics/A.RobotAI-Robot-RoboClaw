@@ -62,6 +62,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(checker, "LOCK_PINNED", {"mcp": "테스트"})
     monkeypatch.setattr(checker, "DOCKER_ONLY", {"cmake": "테스트"})
     monkeypatch.setattr(checker, "DOCKER_OVERRIDE_ALLOWED", {})
+    monkeypatch.setattr(checker, "PROJECT_ONLY", {})
     return tmp_path
 
 
@@ -209,3 +210,69 @@ def test_repository_pins_mcp_to_locked_version():
 
     assert dockerfile["mcp"] == f"=={locked['mcp']}"
     assert project["mcp"] == ">=1.27,<2"
+
+
+# ---------------------------------------------------------------------------
+# 역방향 검사: pyproject 에만 있고 이미지에 설치되지 않는 런타임 의존성
+# ---------------------------------------------------------------------------
+
+
+def test_project_runtime_dependency_missing_from_dockerfile_is_reported(repo):
+    """pyproject 런타임 의존성이 이미지에서 빠지면 개발 환경과 배포 이미지가 갈린다."""
+    (repo / "pyproject.toml").write_text(
+        _PYPROJECT.replace(
+            '    "PyYAML>=6.0.0",\n', '    "PyYAML>=6.0.0",\n    "pytest-asyncio>=0.23.0",\n'
+        ),
+        encoding="utf-8",
+    )
+
+    problems = checker.check(repo)
+
+    assert any(
+        "pytest-asyncio" in problem and "Dockerfile에서 설치하지 않습니다" in problem
+        for problem in problems
+    )
+
+
+def test_project_only_entry_explains_missing_dependency(repo):
+    """베이스 이미지가 제공하는 패키지는 사유와 함께 등록하면 통과한다."""
+    (repo / "pyproject.toml").write_text(
+        _PYPROJECT.replace(
+            '    "PyYAML>=6.0.0",\n', '    "PyYAML>=6.0.0",\n    "opencv-python>=4.8.0",\n'
+        ),
+        encoding="utf-8",
+    )
+    checker.PROJECT_ONLY["opencv-python"] = "ROS cv_bridge/python3-opencv로 제공"
+
+    assert checker.check(repo) == []
+
+
+def test_project_only_entry_must_exist_in_pyproject(repo):
+    checker.PROJECT_ONLY["ghost-package"] = "테스트"
+
+    problems = checker.check(repo)
+
+    assert any(
+        "ghost-package" in problem and "pyproject.toml에 없습니다" in problem
+        for problem in problems
+    )
+
+
+def test_repository_has_no_unexplained_project_only_dependency():
+    """실제 저장소: pyproject 의존성은 Dockerfile에 있거나 사유가 등록되어 있어야 한다."""
+    dockerfile = checker.dockerfile_requirements(REPO_ROOT / "Dockerfile")
+    project = checker.pyproject_requirements(REPO_ROOT / "pyproject.toml")
+    project_only = {checker.normalize(name) for name in checker.PROJECT_ONLY}
+
+    missing = {name for name in project if name not in dockerfile and name not in project_only}
+
+    assert missing == set()
+
+
+def test_repository_installs_pytest_asyncio_in_image():
+    """이미지 안에서 pytest 를 돌릴 때 async 테스트가 수집 실패하지 않아야 한다."""
+    dockerfile = checker.dockerfile_requirements(REPO_ROOT / "Dockerfile")
+    project = checker.pyproject_requirements(REPO_ROOT / "pyproject.toml")
+
+    assert "pytest-asyncio" in project
+    assert dockerfile["pytest-asyncio"] == project["pytest-asyncio"]

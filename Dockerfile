@@ -91,6 +91,7 @@ COPY pyproject.toml ./
 RUN pip3 install \
     "cmake>=3.24,<4" \
     "pytest>=7.4.0" \
+    "pytest-asyncio>=0.23.0" \
     "openai>=1.0.0" \
     "anthropic>=0.39.0" \
     "langsmith>=0.1.100" \

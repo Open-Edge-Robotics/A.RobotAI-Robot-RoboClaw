@@ -13,6 +13,9 @@ Dockerfile의 ``mcp>=1.0.0``이 최신 2.x를 설치해 MCP 스킬 로딩이 실
 2. lock_pinned 패키지는 Dockerfile에서 uv.lock과 같은 버전으로 정확히 고정해야
    합니다. 이미지와 개발 환경이 같은 버전을 설치하도록 강제하기 위함입니다.
 3. Dockerfile에만 있는 패키지는 docker_only 목록에 사유와 함께 등록해야 합니다.
+4. 반대로 pyproject.toml에만 있는 런타임 의존성은 Dockerfile에도 있어야 합니다.
+   베이스 이미지가 다른 경로(예: ROS apt)로 제공하면 project_only에 사유와 함께
+   등록합니다.
 
 사용법::
 
@@ -44,6 +47,15 @@ LOCK_PINNED: dict[str, str] = {
 # pyproject.toml에도 있지만 이미지에서 다른 버전을 고정하는 빌드 도구.
 DOCKER_OVERRIDE_ALLOWED: dict[str, str] = {
     "setuptools": "colcon 빌드 도구: 이미지에서 65.7.0 고정",
+}
+
+# pyproject.toml에 없거나, 다른 경로(베이스 이미지/ROS 의존성)로 제공되는 패키지.
+# 사유를 함께 기록해 "왜 Dockerfile pip 목록에 없는지"를 남긴다.
+PROJECT_ONLY: dict[str, str] = {
+    "opencv-python": (
+        "ROS cv_bridge/python3-opencv가 이미지에 cv2를 제공한다. "
+        "pyproject 의 항목은 개발 venv 용도다"
+    ),
 }
 
 # pyproject.toml에 없는 이미지 전용 패키지. 사유를 함께 기록한다.
@@ -121,11 +133,13 @@ def check(
     lock_pinned: dict[str, str] | None = None,
     docker_only: dict[str, str] | None = None,
     overrides: dict[str, str] | None = None,
+    project_only: dict[str, str] | None = None,
 ) -> list[str]:
     """정합성 위반 사항을 문자열 목록으로 반환합니다(빈 목록이면 통과)."""
     lock_pinned = _normalized_keys(LOCK_PINNED if lock_pinned is None else lock_pinned)
     docker_only = _normalized_keys(DOCKER_ONLY if docker_only is None else docker_only)
     overrides = _normalized_keys(DOCKER_OVERRIDE_ALLOWED if overrides is None else overrides)
+    project_only = _normalized_keys(PROJECT_ONLY if project_only is None else project_only)
 
     dockerfile = dockerfile_requirements(root / "Dockerfile")
     project = pyproject_requirements(root / "pyproject.toml")
@@ -179,6 +193,19 @@ def check(
     for name in sorted(overrides):
         if name not in dockerfile:
             problems.append(f"{name}: override 목록에 있지만 Dockerfile에서 설치하지 않습니다.")
+
+    # 역방향 검사: pyproject 런타임 의존성이 이미지에 없으면 개발·배포 환경이 갈린다.
+    for name in sorted(project):
+        if name in dockerfile or name in project_only:
+            continue
+        problems.append(
+            f"{name}: pyproject.toml에 있지만 Dockerfile에서 설치하지 않습니다. "
+            "이미지가 다른 경로로 제공하면 사유와 함께 project_only에 등록하세요."
+        )
+
+    for name in sorted(project_only):
+        if name not in project:
+            problems.append(f"{name}: project_only에 있지만 pyproject.toml에 없습니다.")
 
     return problems
 

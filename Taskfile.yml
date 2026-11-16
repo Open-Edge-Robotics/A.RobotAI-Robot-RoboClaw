@@ -177,16 +177,18 @@ tasks:
   # -------------------------------------------------------------
   # 테스트
   # -------------------------------------------------------------
+  preflight:
+    desc: 테스트 실행 전 환경 점검(빌드 산출물·proto 생성물·colcon)
+    cmds:
+      - ./scripts/preflight_test_env.sh
+
   unit-test:
     desc: 빠른 단위 테스트 실행 (ROS 2/하드웨어 제외, coverage 없음)
+    deps: [preflight]
     vars:
       COVERAGE_ARGS: ""
     cmds:
       - |
-        if [[ ! -f install/setup.bash ]]; then
-          echo "[rc] 워크스페이스가 빌드되지 않았습니다. 먼저 'task build'를 실행하세요." >&2
-          exit 1
-        fi
         ./scripts/run_in_ros_env.sh --ws env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
           -p pytest_asyncio.plugin \
           {{.COVERAGE_ARGS}} \
@@ -254,9 +256,10 @@ tasks:
   # 코드 품질 및 컨트랙트
   # -------------------------------------------------------------
   lint:
-    desc: 전체 린트 검사 실행 (ruff, 스킬 카탈로그, 프롬프트 톤, 의존성, go vet)
+    desc: 전체 린트 검사 실행 (ruff, 포맷, 스킬 카탈로그, 프롬프트 톤, 의존성, go vet)
     cmds:
       - uv run ruff check src/
+      - uv run ruff format --check src/
       - python3 scripts/validate_skill_catalog.py
       - python3 scripts/check_prompt_tone.py
       - python3 scripts/check_docker_deps.py
