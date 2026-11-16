@@ -18,7 +18,11 @@ from rclpy.node import Node
 from .adapters.http_handlers import make_handler
 from .adapters.ros_adapter import RosBackend
 from .adapters.security import DashboardHttpSecurityPolicy
-from .application.scenario_runner import ScenarioConfig, resolve_cli_config_defaults
+from .application.scenario_runner import (
+    ScenarioConfig,
+    normalize_host_entry,
+    resolve_cli_config_defaults,
+)
 from .application.service import DashboardService
 from .domain.exposure import ERROR, exposure_findings, is_loopback_host, parse_allowed_cidrs
 
@@ -30,6 +34,12 @@ DEFAULT_BLOCKED_SKILLS = [
 ]
 
 DEFAULT_CIDRS_JSON = '["127.0.0.1/32", "::1/128"]'
+
+
+def _normalize_allowlist(raw: str) -> frozenset[str]:
+    """쉼표(또는 공백) 구분 허용 목록을 정규화된 ``host:port`` 집합으로 변환한다."""
+    entries = [part for part in raw.replace(" ", ",").split(",") if part.strip()]
+    return frozenset(entry for entry in (normalize_host_entry(item) for item in entries) if entry)
 
 
 def _parse_list(raw: str, default: list[str] | None = None) -> list[str]:
@@ -96,6 +106,9 @@ class DashboardNode(Node):
         self._declare("robot_config", "")
         self._declare("config_environment", "")
         self._declare("config_server_url", "")
+        # 사용자 입력 AI Config 서버 URL 의 호스트 허용 목록(쉼표 구분 host[:port]).
+        # 비어 있으면 startup 설정 호스트만 허용 목록에 포함된다.
+        self._declare("config_server_allowlist", "")
         self._declare("config_device_token", "")
         self._declare("scenario_file", "")
         self._declare("robot_soul_file", "")
@@ -170,6 +183,9 @@ class DashboardNode(Node):
             environment=environment,
             config_server_url=config_server_url,
             device_token=device_token,
+            allowed_config_hosts=_normalize_allowlist(
+                str(self.get_parameter("config_server_allowlist").value or "")
+            ),
             scenario_file=scenario_file,
             cache_dir=cache_dir,
             robot_soul_file=robot_soul_file,

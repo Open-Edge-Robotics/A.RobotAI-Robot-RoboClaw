@@ -139,7 +139,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/chat`   | `POST` | control                 | 자연어 메시지 전달, 지도 이동 메시지는 비동기 접수 |
 | `/api/initial_pose` | `POST` | control           | AMCL 초기 위치 설정 (`/initialpose` 발행)     |
 | `/api/scenarios` | `GET` | auth 활성 시 readonly 이상 | 활성 테스트 시나리오 조회 (`?refresh=1` 동기화) |
-| `/api/scenarios/sync` | `POST` | auth 활성 시 readonly 이상 | 웹에서 입력한 AI Config 서버 설정으로 시나리오 동기화 (디바이스 토큰은 JSON 본문) |
+| `/api/scenarios/sync` | `POST` | control | 웹에서 입력한 AI Config 서버 설정으로 시나리오 동기화 (디바이스 토큰은 JSON 본문). 대시보드가 사용자 입력 호스트로 직접 요청하므로 control 권한이 필요합니다 |
 | `/api/scenarios/run` | `POST` | control | 테스트 시나리오 비동기 실행 |
 | `/api/scenarios/cancel` | `POST` | control | 실행 중인 시나리오 중단 |
 | `/api/scenarios/status` | `GET` | auth 활성 시 readonly 이상 | 시나리오 실행 진행률 및 스텝별 결과 조회 |
@@ -161,6 +161,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `http_blocked_skills_json` | `["delete_file","emergency_stop",...]` | 차단 위험 스킬                        |
 | `config_environment`       | `""`                            | 시나리오 대상 환경 기본값 (`RC_ENVIRONMENT`). 비우면 웹 UI 입력값을 사용 |
 | `config_server_url`        | `""`                            | AI Config Server 주소 기본값. 비우면 웹 UI 입력값을 사용 |
+| `config_server_allowlist`  | `""`                            | 웹 UI 에서 입력 가능한 AI Config 서버 호스트 허용 목록(쉼표 구분 `host[:port]`). 비우면 `config_server_url` 의 호스트만 허용 |
 | `config_device_token`      | `""`                            | AI Config Server 인증 디바이스 토큰 기본값 |
 | `scenario_file`            | `""`                            | 로컬 커스텀 시나리오 JSON 파일 경로           |
 | `robot_config`             | `""`                            | 대상 로봇 설정 이름                           |
@@ -525,7 +526,7 @@ Docker 로 기동한 대시보드 컨테이너는 호스트의 CLI 설정(`~/.co
 
 | 입력 항목 | 예 | 설명 |
 | --------- | -- | ---- |
-| 서버 URL | `http://192.168.50.47:30180` | `http(s)://host[:port]` 만 허용 (그 외 스킴/경로/쿼리는 400) |
+| 서버 URL | `http://192.168.50.47:30180` | `http(s)://host[:port]` 만 허용 (그 외 스킴/경로/쿼리는 400). 허용 목록(`config_server_allowlist`)에 없는 호스트와 링크로컬·클라우드 메타데이터 주소는 거부 |
 | 로봇 이름 | `former` | `rclaw launch <robot> <environment>` 의 첫 인자 |
 | 환경 | `kon47` | `rclaw launch <robot> <environment>` 의 두 번째 인자 |
 | 디바이스 토큰 | (선택) | AI Config Server 디바이스 토큰. 인증은 `Authorization: Bearer` 로 전송합니다. |
@@ -533,6 +534,7 @@ Docker 로 기동한 대시보드 컨테이너는 호스트의 CLI 설정(`~/.co
 - 값은 브라우저 `localStorage`(`rc.scenario.config`)에만 저장되며 서버 프로세스는 보관하지 않습니다.
 - 로봇 이름·환경을 비우면 로컬 캐시 경로(`~/.robo_claw/config_cache/<robot>_<env>`)도 계산되지 않으므로 둘 다 입력해야 합니다.
 - 입력값은 `POST /api/scenarios/sync` 로 전송되고, 서버는 해당 조합으로 활성 시나리오를 조회한 뒤 `~/.robo_claw/config_cache/<robot>_<env>/scenario.json` 에 캐시합니다. 컨테이너 안에서는 이 경로가 휘발성입니다.
+- 동기화 요청은 로봇을 움직이지 않지만 대시보드가 사용자가 지정한 호스트로 직접 HTTP 요청을 보내므로 `control` 권한이 필요합니다. 허용 호스트를 미리 고정하려면 `config_server_allowlist` 파라미터를 사용합니다.
 - AI Config Server 는 디바이스 엔드포인트에서 **디바이스 토큰 또는 어드민 토큰**을 모두 허용합니다. 어드민 토큰은 설정 쓰기 권한까지 가지므로 브라우저 저장소에 남는 이 입력란에는 권한이 좁은 디바이스 토큰을 사용합니다.
 - 동기화 결과는 제목 옆 라벨에 `(AI Config 서버 · 14:03:21)`, `(로컬 캐시 · …)`, `(내장 기본값 · …)` 처럼 출처와 시각으로 표시되고, 실패 사유는 패널 상단 경고 박스에 표시됩니다.
 - 인증 실패(`HTTP 401/403`)는 디바이스 토큰, 활성 시나리오 없음(`HTTP 404`)은 AI Config Server 대시보드의 활성화 여부를 각각 경고 박스에서 안내합니다.
@@ -541,7 +543,7 @@ Docker 로 기동한 대시보드 컨테이너는 호스트의 CLI 설정(`~/.co
 ```bash
 # 웹 UI 와 같은 동기화 요청 (디바이스 토큰은 본문)
 curl -s -X POST http://127.0.0.1:9090/api/scenarios/sync \
-  -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
+  -H "X-RoboClaw-Token: $RC_HTTP_CONTROL_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"config_server_url":"http://192.168.50.47:30180","robot_name":"former","environment":"kon47","device_token":"<device-token>"}'
 ```

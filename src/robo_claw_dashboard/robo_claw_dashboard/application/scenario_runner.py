@@ -54,12 +54,70 @@ _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 _CONFIG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
+#: 클라우드 메타데이터·링크로컬 주소. 대시보드는 로봇/설정 서버와 통신할 뿐이며,
+#: 이 주소로 요청을 보내는 정상 시나리오가 없다. 허용 목록 설정과 무관하게 차단한다.
+_BLOCKED_HOSTS = frozenset(
+    {
+        "169.254.169.254",
+        "metadata.google.internal",
+        "metadata",
+        "fd00:ec2::254",
+    }
+)
+_LINK_LOCAL_PREFIX = "169.254."
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
-def parse_user_server_config(payload: dict[str, Any]) -> tuple[dict[str, str], str]:
+
+def normalize_host_entry(value: str) -> str:
+    """호스트 표기를 ``host:port`` 형태로 정규화한다.
+
+    ``http://10.0.0.5``, ``10.0.0.5``, ``https://config.example.com`` 처럼 스킴이
+    있든 없든 같은 표기로 비교할 수 있게 만든다. 기본 포트(80/443)는 명시한다.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "://" in raw:
+        parts = urlsplit(raw)
+        scheme = parts.scheme.lower()
+        host = (parts.hostname or "").lower()
+        port = parts.port or _DEFAULT_PORTS.get(scheme, 0)
+    else:
+        host, _, port_text = raw.partition(":")
+        host = host.strip().lower()
+        port = int(port_text) if port_text.isdigit() else 0
+    if not host:
+        return ""
+    return f"{host}:{port}" if port else host
+
+
+def _host_of(url: str) -> str:
+    """URL 의 ``host:port`` 를 정규화해 돌려준다(파싱 실패 시 빈 문자열)."""
+    return normalize_host_entry(url)
+
+
+def _is_blocked_host(url: str) -> bool:
+    """클라우드 메타데이터·링크로컬 목적지인지 판단한다."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False
+    return host in _BLOCKED_HOSTS or host.startswith(_LINK_LOCAL_PREFIX)
+
+
+def parse_user_server_config(
+    payload: dict[str, Any],
+    *,
+    allowed_hosts: frozenset[str] = frozenset(),
+) -> tuple[dict[str, str], str]:
     """대시보드가 입력받은 AI Config 서버 설정을 검증·정규화한다.
 
     (정규화된 값, 오류 메시지) 를 반환한다. 오류가 있으면 값은 빈 딕셔너리다.
     URL 은 http(s)://host[:port] 만 허용해 file:// 같은 스킴 주입을 막는다.
+
+    ``allowed_hosts`` 가 비어 있지 않으면 그 목록에 있는 ``host:port`` 만 허용한다.
+    목록이 비어 있을 때는 기존 동작(임의 호스트 허용)을 유지하되, 링크로컬·메타
+    데이터 주소는 목록과 무관하게 항상 차단한다.
     """
 
     def _text(key: str) -> str:
@@ -82,6 +140,17 @@ def parse_user_server_config(payload: dict[str, Any]) -> tuple[dict[str, str], s
         return (
             {},
             "AI Config 서버 URL에는 경로/쿼리를 넣을 수 없습니다. host[:port] 까지만 입력하세요.",
+        )
+
+    normalized_host = _host_of(url)
+    if _is_blocked_host(url):
+        return {}, "AI Config 서버 URL로 링크로컬·메타데이터 주소는 허용되지 않습니다."
+    if allowed_hosts and normalized_host not in allowed_hosts:
+        allowed_text = ", ".join(sorted(allowed_hosts))
+        return (
+            {},
+            "허용되지 않은 AI Config 서버 호스트입니다. "
+            f"허용 목록: {allowed_text} (설정: config_server_allowlist)",
         )
 
     if not robot:
@@ -120,6 +189,9 @@ class ScenarioConfig:
     robot_limits_file: str = ""
     agent_workspace_dir: str = ""
     llm_info: str = ""
+    #: 대시보드에서 입력한 AI Config 서버 호스트 허용 목록(정규화된 host:port).
+    #: 비어 있으면 제한하지 않는다(링크로컬·메타데이터 주소는 항상 차단).
+    allowed_config_hosts: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if not self.cache_dir and self.robot_name and self.environment:
@@ -334,13 +406,30 @@ class ScenarioRunnerService:
 
         검증에 실패하면 400 과 함께 오류 메시지를 반환하고, 기존 설정은 유지한다.
         디바이스 토큰은 응답에 포함하지 않는다.
+
+        이 메서드만 사용자 입력 호스트로 직접 HTTP 요청을 보내므로, 허용 목록과
+        링크로컬·메타데이터 차단을 통과한 URL 만 수용한다.
         """
-        values, error = parse_user_server_config(payload or {})
+        values, error = parse_user_server_config(
+            payload or {}, allowed_hosts=self.allowed_config_hosts()
+        )
         if error:
             return {"error": error, "status_code": 400}
         with self._lock:
             self._user_config = values
         return self.get_scenario(refresh=True)
+
+    def allowed_config_hosts(self) -> frozenset[str]:
+        """사용자 입력 URL 에 허용되는 ``host:port`` 집합을 반환한다.
+
+        설정된 허용 목록에 startup 설정의 AI Config 서버 호스트를 항상 더한다.
+        startup 설정만으로 운영되던 기존 배포가 그대로 동작하게 하기 위해서다.
+        """
+        hosts = set(self._config.allowed_config_hosts)
+        startup_host = _host_of(self._config.config_server_url)
+        if startup_host:
+            hosts.add(startup_host)
+        return frozenset(hosts)
 
     def _format_scenario_response(
         self,

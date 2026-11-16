@@ -393,14 +393,16 @@ class TestScenarioEndpointsAuth:
         assert denied.status == 401
         assert allowed.status == 202
 
-    def test_scenarios_sync_requires_readonly(self, web_root):
-        security = _policy(readonly="r-secret")
+    def test_scenarios_sync_requires_control(self, web_root):
+        # sync 는 사용자가 입력한 호스트로 대시보드가 직접 요청을 보내는 경로라
+        # 읽기 권한으로는 허용하지 않는다.
+        security = _policy(readonly="r-secret", control="c-secret")
         body = b'{"config_server_url": "http://10.0.0.5:30180", "robot_name": "f", "environment": "kon47"}'
         denied = handle_request(
             "POST",
             "/api/scenarios/sync",
             client_ip="127.0.0.1",
-            headers={},
+            headers={"Authorization": "Bearer r-secret"},
             body=body,
             service=FakeService(),
             static_root=web_root,
@@ -410,7 +412,7 @@ class TestScenarioEndpointsAuth:
             "POST",
             "/api/scenarios/sync",
             client_ip="127.0.0.1",
-            headers={"Authorization": "Bearer r-secret"},
+            headers={"Authorization": "Bearer c-secret"},
             body=body,
             service=FakeService(),
             static_root=web_root,
