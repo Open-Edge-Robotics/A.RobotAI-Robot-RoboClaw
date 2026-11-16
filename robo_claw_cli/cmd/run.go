@@ -203,8 +203,12 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 
 	if isSim {
 		env = append(env, "RCUTILS_COLORIZED_OUTPUT=1", "QT_QPA_PLATFORM=xcb", "GZ_RENDERING_BACKEND=ogre2")
-		gzModelPath := filepath.Join(projectRoot, "install", "robo_claw_bringup", "share", "robo_claw_bringup", "models")
-		env = append(env, fmt.Sprintf("GZ_SIM_RESOURCE_PATH=%s", gzModelPath))
+		// 이 저장소는 Gazebo 모델/world 자산을 포함하지 않으므로 install 경로를
+		// 임의로 넣지 않는다(존재하지 않는 경로는 모델 탐색을 흔든다).
+		// 사용자가 명시한 리소스 경로는 그대로 전달한다.
+		if gzPath := os.Getenv("GZ_SIM_RESOURCE_PATH"); gzPath != "" {
+			env = append(env, fmt.Sprintf("GZ_SIM_RESOURCE_PATH=%s", gzPath))
+		}
 	}
 
 	argsToExec := append([]string{"launch", "robo_claw_bringup", launchFile}, launchArgs...)

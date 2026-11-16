@@ -39,18 +39,51 @@ ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml --output /tmp/ou
 
 `rclaw sim`/`rclaw launch ... --sim`/`sim/run_sim.sh`는 모두 같은 런치 파일을
 사용하며, `sim_engine`은 배포판에서 자동 결정됩니다(`jazzy`→`gz`,
-그 외 `classic`). Gazebo 없이 전체 스택을 띄우려면 다음처럼 실행합니다.
+그 외 `classic`). Gazebo 없이 전체 스택을 띄우려면 `--engine stub`을 지정합니다.
+
+### 2.1 CLI 실행
+
+`rclaw`에서 시뮬레이션 엔진과 시나리오를 직접 선택할 수 있습니다.
 
 ```bash
+# Gazebo 없이 전용 시뮬레이터로 전체 스택 기동 (권장)
+./rclaw sim --engine stub \
+  --scenario src/robo_claw_sim/scenarios/navigate_basic.yaml
+
+# 로봇/환경 설정을 적용해 기동 (launch 경로)
+./rclaw launch former w2_2f_2 --sim --engine stub \
+  --scenario src/robo_claw_sim/scenarios/navigate_basic.yaml
+
+# 기존 Gazebo 경로 (배포판 자동 선택)
+./rclaw sim               # jazzy→gz, humble→classic
+./rclaw sim --engine gz   # Gazebo Harmonic 강제
+```
+
+| 플래그 | 값 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `--engine` | `auto` · `stub` · `gz` · `classic` | `auto` | 시뮬레이션 엔진. `auto`는 배포판에 맞는 Gazebo를 고릅니다(`gz`/`classic` 별칭: `harmonic`/`gazebo`) |
+| `--scenario` | YAML 경로 | 없음 | `stub` 엔진이 사용할 시나리오. 미지정 시 기본 방(8×6m)을 사용합니다 |
+
+`--engine`/`--scenario`는 `--sim`과 함께 씁니다(`rclaw launch`는 `--sim` 없이 쓰면
+사용 오류를 반환합니다). 종료는 `Ctrl+C`이며, `rclaw kill`은 시뮬레이터 노드
+(`sim_node`)까지 정리합니다.
+
+`stub` 엔진은 벽시계 시간(20Hz)으로 동작하고 `/clock`을 발행하지 않으므로 하위
+스택에는 `use_sim_time:=false`가 전달됩니다. 시나리오에서 `use_sim_time:=true`를
+직접 주면 노드 타이머가 멈춰 heartbeat watchdog이 에이전트를 종료하므로 주지
+않습니다.
+
+`sim_engine:=stub`에서는 `robo_claw_sim` 노드가 지도·센서·액션 서버를 모두
+제공합니다. `run_core:=true`를 주면 `robo_claw_core`까지 함께 기동해 속도 제한과
+watchdog 동작을 검증할 수 있습니다.
+
+```bash
+# 런치 파일 직접 실행 (CLI 없이)
 ros2 launch robo_claw_bringup robo_claw_sim.launch.py \
   sim_engine:=stub \
   scenario_file:=$PWD/src/robo_claw_sim/scenarios/navigate_basic.yaml \
   use_channel:=false
 ```
-
-`sim_engine:=stub`에서는 `robo_claw_sim` 노드가 지도·센서·액션 서버를 모두
-제공합니다. `run_core:=true`를 주면 `robo_claw_core`까지 함께 기동해 속도 제한과
-watchdog 동작을 검증할 수 있습니다.
 
 ## 3. 시나리오 스키마
 
