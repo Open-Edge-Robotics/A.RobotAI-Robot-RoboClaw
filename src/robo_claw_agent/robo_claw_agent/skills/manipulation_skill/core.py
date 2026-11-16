@@ -26,12 +26,18 @@ def _get_runtime(node: Any) -> MoveItManipulationRuntime:
     return runtime
 
 
-def _failure_result(exc: Exception) -> dict[str, Any]:
+def _failure_result(
+    exc: Exception, *, stage: str = "", executed_steps: list[str] | None = None
+) -> dict[str, Any]:
     """매니퓰레이션 예외를 스킬 실패 payload 로 변환한다.
 
     ``reason``/``stopped_by`` 속성을 가진 예외(E-stop 래치, robot limits 부재)는
     기계가 읽을 수 있는 실패 사유를 함께 보고한다. "정지 때문에 거부됨"과
     "실행 중 실패"를 상위 계층이 구분할 수 있어야 하기 때문이다.
+
+    ``stage`` 가 주어지면 ``grasp``/``place`` 와 같은 형식으로 ``failed_stage`` /
+    ``partial_execution`` / ``executed_steps`` 를 함께 보고한다. 단일 단계 스킬은
+    성공한 단계가 없으므로 ``partial_execution`` 이 False 다.
     """
     payload: dict[str, Any] = {"success": False, "message": f"{exc}"}
     reason = getattr(exc, "reason", None)
@@ -40,6 +46,11 @@ def _failure_result(exc: Exception) -> dict[str, Any]:
     stopped_by = getattr(exc, "stopped_by", None)
     if stopped_by:
         payload["stopped_by"] = stopped_by
+    if stage:
+        steps = list(executed_steps or [])
+        payload["failed_stage"] = stage
+        payload["partial_execution"] = bool(steps)
+        payload["executed_steps"] = steps
     return payload
 
 
@@ -177,6 +188,9 @@ def _move_sequence_result(
     message = action
     if already_action and payload.get("already_at_target"):
         message = already_action
+    if payload.get("orientation_error_rad") is not None and not payload.get("orientation_verified"):
+        # 위치만 확인한 이동은 자세까지 도달했다고 단정하지 않는다.
+        message = f"{message} (자세 오차 {payload['orientation_error_rad']:.3f}rad, 미검증)"
     return {
         "success": True,
         "message": message,

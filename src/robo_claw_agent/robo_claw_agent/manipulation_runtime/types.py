@@ -27,6 +27,10 @@ class MotionOutcome:
     moved: bool = True
     already_at_target: bool = False
     detail: str = ""
+    #: 목표 자세를 실제로 검증했는지(허용치 설정 여부)와 측정된 오차(rad).
+    #: 검증하지 않았으면 스킬 계층이 "도달"을 자세까지 확인한 것으로 보고하지 않는다.
+    orientation_verified: bool = False
+    orientation_error_rad: float | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +76,9 @@ class ManipulationConfig:
     agx_arm_status_topic: str = "feedback/arm_status"
     agx_joint_tolerance_rad: float = 0.02
     agx_pose_tolerance_m: float = 0.01
+    #: pose 목표의 자세(orientation) 허용 오차(rad). 0 이면 검증하지 않고
+    #: 결과 payload 에 오차만 보고한다.
+    agx_pose_orientation_tolerance_rad: float = 0.0
     agx_motion_timeout_sec: float = 30.0
     agx_feedback_timeout_sec: float = 5.0
     agx_home_service: str = "move_home"

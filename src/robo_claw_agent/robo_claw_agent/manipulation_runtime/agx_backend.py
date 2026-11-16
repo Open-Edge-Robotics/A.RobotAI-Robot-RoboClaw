@@ -374,11 +374,20 @@ class AgxDriverBackend:
             if _GRIPPER_KEYWORD not in str(name).lower()
         }
 
-    def _set_last_motion(self, *, already_at_target: bool, detail: str = "") -> None:
+    def _set_last_motion(
+        self,
+        *,
+        already_at_target: bool,
+        detail: str = "",
+        orientation_error_rad: float | None = None,
+    ) -> None:
+        verified = orientation_error_rad is not None and self._orientation_verified()
         self.last_motion = MotionOutcome(
             moved=not already_at_target,
             already_at_target=already_at_target,
             detail=detail,
+            orientation_verified=verified,
+            orientation_error_rad=orientation_error_rad,
         )
 
     def _spin_once(self) -> None:
@@ -530,6 +539,44 @@ class AgxDriverBackend:
                 return False
         return True
 
+    def _orientation_tolerance_rad(self) -> float:
+        """설정된 자세 허용 오차(rad). 0 이면 자세를 검증하지 않는다."""
+        raw = getattr(self._config, "agx_pose_orientation_tolerance_rad", 0.0)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        return value if math.isfinite(value) and value > 0.0 else 0.0
+
+    def _orientation_verified(self) -> bool:
+        """이 백엔드가 자세까지 검증하도록 설정되었는지 여부."""
+        return self._orientation_tolerance_rad() > 0.0
+
+    def _orientation_error_rad(self, targets: Mapping[str, float]) -> float | None:
+        """현재 TCP 자세와 목표 자세의 회전 오차(rad)를 반환한다.
+
+        목표에 자세 값이 없거나(구 호출) 피드백이 없으면 ``None`` 이다. 오차는
+        두 단위 quaternion 의 내적으로 계산해 항상 [0, π] 범위를 갖는다.
+        """
+        keys = ("qx", "qy", "qz", "qw")
+        if not all(key in targets for key in keys):
+            return None
+        pose = self._latest_tcp_pose
+        if pose is None:
+            return None
+        current = (
+            float(pose.pose.orientation.x),
+            float(pose.pose.orientation.y),
+            float(pose.pose.orientation.z),
+            float(pose.pose.orientation.w),
+        )
+        target = tuple(float(targets[key]) for key in keys)
+        if not all(math.isfinite(value) for value in (*current, *target)):
+            return None
+        dot = abs(sum(a * b for a, b in zip(current, target, strict=True)))
+        # 정규화 오차를 감안해 acos 입력을 [-1, 1] 로 제한한다.
+        return 2.0 * math.acos(min(1.0, max(-1.0, dot)))
+
     def _pose_reached(self, targets: Mapping[str, float]) -> bool:
         pose = self._latest_tcp_pose
         if pose is None or not self._feedback_is_fresh(self._tcp_pose_time):
@@ -547,6 +594,14 @@ class AgxDriverBackend:
             if not math.isfinite(current) or not math.isfinite(target):
                 return False
             if abs(current - target) > tolerance:
+                return False
+
+        # 자세 허용치가 설정된 경우에만 자세를 도달 조건에 포함한다. 기본값(0)은
+        # 기존 동작을 유지하고, 대신 측정된 오차를 결과에 보고한다.
+        orientation_tolerance = self._orientation_tolerance_rad()
+        if orientation_tolerance > 0.0:
+            error = self._orientation_error_rad(targets)
+            if error is None or error > orientation_tolerance:
                 return False
         return True
 
@@ -780,7 +835,11 @@ class AgxDriverBackend:
             lambda: self._joint_feedback_seen,
             diagnostics_baseline=diagnostics_baseline,
         )
-        self._set_last_motion(already_at_target=already_at_target)
+        orientation_error = self._orientation_error_rad(targets)
+        self._set_last_motion(
+            already_at_target=already_at_target,
+            orientation_error_rad=orientation_error,
+        )
 
     def move_to_pose_target(
         self,

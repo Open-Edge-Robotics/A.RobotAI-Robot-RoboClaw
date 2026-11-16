@@ -195,6 +195,11 @@ def load_manipulation_config(node: Any) -> ManipulationConfig:
         ),
         agx_joint_tolerance_rad=_read_float(node, "manipulation_agx_joint_tolerance_rad", 0.02),
         agx_pose_tolerance_m=_read_float(node, "manipulation_agx_pose_tolerance_m", 0.01),
+        # 0 이면 자세(orientation)는 검증하지 않고 결과에 오차만 보고한다.
+        # 실기에서 허용 오차를 측정한 뒤 켜는 것을 전제로 한 기본값이다.
+        agx_pose_orientation_tolerance_rad=_read_float(
+            node, "manipulation_agx_pose_orientation_tolerance_rad", 0.0
+        ),
         agx_motion_timeout_sec=_read_float(node, "manipulation_agx_motion_timeout_sec", 30.0),
         agx_feedback_timeout_sec=_read_float(node, "manipulation_agx_feedback_timeout_sec", 5.0),
         agx_home_service=_read_string(node, "manipulation_agx_home_service", "/move_home"),

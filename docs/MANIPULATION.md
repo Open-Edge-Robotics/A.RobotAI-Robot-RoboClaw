@@ -145,6 +145,8 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 - **그리퍼 단독 제어**: `agx_arm_ctrl` 드라이버는 `move_j` 메시지에 팔 관절이 포함되어 있으면 팔 동작 모터를 구동합니다. 따라서 그리퍼만 움직일 때는 `name: ['gripper']`, `position: [width]` 만 발행하여 팔 관절 모터 간섭 없이 빠르고 안전하게 동작합니다.
 - **비상 정지 우선**: `emergency_stop` 래치(`_emergency_stop_latched`) 상태에서는 팔·그리퍼·헤드 명령이 백엔드로 전달되지 않습니다. 스킬 결과는 `success=false`, `stopped_by=emergency_stop`, `failure_reason=emergency_stop_active`로 보고하며, `reset_emergency_stop(confirm=true)` 이후에만 재개됩니다.
 - **한계 검증 fail-closed**: 관절 값(rad/deg)을 지정하는 명령(`move_joints`, 그리퍼 preset, 조인트 맵이 정의된 named pose)은 `ROBOT_LIMITS.json`을 찾지 못하면 실행하지 않고 `failure_reason=robot_limits_missing`으로 실패합니다. 근거 데이터 없이 팔을 움직이지 않기 위한 규칙입니다. MoveIt 측 named pose(조인트 값 미지정)는 URDF/MoveIt 한계로 검증되므로 이 차단 대상이 아닙니다.
+- **pose 도달 판정**: AGX 백엔드는 기본적으로 위치(x/y/z, `manipulation_agx_pose_tolerance_m`)만으로 도달을 판정하고, 측정한 자세 오차를 결과의 `orientation_error_rad`로 보고합니다. `manipulation_agx_pose_orientation_tolerance_rad`(rad)를 0보다 크게 설정하면 자세도 도달 조건에 포함하며, 목표에 자세 값이 없으면 검증 불가로 보고 도달로 처리하지 않습니다. 위치만 확인한 이동은 완료 메시지에 `자세 오차 …, 미검증`을 덧붙입니다.
+- **실패 보고 형식**: `arm_pose`·`move_joints`·`move_pose`·`open_gripper`·`close_gripper`·`head_pan_tilt` 실패는 `grasp`/`place`와 같은 형식으로 `failed_stage`·`partial_execution`·`executed_steps`를 함께 반환합니다. 드라이버가 예상 밖 예외를 던져도 스킬 경계에서 구조화된 실패로 변환하며 예외를 상위로 전파하지 않습니다.
 - **팔 관절 제어**: 드라이버가 생략 관절을 0.0으로 채우므로 지정하지 않은 관절은 최신 피드백 값으로 보존합니다. `ROBOT_LIMITS`가 제공되면 요청한 관절뿐 아니라 보존 관절을 포함한 **실제 전체 명령**을 발행 전에 검증합니다. 현재 피드백이 한계 밖인 관절을 그대로 보존해야 한다면 실행을 거부하며, 임의 클램프나 영점 변경으로 보정하지 않습니다.
 - **물리 검증 완료**: 실기 그리퍼 열기(`open_gripper`, 0.05m 도달) 및 닫기(`close_gripper`, 0.00038m 도달) 물리적 동작이 검증되었습니다.
 

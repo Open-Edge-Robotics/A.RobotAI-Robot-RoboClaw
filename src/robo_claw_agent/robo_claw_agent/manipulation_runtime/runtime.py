@@ -45,10 +45,17 @@ def _motion_payload(backend: Any) -> dict[str, Any]:
     outcome = getattr(backend, "last_motion", None)
     if outcome is None:
         return {}
-    return {
+    payload: dict[str, Any] = {
         "moved": bool(getattr(outcome, "moved", True)),
         "already_at_target": bool(getattr(outcome, "already_at_target", False)),
     }
+    # 자세(orientation) 검증 결과는 판정 근거를 숨기지 않도록 그대로 보고한다.
+    # 검증하지 않은 백엔드(기본값)는 이 키를 싣지 않아 기존 소비자와 호환된다.
+    error = getattr(outcome, "orientation_error_rad", None)
+    if error is not None:
+        payload["orientation_verified"] = bool(getattr(outcome, "orientation_verified", False))
+        payload["orientation_error_rad"] = round(float(error), 4)
+    return payload
 
 
 class MoveItManipulationRuntime:

@@ -46,7 +46,10 @@ class OpenGripperSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Gripper open failed ({preset_name}): {exc}")
-            return _failure_result(exc)
+            return _failure_result(exc, stage="open_gripper")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Gripper open raised unexpected error")
+            return _failure_result(exc, stage="open_gripper")
 
         return _move_sequence_result(
             action=f"그리퍼 open 완료: {preset_name}",
@@ -85,7 +88,10 @@ class CloseGripperSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Gripper close failed ({preset_name}): {exc}")
-            return _failure_result(exc)
+            return _failure_result(exc, stage="close_gripper")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Gripper close raised unexpected error")
+            return _failure_result(exc, stage="close_gripper")
 
         return _move_sequence_result(
             action=f"그리퍼 close 완료: {preset_name}",

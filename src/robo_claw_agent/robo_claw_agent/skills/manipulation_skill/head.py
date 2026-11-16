@@ -140,7 +140,10 @@ class HeadPanTiltSkill(BaseSkill):
             TypeError,
         ) as exc:
             logger.warning("Head pan/tilt move failed: %s", exc)
-            return _failure_result(exc)
+            return _failure_result(exc, stage="head_pan_tilt")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Head pan/tilt raised unexpected error")
+            return _failure_result(exc, stage="head_pan_tilt")
 
         return _move_sequence_result(
             action=f"헤드 pan/tilt 이동 완료{f' ({pose_name})' if pose_name else ''}",

@@ -55,7 +55,10 @@ class ArmPoseSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Arm pose move failed ({pose_name}): {exc}")
-            return _failure_result(exc)
+            return _failure_result(exc, stage="arm_pose")
+        except Exception as exc:  # noqa: BLE001 - 스킬 경계에서 드라이버 예외를 구조화된 실패로 변환
+            logger.exception(f"Arm pose move raised unexpected error ({pose_name})")
+            return _failure_result(exc, stage="arm_pose")
 
         return _move_sequence_result(
             action=f"포즈 이동 완료: {pose_name}",
@@ -111,7 +114,10 @@ class MoveJointsSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Joint move failed: {exc}")
-            return _failure_result(exc)
+            return _failure_result(exc, stage="move_joints")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Joint move raised unexpected error")
+            return _failure_result(exc, stage="move_joints")
 
         return _move_sequence_result(
             action="조인트 이동 완료",
@@ -178,7 +184,10 @@ class MovePoseSkill(BaseSkill):
             ManipulationError,
         ) as exc:
             logger.warning(f"Pose move failed: {exc}")
-            return _failure_result(exc)
+            return _failure_result(exc, stage="move_pose")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Pose move raised unexpected error")
+            return _failure_result(exc, stage="move_pose")
 
         return _move_sequence_result(
             action="Pose 이동 완료",
