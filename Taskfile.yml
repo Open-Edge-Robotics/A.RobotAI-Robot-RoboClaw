@@ -28,15 +28,21 @@ tasks:
   # 코드 생성 및 빌드
   # -------------------------------------------------------------
   proto:
-    desc: gRPC proto 파일 컴파일 (robo.proto 및 messenger.proto)
+    desc: gRPC proto 파일 컴파일 (robo.proto / fleet_control.proto / messenger.proto)
+    # 입력은 모두 robo_claw_msgs/proto 에 있다. 경로가 틀리면 go-task 의 체크섬이
+    # 변하지 않아 proto 를 수정해도 재생성이 건너뛰어진다(생성물이 낡은 채로 빌드됨).
     sources:
-      - "src/robo_claw_grpc/proto/*.proto"
-      - "src/robo_claw_channel/proto/*.proto"
+      - "src/robo_claw_msgs/proto/*.proto"
     generates:
       - "src/robo_claw_grpc/robo_claw_grpc/robo_pb2.py"
       - "src/robo_claw_grpc/robo_claw_grpc/robo_pb2_grpc.py"
+      - "src/robo_claw_grpc/robo_claw_grpc/robo_pb2.pyi"
+      - "src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2.py"
+      - "src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2_grpc.py"
+      - "src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2.pyi"
       - "src/robo_claw_channel/robo_claw_channel/messenger_pb2.py"
       - "src/robo_claw_channel/robo_claw_channel/messenger_pb2_grpc.py"
+      - "src/robo_claw_channel/robo_claw_channel/messenger_pb2.pyi"
     cmds:
       - ./generate_protos.sh
 
@@ -103,6 +109,7 @@ tasks:
       - rm -rf build/ install/ log/ .venv/ bin/ {{.BINARY_NAME}} {{.CLI_DIR}}/robo_claw_cli
       - rm -f src/robo_claw_channel/robo_claw_channel/messenger_pb2*
       - rm -f src/robo_claw_grpc/robo_claw_grpc/robo_pb2*
+      - rm -f src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2*
 
   # -------------------------------------------------------------
   # Docker 이미지 빌드 (docs/DOCKER_GUIDE.md 참고)

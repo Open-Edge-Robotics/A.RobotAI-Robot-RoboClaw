@@ -170,10 +170,12 @@ COPY generate_protos.sh ./generate_protos.sh
 RUN bash ./generate_protos.sh && \
     test -s src/robo_claw_grpc/robo_claw_grpc/robo_pb2.py && \
     test -s src/robo_claw_grpc/robo_claw_grpc/robo_pb2_grpc.py && \
+    test -s src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2.py && \
+    test -s src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2_grpc.py && \
     test -s src/robo_claw_channel/robo_claw_channel/messenger_pb2.py && \
     test -s src/robo_claw_channel/robo_claw_channel/messenger_pb2_grpc.py && \
     PYTHONPATH=src/robo_claw_grpc:src/robo_claw_channel python3 -c \
-      'from robo_claw_grpc import robo_pb2, robo_pb2_grpc; from robo_claw_channel import messenger_pb2, messenger_pb2_grpc'
+      'from robo_claw_grpc import fleet_control_pb2, fleet_control_pb2_grpc, robo_pb2, robo_pb2_grpc; from robo_claw_channel import messenger_pb2, messenger_pb2_grpc'
 
 # 10. Colcon 빌드
 # buildx/QEMU에서 ROS export library 탐색이 깨져 메시지 패키지(robo_claw_msgs)는
