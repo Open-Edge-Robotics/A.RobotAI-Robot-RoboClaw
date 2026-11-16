@@ -33,6 +33,18 @@ cd <robo-claw>
 - 9개 테스트가 모두 PASS면 코드 레벨 개선이 정상입니다.
 - 상세: [`validation/rag_regression/README.md`](rag_regression/README.md)
 
+전체 회귀는 저장소 루트에서 한 번에 돌립니다.
+
+```bash
+task verify   # preflight → lint → contract-check → unit-test
+```
+
+> `task verify` 는 `RC_REQUIRE_JS_TESTS=1` 로 실행되므로 **node(Node.js 18+)가 필요**합니다.
+> 대시보드 표시 로직은 node 로 실제 JS 를 실행해 검증하며, node 가 없으면 skip 이 아니라
+> 실패합니다. 런타임 Docker 컨테이너에는 node 가 없으므로 컨테이너 안에서는 이 게이트를
+> 돌리지 않고, `docker exec ... pytest` 로 Python 테스트만 실행할 때는 JS 테스트가 skip
+> 됩니다(skip 사유가 요약에 남습니다).
+
 ---
 
 ## B. 실로봇 시나리오 테스트

@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from ._js_node import skip_or_fail_missing_node
+
 pytestmark = pytest.mark.component
 
 COOPERATION_JS = Path(__file__).resolve().parents[1] / "web" / "assets" / "cooperation.js"
@@ -28,7 +30,7 @@ DOM_SCRIPT = (JS_DIR / "cleanup_demo_dom.js").read_text(encoding="utf-8")
 def dom() -> dict:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("node 실행 파일이 없어 JS 협동 패널 테스트를 건너뜁니다")
+        skip_or_fail_missing_node("node 실행 파일이 없어 JS 협동 패널 테스트를 건너뜁니다")
     result = subprocess.run(
         [node, "-e", DOM_SCRIPT, "--", str(COOPERATION_JS)],
         check=True,

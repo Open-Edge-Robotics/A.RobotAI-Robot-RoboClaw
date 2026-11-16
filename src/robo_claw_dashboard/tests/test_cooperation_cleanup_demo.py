@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 from robo_claw_dashboard.domain import cooperation as coop
 
+from ._js_node import skip_or_fail_missing_node
+
 pytestmark = pytest.mark.unit
 
 COOPERATION_JS = Path(__file__).resolve().parents[1] / "web" / "assets" / "cooperation.js"
@@ -281,7 +283,7 @@ REDUCER_SCRIPT = (JS_DIR / "cleanup_demo_reducer.js").read_text(encoding="utf-8"
 def reducer() -> dict:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("node 실행 파일이 없어 JS 협동 패널 테스트를 건너뜁니다")
+        skip_or_fail_missing_node("node 실행 파일이 없어 JS 협동 패널 테스트를 건너뜁니다")
     result = subprocess.run(
         [node, "-e", REDUCER_SCRIPT, "--", str(COOPERATION_JS)],
         check=True,

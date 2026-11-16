@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from ._js_node import skip_or_fail_missing_node
+
 pytestmark = pytest.mark.component
 
 WEB = Path(__file__).resolve().parents[1] / "web"
@@ -31,7 +33,7 @@ HARNESS = Path(__file__).resolve().parent / "js" / "scenario_view.js"
 def _node() -> str:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("node 실행 파일이 없어 시나리오 표시 JS 테스트를 건너뜁니다")
+        skip_or_fail_missing_node("node 실행 파일이 없어 시나리오 표시 JS 테스트를 건너뜁니다")
     return node
 
 

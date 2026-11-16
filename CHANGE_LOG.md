@@ -5,6 +5,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-16 — JS 테스트 침묵 skip 제거와 이미지 도구 정책 명시
+
+- **Fixed**: 대시보드 표시 로직 테스트가 `node` 부재 시 조용히 skip 되던 문제를 보완합니다. 런타임 Docker 이미지에는 node 가 없어 34개 JS 테스트가 skip 되는데, 출력만 보면 "통과" 로 읽힙니다. 공용 가드(`tests/_js_node.py`)를 추가해 `RC_REQUIRE_JS_TESTS` 가 켜져 있으면 skip 대신 실패하도록 했고, `task unit-test`·`task verify` 가 이 값을 켜고 실행합니다.
+- **Changed**: 런타임 이미지는 실행 전용으로 유지합니다(node·`task`·`uv`·`ruff` 미포함). 검증 게이트는 호스트/CI 에서 `task verify` 로 실행합니다. `docs/DOCKER_GUIDE.md` 에 이미지에 없는 도구와 영향, `AGENTS.md` §5 와 `validation/README.md` 에 node 요구사항을 명시합니다.
+- **검증**: 가드 테스트 7개(skip/fail 분기, 값 파싱), node 를 PATH 에서 제거한 상태에서 `RC_REQUIRE_JS_TESTS=1` 이면 10개 실패·미설정이면 15개 skip 임을 확인. `task verify` 3245 passed.
+
 ## 2026-11-16 — 동료 메시지 출처 인증과 pose 자세 검증
 
 - **Fixed**: `PeerMessage` ROS 서비스에 출처 인증을 추가합니다. gRPC 계층은 peer 토큰을 검증하지만 이 로컬 ROS 서비스는 검증을 우회해, 같은 DDS 도메인의 다른 노드가 임의의 `peer_name` 을 신고해 협동 인박스에 메시지를 넣을 수 있었습니다. `PeerMessage.srv` 에 `auth_token` 을 추가하고 채널 노드가 주입하면, 에이전트가 SHA-256 다이제스트 상수 시간 비교로 검증합니다. 불일치·누락 메시지는 인박스에 넣지 않고 저널에 `reason=peer_token_missing|peer_token_mismatch` 로 남깁니다.

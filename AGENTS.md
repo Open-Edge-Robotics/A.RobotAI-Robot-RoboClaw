@@ -111,6 +111,11 @@ task verify
 `task lint` 는 `ruff format --check src/` 를 포함합니다. 포맷만 어긋난 변경도 실패하므로
 `uv run ruff format src/` 로 맞춘 뒤 다시 실행합니다.
 
+`task unit-test`/`task verify` 는 `RC_REQUIRE_JS_TESTS=1` 로 실행합니다. 대시보드 표시
+로직 테스트는 `node` 로 실제 JS 를 실행해 검증하므로, **node(Node.js 18+)가 없으면
+skip 이 아니라 실패**합니다. 런타임 Docker 이미지에는 node 가 없으므로 컨테이너 안에서는
+이 게이트를 돌리지 않습니다(이미지는 런타임 전용, 게이트는 호스트/CI 에서 실행).
+
 ### 전체 Python 및 ROS2 테스트
 
 ```bash

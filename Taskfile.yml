@@ -202,8 +202,11 @@ tasks:
     deps: [preflight]
     vars:
       COVERAGE_ARGS: ""
+    # 대시보드 표시 로직은 node 로 실제 JS 를 실행해 검증한다. node 가 없으면
+    # 조용히 skip 되어 "통과" 로 보이므로, 게이트에서는 실패로 처리한다.
     cmds:
       - |
+        RC_REQUIRE_JS_TESTS=1 \
         ./scripts/run_in_ros_env.sh --ws env PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest \
           -p pytest_asyncio.plugin \
           {{.COVERAGE_ARGS}} \

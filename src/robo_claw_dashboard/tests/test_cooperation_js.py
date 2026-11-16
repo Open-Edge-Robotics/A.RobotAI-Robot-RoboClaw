@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from ._js_node import skip_or_fail_missing_node
+
 pytestmark = pytest.mark.component
 
 ASSETS = Path(__file__).resolve().parents[1] / "web" / "assets"
@@ -25,7 +27,7 @@ COOPERATION_JS = ASSETS / "cooperation.js"
 def _node() -> str:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("node 실행 파일이 없어 JS 협동 패널 테스트를 건너뜁니다")
+        skip_or_fail_missing_node("node 실행 파일이 없어 JS 협동 패널 테스트를 건너뜁니다")
     return node
 
 
