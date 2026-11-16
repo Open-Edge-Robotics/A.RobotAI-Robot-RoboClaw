@@ -1,0 +1,29 @@
+# 기본 내비게이션 시나리오: 장애물을 피해 목표 2곳에 도달한다.
+# 실행: ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml
+name: navigate_basic
+timeout_sec: 60
+
+world:
+  width: 8.0
+  height: 6.0
+  resolution: 0.05
+  robot_radius: 0.22
+  robot: {x: 1.0, y: 1.0, yaw: 0.0}
+  obstacles:
+    - {type: box, name: south_wall, x: 4.0, y: 0.4, width: 8.0, height: 0.2}
+    - {type: box, name: divider, x: 4.0, y: 3.6, width: 0.3, height: 2.4}
+    - {type: circle, name: pillar, x: 6.2, y: 1.6, radius: 0.35}
+  objects:
+    - {name: cup_1, class_id: cup, x: 2.2, y: 1.2, radius: 0.06}
+    - {name: bottle_1, class_id: bottle, x: 3.4, y: 2.2, radius: 0.08}
+
+goals:
+  - {x: 2.0, y: 2.4, tolerance: 0.3, label: near_cup}
+  - {x: 5.0, y: 1.4, tolerance: 0.3, label: across_pillar}
+
+expect:
+  max_collisions: 0
+  min_goals_reached: 2
+  max_elapsed_sec: 60
+
+injections: []

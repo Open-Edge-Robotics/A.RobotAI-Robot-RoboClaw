@@ -19,6 +19,7 @@ RoboClaw는 ROS 2 기반 로봇 에이전트 런타임입니다.
 | `robo_claw_discovery` | ROS 그래프 및 peer 탐색                    | Python       |
 | `robo_claw_grpc`      | 외부 시스템용 RosGrpc 서비스               | Python       |
 | `robo_claw_bringup`   | launch/config 및 통합 실행                 | Python/ROS 2 |
+| `robo_claw_sim`       | 전용 시뮬레이터(세계 모델·센서·시나리오 QA) | Python       |
 | `robo_claw_vision`    | 실시간 객체 인식                           | C++          |
 | `robo_claw_cli`       | 설정 동기화·시나리오 QA CLI(`rclaw`, Go)   | Go           |
 

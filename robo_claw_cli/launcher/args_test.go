@@ -466,3 +466,121 @@ func TestBuildCommonLaunchArgsGripperCameraTopics(t *testing.T) {
 		}
 	}
 }
+
+// 시뮬레이션 엔진은 배포판에 종속된다. jazzy 에서 launch 기본값(classic)이
+// 적용되면 gazebo_ros 부재로 기동이 실패하므로, 인자 생성 단계에서 결정되어야 한다.
+func TestBuildSimArgsSimEngineFollowsDistro(t *testing.T) {
+	cases := []struct {
+		distro string
+		want   string
+	}{
+		{"jazzy", "sim_engine:=gz"},
+		{"humble", "sim_engine:=classic"},
+	}
+	for _, tc := range cases {
+		lctx := baseCtx(map[string]string{})
+		lctx.RosDistro = tc.distro
+		joined := strings.Join(BuildSimArgs(lctx), " ")
+		if !strings.Contains(joined, tc.want) {
+			t.Fatalf("%s 배포판에서 %q 가 필요합니다. 실제: %s", tc.distro, tc.want, joined)
+		}
+	}
+}
+
+// RosDistro 가 비어 있으면 환경변수/설치 경로로 배포판을 감지해 엔진을 정한다.
+func TestBuildSimArgsFallsBackToDetectedDistro(t *testing.T) {
+	t.Setenv("ROS_DISTRO", "jazzy")
+	lctx := baseCtx(map[string]string{})
+	lctx.RosDistro = ""
+
+	joined := strings.Join(BuildSimArgs(lctx), " ")
+	if !strings.Contains(joined, "sim_engine:=gz") {
+		t.Fatalf("ROS_DISTRO=jazzy 인데 gz 엔진이 선택되지 않았습니다. 실제: %s", joined)
+	}
+}
+
+func TestDetectRosDistroPrefersEnvironment(t *testing.T) {
+	t.Setenv("ROS_DISTRO", "humble")
+	if got := DetectRosDistro(); got != "humble" {
+		t.Fatalf("환경변수 우선 실패: %s", got)
+	}
+}
+
+func TestSimEngineForDistro(t *testing.T) {
+	if got := SimEngineForDistro("jazzy"); got != "gz" {
+		t.Fatalf("jazzy -> gz 기대, 실제 %s", got)
+	}
+	if got := SimEngineForDistro("humble"); got != "classic" {
+		t.Fatalf("humble -> classic 기대, 실제 %s", got)
+	}
+}
+
+// --engine 으로 전용 시뮬레이터(stub)를 선택하면 Gazebo 인자 없이 실행되어야 한다.
+func TestBuildSimArgsExplicitStubEngine(t *testing.T) {
+	lctx := baseCtx(map[string]string{})
+	lctx.RosDistro = "jazzy"
+	lctx.SimEngine = SimEngineStub
+	lctx.ScenarioFile = "src/robo_claw_sim/scenarios/navigate_basic.yaml"
+
+	joined := strings.Join(BuildSimArgs(lctx), " ")
+
+	if !strings.Contains(joined, "sim_engine:=stub") {
+		t.Fatalf("stub 엔진이 선택되지 않았습니다: %s", joined)
+	}
+	if !strings.Contains(joined, "scenario_file:=src/robo_claw_sim/scenarios/navigate_basic.yaml") {
+		t.Fatalf("시나리오 인자가 전달되지 않았습니다: %s", joined)
+	}
+}
+
+// --engine 을 주지 않으면 배포판 기본 엔진(Gazebo)을 유지한다(기존 동작 보존).
+func TestBuildSimArgsAutoEngineKeepsDistroDefault(t *testing.T) {
+	lctx := baseCtx(map[string]string{})
+	lctx.RosDistro = "jazzy"
+	lctx.SimEngine = SimEngineAuto
+
+	joined := strings.Join(BuildSimArgs(lctx), " ")
+	if !strings.Contains(joined, "sim_engine:=gz") {
+		t.Fatalf("auto 는 배포판 기본값(gz)이어야 합니다: %s", joined)
+	}
+	if strings.Contains(joined, "scenario_file:=") {
+		t.Fatalf("시나리오 미지정 시 인자를 만들면 안 됩니다: %s", joined)
+	}
+}
+
+func TestNormalizeSimEngine(t *testing.T) {
+	cases := map[string]string{
+		"":         SimEngineAuto,
+		"auto":     SimEngineAuto,
+		"stub":     SimEngineStub,
+		"STUB":     SimEngineStub,
+		" gz ":     SimEngineGz,
+		"classic":  SimEngineClassic,
+		"gazebo":   SimEngineClassic,
+		"harmonic": SimEngineGz,
+	}
+	for input, want := range cases {
+		got, err := NormalizeSimEngine(input)
+		if err != nil {
+			t.Fatalf("%q 정규화 실패: %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("%q -> %q 기대, 실제 %q", input, want, got)
+		}
+	}
+
+	if _, err := NormalizeSimEngine("mujoco"); err == nil {
+		t.Fatal("지원하지 않는 엔진은 오류여야 합니다")
+	}
+}
+
+func TestResolveSimEngine(t *testing.T) {
+	if got := ResolveSimEngine("stub", "jazzy"); got != SimEngineStub {
+		t.Fatalf("명시값 우선 실패: %s", got)
+	}
+	if got := ResolveSimEngine("", "humble"); got != SimEngineClassic {
+		t.Fatalf("humble 기본값은 classic 이어야 합니다: %s", got)
+	}
+	if got := ResolveSimEngine("알수없음", "jazzy"); got != SimEngineGz {
+		t.Fatalf("잘못된 값은 배포판 기본값으로 되돌아야 합니다: %s", got)
+	}
+}

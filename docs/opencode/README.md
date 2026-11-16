@@ -16,6 +16,7 @@
 | `robo_claw_vision` | ONNX 객체 탐지 결과를 발행합니다. |
 | `robo_claw_dashboard` | 상태·지도·설정·로그 조회와 시나리오 실행 UI를 제공합니다. |
 | `robo_claw_bringup` | 로봇 YAML·launch 인자·선택적 노드를 조립합니다. |
+| `robo_claw_sim` | Gazebo 없이 센서·액션을 폐루프로 재현하는 전용 시뮬레이터입니다. |
 | `robo_claw_cli` | Go CLI `rclaw`의 설정 동기화·실행·진단·QA를 구현합니다. |
 
 모든 로봇 명령이 C++ core를 통과하는 것은 아닙니다. 주행 스킬은 Nav2 action을,

@@ -272,6 +272,14 @@ func applySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string 
 		"PYTHONWARNINGS=ignore:setup.py install is deprecated",
 	)
 
+	// stub 엔진은 Gazebo 를 쓰지 않으므로 Gazebo 전용 환경변수를 주입하지 않는다.
+	// (존재하지 않는 모델 경로나 소프트웨어 렌더링 설정은 혼동만 만든다)
+	if ResolveSimEngine(lctx.SimEngine, lctx.RosDistro) == SimEngineStub {
+		logging.Debug("stub 시뮬레이터: Gazebo 환경변수 주입 생략")
+		rich.Println("[green]✔[/green] 전용 시뮬레이터(stub) 환경으로 기동합니다 (Gazebo 불필요)")
+		return env
+	}
+
 	if lctx.RosDistro == "jazzy" {
 		env = applyJazzySimEnv(ctx, lctx.ProjectRoot, env)
 	} else {
@@ -285,20 +293,22 @@ func applySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string 
 
 // applyJazzySimEnv Jazzy(Harmonic/Gazebo) 시뮬레이션 환경변수를 추가합니다.
 func applyJazzySimEnv(ctx *wcli.Context, projectRoot string, env []string) []string {
-	gzModelPath := filepath.Join(projectRoot, "install", "robo_claw_bringup", "share", "robo_claw_bringup", "models")
+	// 이 저장소는 Gazebo 모델/world 자산을 포함하지 않는다. 사용자가 지정한 리소스
+	// 경로가 있을 때만 그대로 전달하고, 빈 항목(=CWD)이 섞이지 않도록 join 한다.
 	if cur := os.Getenv("GZ_SIM_RESOURCE_PATH"); cur != "" {
-		env = append(env, fmt.Sprintf("GZ_SIM_RESOURCE_PATH=%s:%s", cur, gzModelPath))
-	} else {
-		env = append(env, fmt.Sprintf("GZ_SIM_RESOURCE_PATH=%s", gzModelPath))
+		env = append(env, fmt.Sprintf("GZ_SIM_RESOURCE_PATH=%s", cur))
 	}
 	env = append(env, "QT_QPA_PLATFORM=xcb", "GZ_RENDERING_BACKEND=ogre2")
 
-	// GUI 캐시 정리
-	homeDir, _ := os.UserHomeDir()
-	gzCacheDir := filepath.Join(homeDir, ".gz", "sim")
-	_ = os.RemoveAll(gzCacheDir)
-	logging.Debug("Gazebo GUI 캐시 정리 완료: %s", gzCacheDir)
-	rich.Println("[cyan]ℹ[/cyan] Gazebo GUI 캐시 정리 완료 (%s)", gzCacheDir)
+	// Gazebo GUI 설정 캐시는 기본적으로 지우지 않는다(사용자 GUI 설정 보존).
+	// 충돌이 의심될 때만 RC_SIM_RESET_GZ_CACHE=1 로 초기화한다.
+	if isHostEnvTrue("RC_SIM_RESET_GZ_CACHE") {
+		homeDir, _ := os.UserHomeDir()
+		gzCacheDir := filepath.Join(homeDir, ".gz", "sim")
+		_ = os.RemoveAll(gzCacheDir)
+		logging.Debug("Gazebo GUI 캐시 정리 완료: %s", gzCacheDir)
+		rich.Println("[cyan]ℹ[/cyan] Gazebo GUI 캐시 정리 완료 (%s)", gzCacheDir)
+	}
 
 	return env
 }

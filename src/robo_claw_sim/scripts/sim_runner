@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""시나리오 실행 진입점.
+
+사용 예:
+    ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml --output /tmp/out.json
+"""
+
+import sys
+
+from robo_claw_sim.runner import main
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

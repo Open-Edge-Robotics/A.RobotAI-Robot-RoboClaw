@@ -32,6 +32,7 @@ OpenClaw(Node.js AI 비서 플랫폼)의 ROS2 네이티브 버전.
 | `robo_claw_grpc`      | **Python** | `robo_mcp` 등 외부 시스템 연동용 `RosGrpc` 서비스(로봇 상태/내비게이션/매니퓰레이션/카메라/스킬 실행/태스크 실행 등). `robo_claw_channel`의 메신저 gRPC와는 별개 |
 | `robo_claw_bringup`   | Python     | 전체 시스템 및 시뮬레이션 통합 런처                                                                                                                              |
 | `robo_claw_vision`    | **C++**    | ONNX Runtime + YOLOv8 실시간 객체 인식, Detection2DArray 발행                                                                                                    |
+| `robo_claw_sim`       | **Python** | Gazebo 없는 전용 시뮬레이터 — 운동학 세계, 센서 합성, 시나리오 판정 |
 | `robo_claw_dashboard` | **Python** | 웹 대시보드 노드 — 상태·지도·로그·협동 타임라인 조회와 메시지 전송(기본 포트 9090)                                                                                             |
 | `robo_claw_cli`       | **Go**     | `rclaw` CLI — 설정 동기화, `run`/`launch`/`sim`, 진단, 시나리오 QA 자동화                                                                                        |
 
@@ -433,6 +434,7 @@ README는 핵심 개요만 담고 있습니다. 기능별 상세 설정과 레�
 | [docs/SKILLS.md](docs/SKILLS.md)                                             | 전체 스킬 레퍼런스                                                        |
 | [docs/SKILL_MANAGER_AND_TOOLS.md](docs/SKILL_MANAGER_AND_TOOLS.md)           | 아키텍처 Skill Manager(내장 스킬)·Tool(MCP 외부 도구) 구성                |
 | [docs/CONFIGURATION_GUIDE.md](docs/CONFIGURATION_GUIDE.md)                   | 설정 소유권, 실행 방식별 우선순위, AI Config Server profile               |
+| [docs/SIMULATION.md](docs/SIMULATION.md)                                     | Gazebo 없는 전용 시뮬레이터(시나리오·인터페이스·한계)                     |
 | [docs/RAG_AND_LEARNING.md](docs/RAG_AND_LEARNING.md)                         | RAG/Qdrant 설정, 스킬 자가 학습, 탐험 관찰 로깅                           |
 | [docs/ROBOT_CONFIG.md](docs/ROBOT_CONFIG.md)                                 | `ROBOT.md` 개성, `ROBOT_LIMITS.json`, 장애 조치 `TROUBLESHOOTING.md`      |
 | [docs/behavior-tree/README.md](docs/behavior-tree/README.md)                 | BT 엔진 코어, 자율행동/반응형 트리 전체 구조와 노드 카탈로그              |

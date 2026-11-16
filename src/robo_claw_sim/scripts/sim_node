@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""시뮬레이터 노드 실행 진입점 (ros2 run robo_claw_sim sim_node)."""
+
+from robo_claw_sim.nodes.sim_node import main
+
+if __name__ == "__main__":
+    main()

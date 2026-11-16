@@ -154,11 +154,16 @@ type LaunchFlags struct {
 	World      string
 	RobotModel string
 	MapFile    string
-	ImageName  string // (Docker) 사용할 이미지명. 비면 기본값(robo-claw).
-	ImageTag   string // (Docker) 사용할 이미지 태그. 비면 "latest".
-	Pull       bool   // (Docker) 실행 직전 docker pull 수행 여부.
-	ForceGrpc  bool   // gRPC 서버 노드(use_grpc) 강제 활성화. robo_claw_cli test 연동에 필요.
-	MockRobot  bool   // 로봇 노드를 끄고 로봇 스킬을 표시된 가짜 성공으로 반환합니다.
+	// SimEngine 시뮬레이션 엔진 선택: auto(기본) | stub | gz | classic.
+	// 비어 있으면 auto 로 해석되어 배포판에 맞는 Gazebo 엔진이 선택된다.
+	SimEngine string
+	// ScenarioFile stub 엔진이 사용할 시나리오 YAML 경로.
+	ScenarioFile string
+	ImageName    string // (Docker) 사용할 이미지명. 비면 기본값(robo-claw).
+	ImageTag     string // (Docker) 사용할 이미지 태그. 비면 "latest".
+	Pull         bool   // (Docker) 실행 직전 docker pull 수행 여부.
+	ForceGrpc    bool   // gRPC 서버 노드(use_grpc) 강제 활성화. robo_claw_cli test 연동에 필요.
+	MockRobot    bool   // 로봇 노드를 끄고 로봇 스킬을 표시된 가짜 성공으로 반환합니다.
 }
 
 // ConfigSourceRemote 설정을 원격 서버에서 방금 동기화했음을 나타냅니다.

@@ -189,6 +189,20 @@ tasks:
     cmds:
       - ./scripts/preflight_test_env.sh
 
+  sim-check:
+    desc: 시뮬레이션 의존성 점검 (distro별 Gazebo 패키지 / Gazebo 없는 stub)
+    cmds:
+      - ./scripts/check_sim_deps.sh {{.CLI_ARGS}}
+
+  sim-test:
+    desc: Gazebo 없는 전용 시뮬레이터로 시나리오 검증 (기본 navigate_basic)
+    vars:
+      SCENARIO: '{{default "src/robo_claw_sim/scenarios/navigate_basic.yaml" .CLI_ARGS}}'
+    cmds:
+      - |
+        ./scripts/run_in_ros_env.sh --ws env ros2 run robo_claw_sim sim_runner \
+          {{.SCENARIO}}
+
   verify:
     desc: 커밋/CI 단일 검증 게이트 (lint → contract-check → unit-test)
     cmds:
@@ -216,6 +230,7 @@ tasks:
           src/robo_claw_grpc/tests/ \
           src/robo_claw_dashboard/tests/ \
           src/robo_claw_bringup/tests/ \
+          src/robo_claw_sim/tests/ \
           -m "not ros2 and not hardware" \
           -v --tb=short {{.CLI_ARGS}}
 
@@ -245,6 +260,7 @@ tasks:
           src/robo_claw_grpc/tests/ \
           src/robo_claw_dashboard/tests/ \
           src/robo_claw_bringup/tests/ \
+          src/robo_claw_sim/tests/ \
           -v --tb=short
         echo "Running colcon test..."
         ./scripts/run_in_ros_env.sh --ws colcon test-result --delete-yes >/dev/null 2>&1 || true
@@ -261,6 +277,7 @@ tasks:
           robo_claw_grpc \
           robo_claw_dashboard \
           robo_claw_vision \
+          robo_claw_sim \
           {{.CLI_ARGS}}
         ./scripts/run_in_ros_env.sh --ws colcon test-result --verbose
 

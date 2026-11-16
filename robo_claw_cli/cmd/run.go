@@ -161,6 +161,17 @@ func BuildRunLaunchArgs(envMap map[string]string, llmProvider, llmModel, channel
 	return args
 }
 
+// hasLaunchArg 사용자가 이미 전달한 런치 인자(예: sim_engine)가 있는지 확인합니다.
+func hasLaunchArg(args []string, name string) bool {
+	prefix := name + ":="
+	for _, arg := range args {
+		if strings.HasPrefix(arg, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func getEnvOrDefault(envMap map[string]string, key, fallback string) string {
 	if v, ok := envMap[key]; ok && strings.TrimSpace(v) != "" {
 		return strings.TrimSpace(v)
@@ -277,12 +288,21 @@ func SimCmd() *wcli.Command {
 	var world string
 	var model string
 	var mapFile string
+	var engine string
+	var scenarioFile string
 
 	cmd := &wcli.Command{
 		Use:   "sim [llm] [model] [channel]",
 		Short: "로컬 환경(.env)을 기반으로 시뮬레이션 환경을 기동합니다.",
 		Run: func(ctx *wcli.Context) error {
 			projectRoot := launcher.GetProjectRoot()
+			resolvedEngine, err := launcher.NormalizeSimEngine(engine)
+			if err != nil {
+				return err
+			}
+			if scenarioFile != "" && !launcher.PathExists(scenarioFile) {
+				return fmt.Errorf("시나리오 파일을 찾을 수 없습니다: %s", scenarioFile)
+			}
 			envFile := filepath.Join(projectRoot, ".env")
 			_, envMap, _ := launcher.ParseEnvFile(envFile)
 			if envMap == nil {
@@ -301,6 +321,18 @@ func SimCmd() *wcli.Command {
 
 			if nav2 {
 				extraArgs = append(extraArgs, "use_nav2:=true")
+			}
+			// 시뮬레이션 엔진은 배포판에 종속된다. 지정하지 않으면 launch 기본값(classic)이
+			// 적용되어 jazzy 전용 호스트에서 gazebo_ros 부재로 즉시 실패한다.
+			if !hasLaunchArg(extraArgs, "sim_engine") {
+				simEngine := resolvedEngine
+				if simEngine == launcher.SimEngineAuto {
+					simEngine = launcher.SimEngineForDistro(launcher.DetectRosDistro())
+				}
+				extraArgs = append(extraArgs, fmt.Sprintf("sim_engine:=%s", simEngine))
+			}
+			if scenarioFile != "" && !hasLaunchArg(extraArgs, "scenario_file") {
+				extraArgs = append(extraArgs, fmt.Sprintf("scenario_file:=%s", scenarioFile))
 			}
 			if slam {
 				extraArgs = append(extraArgs, "use_slam:=true", "use_nav2:=true")
@@ -339,6 +371,10 @@ func SimCmd() *wcli.Command {
 	cmd.Flags().StringVar(&world, "world", "", "", "시뮬레이션 월드 파일명")
 	cmd.Flags().StringVar(&model, "model", "", "", "로봇 모델 지정")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "맵 파일 경로 지정")
+	cmd.Flags().StringVar(&engine, "engine", "", "auto",
+		"시뮬레이션 엔진: auto | stub(Gazebo 불필요) | gz | classic")
+	cmd.Flags().StringVar(&scenarioFile, "scenario", "",
+		"", "stub 엔진이 사용할 시나리오 YAML 경로")
 
 	return cmd
 }

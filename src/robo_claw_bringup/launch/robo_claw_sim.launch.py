@@ -72,12 +72,17 @@ def launch_setup(context, *args, **kwargs):
     ollama_options_json = LaunchConfiguration("ollama_options_json").perform(context)
 
     bringup_share = get_package_share_directory("robo_claw_bringup")
+    scenario_file = LaunchConfiguration("scenario_file").perform(context)
 
     # 월드 이름에 따른 맵 파일 자동 설정
     if sim_engine == "gz":
         tb4_nav_share = FindPackageShare("turtlebot4_navigation")
         default_map = PathJoinSubstitution([tb4_nav_share, "maps", world + ".yaml"])
         camera_topic_val = "/oakd/rgb/preview/image_raw"
+    elif sim_engine == "stub":
+        # 무거운 시뮬레이터: 지도/카메라는 robo_claw_sim 노드가 직접 발행한다.
+        default_map = ""
+        camera_topic_val = "/sim/camera/image_raw"
     else:
         tb3_nav_share = FindPackageShare("nav2_bringup")
         default_map = PathJoinSubstitution([tb3_nav_share, "maps", "turtlebot3_world.yaml"])
@@ -88,19 +93,39 @@ def launch_setup(context, *args, **kwargs):
 
     nodes_to_launch = []
 
+    if sim_engine == "stub":
+        # --- Gazebo 없는 기본 시뮬레이터 ---
+        # 운동학 세계 + 센서 합성 + NavigateToPose/Spin/FollowWaypoints 액션 서버를
+        # 한 노드에서 제공한다. GPU/distro별 Gazebo 자산이 필요 없다.
+        sim_parameters = {
+            "scenario_file": scenario_file,
+            "use_sim_time": False,
+            "serve_navigation": True,
+            "update_rate_hz": LaunchConfiguration("sim_update_rate_hz"),
+        }
+        nodes_to_launch.append(
+            Node(
+                package="robo_claw_sim",
+                executable="sim_node",
+                name="robo_claw_sim_node",
+                output="screen",
+                parameters=[sim_parameters],
+            )
+        )
+
     if sim_engine == "gz":
         # --- Jazzy (Turtlebot4 + Gazebo Harmonic) ---
         tb4_gz_share = FindPackageShare("turtlebot4_gz_bringup")
         is_nav2 = use_nav2.perform(context).lower() == "true"
         is_slam = use_slam.perform(context).lower() == "true"
-        localization = "true" if (is_nav2 and not is_slam) else "false"
         final_map = map_file.perform(context)
         if not final_map:
             final_map = default_map.perform(context)
 
-        # TurtleBot4 Gazebo는 /cmd_vel에 TwistStamped를 사용한다.
-        custom_nav2_params = PathJoinSubstitution([bringup_share, "config", "nav2_params_gz.yaml"])
-
+        # turtlebot4_gz.launch.py 가 선언한 인자는 namespace/rviz/world/model/pose 뿐이다.
+        # nav2/slam/localization/map/params_file 을 여기에 넘기면 미선언 인자로
+        # 조용히 무시되어 시뮬레이터만 뜨고 내비게이션 스택이 사라진다.
+        # 내비게이션 계층은 turtlebot4_navigation 런치를 직접 include 한다.
         nodes_to_launch.append(
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
@@ -109,17 +134,55 @@ def launch_setup(context, *args, **kwargs):
                 launch_arguments={
                     "model": robot_model,
                     "world": world,
-                    "nav2": "true" if is_nav2 else "false",
-                    "slam": "true" if is_slam else "false",
-                    "localization": localization,
-                    "map": final_map,
                     "rviz": "true" if is_nav2 else "false",
-                    "params_file": custom_nav2_params,  # 커스텀 파라미터 적용
                 }.items(),
             )
         )
-    else:
+
+        # 지도 기반 위치추정(AMCL + map_server)은 SLAM 사용 시 비활성화한다.
+        if is_nav2 and not is_slam:
+            nodes_to_launch.append(
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        PathJoinSubstitution([tb4_nav_share, "launch", "localization.launch.py"])
+                    ),
+                    launch_arguments={
+                        "use_sim_time": use_sim_time,
+                        "map": final_map,
+                    }.items(),
+                )
+            )
+
+        if is_slam:
+            nodes_to_launch.append(
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        PathJoinSubstitution([tb4_nav_share, "launch", "slam.launch.py"])
+                    ),
+                    launch_arguments={"use_sim_time": use_sim_time}.items(),
+                )
+            )
+
+        if is_nav2:
+            # TurtleBot4 Gazebo는 /cmd_vel에 TwistStamped를 사용한다.
+            custom_nav2_params = PathJoinSubstitution(
+                [bringup_share, "config", "nav2_params_gz.yaml"]
+            )
+            nodes_to_launch.append(
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        PathJoinSubstitution([tb4_nav_share, "launch", "nav2.launch.py"])
+                    ),
+                    launch_arguments={
+                        "use_sim_time": use_sim_time,
+                        "params_file": custom_nav2_params,
+                    }.items(),
+                )
+            )
+    elif sim_engine == "classic":
         # --- Humble (Turtlebot3 + Gazebo Classic) ---
+        # bare `else` 로 두면 sim_engine:=stub 에서도 turtlebot3_gazebo/gazebo_ros 를
+        # 찾다가 런치 전체가 예외로 종료된다. 엔진별 분기는 항상 명시적으로 비교한다.
         tb3_gazebo_share = FindPackageShare("turtlebot3_gazebo")
         actual_world = world if world != "warehouse" else "turtlebot3_world"
         world_path = PathJoinSubstitution([tb3_gazebo_share, "worlds", actual_world + ".world"])
@@ -219,12 +282,17 @@ def launch_setup(context, *args, **kwargs):
     # robo_claw.launch.py를 인클루드하여 구동
     robo_claw_launch_file = PathJoinSubstitution([bringup_share, "launch", "robo_claw.launch.py"])
 
+    # stub 엔진의 sim_node 는 실시간(20Hz)으로 동작하고 /clock 을 발행하지 않는다.
+    # 이때 하위 스택에 use_sim_time:=true 를 넘기면 ROS 타이머가 전진하지 않아
+    # heartbeat 가 30초 뒤 watchdog 에 의해 노드가 종료된다.
+    stack_use_sim_time = "false" if sim_engine == "stub" else use_sim_time.perform(context)
+
     nodes_to_launch.append(
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(robo_claw_launch_file),
             launch_arguments={
-                "use_sim_time": use_sim_time,
-                "run_core": "false",  # 시뮬레이션 환경에서는 core_node를 비활성화 (기존 sim launch 구조 유지)
+                "use_sim_time": stack_use_sim_time,
+                "run_core": LaunchConfiguration("run_core"),
                 "llm_provider": llm_provider,
                 "llm_model": llm_model,
                 "llm_tool_calling": LaunchConfiguration("llm_tool_calling"),
@@ -363,6 +431,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("robot_model", default_value="standard"),
             DeclareLaunchArgument("world", default_value="warehouse"),
             DeclareLaunchArgument("sim_engine", default_value="classic"),
+            DeclareLaunchArgument(
+                "scenario_file",
+                default_value="",
+                description="sim_engine:=stub 에서 사용할 시나리오 YAML 경로",
+            ),
+            DeclareLaunchArgument("sim_update_rate_hz", default_value="20.0"),
             DeclareLaunchArgument("use_nav2", default_value="false"),
             DeclareLaunchArgument("use_slam", default_value="false"),
             DeclareLaunchArgument("map", default_value=""),
@@ -372,6 +446,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("discovery_log_interval_sec", default_value="600.0"),
             DeclareLaunchArgument("memory_path", default_value=""),
             DeclareLaunchArgument("rag_local_mirror", default_value=""),
+            DeclareLaunchArgument(
+                "robot_description_file",
+                default_value="",
+                description="URDF 파일 경로. 비우면 robot_config 설정의 robot_description_file을 사용",
+            ),
             DeclareLaunchArgument("use_vision", default_value="true"),
             DeclareLaunchArgument(
                 "vision_model_path", default_value="/ros2_ws/models/yolov8n.onnx"

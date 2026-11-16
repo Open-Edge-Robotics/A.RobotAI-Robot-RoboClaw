@@ -5,10 +5,10 @@
 _COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${_COMMON_DIR}/.." && pwd)"
 
-# ROS Distro 감지
+# ROS Distro 감지 (scripts/run_in_ros_env.sh, rclaw DetectRosDistro() 와 동일 순서)
 if [[ -z "${ROS_DISTRO:-}" ]]; then
-  [[ -f "/opt/ros/jazzy/setup.bash" ]]  && export ROS_DISTRO="jazzy"
-  [[ -f "/opt/ros/humble/setup.bash" ]] && export ROS_DISTRO="${ROS_DISTRO:-humble}"
+  [[ -f "/opt/ros/humble/setup.bash" ]] && export ROS_DISTRO="humble"
+  [[ -z "${ROS_DISTRO:-}" && -f "/opt/ros/jazzy/setup.bash" ]] && export ROS_DISTRO="jazzy"
 fi
 
 # ROS + workspace 소싱

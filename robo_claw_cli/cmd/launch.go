@@ -21,6 +21,8 @@ func LaunchCmd() *wcli.Command {
 	var world string
 	var robotModel string
 	var mapFile string
+	var engine string
+	var scenarioFile string
 	var imageName string
 	var imageTag string
 	var pull bool
@@ -36,6 +38,16 @@ func LaunchCmd() *wcli.Command {
 			if mockRobot && (docker || sim || nav2 || slam) {
 				return fmt.Errorf("--mock-robot은 로컬 네이티브 실행 전용입니다. --docker/--sim/--nav2/--slam 없이 사용하세요")
 			}
+			resolvedEngine, err := launcher.NormalizeSimEngine(engine)
+			if err != nil {
+				return err
+			}
+			if !sim && (resolvedEngine != launcher.SimEngineAuto || scenarioFile != "") {
+				return fmt.Errorf("--engine/--scenario는 시뮬레이션 모드에서만 사용할 수 있습니다. --sim과 함께 사용하세요")
+			}
+			if scenarioFile != "" && !launcher.PathExists(scenarioFile) {
+				return fmt.Errorf("시나리오 파일을 찾을 수 없습니다: %s", scenarioFile)
+			}
 			args := ctx.Args
 			if len(args) < 2 {
 				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli launch butler office")
@@ -44,19 +56,21 @@ func LaunchCmd() *wcli.Command {
 			logging.Info("robo_claw launch 커맨드를 기동합니다. (로봇: %s, 환경: %s)", args[0], args[1])
 
 			lctx, err := launcher.LoadLaunchContext(ctx, args[0], args[1], launcher.LaunchFlags{
-				Debug:      debug,
-				Sim:        sim,
-				Nav2:       nav2,
-				Slam:       slam,
-				Docker:     docker,
-				World:      world,
-				RobotModel: robotModel,
-				MapFile:    mapFile,
-				ImageName:  imageName,
-				ImageTag:   imageTag,
-				Pull:       pull,
-				ForceGrpc:  useGrpc,
-				MockRobot:  mockRobot,
+				Debug:        debug,
+				Sim:          sim,
+				Nav2:         nav2,
+				Slam:         slam,
+				Docker:       docker,
+				World:        world,
+				RobotModel:   robotModel,
+				MapFile:      mapFile,
+				SimEngine:    resolvedEngine,
+				ScenarioFile: scenarioFile,
+				ImageName:    imageName,
+				ImageTag:     imageTag,
+				Pull:         pull,
+				ForceGrpc:    useGrpc,
+				MockRobot:    mockRobot,
 			}, fetchConfig)
 			if err != nil {
 				logging.Error("launch 환경 구성 실패: %v", err)
@@ -95,6 +109,8 @@ func LaunchCmd() *wcli.Command {
 	cmd.Flags().StringVar(&world, "world", "", "", "(Sim) 로드할 시뮬레이션 월드 파일명")
 	cmd.Flags().StringVar(&robotModel, "model", "", "", "(Sim) 사용할 로봇 모델 (예: waffle)")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "(Sim) 사용할 맵(.yaml) 파일 경로")
+	cmd.Flags().StringVar(&engine, "engine", "", "auto", "(Sim) 시뮬레이션 엔진: auto | stub(Gazebo 불필요) | gz | classic")
+	cmd.Flags().StringVar(&scenarioFile, "scenario", "", "", "(Sim) stub 엔진이 사용할 시나리오 YAML 경로")
 	cmd.Flags().StringVar(&imageName, "image", "", "lgecloudroboticstask/robo-claw", "(Docker) 사용할 컨테이너 이미지명 (예: myrepo/robo-claw)")
 	cmd.Flags().StringVar(&imageTag, "image-tag", "", "latest", "(Docker) 사용할 컨테이너 이미지 태그")
 	cmd.Flags().BoolVar(&pull, "pull", "", false, "(Docker) 실행 직전 이미지를 레지스트리에서 pull")

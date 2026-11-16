@@ -12,6 +12,7 @@
     <exec_depend>robo_claw_core</exec_depend>
     <exec_depend>robo_claw_agent</exec_depend>
     <exec_depend>robo_claw_discovery</exec_depend>
+    <exec_depend>robo_claw_sim</exec_depend>
     <exec_depend>topic_tools</exec_depend>
 
     <test_depend>ament_lint_auto</test_depend>

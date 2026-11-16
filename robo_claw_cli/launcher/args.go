@@ -333,16 +333,26 @@ func resolveVisionModelPath(lctx *LaunchContext, requested string) string {
 }
 
 // BuildSimArgs 시뮬레이션 모드 전용 런치 아규먼트를 빌드합니다.
+//
+// 엔진 선택 우선순위: `--engine` 명시값 -> 배포판 기본값(jazzy=gz, 그 외 classic).
+// `--engine stub` 은 Gazebo 없이 도는 전용 시뮬레이터(robo_claw_sim)를 사용한다.
 func BuildSimArgs(lctx *LaunchContext) []string {
 	var args []string
 
-	simEngine := "classic"
-	if lctx.RosDistro == "jazzy" {
-		simEngine = "gz"
+	distro := lctx.RosDistro
+	if distro == "" {
+		distro = DetectRosDistro()
 	}
-	args = append(args, fmt.Sprintf("sim_engine:=%s", simEngine))
+	engine := ResolveSimEngine(lctx.SimEngine, distro)
+	args = append(args, fmt.Sprintf("sim_engine:=%s", engine))
+
+	// 시나리오는 stub 엔진에서만 의미가 있다(월드·객체·기대치·실패 주입 정의).
+	if lctx.ScenarioFile != "" {
+		args = append(args, fmt.Sprintf("scenario_file:=%s", lctx.ScenarioFile))
+	}
 
 	// Slam이 Nav2보다 우선: Slam 활성화 시 Nav2도 함께 활성화됩니다.
+	// stub 엔진은 자체 내비게이션 액션 서버를 기본 제공하므로 이 인자는 무시된다.
 	if lctx.Slam {
 		args = append(args, "use_slam:=true", "use_nav2:=true")
 	} else if lctx.Nav2 {
