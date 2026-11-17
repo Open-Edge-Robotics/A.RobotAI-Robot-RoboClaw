@@ -114,7 +114,7 @@ def test_stub_engine_starts_robo_claw_sim_node() -> None:
 def test_launch_file_drops_gazebo_classic_assets() -> None:
     """Humble/Gazebo Classic 지원이 남아 있으면 안 된다.
 
-    ``sim_engine:=classic`` 분기가 다시 살아나면 jazzy 호스트에서 ``gazebo_ros``
+    Gazebo 분기(``sim_engine:=gz``)가 다시 살아나면 ``ros_gz_sim``/``gazebo_ros``
     부재로 런치가 즉시 예외로 종료되고, ``stub`` 엔진에서도 classic 자산을 찾다가
     같은 실패가 난다. Gazebo 자산은 Harmonic(``ros_gz_sim``)만 참조한다.
     """
@@ -151,12 +151,12 @@ def test_sim_engine_default_is_stub() -> None:
 
 @pytest.mark.ros2
 def test_removed_classic_engine_is_rejected() -> None:
-    """제거된 ``sim_engine:=classic`` 은 조용히 진행하지 않고 즉시 실패해야 한다."""
+    """제거된 Gazebo 엔진은 조용히 진행하지 않고 즉시 실패해야 한다."""
     module = _load_launch_module()
     description = module.generate_launch_description()
-    context = _build_context(description, {"sim_engine": "classic"})
+    context = _build_context(description, {"sim_engine": "gz"})
 
-    with pytest.raises(RuntimeError, match="classic"):
+    with pytest.raises(RuntimeError, match="gz"):
         module.launch_setup(context)
 
 

@@ -26,8 +26,8 @@ T2는 같은 세계 모델에 실제 Nav2를 붙여 사용합니다.
 
 ```bash
 # 의존성 점검 (Gazebo 패키지 / Gazebo 없는 stub)
-task sim-check
-./scripts/check_sim_deps.sh --engine stub
+task sim-check   # Gazebo 대신 nav2_msgs/vision_msgs/tf2_ros/robo_claw_sim 점검
+./scripts/check_sim_deps.sh
 
 # 시나리오 회귀 (기본: scenarios/navigate_basic.yaml)
 task sim-test

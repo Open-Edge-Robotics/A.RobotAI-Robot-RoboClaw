@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 시뮬레이션 변경에 따른 기존 스크립트·런치 정합성 점검
+
+- **Fixed**: `docs/SIMULATION.md` 의 `check_sim_deps.sh --engine stub` 안내를 제거했습니다(스크립트가 더 이상 `--engine` 을 받지 않음). `task sim-check` 설명도 Gazebo 대신 `nav2_msgs`·`vision_msgs`·`tf2_ros`·`robo_claw_sim` 점검으로 수정했습니다.
+- **Changed**: `robo_claw_sim.launch.py` 상단 주석을 Gazebo 경로 제거 기준으로 정리하고, 런치 구조 테스트가 제거된 엔진명(`classic`)이 아니라 실제 거부 대상(`gz`)을 검증하도록 갱신했습니다.
+- **점검 결과**: `sim/run_sim.sh`·`sim/common_env.sh`·`sim/jazzy`·`sim/humble`·`sim_engine:=gz` 참조는 저장소 전체에 남아 있지 않습니다. `scripts/`(preflight·docker·contract)·`Taskfile`·`validation/`·`robo_claw_cli/README.md` 에도 변경이 필요한 참조가 없음을 확인했습니다.
+- **검증**: `uv run pytest src/robo_claw_bringup/tests` 113 passed, `ruff` 통과.
+
 ## 2026-11-17 — rclaw 시뮬레이션 시각화 플래그
 
 - **Added**: `rclaw sim` 에 `--sim-backend kinematic|mujoco`, `--viz`, `--viewer` 플래그를 추가했습니다. 각각 `sim_backend`/`sim_viz`/`sim_viewer` 런치 인자로 전달되며, `--viewer` 는 `--sim-backend mujoco` 없이 쓰면 사용 오류로 중단합니다.
