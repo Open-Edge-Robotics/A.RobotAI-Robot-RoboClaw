@@ -187,6 +187,7 @@ Gazebo 시뮬레이션(Harmonic)과 Gazebo 없이 도는 전용 시뮬레이터�
 
 - **Jazzy**: Gazebo Harmonic (Turtlebot4 기반) — Gazebo 시뮬레이션은 Jazzy만 지원합니다.
 - **Gazebo 없는 검증**: 전용 `robo_claw_sim` (`--engine stub`)
+- **시뮬레이터 백엔드**: `kinematic`(기본, 외부 의존성 없음) · `mujoco`(선택, `uv sync --extra sim-mujoco`)
 
 Humble(Gazebo Classic, Turtlebot3 기반) 시뮬레이션 지원은 제거되었습니다.
 
@@ -295,9 +296,9 @@ YOLOv8 ONNX 모델을 이용해 카메라 이미지에서 COCO 80종 물체를 �
 ### 모델 다운로드
 
 ```bash
-./download_model.sh        # yolov8n (기본, ~6MB, 가장 빠름)
-./download_model.sh s      # yolov8s (~22MB)
-./download_model.sh m      # yolov8m (~52MB)
+./scripts/download_model.sh        # yolov8n (기본, ~6MB, 가장 빠름)
+./scripts/download_model.sh s      # yolov8s (~22MB)
+./scripts/download_model.sh m      # yolov8m (~52MB)
 ```
 
 ### 비전 노드 활성화

@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 전용 시뮬레이터에 MuJoCo 백엔드 추가(Phase 0)
+
+- **Added**: `robo_claw_sim` 에 교체 가능한 백엔드 계층(`backends/`)을 두고, MuJoCo 물리 백엔드를 추가합니다. 시나리오 YAML·판정·ROS 인터페이스는 두 백엔드가 공유하므로 같은 시나리오를 양쪽에서 돌려 비교할 수 있습니다. 기본값은 기존과 동일한 `kinematic`(외부 의존성 없음)이고 `mujoco` 는 선택입니다.
+- **Added**: MuJoCo 세계는 시나리오에서 매 실행 MJCF 로 생성합니다(`backends/scene.py`). 별도 자산을 저장소에 두지 않아, 로봇/장애물 배치가 시나리오 파일 하나로 유지됩니다. 로봇은 free joint + 원기둥 베이스로 모델링하고 `cmd_vel` 을 물리 스텝마다 자유 관절 속도로 주입합니다(바퀴 마찰·서스펜션 튜닝 없이 재현성 유지). 접촉은 벽·장애물로 한정하고, 충돌 시 운동학 백엔드와 같은 규칙(카운트 후 남은 이동 폐기)을 씁니다. LaserScan 은 `mj_ray` 로 합성하며 로봇 body 는 광선에서 제외합니다.
+- **Added**: `sim_runner --backend kinematic|mujoco`, launch 인자 `sim_backend`(기본 `kinematic`), `task sim-test-mujoco`, `task sim-compare`, `scripts/compare_sim_backends.sh`. `mujoco` 미설치 시 조용히 대체하지 않고 설치 명령과 함께 실패합니다.
+- **Added**: 시나리오 `navigate_two_rooms.yaml`(벽+문 구조, 두 goal).
+- **Added**: `mujoco >=3.2,<4` 를 optional extra `sim-mujoco` 로 선언하고 pytest 마커 `mujoco` 를 등록했습니다. 테스트 20건(장면 생성 6, 백엔드 계약 7, MuJoCo 백엔드 7)을 추가했습니다.
+- **검증**: `task sim-compare` 로 두 백엔드 판정을 비교했습니다. `navigate_basic` kinematic 4.482m / mujoco 4.457m(11.8s / 13.4s), `navigate_two_rooms` 6.661m / 6.661m(15.4s / 17.3s)로 모두 통과했고 goal 은 2/2, 충돌 0으로 같았습니다. `uv run pytest src/robo_claw_sim/tests` 66 passed. Gazebo/Humble 경로는 변경하지 않았습니다.
+
 ## 2026-11-17 — 보조 스크립트 및 테스트 preflight 정리
 
 - **Removed**: 저장소 내 호출·문서·테스트 참조가 없고, 현재 초기화 도구 외에는 `memory.semantic.json` 사용처가 없는 레거시 `scripts/compact_semantic_memory.py`를 제거합니다.

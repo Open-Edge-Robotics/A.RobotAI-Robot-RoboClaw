@@ -9,6 +9,8 @@ Gazebo 경로(`sim_engine:=gz`, ROS 2 Jazzy 전용)와 전용 시뮬레이터(`s
 | 계층 | 엔진 | 용도 | 필요한 외부 패키지 |
 | --- | --- | --- | --- |
 | T1 전용 시뮬레이터 | `robo_claw_sim` (자체 구현) | 커밋 게이트·시나리오 회귀, 결정론적 판정 | `nav2_msgs`, `vision_msgs`, `tf2_ros` 및 ROS 메시지 패키지 |
+| T1 백엔드 `kinematic` | 2D 운동학 세계 + ray marching | 기본값. 외부 의존성 없음 | 없음 |
+| T1 백엔드 `mujoco` | MuJoCo 물리 + ray casting | 접촉 판정, 후속 파지·카메라 검증 기반 | `mujoco`(선택, `sim-mujoco` extra) |
 | T2 Gazebo Harmonic | `turtlebot4_gz_bringup` | 3D 시각화, Nav2 파라미터 실검증 | `ros_gz_sim`, `turtlebot4_*` |
 
 Gazebo 시뮬레이션은 **ROS 2 Jazzy(Harmonic)** 만 지원합니다. Humble의 Gazebo
@@ -93,6 +95,43 @@ ros2 launch robo_claw_bringup robo_claw_sim.launch.py \
   use_channel:=false
 ```
 
+### 2.2 시뮬레이터 백엔드 (`kinematic` | `mujoco`)
+
+T1 시뮬레이터는 물리/센서 백엔드를 교체할 수 있습니다. 시나리오 YAML·판정·ROS
+인터페이스는 두 백엔드가 동일하므로, 같은 시나리오를 양쪽에서 돌려 결과를 비교할 수
+있습니다.
+
+| 백엔드 | 상태 | 특징 |
+| --- | --- | --- |
+| `kinematic`(기본) | 안정 | 2D 그리드 적분 + ray marching. 외부 의존성 없음 |
+| `mujoco` | 실험적(Phase 0) | MuJoCo 물리. 벽·장애물 접촉과 MuJoCo ray casting 사용 |
+
+```bash
+# 의존성 설치 (선택 extra)
+uv sync --extra sim-mujoco      # 개발 환경
+pip install mujoco              # 이미지/호스트
+
+# 백엔드 선택
+task sim-test-mujoco                                 # 시나리오를 MuJoCo 로 실행
+task sim-compare                                     # 두 백엔드 판정 비교
+ros2 run robo_claw_sim sim_runner --backend mujoco \
+  src/robo_claw_sim/scenarios/navigate_two_rooms.yaml
+./rclaw sim --engine stub sim_backend:=mujoco        # launch 인자로 지정
+```
+
+MuJoCo 백엔드의 설계와 한계는 다음과 같습니다.
+
+- 세계는 시나리오 YAML에서 MJCF로 매 실행 생성합니다(별도 자산 없음,
+  `robo_claw_sim/backends/scene.py`). 두 백엔드가 같은 시나리오를 공유합니다.
+- 로봇은 free joint + 원기둥 베이스이며, `cmd_vel`을 매 물리 스텝의 자유 관절
+  속도로 주입합니다. 바퀴 마찰·서스펜션 파라미터 튜닝 없이도 재현성이 유지되고,
+  접촉은 벽·장애물에서만 발생합니다.
+- 충돌 규칙은 운동학 백엔드와 같습니다. 접촉이 감지되면 충돌 카운트를 올리고 그
+  tick의 남은 이동을 버립니다.
+- LaserScan은 `mj_ray`로 합성하며 로봇 body는 광선 대상에서 제외합니다.
+- 아직 하지 않는 것: 카메라 렌더, 관절/파지 동역학, 물체 질량·마찰. 이들은
+  후속 단계(조작·인지 검증)에서 추가합니다.
+
 ## 3. 시나리오 스키마
 
 ```yaml
@@ -149,7 +188,8 @@ injections:
 ## 5. 한계
 
 - 파지 역학·마찰·접촉력은 재현하지 않습니다. 파지 성공/실패는 시나리오가
-  선언하고 조작 액션 서버가 그대로 반환합니다.
+  선언하고 조작 액션 서버가 그대로 반환합니다. (`mujoco` 백엔드는 접촉 해석 기반을
+  제공하지만, 파지용 관절/그리퍼 모델은 아직 넣지 않았습니다.)
 - 장애물 회피는 제어 법칙 기반이며 Nav2의 costmap/플래너 동작과 같지 않습니다.
   Nav2 파라미터나 BT 동작을 검증하려면 T2를 사용합니다.
 - 카메라 영상·점유 격자 갱신(SLAM)은 제공하지 않습니다.
@@ -159,10 +199,17 @@ injections:
 ## 6. 검증
 
 ```bash
-task sim-test        # 시나리오 회귀 (Gazebo 불필요)
+task sim-test        # 시나리오 회귀 (Gazebo 불필요, kinematic 백엔드)
+task sim-test-mujoco # 같은 시나리오를 MuJoCo 백엔드로 회귀
+task sim-compare     # 두 백엔드의 판정/계측 비교
 task unit-test       # 순수 모듈 단위 테스트 포함
 task test            # ROS 그래프 테스트 + colcon test 포함
 ```
+
+`sim-compare`는 시나리오별로 두 백엔드의 `passed`·도달 goal 수·주행 거리를 나란히
+출력하고, 한쪽이라도 실패하면 exit 1로 끝납니다. 백엔드 동작을 바꿀 때 이 표의
+주행 거리 차이가 커지면 물리 모델이 어긋난 신호로 봅니다(2026-11-17 기준
+`navigate_basic` 4.482m vs 4.457m, `navigate_two_rooms` 6.661m vs 6.661m).
 
 `tests/test_ros_integration.py`는 실제 노드를 띄워 `/scan`·`/joint_states` 발행과
 `NavigateToPose` 목표 도달을 확인합니다. Gazebo나 GPU가 없어도 실행됩니다.

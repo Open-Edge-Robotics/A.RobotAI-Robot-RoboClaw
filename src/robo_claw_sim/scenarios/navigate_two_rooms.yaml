@@ -1,0 +1,26 @@
+name: navigate_two_rooms
+timeout_sec: 90
+# 문이 하나 있는 두 방 구조. 벽/문 형상이 백엔드(운동학 vs MuJoCo)에서 같은
+# LaserScan·판정을 만드는지 확인하는 회귀 시나리오다.
+world:
+  width: 10.0
+  height: 6.0
+  resolution: 0.05
+  robot: {x: 1.2, y: 3.5, yaw: 0.0}
+  robot_radius: 0.22
+  obstacles:
+    # x=5 벽: 아래(y 0~2.9)와 위(y 4.1~6.0)를 막고 y 2.9~4.1 문을 남긴다.
+    - {type: box, name: divider_south, x: 5.0, y: 1.45, width: 0.2, height: 2.9}
+    - {type: box, name: divider_north, x: 5.0, y: 5.05, width: 0.2, height: 1.9}
+    - {type: circle, name: pillar, x: 2.6, y: 1.4, radius: 0.4}
+  objects:
+    - {name: cup_1, class_id: cup, x: 7.4, y: 4.6, radius: 0.06}
+goals:
+  - {x: 4.4, y: 3.5, tolerance: 0.3, yaw: 0.0, label: doorway_approach}
+  - {x: 8.0, y: 4.4, tolerance: 0.35, yaw: 1.57, label: far_room}
+expect:
+  max_collisions: 0
+  min_goals_reached: 2
+  max_elapsed_sec: 90
+  require_no_abort: true
+injections: []

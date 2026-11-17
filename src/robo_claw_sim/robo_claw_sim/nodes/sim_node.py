@@ -28,10 +28,11 @@ from sensor_msgs.msg import BatteryState, Imu, JointState, LaserScan
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
+from ..backends import DEFAULT_BACKEND, build_backend
 from ..motion import MotionArbiter
 from ..nav import ControllerConfig
 from ..perception import CameraConfig, detect
-from ..raycast import ScanConfig, cast_scan, occupancy_values
+from ..raycast import ScanConfig, occupancy_values
 from ..scenario import Scenario, ScenarioError, build_scenario, load_scenario
 from ..world import Pose2D, Twist2D
 
@@ -54,10 +55,10 @@ DEFAULT_SCENARIO: dict = {
 
 
 class SimulationNode(Node):
-    """운동학 세계 + 센서 합성 노드."""
+    """시나리오 세계 + 센서 합성 노드(백엔드 교체 가능)."""
 
-    def __init__(self, scenario: Scenario | None = None) -> None:
-        super().__init__("robo_claw_sim_node")
+    def __init__(self, scenario: Scenario | None = None, cli_args: list[str] | None = None) -> None:
+        super().__init__("robo_claw_sim_node", cli_args=cli_args)
         self._declare_parameters()
         self.scenario = scenario or self._load_scenario()
         self.world = self.scenario.world
@@ -77,6 +78,12 @@ class SimulationNode(Node):
             width=int(self.get_parameter("camera_width").value),
             height=int(self.get_parameter("camera_height").value),
             hfov=float(self.get_parameter("camera_hfov").value),
+        )
+        # 물리/센서 백엔드. 기본값은 외부 의존성이 없는 kinematic 이다.
+        self.backend = build_backend(
+            str(self.get_parameter("backend").value),
+            world=self.world,
+            scan_config=self.scan_config,
         )
         self._frames = {
             "map": self.get_parameter("map_frame").value,
@@ -103,7 +110,7 @@ class SimulationNode(Node):
         rate = float(self.get_parameter("update_rate_hz").value)
         self._timer = self.create_timer(1.0 / max(rate, 1.0), self._tick)
         self.get_logger().info(
-            f"robo_claw_sim 시작: scenario={self.scenario.name} "
+            f"robo_claw_sim 시작: scenario={self.scenario.name} backend={self.backend.name} "
             f"world={self.world.width}x{self.world.height}m "
             f"objects={len(self.world.objects)} rate={rate}Hz"
         )
@@ -112,6 +119,7 @@ class SimulationNode(Node):
     def _declare_parameters(self) -> None:
         defaults = {
             "scenario_file": "",
+            "backend": DEFAULT_BACKEND,
             "update_rate_hz": 20.0,
             "command_timeout_sec": 0.5,
             "controller_max_linear": 0.45,
@@ -210,7 +218,7 @@ class SimulationNode(Node):
         yaw = _yaw_from_quaternion(
             pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w
         )
-        if self.world.teleport(Pose2D(x=pose.position.x, y=pose.position.y, yaw=yaw)):
+        if self.backend.teleport(Pose2D(x=pose.position.x, y=pose.position.y, yaw=yaw)):
             self.get_logger().info(
                 f"초기 위치 설정: ({pose.position.x:.2f}, {pose.position.y:.2f}, {yaw:.2f})"
             )
@@ -230,9 +238,14 @@ class SimulationNode(Node):
 
         now = self._now()
         command = self.arbiter.command(now)
-        self.world.apply_twist(command, dt)
+        self.backend.step(command, dt)
         self._update_battery(dt)
         self.publish_sensors()
+
+    def destroy_backend(self) -> None:
+        """백엔드 자원 정리. 노드 destroy 전에 호출한다."""
+        if getattr(self, "backend", None) is not None:
+            self.backend.close()
 
     def destroy_navigation(self) -> None:
         """액션 서버 정리. 노드 destroy 전에 호출한다."""
@@ -319,7 +332,7 @@ class SimulationNode(Node):
         self.static_tf_broadcaster.sendTransform(transforms)
 
     def _publish_scan(self, stamp) -> None:  # noqa: ANN001
-        ranges = cast_scan(self.world, self.scan_config)
+        ranges = self.backend.scan()
         msg = LaserScan()
         msg.header.stamp = stamp
         msg.header.frame_id = self._frames["scan"]

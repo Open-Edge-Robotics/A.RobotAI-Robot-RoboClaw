@@ -44,7 +44,7 @@ tasks:
       - "src/robo_claw_channel/robo_claw_channel/messenger_pb2_grpc.py"
       - "src/robo_claw_channel/robo_claw_channel/messenger_pb2.pyi"
     cmds:
-      - ./generate_protos.sh
+      - ./scripts/generate_protos.sh
 
   build:
     desc: 전체 워크스페이스 빌드 (proto 컴파일, ROS 패키지 빌드, rclaw 바이너리)
@@ -202,6 +202,20 @@ tasks:
       - |
         ./scripts/run_in_ros_env.sh --ws env ros2 run robo_claw_sim sim_runner \
           {{.SCENARIO}}
+
+  sim-test-mujoco:
+    desc: MuJoCo 백엔드로 시나리오 검증 (sim-mujoco extra 필요)
+    vars:
+      SCENARIO: '{{default "src/robo_claw_sim/scenarios/navigate_basic.yaml" .CLI_ARGS}}'
+    cmds:
+      - |
+        ./scripts/run_in_ros_env.sh --ws env ros2 run robo_claw_sim sim_runner \
+          --backend mujoco {{.SCENARIO}}
+
+  sim-compare:
+    desc: kinematic/MuJoCo 백엔드 판정 비교 (모든 시나리오)
+    cmds:
+      - ./scripts/compare_sim_backends.sh {{.CLI_ARGS}}
 
   verify:
     desc: 커밋/CI 단일 검증 게이트 (lint → contract-check → unit-test)

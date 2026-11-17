@@ -126,6 +126,7 @@ def launch_setup(context, *args, **kwargs):
         # 한 노드에서 제공한다. GPU/distro별 Gazebo 자산이 필요 없다.
         sim_parameters = {
             "scenario_file": scenario_file,
+            "backend": LaunchConfiguration("sim_backend"),
             "use_sim_time": False,
             "serve_navigation": True,
             "update_rate_hz": LaunchConfiguration("sim_update_rate_hz"),
@@ -366,6 +367,14 @@ def generate_launch_description() -> LaunchDescription:
                 description="sim_engine:=stub 에서 사용할 시나리오 YAML 경로",
             ),
             DeclareLaunchArgument("sim_update_rate_hz", default_value="20.0"),
+            DeclareLaunchArgument(
+                "sim_backend",
+                default_value="kinematic",
+                description=(
+                    "RoboClaw 전용 시뮬레이터 백엔드: kinematic(기본, 외부 의존성 없음) "
+                    "| mujoco(선택, 접촉/카메라 확장 기반)"
+                ),
+            ),
             DeclareLaunchArgument("use_nav2", default_value="false"),
             DeclareLaunchArgument("use_slam", default_value="false"),
             DeclareLaunchArgument("map", default_value=""),
