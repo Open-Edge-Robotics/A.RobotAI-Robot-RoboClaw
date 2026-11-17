@@ -5,6 +5,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — MuJoCo 뷰어 기동 오류 수정, 시뮬 카메라 배선
+
+- **Fixed**: `--viewer` 실행 시 `AttributeError: module 'mujoco' has no attribute 'viewer'` 로 죽던 문제를 수정했습니다. `mujoco.viewer` 는 하위 모듈이라 명시적으로 import 해야 하며, 이제 안내 메시지도 import 실패와 DISPLAY 실패를 구분합니다. 별도 설치(pip/apt)는 필요 없습니다(`mujoco` 패키지에 포함, glfw 사용).
+- **Changed**: 런치에서 시뮬 카메라를 배선했습니다. `sim_publish_camera:=true` 면 시뮬레이터가 `camera_topic`(기본 `/sim/camera/image_raw`)으로 RGB를, `/sim/camera/depth/image_raw` 로 depth를 발행합니다. 내장 `object_detector_node` 가 구독하는 토픽과 일치합니다.
+- **검증**: `from mujoco import viewer` import 확인, `uv run pytest src/robo_claw_sim/tests src/robo_claw_bringup/tests` 207 passed, `go build` 통과. 뷰어 실제 창과 카메라 표시는 디스플레이 세션에서 확인이 필요합니다.
+
 ## 2026-11-17 — rclaw·Taskfile 중복 정리
 
 - **Removed**: `task sim-test-mujoco` 를 제거하고 `task sim-test -- --backend mujoco [경로]` 로 통합했습니다. 두 태스크가 같은 `sim_runner` 호출에서 `--backend` 유무만 달랐습니다.

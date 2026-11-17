@@ -99,6 +99,9 @@ def launch_setup(context, *args, **kwargs):
             "scenario_file": scenario_file,
             "backend": LaunchConfiguration("sim_backend"),
             "sim_viz": LaunchConfiguration("sim_viz"),
+            "publish_camera": LaunchConfiguration("sim_publish_camera"),
+            "camera_topic": camera_topic_val,
+            "camera_depth_topic": "/sim/camera/depth/image_raw",
             "viewer": LaunchConfiguration("sim_viewer"),
             "use_sim_time": False,
             "serve_navigation": True,
@@ -273,6 +276,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="sim_engine:=stub 에서 사용할 시나리오 YAML 경로",
             ),
             DeclareLaunchArgument("sim_update_rate_hz", default_value="20.0"),
+            DeclareLaunchArgument(
+                "sim_publish_camera",
+                default_value="false",
+                description="시뮬 카메라 RGB-D 발행(내장 검출기/vision 노드 입력용, MUJOCO_GL 필요)",
+            ),
             DeclareLaunchArgument(
                 "sim_viewer",
                 default_value="false",

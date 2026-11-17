@@ -73,11 +73,20 @@ class MujocoBackend:
         # 대화형 뷰어(디스플레이 필요). 시각화 전용이며 판정에는 영향을 주지 않는다.
         self._viewer = None
         if viewer:
+            # mujoco.viewer 는 하위 모듈이라 명시적으로 import 해야 한다(패키지 루트에
+            # 자동 노출되지 않는다). glfw 기반이므로 DISPLAY/X11 이 필요하다.
             try:
-                self._viewer = mujoco.viewer.launch_passive(self._model, self._data)
+                from mujoco import viewer as mujoco_viewer
+            except ImportError as exc:  # pragma: no cover - 매우 오래된 패키지
+                raise RuntimeError(
+                    "mujoco.viewer 를 import 할 수 없습니다. `pip install -U mujoco` 로 갱신하세요."
+                ) from exc
+            try:
+                self._viewer = mujoco_viewer.launch_passive(self._model, self._data)
             except Exception as exc:
                 raise RuntimeError(
-                    "MuJoCo 뷰어를 열 수 없습니다. DISPLAY/X11(또는 GUI 세션)에서 실행하세요."
+                    f"MuJoCo 뷰어를 열 수 없습니다: {exc}. "
+                    "DISPLAY/X11(또는 GUI 세션)에서 실행하세요."
                 ) from exc
 
     # ------------------------------------------------------------------ 계약
