@@ -6,8 +6,10 @@ _JAZZY_ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _PROJECT_ROOT="$(cd "${_JAZZY_ENV_DIR}/../.." && pwd)"
 
 # DDS
+# TurtleBot4 Gazebo는 노드를 50개 이상 띄운다. 파일 설정에 참여자 인덱스 상한이
+# 들어 있으므로 CycloneDDS를 쓸 때는 이 파일을 지정한다(기본 RMW는 Fast DDS).
 # export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-# export CYCLONEDDS_URI="${_JAZZY_ENV_DIR}/cyclonedds_config.xml"
+# export CYCLONEDDS_URI="file://${_JAZZY_ENV_DIR}/cyclonedds_config.xml"
 
 # Qt / Gazebo 렌더링
 export QT_QPA_PLATFORM=xcb

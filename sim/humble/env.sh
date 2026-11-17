@@ -4,8 +4,12 @@
 
 # DDS (인라인 XML - Humble은 파일 방식 대신 직접 지정)
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-30}"
-export CYCLONEDDS_URI="<CycloneDDS><Domain><General><MaxMessageSize>65535B</MaxMessageSize><FragmentSize>1300B</FragmentSize></General></Domain></CycloneDDS>"
+# 시뮬레이션 전용 도메인(실기기 기본 0 과 분리). rclaw 의 RC_SIM_DOMAIN_ID 기본값과 맞춘다.
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
+# Gazebo Classic 시뮬레이션은 노드를 40개 이상 띄운다. CycloneDDS 기본 자동 인덱스
+# 범위(실측 32개)를 넘으면 "Failed to find a free participant index" 로 노드가
+# 기동 직후 abort 하므로 상한을 올린다(robo_claw_cli/launcher/dds.go 와 동일 값).
+export CYCLONEDDS_URI="<CycloneDDS><Domain><General><MaxMessageSize>65535B</MaxMessageSize><FragmentSize>1300B</FragmentSize></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>200</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>"
 
 # 로봇 모델
 export TURTLEBOT3_MODEL="${TURTLEBOT3_MODEL:-waffle}"

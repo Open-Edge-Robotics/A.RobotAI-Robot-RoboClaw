@@ -584,3 +584,80 @@ func TestResolveSimEngine(t *testing.T) {
 		t.Fatalf("잘못된 값은 배포판 기본값으로 되돌아야 합니다: %s", got)
 	}
 }
+
+// Gazebo 시뮬레이션은 노드를 50개 이상 띄운다. CycloneDDS 참여자 인덱스 상한을
+// 넣지 않으면 "Failed to find a free participant index" 로 노드가 abort 하므로,
+// 생성되는 URI 에 상한이 반드시 포함되어야 한다.
+func TestCycloneDdsUriIncludesParticipantLimit(t *testing.T) {
+	uri := CycloneDdsUri("131072B", "2097152B")
+
+	for _, want := range []string{
+		"<MaxMessageSize>131072B</MaxMessageSize>",
+		"<ParticipantIndex>auto</ParticipantIndex>",
+		fmt.Sprintf("<MaxAutoParticipantIndex>%d</MaxAutoParticipantIndex>", CycloneDdsMaxAutoParticipantIndex),
+		"<WhcHigh>2097152B</WhcHigh>",
+	} {
+		if !strings.Contains(uri, want) {
+			t.Fatalf("URI 에 %q 가 없습니다: %s", want, uri)
+		}
+	}
+	if CycloneDdsMaxAutoParticipantIndex < 64 {
+		t.Fatalf("참여자 상한이 너무 작습니다: %d", CycloneDdsMaxAutoParticipantIndex)
+	}
+}
+
+// Watermarks 를 주지 않으면 Internal 항목을 넣지 않는다(기존 동작 보존).
+func TestCycloneDdsUriOmitsWatermarksWhenNotRequested(t *testing.T) {
+	uri := CycloneDdsUri("65535B", "")
+
+	if strings.Contains(uri, "WhcHigh") {
+		t.Fatalf("watermark 미지정인데 Internal 항목이 들어갔습니다: %s", uri)
+	}
+	if !strings.Contains(uri, "<MaxAutoParticipantIndex>") {
+		t.Fatalf("참여자 상한이 빠졌습니다: %s", uri)
+	}
+}
+
+// 시뮬레이션 도메인은 실기기 도메인(기본 0)과 분리되어야 한다.
+func TestResolveSimDomainID(t *testing.T) {
+	t.Setenv("ROS_DOMAIN_ID", "")
+	t.Setenv("RC_SIM_DOMAIN_ID", "")
+	if got := ResolveSimDomainID(nil); got != DefaultSimDomainID {
+		t.Fatalf("기본 시뮬레이션 도메인은 %s 여야 합니다: %s", DefaultSimDomainID, got)
+	}
+	if DefaultSimDomainID == "0" {
+		t.Fatal("시뮬레이션 기본 도메인이 0(실기기 공유)이면 안 됩니다")
+	}
+
+	t.Setenv("RC_SIM_DOMAIN_ID", "77")
+	if got := ResolveSimDomainID(map[string]string{}); got != "77" {
+		t.Fatalf("RC_SIM_DOMAIN_ID 우선순위 실패: %s", got)
+	}
+
+	t.Setenv("ROS_DOMAIN_ID", "5")
+	if got := ResolveSimDomainID(map[string]string{"RC_SIM_DOMAIN_ID": "77"}); got != "5" {
+		t.Fatalf("명시한 ROS_DOMAIN_ID 를 존중해야 합니다: %s", got)
+	}
+
+	t.Setenv("ROS_DOMAIN_ID", "")
+	if got := ResolveSimDomainID(map[string]string{"ROS_DOMAIN_ID": "4"}); got != "4" {
+		t.Fatalf(".env 의 ROS_DOMAIN_ID 를 존중해야 합니다: %s", got)
+	}
+}
+
+// 시뮬레이션 env 주입은 전용 도메인과 DDS 공통 설정을 넣어야 한다.
+func TestApplySimDdsEnv(t *testing.T) {
+	t.Setenv("CYCLONEDDS_URI", "")
+	t.Setenv("ROS_DOMAIN_ID", "")
+	t.Setenv("RC_SIM_DDS_LAN", "")
+
+	env := applySimDdsEnv(&LaunchContext{EnvMap: map[string]string{}}, "65535B", "", nil)
+	joined := strings.Join(env, "\n")
+
+	if !strings.Contains(joined, "ROS_DOMAIN_ID="+DefaultSimDomainID) {
+		t.Fatalf("시뮬레이션 도메인이 주입되지 않았습니다: %s", joined)
+	}
+	if !strings.Contains(joined, "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp") {
+		t.Fatalf("RMW 설정이 빠졌습니다: %s", joined)
+	}
+}

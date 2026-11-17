@@ -188,20 +188,44 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 	// 1. 기존 프로세스 정리
 	logging.Info("이전 RoboClaw 프로세스 정리 중...")
 	_ = KillRoboClawProcs([]int{8080, 50051, 50052})
+	if isSim {
+		// gz sim server/gui 는 자체 프로세스 그룹으로 detach 되어 런치 그룹 정리에서
+		// 빠진다. 남아 있으면 새 gz 서버와 충돌해 create 가 월드 목록을 못 받는다.
+		if killed := KillSimRuntimeProcs(); killed > 0 {
+			logging.Info("이전 실행의 시뮬레이터 프로세스 %d개를 정리했습니다.", killed)
+		}
+	}
 
 	// 2. 환경변수 준비
 	env := os.Environ()
 	env = append(env,
 		"RMW_FASTRTPS_PUBLICATION_MODE=ASYNCHRONOUS",
 		"RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
-		"CYCLONEDDS_URI=<CycloneDDS><Domain><General><MaxMessageSize>131072B</MaxMessageSize><FragmentSize>1300B</FragmentSize></General><Internal><Watermarks><WhcHigh>2097152B</WhcHigh></Watermarks></Internal></Domain></CycloneDDS>",
 	)
+
+	// DDS 설정: 사용자가 CYCLONEDDS_URI 를 지정했으면 그대로 쓰고, 아니면 공통 설정을
+	// 넣는다(참여자 상한 포함). 인터페이스를 임의로 좁히지 않는다 — 시뮬레이터 참여자와
+	// 외부 도구(ros2 CLI, 대시보드 어댑터)가 같은 바인딩 집합을 써야 참여자 인덱스가
+	// 충돌하지 않고, 인덱스가 충돌하면 한쪽 locator 로의 쓰기가 실패해
+	// `ddsi_udp_conn_write ... failed with retcode` 가 고속 토픽에서 폭주한다.
+	if userURI := strings.TrimSpace(os.Getenv("CYCLONEDDS_URI")); userURI != "" {
+		env = append(env, "CYCLONEDDS_URI="+userURI)
+	} else {
+		env = append(env, "CYCLONEDDS_URI="+launcher.CycloneDdsUri("131072B", "2097152B"))
+	}
 
 	if debug {
 		env = append(env, "RCUTILS_LOGGING_MIN_SEVERITY_LEVEL=DEBUG")
 	}
 
 	if isSim {
+		// 시뮬레이션 도메인 격리(사용자가 이미 지정했으면 그대로 둔다).
+		if strings.TrimSpace(os.Getenv("ROS_DOMAIN_ID")) == "" {
+			simDomain := launcher.ResolveSimDomainID(nil)
+			env = append(env, "ROS_DOMAIN_ID="+simDomain)
+			logging.Info("시뮬레이션을 ROS 도메인 %s 로 격리합니다(실기기 도메인과 분리).", simDomain)
+			rich.Println("[cyan]ℹ[/cyan] 시뮬레이션 DDS 도메인: %s (변경: RC_SIM_DOMAIN_ID)", simDomain)
+		}
 		env = append(env, "RCUTILS_COLORIZED_OUTPUT=1", "QT_QPA_PLATFORM=xcb", "GZ_RENDERING_BACKEND=ogre2")
 		// 이 저장소는 Gazebo 모델/world 자산을 포함하지 않으므로 install 경로를
 		// 임의로 넣지 않는다(존재하지 않는 경로는 모델 탐색을 흔든다).
@@ -236,7 +260,14 @@ func executeRosLaunch(launchFile string, launchArgs []string, debug bool, isSim 
 
 	// 런치를 별도 프로세스 그룹에서 실행하고, 종료 시 그룹 전체를 정리합니다.
 	// 런치가 중간에 실패해도 이미 기동된 노드가 고아로 남지 않습니다.
-	return runLaunchProcess(cmd)
+	err := runLaunchProcess(cmd)
+	if isSim {
+		// 그룹 밖으로 detach 된 gz 프로세스를 마지막으로 회수한다.
+		if killed := KillSimRuntimeProcs(); killed > 0 {
+			logging.Info("종료 후 시뮬레이터 프로세스 %d개를 정리했습니다.", killed)
+		}
+	}
+	return err
 }
 
 // RunCmd 로컬 설정을 기반으로 RoboClaw 에이전트를 기동합니다.

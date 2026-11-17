@@ -175,3 +175,61 @@ func TestSelectPortKillTargetsSkipsNonRoboClawHolders(t *testing.T) {
 		}
 	}
 }
+
+// gz sim 은 server/gui 를 새 프로세스 그룹으로 detach 한다. 남아 있으면 다음 실행의
+// ros_gz_sim create 가 월드 목록을 받지 못해 무한 대기하므로 회수 대상이어야 한다.
+func TestMatchesSimArgvPattern(t *testing.T) {
+	patterns := DefaultKillSimArgvPatterns()
+
+	cases := []struct {
+		name string
+		argv []string
+		want bool
+	}{
+		{"gz sim world", []string{"gz", "sim", "warehouse.sdf", "-r", "-v", "4"}, true},
+		// gz 는 프로세스 타이틀을 한 덩어리로 바꿔치기한다(실측 /proc 형식).
+		{"gz sim server title-style", []string{"gz sim server"}, true},
+		{"gz sim gui title-style", []string{"gz sim gui"}, true},
+		{"gz sim world title-style", []string{"gz sim warehouse.sdf -r -v 4"}, true},
+		{"gz sim server (detached)", []string{"gz", "sim", "server"}, true},
+		{"gz sim gui (detached)", []string{"gz", "sim", "gui"}, true},
+		{"gz other subcommand", []string{"gz", "topic", "-l"}, false},
+		{"gz alone", []string{"gz"}, false},
+		{"gzserver classic", []string{"gzserver", "/ws/world.world"}, true},
+		{"gzclient classic", []string{"gzclient"}, true},
+		{"spawn_entity", []string{"python3", "/opt/ros/jazzy/lib/gazebo_ros/spawn_entity.py"}, false},
+		{"spawn_entity direct", []string{"spawn_entity.py", "-entity", "robot"}, true},
+		{"tool shell mentioning gz", []string{"bash", "-c", "gz sim warehouse.sdf"}, false},
+		{"agent shell", []string{"zsh", "-c", "gz sim"}, false},
+		{"unrelated process", []string{"python3", "-m", "pytest"}, false},
+	}
+	for _, tc := range cases {
+		got := matchesSimArgvPattern(procCmdline{PID: 100, Argv: tc.argv}, patterns)
+		if got != tc.want {
+			t.Fatalf("%s: matchesSimArgvPattern(%v) = %v, want %v", tc.name, tc.argv, got, tc.want)
+		}
+	}
+}
+
+func TestSelectSimRuntimeTargetsExcludesSelfAndAncestors(t *testing.T) {
+	procs := []procCmdline{
+		{PID: 100, Argv: []string{"gz", "sim", "server"}}, // self 의 조상
+		{PID: 101, Argv: []string{"gz", "sim", "gui"}},    // self
+		{PID: 102, Argv: []string{"python3", "-m", "pytest"}},
+		{PID: 103, Argv: []string{"gz", "sim", "server"}}, // 무관한 잔여 프로세스
+	}
+	parentOf := func(pid int) (int, bool) {
+		switch pid {
+		case 101:
+			return 100, true // self 의 부모
+		default:
+			return 1, true
+		}
+	}
+
+	got := selectSimRuntimeTargets(procs, 101, parentOf)
+
+	if len(got) != 1 || got[0].PID != 103 {
+		t.Fatalf("자기 자신(101)과 조상(100)은 제외하고 잔여(103)만 대상이어야 합니다: %#v", got)
+	}
+}

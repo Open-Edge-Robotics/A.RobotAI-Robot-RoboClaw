@@ -262,3 +262,13 @@ func ResolveButlerSourceDir(envMap map[string]string) string {
 	}
 	return ""
 }
+
+// EnvFlagEnabled 환경변수 문자열이 참 값을 갖는지 확인합니다(대소문자 무관).
+func EnvFlagEnabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}

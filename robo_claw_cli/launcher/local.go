@@ -281,9 +281,9 @@ func applySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string 
 	}
 
 	if lctx.RosDistro == "jazzy" {
-		env = applyJazzySimEnv(ctx, lctx.ProjectRoot, env)
+		env = applyJazzySimEnv(ctx, lctx, env)
 	} else {
-		env = applyHumbleSimEnv(ctx, env)
+		env = applyHumbleSimEnv(ctx, lctx, env)
 	}
 
 	logging.Debug("시뮬레이션 최적화 환경변수 설정 완료 (Distro: %s)", lctx.RosDistro)
@@ -292,7 +292,8 @@ func applySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string 
 }
 
 // applyJazzySimEnv Jazzy(Harmonic/Gazebo) 시뮬레이션 환경변수를 추가합니다.
-func applyJazzySimEnv(ctx *wcli.Context, projectRoot string, env []string) []string {
+func applyJazzySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string {
+	env = applySimDdsEnv(lctx, "131072B", "2097152B", env)
 	// 이 저장소는 Gazebo 모델/world 자산을 포함하지 않는다. 사용자가 지정한 리소스
 	// 경로가 있을 때만 그대로 전달하고, 빈 항목(=CWD)이 섞이지 않도록 join 한다.
 	if cur := os.Getenv("GZ_SIM_RESOURCE_PATH"); cur != "" {
@@ -313,19 +314,35 @@ func applyJazzySimEnv(ctx *wcli.Context, projectRoot string, env []string) []str
 	return env
 }
 
+// applySimDdsEnv 시뮬레이션 DDS 설정(도메인 격리 + loopback 바인딩)을 주입합니다.
+//
+// 시뮬레이션이 실기기와 같은 LAN/도메인에 있으면 실로봇의 액션·토픽을 발견하고,
+// 이미 죽은 참여자의 LAN 포트로 계속 쓰다 실패하는 로그(ddsi_udp_conn_write)가
+// 고속 토픽에서 폭주한다.
+func applySimDdsEnv(lctx *LaunchContext, maxMessageSize, whcHigh string, env []string) []string {
+	if os.Getenv("CYCLONEDDS_URI") == "" {
+		env = append(env, "CYCLONEDDS_URI="+CycloneDdsUri(maxMessageSize, whcHigh))
+	}
+	env = append(env, "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp")
+	if os.Getenv("ROS_DOMAIN_ID") == "" {
+		domain := DefaultSimDomainID
+		if lctx != nil {
+			domain = ResolveSimDomainID(lctx.EnvMap)
+		}
+		env = append(env, "ROS_DOMAIN_ID="+domain)
+	}
+	return env
+}
+
 // applyHumbleSimEnv Humble(Gazebo Classic) 시뮬레이션 환경변수를 추가합니다.
-func applyHumbleSimEnv(ctx *wcli.Context, env []string) []string {
+func applyHumbleSimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string {
+	env = applySimDdsEnv(lctx, "65535B", "", env)
 	env = append(env,
-		"RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
-		"CYCLONEDDS_URI=<CycloneDDS><Domain><General><MaxMessageSize>65535B</MaxMessageSize><FragmentSize>1300B</FragmentSize></General></Domain></CycloneDDS>",
 		"LIBGL_ALWAYS_SOFTWARE=1",
 		"MESA_GL_VERSION_OVERRIDE=3.3",
 		"MESA_GLSL_VERSION_OVERRIDE=330",
 		"OGRE_RTT_MODE=Copy",
 	)
-	if os.Getenv("ROS_DOMAIN_ID") == "" {
-		env = append(env, "ROS_DOMAIN_ID=30")
-	}
 	if os.Getenv("TURTLEBOT3_MODEL") == "" {
 		env = append(env, "TURTLEBOT3_MODEL=waffle")
 	}

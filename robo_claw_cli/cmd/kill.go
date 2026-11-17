@@ -76,9 +76,37 @@ func KillCmd() *wcli.Command {
 			if err := KillRoboClawProcs([]int{8080, 50051, 50052}); err != nil {
 				return err
 			}
+			// gz sim 은 자체 프로세스 그룹으로 detach 되므로 별도로 회수한다.
+			_ = KillSimRuntimeProcs()
 			logging.Info("정리 완료")
 			rich.Println("[green]✔ 정리 완료[/green]")
 			return nil
 		},
 	}
+}
+
+// simKillTerminateTimeout gz GUI/server 종료 대기 시간.
+// Gazebo 는 SIGTERM 처리에 수 초가 걸리므로 1초로는 SIGKILL 승격이 잦다.
+const simKillTerminateTimeout = 3 * time.Second
+
+// KillSimRuntimeProcs 이전 실행이 남긴 시뮬레이터 프로세스(gz sim server/gui 등)를 정리합니다.
+//
+// gz 는 server/gui 를 별도 프로세스 그룹으로 띄우므로 런치 그룹 정리로 회수되지 않는다.
+// 남아 있으면 다음 실행의 `ros_gz_sim create` 가 월드 목록을 받지 못해 무한 대기한다.
+func KillSimRuntimeProcs() int {
+	parentOf := func(pid int) (int, bool) { return readParentPID("/proc", pid) }
+	procs := collectProcessCmdlines("/proc")
+
+	killed := 0
+	for _, target := range selectSimRuntimeTargets(procs, os.Getpid(), parentOf) {
+		logging.Warn("시뮬레이터 프로세스 종료 (PID: %d): %s", target.PID, strings.Join(target.Argv, " "))
+		rich.Println("[yellow]⚠ 이전 실행의 시뮬레이터 프로세스 종료 (PID: %d, %s)[/yellow]",
+			target.PID, target.Argv[0])
+		_ = terminatePID(target.PID, simKillTerminateTimeout)
+		killed++
+	}
+	if killed > 0 {
+		time.Sleep(500 * time.Millisecond)
+	}
+	return killed
 }

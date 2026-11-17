@@ -246,3 +246,82 @@ func selectPortKillTargets(pids []int, byPID map[int]procCmdline, protected map[
 	}
 	return targets, skipped
 }
+
+// DefaultKillSimArgvPatterns 시뮬레이터 런타임 명령줄 패턴입니다.
+//
+// `gz sim` 은 GUI/server 를 각각 **새 프로세스 그룹**으로 띄운다. 그래서 런치
+// 프로세스 그룹을 정리해도 `gz sim server` 는 살아남아 부모가 systemd 로 바뀌고,
+// 다음 실행에서 두 개의 gz 서버가 같은 파티션에 뜬다. 이때 `ros_gz_sim create` 가
+// "Requesting list of world names" 를 반복하며 무한 대기해 로봇이 스폰되지 않는다
+// (2026-11-17 재현). 실행 전후로 반드시 회수해야 한다.
+func DefaultKillSimArgvPatterns() [][]string {
+	return [][]string{
+		{"gz", "sim"},       // gz sim <world> / gz sim server / gz sim gui
+		{"gzserver"},        // Gazebo Classic(humble)
+		{"gzclient"},        // Gazebo Classic(humble)
+		{"spawn_entity.py"}, // gazebo_ros 스폰 스크립트
+	}
+}
+
+// simArgvTokens 프로세스 명령줄을 비교용 토큰 목록으로 정규화합니다.
+//
+// `gz` 는 실행 중 프로세스 타이틀을 "gz sim server" 처럼 **공백 포함 한 덩어리**로
+// 바꿔치기한다(실측: /proc/<pid>/cmdline 이 `gz sim server` 단일 항목). 그래서
+// argv[0] 을 그대로 비교하면 매칭되지 않으므로 공백으로 다시 나눈다.
+func simArgvTokens(p procCmdline) []string {
+	if len(p.Argv) == 0 {
+		return nil
+	}
+	head := strings.Fields(p.Argv[0])
+	if len(head) == 0 {
+		return nil
+	}
+	tokens := make([]string, 0, len(head)+len(p.Argv)-1)
+	tokens = append(tokens, head...)
+	tokens = append(tokens, p.Argv[1:]...)
+	return tokens
+}
+
+// matchesSimArgvPattern 프로세스가 시뮬레이터 런타임 패턴과 일치하는지 판별합니다.
+//
+// 셸/래퍼는 제외하므로 `bash -c "... gz sim ..."` 문자열만 가진 프로세스는
+// 종료되지 않습니다(도구 셸 보호).
+func matchesSimArgvPattern(p procCmdline, patterns [][]string) bool {
+	tokens := simArgvTokens(p)
+	if len(tokens) == 0 {
+		return false
+	}
+	execName := filepath.Base(tokens[0])
+	if execName == "" || neverKillExecutables[execName] {
+		return false
+	}
+	for _, pattern := range patterns {
+		if len(pattern) == 0 || pattern[0] != execName {
+			continue
+		}
+		if len(pattern) == 1 {
+			return true
+		}
+		if len(tokens) > 1 && tokens[1] == pattern[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// selectSimRuntimeTargets 시뮬레이터 런타임 프로세스 중 자기 자신과 조상을 제외한 대상을 고릅니다.
+func selectSimRuntimeTargets(procs []procCmdline, selfPID int, parentOf func(int) (int, bool)) []procCmdline {
+	excluded := ancestorSet(selfPID, parentOf)
+	patterns := DefaultKillSimArgvPatterns()
+
+	var targets []procCmdline
+	for _, p := range procs {
+		if excluded[p.PID] {
+			continue
+		}
+		if matchesSimArgvPattern(p, patterns) {
+			targets = append(targets, p)
+		}
+	}
+	return targets
+}
