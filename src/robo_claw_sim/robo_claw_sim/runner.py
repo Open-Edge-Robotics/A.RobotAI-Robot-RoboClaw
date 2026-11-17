@@ -43,6 +43,9 @@ def run_scenario(
     ros_args = ["--ros-args", "-p", f"navigate_timeout_sec:={timeout}"]
     if backend:
         ros_args += ["-p", f"backend:={backend}"]
+    if scenario.manipulation is not None:
+        ros_args += ["-p", "serve_manipulation:=true"]
+        ros_args += ["-p", f"manipulation_timeout_sec:={timeout}"]
     cli_args = ros_args
 
     rclpy.init()
@@ -63,10 +66,13 @@ def run_scenario(
             _execute_goals(
                 node, client, scenario, result, started, timeout, spin_after_each_goal_sec
             )
+            if scenario.manipulation is not None:
+                _execute_manipulation(node, scenario, result)
     finally:
         result.elapsed_sec = time.monotonic() - started
         result.collisions = int(node.world.collisions)
         result.traveled_m = float(node.world.traveled_m)
+        result.grasped_objects = list(node.grasped_objects())
         if result.elapsed_sec >= timeout:
             result.timed_out = True
         node.destroy_navigation()
@@ -124,6 +130,42 @@ def _execute_goals(
 
         if spin_after_each_goal_sec > 0.0:
             time.sleep(spin_after_each_goal_sec)
+
+
+def _execute_manipulation(node, scenario, result: RunResult) -> None:  # noqa: ANN001
+    """시나리오의 조작 궤적을 FollowJointTrajectory 로 보낸다."""
+    from control_msgs.action import FollowJointTrajectory
+    from rclpy.action import ActionClient
+    from trajectory_msgs.msg import JointTrajectoryPoint
+
+    script = scenario.manipulation
+    if script is None:
+        return
+
+    action_name = str(node.get_parameter("manipulation_action_name").value)
+    client = ActionClient(node, FollowJointTrajectory, action_name)
+    if not client.wait_for_server(timeout_sec=10.0):
+        result.error = result.error or f"조작 액션 서버를 찾을 수 없습니다: {action_name}"
+        return
+
+    names = script.joint_names()
+    goal = FollowJointTrajectory.Goal()
+    goal.trajectory.joint_names = names
+    for point in script.points:
+        entry = JointTrajectoryPoint()
+        whole = int(point.sec)
+        entry.time_from_start.sec = whole
+        entry.time_from_start.nanosec = int(round((point.sec - whole) * 1e9))
+        entry.positions = [float(point.joints[name]) for name in names]
+        goal.trajectory.points.append(entry)
+
+    send_future = client.send_goal_async(goal)
+    goal_handle = _wait_future(send_future, timeout_sec=10.0)
+    if goal_handle is None or not goal_handle.accepted:
+        result.error = result.error or "조작 궤적 goal 이 거부되었습니다"
+        return
+    deadline = time.monotonic() + script.duration_sec + 30.0
+    _wait_result(goal_handle, deadline)
 
 
 def _send_goal(node, client, goal: GoalPose):  # noqa: ANN001, ANN202

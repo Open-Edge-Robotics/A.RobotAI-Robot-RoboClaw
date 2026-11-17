@@ -29,6 +29,7 @@ from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
 from ..backends import DEFAULT_BACKEND, build_backend
+from ..backends.manipulation import ManipulationConfig
 from ..motion import MotionArbiter
 from ..nav import ControllerConfig
 from ..perception import CameraConfig, detect
@@ -80,10 +81,13 @@ class SimulationNode(Node):
             hfov=float(self.get_parameter("camera_hfov").value),
         )
         # 물리/센서 백엔드. 기본값은 외부 의존성이 없는 kinematic 이다.
+        self.serve_manipulation = bool(self._p("serve_manipulation"))
+        manipulation = ManipulationConfig() if self.serve_manipulation else None
         self.backend = build_backend(
             str(self.get_parameter("backend").value),
             world=self.world,
             scan_config=self.scan_config,
+            manipulation=manipulation,
         )
         self._frames = {
             "map": self.get_parameter("map_frame").value,
@@ -100,6 +104,13 @@ class SimulationNode(Node):
         self._last_tick = time.monotonic()
         self._setup_io()
         self.navigation = None
+        self.manipulation = None
+        if self.serve_manipulation:
+            from .manipulation_servers import SimManipulation
+
+            self.manipulation = SimManipulation(
+                self, self.backend, str(self._p("manipulation_action_name"))
+            )
         if bool(self._p("serve_navigation")):
             # 순환 import 를 피하기 위해 노드 준비 후 지역 import 한다.
             from .nav_servers import SimNavigation
@@ -157,6 +168,9 @@ class SimulationNode(Node):
             "detect_false_negative_rate": 0.0,
             "joint_names_json": "",
             "serve_navigation": True,
+            "serve_manipulation": False,
+            "manipulation_action_name": "/sim_arm_controller/follow_joint_trajectory",
+            "manipulation_timeout_sec": 30.0,
             "navigate_tolerance": 0.25,
             "navigate_timeout_sec": 300.0,
             "spin_timeout_sec": 60.0,
@@ -242,8 +256,17 @@ class SimulationNode(Node):
         self._update_battery(dt)
         self.publish_sensors()
 
+    def grasped_objects(self) -> list[str]:
+        """시나리오 실행 중 파지에 성공한 물체 이름."""
+        if self.manipulation is None:
+            return []
+        return self.manipulation.grasped_objects()
+
     def destroy_backend(self) -> None:
         """백엔드 자원 정리. 노드 destroy 전에 호출한다."""
+        if getattr(self, "manipulation", None) is not None:
+            self.manipulation.destroy()
+            self.manipulation = None
         if getattr(self, "backend", None) is not None:
             self.backend.close()
 

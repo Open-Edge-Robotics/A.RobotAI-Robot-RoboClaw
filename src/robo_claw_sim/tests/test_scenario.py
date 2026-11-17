@@ -164,10 +164,72 @@ def test_shipped_scenario_is_valid(path: Path) -> None:
     scenario = load_scenario(path)
 
     assert scenario.name == path.stem
-    assert scenario.goals, f"{path.name}: goals 가 비어 있습니다"
+    assert scenario.goals or scenario.manipulation, (
+        f"{path.name}: goals 또는 manipulation 중 하나는 있어야 합니다"
+    )
     assert scenario.timeout_sec > 0.0
     for goal in scenario.goals:
         assert scenario.world.is_free(goal.x, goal.y, scenario.world.robot_radius), (
             f"{path.name}: goal({goal.label}) 이 점유 위치입니다"
         )
     assert scenario.expect.min_goals_reached <= len(scenario.goals)
+
+
+_MANIPULATION_SCENARIO = {
+    "name": "grasp_probe",
+    "world": {
+        "width": 6.0,
+        "height": 4.0,
+        "robot": {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        "objects": [{"name": "cup_1", "class_id": "cup", "x": 1.42, "y": 1.0}],
+    },
+    "goals": [],
+    "manipulation": {
+        "points": [
+            {"sec": 0.0, "joints": {"arm_x": 0.0, "gripper_joint": 0.1}},
+            {"sec": 2.0, "joints": {"arm_x": 0.35, "gripper_joint": -0.02}},
+        ]
+    },
+    "expect": {"min_goals_reached": 0, "grasped_objects": ["cup_1"]},
+}
+
+
+def test_manipulation_script_is_parsed() -> None:
+    scenario = build_scenario(_MANIPULATION_SCENARIO)
+
+    assert scenario.manipulation is not None
+    assert scenario.manipulation.joint_names() == ["arm_x", "gripper_joint"]
+    assert scenario.manipulation.duration_sec == pytest.approx(2.0)
+    assert scenario.expect.grasped_objects == ("cup_1",)
+
+
+def test_evaluate_reports_missing_grasp() -> None:
+    scenario = build_scenario(_MANIPULATION_SCENARIO)
+    result = RunResult(reached=[], grasped_objects=[])
+
+    outcome = scenario_outcome(scenario, result)
+
+    assert outcome.passed is False
+    assert any("파지 실패" in reason for reason in outcome.reasons)
+
+
+def test_evaluate_accepts_expected_grasp() -> None:
+    scenario = build_scenario(_MANIPULATION_SCENARIO)
+    result = RunResult(reached=[], grasped_objects=["cup_1"])
+
+    outcome = scenario_outcome(scenario, result)
+
+    assert outcome.passed is True
+
+
+def test_manipulation_points_must_be_ordered() -> None:
+    raw = dict(_MANIPULATION_SCENARIO)
+    raw["manipulation"] = {
+        "points": [
+            {"sec": 2.0, "joints": {"arm_x": 0.1}},
+            {"sec": 1.0, "joints": {"arm_x": 0.2}},
+        ]
+    }
+
+    with pytest.raises(ScenarioError):
+        build_scenario(raw)

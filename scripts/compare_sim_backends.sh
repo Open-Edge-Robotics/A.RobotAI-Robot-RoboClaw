@@ -32,6 +32,8 @@ import subprocess
 import sys
 import tempfile
 
+import yaml
+
 BACKENDS = ("kinematic", "mujoco")
 RUN_TIMEOUT_SEC = float(os.environ.get("RC_SIM_RUN_TIMEOUT", "240"))
 scenarios = sys.argv[1:]
@@ -73,6 +75,15 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         for scenario in scenarios:
             name = os.path.basename(scenario).removesuffix(".yaml")
+            # 조작 시나리오는 mujoco 전용이므로 기본 비교 대상에서 제외한다.
+            try:
+                with open(scenario, encoding="utf-8") as handle:
+                    raw = yaml.safe_load(handle) or {}
+            except (OSError, yaml.YAMLError):
+                raw = {}
+            if raw.get("manipulation") and os.environ.get("RC_SIM_COMPARE_MANIPULATION") != "1":
+                print(f"{name:<28} {'skip(조작)':<45}", flush=True)
+                continue
             results: dict[str, tuple[bool, dict, str]] = {}
             for backend in BACKENDS:
                 output = os.path.join(tmp, f"{name}-{backend}.json")

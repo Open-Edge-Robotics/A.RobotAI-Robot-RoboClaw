@@ -44,11 +44,39 @@ class Injection:
 
 
 @dataclass(frozen=True)
+class ManipulationPoint:
+    """조작 궤적의 한 점(관절 목표 + 도달 시각)."""
+
+    sec: float
+    joints: dict[str, float]
+
+
+@dataclass(frozen=True)
+class ManipulationScript:
+    """FollowJointTrajectory 로 보낼 관절 궤적."""
+
+    points: tuple[ManipulationPoint, ...]
+
+    def joint_names(self) -> list[str]:
+        names: list[str] = []
+        for point in self.points:
+            for name in point.joints:
+                if name not in names:
+                    names.append(name)
+        return names
+
+    @property
+    def duration_sec(self) -> float:
+        return self.points[-1].sec if self.points else 0.0
+
+
+@dataclass(frozen=True)
 class Expectation:
     max_collisions: int = 0
     min_goals_reached: int = 1
     max_elapsed_sec: float | None = None
     require_no_abort: bool = True
+    grasped_objects: tuple[str, ...] = ()
 
 
 @dataclass
@@ -59,6 +87,7 @@ class Scenario:
     timeout_sec: float = 90.0
     expect: Expectation = field(default_factory=Expectation)
     injections: list[Injection] = field(default_factory=list)
+    manipulation: ManipulationScript | None = None
 
 
 @dataclass
@@ -71,6 +100,7 @@ class RunResult:
     traveled_m: float = 0.0
     timed_out: bool = False
     error: str = ""
+    grasped_objects: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -100,6 +130,7 @@ def build_scenario(raw: dict[str, Any], source: str = "<inline>") -> Scenario:
     goals = [_build_goal(item, source) for item in raw.get("goals") or []]
     expect = _build_expectation(raw.get("expect") or {}, source)
     injections = _build_injections(raw.get("injections") or [], source)
+    manipulation = _build_manipulation(raw.get("manipulation"), source)
     timeout_sec = float(raw.get("timeout_sec", 90.0))
     if timeout_sec <= 0.0:
         raise ScenarioError("timeout_sec 는 0보다 커야 합니다")
@@ -110,6 +141,7 @@ def build_scenario(raw: dict[str, Any], source: str = "<inline>") -> Scenario:
         timeout_sec=timeout_sec,
         expect=expect,
         injections=injections,
+        manipulation=manipulation,
     )
 
 
@@ -125,6 +157,7 @@ def evaluate(scenario: Scenario, result: RunResult) -> Outcome:
         "elapsed_sec": round(result.elapsed_sec, 3),
         "traveled_m": round(result.traveled_m, 3),
         "timed_out": result.timed_out,
+        "grasped_objects": sorted(result.grasped_objects),
     }
 
     if result.error:
@@ -144,6 +177,13 @@ def evaluate(scenario: Scenario, result: RunResult) -> Outcome:
     max_elapsed = scenario.expect.max_elapsed_sec
     if max_elapsed is not None and result.elapsed_sec > max_elapsed:
         reasons.append(f"소요 시간 {result.elapsed_sec:.1f}s > 허용 {max_elapsed:.1f}s")
+    missing_grasps = [
+        name for name in scenario.expect.grasped_objects if name not in result.grasped_objects
+    ]
+    if missing_grasps:
+        reasons.append(
+            f"파지 실패: {missing_grasps} (파지된 물체: {sorted(result.grasped_objects)})"
+        )
 
     return Outcome(passed=not reasons, reasons=reasons, metrics=metrics)
 
@@ -229,7 +269,36 @@ def _build_expectation(raw: dict[str, Any], source: str) -> Expectation:
         min_goals_reached=int(raw.get("min_goals_reached", 1)),
         max_elapsed_sec=None if max_elapsed is None else float(max_elapsed),
         require_no_abort=bool(raw.get("require_no_abort", True)),
+        grasped_objects=tuple(str(name) for name in raw.get("grasped_objects") or []),
     )
+
+
+def _build_manipulation(raw: Any, source: str) -> ManipulationScript | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ScenarioError(f"manipulation 은 매핑이어야 합니다 ({source})")
+    raw_points = raw.get("points") or []
+    if not raw_points:
+        raise ScenarioError(f"manipulation.points 가 비어 있습니다 ({source})")
+
+    points: list[ManipulationPoint] = []
+    previous = -1.0
+    for index, item in enumerate(raw_points):
+        joints_raw = item.get("joints") or {}
+        if not isinstance(joints_raw, dict) or not joints_raw:
+            raise ScenarioError(f"manipulation.points[{index}].joints 가 비어 있습니다 ({source})")
+        sec = float(item.get("sec", index))
+        if sec < previous:
+            raise ScenarioError(f"manipulation.points 는 sec 오름차순이어야 합니다 ({source})")
+        previous = sec
+        points.append(
+            ManipulationPoint(
+                sec=sec,
+                joints={str(name): float(value) for name, value in joints_raw.items()},
+            )
+        )
+    return ManipulationScript(points=tuple(points))
 
 
 def _build_injections(raw_list: list[dict[str, Any]], source: str) -> list[Injection]:

@@ -161,9 +161,30 @@ backend.step(Twist2D(), 0.3)          # 폐합
 assert backend.grasp_state().grasped_object == "cup_1"
 ```
 
+`serve_manipulation:=true` 로 노드를 띄우면 `control_msgs/FollowJointTrajectory`
+액션 서버(기본 `/sim_arm_controller/follow_joint_trajectory`)가 함께 뜹니다. 조작
+스택이 쓰는 것과 같은 메시지이므로 스킬 코드를 수정하지 않고 시뮬레이터를 붙일 수
+있습니다. 시나리오는 궤적과 기대 파지를 함께 선언합니다.
+
+```yaml
+manipulation:
+  points:
+    - {sec: 2.0, joints: {arm_x: 0.35, arm_z: -0.07, gripper_joint: 0.10}}  # 접근
+    - {sec: 3.5, joints: {arm_x: 0.35, arm_z: -0.07, gripper_joint: -0.02}} # 폐합
+    - {sec: 5.5, joints: {arm_x: 0.35, arm_z: 0.15, gripper_joint: -0.02}}  # 들어올리기
+expect:
+  min_goals_reached: 0
+  grasped_objects: [cup_1]
+```
+
+```bash
+ros2 run robo_claw_sim sim_runner --backend mujoco \
+  src/robo_claw_sim/scenarios/grasp_basic.yaml
+```
+
 한계: 실제 매니퓰레이터의 관절 구성·IK를 재현하지 않고, 마찰 기반 파지력도
-튜닝하지 않았습니다. `control_msgs/FollowJointTrajectory` 액션 서버와 시나리오
-`expect.grasped_objects` 판정은 다음 단계에서 이 백엔드 위에 올립니다.
+튜닝하지 않았습니다. `task sim-compare` 는 조작 시나리오를 기본 비교에서 제외합니다
+(kinematic 백엔드가 조작을 지원하지 않음).
 
 ## 3. 시나리오 스키마
 
@@ -255,6 +276,7 @@ task test            # ROS 그래프 테스트 + colcon test 포함
 | `navigate_obstacle_field` | 장애물이 흩어진 넓은 방에서 회피 주행 |
 | `navigate_small_room` | 좁은 방에서 벽에 붙은 목표 왕복(근접 충돌 판정) |
 | `navigate_scan_drop` | `/scan` 발행 중단 주입 하에서 판정 유지 |
+| `grasp_basic` | (mujoco 전용) 접근→폐합→들어올리기 후 파지 성공 판정 |
 
 시나리오를 추가하면 `tests/test_scenario.py::test_shipped_scenario_is_valid`가 스키마와
 목표 도달 가능성(점유 위치 아님)을 검사합니다. 반응형 제어기는 전역 계획이 없으므로,

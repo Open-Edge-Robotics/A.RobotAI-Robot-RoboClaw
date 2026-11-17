@@ -1,0 +1,28 @@
+name: grasp_basic
+timeout_sec: 60
+# MuJoCo 백엔드 전용: 접근 → 폐합 → 들어올리기 후 파지 성공을 판정한다.
+# kinematic 백엔드는 조작을 지원하지 않으므로 이 시나리오는 backend:=mujoco 로만 돈다.
+world:
+  width: 6.0
+  height: 4.0
+  resolution: 0.05
+  robot: {x: 1.0, y: 1.0, yaw: 0.0}
+  robot_radius: 0.22
+  obstacles: []
+  objects:
+    # 팔 정면 0.42m(조 중심), 바닥에 놓인 컵.
+    - {name: cup_1, class_id: cup, x: 1.42, y: 1.0, radius: 0.03}
+goals: []
+manipulation:
+  points:
+    - {sec: 0.0, joints: {arm_x: 0.0, arm_y: 0.0, arm_z: 0.0, gripper_joint: 0.10}}
+    - {sec: 2.0, joints: {arm_x: 0.35, arm_y: 0.0, arm_z: -0.07, gripper_joint: 0.10}}
+    - {sec: 3.5, joints: {arm_x: 0.35, arm_y: 0.0, arm_z: -0.07, gripper_joint: -0.02}}
+    - {sec: 5.5, joints: {arm_x: 0.35, arm_y: 0.0, arm_z: 0.15, gripper_joint: -0.02}}
+expect:
+  max_collisions: 0
+  min_goals_reached: 0
+  max_elapsed_sec: 60
+  require_no_abort: true
+  grasped_objects: [cup_1]
+injections: []

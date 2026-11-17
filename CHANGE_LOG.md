@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 조작 액션 서버와 시나리오 파지 판정(Phase 2b)
+
+- **Added**: `nodes/manipulation_servers.py` — `control_msgs/FollowJointTrajectory` 액션 서버. 궤적을 시뮬레이션 시간으로 샘플링해 백엔드 관절 목표로 넘기고, 종료 후 goal tolerance 를 검사해 성공/실패를 반환합니다. 조작 중 파지 성공 물체를 수집합니다. 노드 파라미터 `serve_manipulation`, `manipulation_action_name`(기본 `/sim_arm_controller/follow_joint_trajectory`), `manipulation_timeout_sec` 로 켭니다.
+- **Added**: 시나리오 스키마에 `manipulation.points`(관절 목표 시퀀스)와 `expect.grasped_objects` 를 추가했습니다. `sim_runner` 가 궤적 goal 을 보내고 실행 후 노드의 파지 결과를 판정에 반영합니다. 조작 시나리오는 `serve_manipulation` 을 자동으로 켭니다.
+- **Added**: 시나리오 `grasp_basic.yaml`(접근→폐합→들어올리기, `grasped_objects: [cup_1]`). `task sim-compare` 는 조작 시나리오를 기본 비교에서 제외합니다(kinematic 미지원).
+- **Added**: 테스트 4건(조작 궤적 파싱, 파지 실패/성공 판정, points 정렬 검증).
+- **검증**: `ros2 run robo_claw_sim sim_runner --backend mujoco .../grasp_basic.yaml` → `passed: true`, `grasped_objects: ["cup_1"]`, 충돌 0. `uv run pytest src/robo_claw_sim/tests` 86 passed. 실기 파지와의 상관 및 실제 조작 스택(스킬) 연동은 미검증입니다.
+
 ## 2026-11-17 — MuJoCo 백엔드 조작·파지 판정 기반(Phase 2a)
 
 - **Added**: `backends/manipulation.py`에 3축 직교 슬라이더 팔(`arm_x`/`arm_y`/`arm_z`)과 평행 조 그리퍼(`gripper_joint`) 모델, `GraspState`, MJCF 조각 생성을 추가했습니다. 시나리오의 `objects`가 free body로 장면에 들어가 실제 접촉 대상이 됩니다.
