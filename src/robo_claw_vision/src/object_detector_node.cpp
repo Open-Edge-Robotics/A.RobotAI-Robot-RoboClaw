@@ -101,14 +101,14 @@ public:
     if (!std::filesystem::exists(cfg.model_path)) {
       RCLCPP_FATAL(get_logger(),
         "ONNX model file not found: %s\n"
-        "  1) Download the model first: ./download_model.sh        (yolov8s, default)\n"
-        "                                ./download_model.sh n      (yolov8n, lightweight)\n"
+        "  1) Download the model first: ./scripts/download_model.sh        (yolov8s, default)\n"
+        "                                ./scripts/download_model.sh n      (yolov8n, lightweight)\n"
         "  2) After downloading, verify the model_path parameter matches the actual save location\n"
         "     (launch argument: vision_model_path:=/ros2_ws/models/yolov8s.onnx)",
         cfg.model_path.c_str());
       throw std::runtime_error(
         "ONNX 모델 파일 없음: " + cfg.model_path +
-        " (./download_model.sh 로 다운로드 필요)");
+        " (./scripts/download_model.sh 로 다운로드 필요)");
     }
 
     try {

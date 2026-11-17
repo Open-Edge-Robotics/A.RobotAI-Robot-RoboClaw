@@ -14,7 +14,7 @@ robo_claw_cli/robo_claw_cli
 validation/talk/*_pb2.py
 validation/talk/*_pb2_grpc.py
 
-# src 내 proto 생성물: generate_protos.sh 생성 (커밋 제외, 각 호스트에서 재생성)
+# src 내 proto 생성물: scripts/generate_protos.sh 생성 (커밋 제외, 각 호스트에서 재생성)
 # proto 원본은 src/robo_claw_msgs/proto/ 에 커밋되어 있다.
 src/robo_claw_grpc/robo_claw_grpc/robo_pb2*
 src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2*

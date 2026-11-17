@@ -5,15 +5,16 @@ set -euo pipefail
 # robo_claw_msgs/proto/messenger.proto → robo_claw_channel/robo_claw_channel/messenger_pb2*.py
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROTO_DIR="$SCRIPT_DIR/src/robo_claw_msgs/proto"
-GRPC_OUTPUT_DIR="$SCRIPT_DIR/src/robo_claw_grpc/robo_claw_grpc"
-CHANNEL_OUTPUT_DIR="$SCRIPT_DIR/src/robo_claw_channel/robo_claw_channel"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROTO_DIR="$PROJECT_ROOT/src/robo_claw_msgs/proto"
+GRPC_OUTPUT_DIR="$PROJECT_ROOT/src/robo_claw_grpc/robo_claw_grpc"
+CHANNEL_OUTPUT_DIR="$PROJECT_ROOT/src/robo_claw_channel/robo_claw_channel"
 
 # grpcio-tools는 uv가 관리하는 .venv에만 설치되어 있으므로(pyproject.toml 의존성),
 # 시스템 python3로 바로 실행하면 "No module named 'grpc_tools'"로 실패한다.
-if [[ -f "$SCRIPT_DIR/.venv/bin/activate" ]]; then
+if [[ -f "$PROJECT_ROOT/.venv/bin/activate" ]]; then
   # shellcheck source=/dev/null
-  source "$SCRIPT_DIR/.venv/bin/activate"
+  source "$PROJECT_ROOT/.venv/bin/activate"
 fi
 
 echo "Proto 파일 생성 시작..."

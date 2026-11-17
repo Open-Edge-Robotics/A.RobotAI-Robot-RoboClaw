@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # YOLOv8 ONNX 모델 다운로드 스크립트
-# 사용법: ./download_model.sh [모델크기]
+# 사용법: ./scripts/download_model.sh [모델크기]
 #   모델크기: n (기본값) | s | m | l | x
 # 예시:
-#   ./download_model.sh       # yolov8n (가장 가벼움)
-#   ./download_model.sh s     # yolov8s
-#   ./download_model.sh m     # yolov8m
+#   ./scripts/download_model.sh       # yolov8n (가장 가벼움)
+#   ./scripts/download_model.sh s     # yolov8s
+#   ./scripts/download_model.sh m     # yolov8m
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# 기본값은 이 스크립트가 있는 저장소 루트의 models/ (docker 실행 스크립트가 마운트하는
-# 경로와 동일). RC_MODELS_DIR로 오버라이드 가능 — run_robo_claw_docker.sh/
-# run_former_docker.sh와 동일한 변수를 사용해 다운로드 위치와 마운트 위치를 일치시킨다.
-MODEL_DIR="${RC_MODELS_DIR:-${SCRIPT_DIR}/models}"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_ROOT}"
+# 기본값은 저장소 루트 models/ (docker 실행 스크립트가 마운트하는 경로와 동일).
+# RC_MODELS_DIR로 오버라이드 가능 — run_robo_claw_docker.sh와 같은 변수를 사용한다.
+MODEL_DIR="${RC_MODELS_DIR:-${PROJECT_ROOT}/models}"
 MODEL_SIZE="${1:-n}"
 MODEL_NAME="yolov8${MODEL_SIZE}"
 PT_FILE="${MODEL_DIR}/${MODEL_NAME}.pt"

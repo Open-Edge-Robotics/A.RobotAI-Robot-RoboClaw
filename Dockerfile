@@ -163,11 +163,11 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
 
 # 9. 소스 코드 복사
 COPY src ./src
-COPY generate_protos.sh ./generate_protos.sh
+COPY scripts/generate_protos.sh ./scripts/generate_protos.sh
 
 # Python gRPC 모듈은 git에서 제외되는 생성물이므로 이미지 빌드 시 생성한다.
 # 생성 전에 실행하면 ament_python_install_package가 해당 모듈을 설치하지 않는다.
-RUN bash ./generate_protos.sh && \
+RUN bash ./scripts/generate_protos.sh && \
     test -s src/robo_claw_grpc/robo_claw_grpc/robo_pb2.py && \
     test -s src/robo_claw_grpc/robo_claw_grpc/robo_pb2_grpc.py && \
     test -s src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2.py && \

@@ -31,8 +31,8 @@ CAMERA_TOPIC="${RC_CAMERA_TOPIC:-}"
 USE_GRPC="${USE_GRPC:-${RC_USE_GRPC:-false}}"
 USE_VISION="${USE_VISION:-${RC_USE_VISION:-true}}"
 MODEL_NAME="${RC_MODEL_NAME:-yolov8n}"
-# download_model.sh 기본 저장 위치(저장소 루트 models/)를 그대로 마운트한다.
-# RC_MODELS_DIR로 오버라이드 가능 (download_model.sh와 동일한 변수명).
+# scripts/download_model.sh 기본 저장 위치(저장소 루트 models/)를 그대로 마운트한다.
+# RC_MODELS_DIR로 오버라이드 가능 (scripts/download_model.sh와 같은 변수명).
 MODELS_DIR="${RC_MODELS_DIR:-${REPO_ROOT}/models}"
 SOUL_FILE="${RC_ROBOT_SOUL_FILE:-}"
 SKILLS_GUIDE="${RC_SKILLS_GUIDE_FILE:-}"
