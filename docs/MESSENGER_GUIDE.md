@@ -42,10 +42,7 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 
 1.  **애플리케이션 생성**: [Discord Developer Portal](https://discord.com/developers/applications)에서 `New Application`을 만듭니다.
 2.  **봇 설정**: `Bot` 탭에서 봇의 이름을 정하고 **Token**을 생성하여 복사합니다.
-3.  **Privileged Gateway Intents**: 같은 `Bot` 탭 아래에서 다음 인텐트를 모두 활성화(On)해야 합니다.
-    - `PRESENCE INTENT`
-    - `SERVER MEMBERS INTENT`
-    - **`MESSAGE CONTENT INTENT`** (필수)
+3.  **Privileged Gateway Intents**: 같은 `Bot` 탭에서 **`MESSAGE CONTENT INTENT`**를 활성화합니다. 현재 클라이언트는 메시지 내용을 읽기 위해 이 intent를 요청합니다.
 4.  **초기 설치**: `OAuth2` -> `URL Generator`에서 `bot` 체크 후, `Send Messages`, `Read Message History` 권한을 선택해 생성된 링크로 본인의 서버에 봇을 초대합니다.
 5.  **.env 설정**:
     ```bash
@@ -61,7 +58,8 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 
 `./rclaw run`은 채널 노드를 기본 활성화하지만 각 메신저는 `ENABLE_TELEGRAM`,
 `ENABLE_SLACK`, `ENABLE_DISCORD`가 `true`이고 필요한 토큰이 있어야 연결합니다.
-로컬 `run/sim`에서 세 메신저의 기본 활성화 값은 모두 `false`입니다.
+로컬 `rclaw run/sim` 기본값은 비활성입니다. 다만 `.env.example`은 Discord를 활성화하고,
+채널 노드를 직접 실행하는 기본값도 다를 수 있으므로 실제 프로필과 최종 환경 변수를 확인합니다.
 
 ```bash
 # 권장: .env 설정 기반 실행
@@ -73,7 +71,11 @@ RoboClaw는 텔레그램(Telegram), 슬랙(Slack), 디스코드(Discord)를 통�
 
 각 메신저 채널은 별도 스레드에서 동시에 실행되므로, 한 대의 로봇을 텔레그램, 슬랙, 디스코드에서 동시에 제어할 수 있습니다.
 
-토큰은 `.env`에만 넣고 커밋하지 마세요. 운영 배포에서는 AI Config Server profile + secret으로 관리하는 것을 권장합니다([CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) 참고).
+현재 채널 핸들러는 발신자 allowlist를 검사하지 않습니다. Telegram 봇에 메시지를 보낼 수
+있는 사용자, Slack 앱이 구독하는 채널 사용자, 초대된 Discord 서버 사용자가 요청을 보낼 수
+있으므로 봇 접근·서버 멤버십을 제한합니다. 토큰은 `.env`에만 넣고 커밋하지 않습니다.
+운영 배포에서는 AI Config Server profile + secret으로 관리합니다
+([CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) 참고).
 
 
 ## gRPC assistant 응답 전달

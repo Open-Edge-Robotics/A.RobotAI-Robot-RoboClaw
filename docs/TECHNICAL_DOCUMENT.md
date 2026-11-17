@@ -6,12 +6,12 @@
 | --- | --- |
 | 문서 버전 | 1.0 |
 | 문서 상태 | 제출 검토용 |
-| 작성일 | 2026-11-12 |
+| 작성일 | 2026-11-17 |
 | 대상 소프트웨어 | Robo-Claw / RoboClaw |
 | 선언 소프트웨어 버전 | `0.1.0` (`pyproject.toml` 기준) |
-| 기준 커밋 | `0b555f180621a0e8e346a0f124a87bc08bd367e8` |
-| 기준 커밋 일자 | 2026-11-10 |
-| 기준 커밋 제목 | `fix(manipulation): 작업자 지지 팔 자세를 stow 참조값으로 기록` |
+| 기준 커밋 | `23530cab4989ed55fad6424089afe6764378f372` |
+| 기준 커밋 일자 | 2026-11-17 |
+| 기준 커밋 제목 | `fix(cli): 시뮬레이터 실행 경로의 죽은 Gazebo 경로 제거와 CLI 절차 문서화` |
 | 공통 설정 계약 버전 | `2.13.0` (`contracts/contract.lock.json` 기준) |
 | 구성 참고 | Robo-Claw Maestro의 `docs/TECHNICAL_DOCUMENT.md` |
 
@@ -96,6 +96,7 @@ Robo-Claw는 Maestro 없이도 독립 실행합니다. Maestro의 Mission Behavi
 | `robo_claw_grpc` | Python | 외부 RosGrpc 서비스와 FleetControl connector를 제공합니다. |
 | `robo_claw_vision` | C++ | ONNX Runtime 객체 탐지와 `Detection2DArray` 발행을 수행합니다. |
 | `robo_claw_dashboard` | Python / HTML·JS | 로컬 상태·지도·설정·로그 조회와 시나리오 UI를 제공합니다. |
+| `robo_claw_sim` | Python | Gazebo 없이 센서·지도·내비게이션 액션을 합성하는 전용 시뮬레이터를 제공합니다. |
 | `robo_claw_bringup` | Python / YAML | 로봇별 설정과 launch 인자로 실행 구성을 조립합니다. |
 | `robo_claw_cli` | Go | `rclaw` 설정 동기화, 실행, 진단과 QA를 구현합니다. |
 
@@ -125,7 +126,7 @@ Robo-Claw는 Maestro 없이도 독립 실행합니다. Maestro의 Mission Behavi
 
 모든 로봇 명령이 C++ core를 통과하지는 않습니다. 주행 스킬은 Nav2 action을 사용하고, Stretch·AGX 조작은 드라이버 action·service·topic을 직접 사용합니다. 따라서 core의 watchdog이나 속도 제한을 전체 제어 경로에 대한 하드웨어 안전 인터록으로 해석하지 않습니다.
 
-실기 구성은 로봇 드라이버·TF·센서와 Robo-Claw를 연결합니다. 시뮬레이션 구성은 Gazebo·Nav2·AMCL 또는 SLAM을 함께 사용합니다. 로컬·컨테이너·원격 프로필 실행은 launch 조립과 설정 우선순위가 다르므로 실행 방식을 고정하여 운영합니다.
+실기 구성은 로봇 드라이버·TF·센서와 Robo-Claw를 연결합니다. 시뮬레이션은 Gazebo·Nav2·AMCL 또는 SLAM 경로와 Gazebo 없이 동작하는 `robo_claw_sim` 경로를 제공합니다. 전용 시뮬레이터는 센서·지도·내비게이션 액션을 합성하지만 물리·카메라 영상·실제 Nav2 동작을 대체하지 않습니다. 로컬·컨테이너·원격 프로필 실행은 launch 조립과 설정 우선순위가 다르므로 실행 방식을 고정하여 운영합니다.
 
 ## 3. 핵심 모델과 실행 계약
 
@@ -456,14 +457,21 @@ task unit-test
 ### 9.3 시뮬레이션과 mock
 
 ```bash
-# Jazzy 경로의 Nav2 시뮬레이션을 시작합니다.
+# Gazebo 없이 전용 시뮬레이터로 전체 스택을 기동합니다.
+./rclaw sim --engine stub \
+  --scenario src/robo_claw_sim/scenarios/navigate_basic.yaml
+
+# Gazebo 경로의 Nav2 시뮬레이션을 시작합니다.
 ./rclaw sim --nav2 sim_engine:=gz
 
 # 중앙 프로필·LLM을 유지하고 로봇 동작만 대체합니다.
 ./rclaw launch former <environment> --mock-robot
 ```
 
-`--mock-robot`은 네이티브 실행에서 사용하며 Docker·Gazebo·Nav2 옵션과 함께 사용하지 않습니다. ROS generated interfaces와 LLM·RAG 등 로봇 외 의존성은 여전히 필요합니다.
+`--engine stub`은 `robo_claw_sim`으로 ROS 센서·액션 경로를 검증하고, `--mock-robot`은
+네이티브 실행에서 로봇 동작만 대체합니다. 두 경로의 검증 범위는 다릅니다.
+`--mock-robot`은 Docker·Gazebo·Nav2 옵션과 함께 사용하지 않으며 ROS generated interfaces와
+LLM·RAG 등 로봇 외 의존성은 여전히 필요합니다.
 
 ### 9.4 중앙 설정과 배포
 
@@ -564,6 +572,9 @@ LLM·ROS·카메라·Qdrant·MCP는 빠른 테스트에서 mock·fake로 격리�
 
 ```bash
 # 먼저 workspace를 build하고 ROS 환경을 준비합니다.
+task verify
+
+# 개별 검증이 필요할 때
 task unit-test
 task unit-test-cov
 task test
@@ -598,11 +609,11 @@ task deps-check
 
 저장소에는 도구 호출 A/B, System 1 평가, 정리 태스크 반복 실험 도구와 기존 기록을 포함합니다. 이 문서에서는 이를 모든 로봇·모델의 보편적인 성능 수치나 기준 커밋의 재측정 결과로 인용하지 않습니다.
 
-### 11.6 문서 작성 시 검증 범위
+### 11.6 검증 결과의 표기
 
-이번 문서 작성은 소스·기존 가이드 조사, 참조 경로·문서 링크와 도식 생성 검증을 범위로 합니다. 단위·ROS 통합·Docker 배포·실 LLM·실기기 시험은 새로 수행하지 않았으므로 새로운 passed 수치·성능·인수 완료를 제시하지 않습니다.
-
-최종 제출·승인 시 실행 환경과 시험 결과를 별도 인수 자료로 첨부합니다. 문서의 구현 설명을 시험 성적서나 안전 인증서로 사용하지 않습니다.
+검증 결과에는 실행 환경, 소프트웨어 commit, 로봇 프로필, 설정 revision과 시험 범위를 함께
+기록합니다. 코드·시뮬레이터 자동화 성공은 ROS 통합·Docker 배포·LLM 품질·실기기 안전성
+검증을 대신하지 않습니다. 문서의 구현 설명을 시험 성적서나 안전 인증서로 사용하지 않습니다.
 
 ## 12. 구현 현황과 제약사항
 

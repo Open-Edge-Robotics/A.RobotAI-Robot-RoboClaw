@@ -21,17 +21,22 @@ graph TD
     AG --> SK[SkillManager]
     SK --> NAV[Navigation Skills]
     SK --> VIS[Vision / Map Skills]
+    SK --> MAN[Manipulation Backends]
     SK --> SYS[System / HRI Skills]
     SK --> COOP[Cooperate / File Skills]
     NAV --> ROS[ROS 2 Graph / Nav2 / Topics]
     VIS --> ROS
+    MAN --> ROS
     SYS --> ROS
     COOP --> ROS
     AG -->|SendMessage service| CH
     ROS --> CORE[robo_claw_core]
     CORE --> HW[Robot HW / Simulator]
+    SIM[robo_claw_sim] --> ROS
+    GZ[Gazebo] --> ROS
     DISC[robo_claw_discovery] --> ROS
     DISC --> CAP[Capability JSON]
+    DASH[robo_claw_dashboard] -->|HTTP / ROS| ROS
 ```
 
 ## 배포 관점 아키텍처
@@ -43,6 +48,8 @@ graph LR
         CH[robo_claw_channel]
         AG[robo_claw_agent]
         DISC[robo_claw_discovery]
+        VISION[robo_claw_vision]
+        DASH[robo_claw_dashboard]
     end
 
     subgraph Real Robot Path
@@ -51,7 +58,8 @@ graph LR
     end
 
     subgraph Simulation Path
-        GZ[Gazebo]
+        STUB[robo_claw_sim]
+        GZ[Gazebo Harmonic / Classic]
         NAV2[Nav2 / AMCL / SLAM]
     end
 
@@ -59,6 +67,9 @@ graph LR
     BR --> AG
     BR --> DISC
     BR --> CORE
+    BR --> VISION
+    BR --> DASH
+    BR --> STUB
     BR --> GZ
     GZ --> NAV2
     CORE --> HW

@@ -422,5 +422,5 @@ python3 scripts/system1_eval.py --router laya --endpoint http://<laya-host>:8000
 - 입력은 지시문 텍스트만 씁니다. 이미지나 센서 값은 Laya에 보내지 않습니다.
 - Laya는 숫자나 자유 텍스트 인자(거리, 새 장소 이름, 검색어)를 추출하지 못합니다. 인자가 필요한 스킬은 `navigate_to`(기억된 장소)를 제외하고 직접 실행 범위에 넣지 않습니다.
 - 복합 명령(`looks_compound`)은 Laya를 호출하지 않고 LLM으로 넘깁니다.
-- AI Config Server 웹 설정의 System 1 섹션은 라우터 항목(`SYSTEM1_ROUTER`~`SYSTEM1_API_KEY`)을 제공합니다. Thor 내장 서버 항목(`SYSTEM1_LOCAL_*`, `SYSTEM1_HEALTH_WAIT_SEC`)을 중앙에서 관리하려면 서버에 필드를 추가해야 합니다.
+- 저장소의 runtime contract는 라우터 항목과 `SYSTEM1_STEP_ROUTING`을 설정 필드로 등록합니다. 실제 AI Config Server UI가 사용하는 contract 버전과 필드 노출 여부는 배포본에서 확인합니다. Thor 내장 서버 항목(`SYSTEM1_LOCAL_*`, `SYSTEM1_HEALTH_WAIT_SEC`)은 별도 전달 경로가 필요합니다.
 - `./rclaw launch --docker`는 컨테이너에 GPU 옵션을 넘기지 않습니다. Thor GPU를 쓰려면 `scripts/run_robo_claw_docker.sh --gpu` 또는 같은 의미의 compose 설정을 사용합니다.

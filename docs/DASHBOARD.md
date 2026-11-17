@@ -70,7 +70,7 @@ RC_HTTP_CONTROL_TOKEN=<제어 토큰>
 ```
 
 `dashboard.host`/`dashboard.port`만 지정하고 `dashboard.enabled`를 켜지 않으면 노드가 기동하지
-않으므로 9190 같은 포트에 아무 응답이 없습니다.
+않으므로 기본 포트 9090에 아무 응답이 없습니다.
 
 `ros2 launch`로 직접 실행할 때는 다음 한 줄이면 됩니다.
 
@@ -393,7 +393,7 @@ curl -s -H "X-RoboClaw-Token: $RC_HTTP_READONLY_TOKEN" \
 대시보드는 `map_topic`으로 받은 OccupancyGrid와 `map_frame`→`base_frame` TF를 사용해 지도와 로봇
 위치를 같은 화면에 표시합니다. `/api/status`의 `localization`에는 위치(`pose`)와 지도 메타(`map`)만
 담고, 셀 데이터는 `/api/map`으로 분리해 전송합니다. 지도는 `stamp_ns`가 바뀔 때만 다시 받으므로
-2초 폴링 부하가 지도 크기에 비례해 커지지 않습니다.
+3초 폴링 부하가 지도 크기에 비례해 커지지 않습니다.
 
 ```bash
 # 현재 위치 스냅샷

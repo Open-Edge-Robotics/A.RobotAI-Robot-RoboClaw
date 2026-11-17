@@ -5,9 +5,12 @@
 ## 1. 구성 요약
 
 ```text
-User ── Channel Gateway ── Roboclaw_core (PI Agent) ──┬── LLM Bridge ── LLM
+User ── Channel Gateway ── robo_claw_agent (Planner) ──┬── LLM Bridge ── LLM
                                                        │        └── MCP ── Tool (외부 도구)
                                                        └── Skill Manager (로봇 내장 스킬)
+                                                              │ ROS 2 topic/action/service
+                                                              ▼
+                                                     robo_claw_core ── Hardware
 ```
 
 | 블록 | 위치 | 호출 방식 |

@@ -2,6 +2,8 @@
 
 Stretch 3에서 `adaptive_pick_object`가 파지 직전 단계에서 반복 실패하던 문제를 해결하기 위해,
 그리퍼 카메라 단독 서보에 헤드 카메라 관측을 병용하도록 확장한 구조를 설명합니다.
+이 경로는 `adaptive_pick_object`의 기본 고정 패턴 파지가 아니라
+`use_fixed_pattern_grasp=false`로 선택하는 그리퍼 카메라/VLA 분기입니다.
 
 ## 1. 왜 필요했나
 
@@ -169,7 +171,7 @@ ros2 launch stretch_core stretch_aruco.launch.py
 | `head_min_score`             | `0.3`                 | 헤드 검출기 최소 confidence            |
 | `grasp_confirm_radius_m`     | `0.05`                | 헤드 기준 "파지 가능" 반경             |
 | `lateral_deadband_deg`       | `1.5`                 | 이 이내는 회전하지 않음                |
-| `max_lateral_correction_deg` | `12.0`                | 초과 시 오검출 의심으로 거부           |
+| `max_lateral_correction_deg` | `20.0`                | 초과 시 오검출 의심으로 거부           |
 | `dual_view_agree_m`          | `0.15`                | 헤드/그리퍼 관측 불일치 임계           |
 
 전부 스킬 파라미터로 오버라이드 가능하고, ArUco 관련 항목은 `stretch3_config.yaml`에도 있습니다.

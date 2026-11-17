@@ -33,7 +33,7 @@ task setup-deps
 task proto
 task build
 ./rclaw run
-# 시뮬레이션은 ./rclaw sim --nav2를 사용합니다.
+# Gazebo 시뮬레이션은 ./rclaw sim --nav2, Gazebo 없는 검증은 ./rclaw sim --engine stub를 사용합니다.
 # 중앙 프로필은 ./rclaw launch <robot> <env>를 사용합니다.
 ```
 

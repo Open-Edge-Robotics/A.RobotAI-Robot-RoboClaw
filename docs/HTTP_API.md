@@ -65,7 +65,10 @@ HTTP 핸들러는 `/skill` 직접 호출에서 목록을 검사합니다. 표준
 - `emergency_stop`
 - `rag_delete`
 - `rag_reindex`
-- `ros_command`
+
+`ros_command`는 HTTP 기본 차단 목록에 포함되지 않습니다. HTTP 직접 스킬 호출에서 이를
+차단하려면 `http_blocked_skills_json`에 명시합니다. 기본 차단 목록을 운영 환경의
+허용 정책으로 간주하지 말고, 필요한 스킬만 `http_allowed_skills_json`으로 허용합니다.
 
 ## 엔드포인트
 
@@ -99,8 +102,7 @@ curl http://127.0.0.1:8080/health
       "delete_file",
       "emergency_stop",
       "rag_delete",
-      "rag_reindex",
-      "ros_command"
+      "rag_reindex"
     ]
   },
   "metrics": {}

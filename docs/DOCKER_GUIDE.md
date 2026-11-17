@@ -16,12 +16,12 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 
 | 도구 | 이미지 | 영향 |
 | --- | --- | --- |
-| `node` | 없음 | 대시보드 JS 실행 테스트가 컨테이너에서 skip 됩니다. 호스트에서 `task verify` 로 검증합니다 |
+| `node` | 없음 | 일반 pytest는 대시보드 JS 테스트를 skip 할 수 있습니다. `task verify`는 `RC_REQUIRE_JS_TESTS=1`로 실행하므로 호스트에 Node.js가 필요합니다 |
 | `task`(go-task), `uv`, `ruff` | 없음 | 컨테이너 안에서 `task verify`/`task lint` 를 실행할 수 없습니다 |
 | `pytest`, `pytest-asyncio` | 있음 | 컨테이너 안에서 Python 테스트 실행 가능 |
 
 컨테이너 안에서 pytest 를 돌릴 때 JS 테스트를 조용히 건너뛰지 않게 하려면 `node` 를
-설치하고 `RC_REQUIRE_JS_TESTS=1` 을 설정합니다. 값이 없으면 skip 사유만 요약에 남습니다.
+설치하고 `RC_REQUIRE_JS_TESTS=1` 을 설정합니다. 값이 없으면 해당 테스트는 skip 됩니다.
 
 ## 1. 개요
 
@@ -38,7 +38,7 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 
 | 옵션명                            | 값 타입   | 설명                                                                                                     | 기본값                                    |
 | :-------------------------------- | :-------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------- |
-| `--robot-config`                  | `string`  | 로봇 설정 프로필을 지정합니다. (`stretch3` \| `former` \| `butler` \| `cloid` \| `sim`)                | `.env`의 `RC_ROBOT_CONFIG`; 미설정 시 launch 기본 `stretch3` |
+| `--robot-config`                  | `string`  | 로봇 설정 프로필을 지정합니다. (`stretch3` \| `former` \| `butler` \| `cloid` \| `sim`)                | `.env`의 `RC_ROBOT_CONFIG`; 미설정 시 launch 기본 `sim` |
 | `--camera-topic`                  | `string`  | 카메라 이미지 토픽을 수동으로 재정의(override)합니다.                                                    | 로봇 프로필 기본값                        |
 | `--soul` / `--soul-file`          | `path`    | 로봇 에이전트의 개성·핵심 지침이 담긴 마크다운 파일 경로를 지정합니다.                                   | `.env` 설정 또는 기본 파일                |
 | `--skills-guide` / `--guide-file` | `path`    | 로봇 에이전트의 스킬 동작 가이드 마크다운 파일 경로를 지정합니다.                                        | `.env` 설정 또는 기본 파일                |
@@ -49,7 +49,7 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 | `--config-dir`                    | `path`    | `robo_claw_bringup` 설정 폴더의 호스트 경로를 지정합니다.                                                | `src/robo_claw_bringup/config`            |
 | `--grpc` / `--use-grpc`           | 없음      | gRPC 제어 노드(`robo_claw_grpc_node`)를 함께 실행합니다.                                                 | `false`                                   |
 | `--vision` / `--use-vision`       | 없음      | ONNX 기반 객체 감지 비전 노드(`object_detector_node`)를 함께 실행합니다.                                 | `true` (`USE_VISION` 또는 `RC_USE_VISION`으로 변경) |
-| `--`                              | 복수 인자 | `--` 이후의 모든 명령은 도커 컨테이너 내부 셸에서 직접 위임 실행됩니다.                                  | ROS 2 기본 런치                           |
+| `--`                              | 복수 인자 | `--` 이후의 명령과 인자를 컨테이너에 직접 전달합니다. 일반 경로에서는 셸을 거치지 않습니다.              | ROS 2 기본 런치                           |
 
 ---
 

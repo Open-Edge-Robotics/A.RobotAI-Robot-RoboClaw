@@ -11,7 +11,7 @@
   - Action: `/stretch_controller/follow_joint_trajectory` (`control_msgs/FollowJointTrajectory`, position 모드 단일 point)
   - Service: `/switch_to_position_mode`, `/home_the_robot`, `/stow_the_robot` (모두 `std_srvs/Trigger`)
 - **EE 프레임**: `link_grasp_center`, base_frame `base_link`
-- **2단계 IK**: position은 정밀(수치 Newton IK, 오차 < 0.01), orientation은 근사 매핑(스케일/오프셋 상수 `_WRIST_*`로 분리 → 본 문서 6절에서 보정).
+- **2단계 IK**: position은 수치 Newton IK를 사용하며 수렴 실패 판정은 목표와 계산 결과의 차이가 0.02 m를 넘는 경우입니다. orientation은 근사 매핑이며 스케일/오프셋 상수 `_WRIST_*`는 `stretch_kinematics.py`에 있습니다.
 
 ---
 
@@ -133,7 +133,7 @@ ros2 run tf2_ros tf2_echo base_link link_grasp_center
 
 ### 6.2 orientation 근사 매핑 보정 (필수)
 
-현재 `stretch_backend.py`의 `_WRIST_PITCH_SCALE/OFFSET`, `_WRIST_ROLL_SCALE/OFFSET`은 **초기값 1.0/0.0(근사)**입니다. 실기/시뮬에서 TF로 측정해 보정합니다.
+현재 `stretch_kinematics.py`의 `_WRIST_PITCH_SCALE/OFFSET`, `_WRIST_ROLL_SCALE/OFFSET`은 **초기값 1.0/0.0(근사)**입니다. 실기/시뮬에서 TF로 측정해 보정합니다.
 
 절차:
 
@@ -148,7 +148,7 @@ ros2 run tf2_ros tf2_echo base_link link_grasp_center
    print(rpy_from_quaternion({'x':..,'y':..,'z':..,'w':..}))"
    ```
 3. 측정 pitch / 목표 pitch = 실제 스케일. 부호가 반대면 `_WRIST_PITCH_SCALE` 부호 반전.
-4. `stretch_backend.py` 상수 갱신:
+4. `stretch_kinematics.py` 상수 갱신:
    ```python
    _WRIST_PITCH_SCALE = <측정 스케일>   # 예: -1.05
    _WRIST_PITCH_OFFSET = <잔여 offset>  # 0에 가까우면 0.0
@@ -181,7 +181,9 @@ orientation 보정 완료 후 통합 검증.
 
 `grasp`, `pick_from_right_side_zone`, `vla_pick_front_object`, `vla_pick_gripper_object`는 close 직후 `/joint_states`(또는 `/stretch/joint_states`)의 `gripper_aperture` 실제값과 명령값의 차이(gap)로 파지 성공 여부(`grasp_verified`)를 판정하고, 실패 시 자동 재시도한다(`retry_on_empty_grasp`, `max_grasp_retries`).
 
-**중요**: 이 판정에 쓰이는 `_EMPTY_CLOSE_GAP_M`(기본 0.01m, `sequence.py`)은 실기/시뮬 확인 없이 정한 **임시값**입니다. 실기/MuJoCo 접근이 가능해지면 다음을 먼저 확인할 것:
+**중요**: 이 판정에 쓰이는 `_EMPTY_CLOSE_GAP_M`(기본 0.01m,
+`skills/manipulation_skill/sequence/grasp_verification.py`)은 실기/시뮬 확인 없이 정한
+**임시값**입니다. 실기/MuJoCo 접근이 가능해지면 다음을 먼저 확인합니다.
 
 - `/joint_states`에 실제로 `gripper_aperture` 조인트명이 그대로 나오는지, 혹은 다른 이름(`joint_gripper_finger_left/right`, `stretch_gripper` 등)으로 나오는지.
 - `effort` 필드가 유의미하게 채워지는지(채워진다면 position deadband보다 신뢰도 높은 힘 기반 판정 도입 검토).

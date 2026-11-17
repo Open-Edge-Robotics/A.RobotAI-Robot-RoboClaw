@@ -5,6 +5,10 @@
 [docs/CLEANUP_RUN_METRICS.md](CLEANUP_RUN_METRICS.md), 조건 파일과 러너 사용법은
 [validation/cleanup-experiment/README.md](../validation/cleanup-experiment/README.md)를 따릅니다.
 
+아래 주소, 계정, 프로필 이름, 모션 ID, 경로와 장소 좌표는 특정 배포 시점의 실행 예시입니다.
+실행 전에 실제 기기의 활성 프로필·peer 등록·접근 권한과 위치 기억을 조회해 대조합니다.
+예시에 적힌 대상을 현재 운영값으로 간주하지 않습니다.
+
 실험 목적에 따라 두 가지 구성을 씁니다.
 
 | 구성 | 요청 | 조건 파일 | 절 |

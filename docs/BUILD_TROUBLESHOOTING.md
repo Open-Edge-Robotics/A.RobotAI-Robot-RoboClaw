@@ -57,8 +57,8 @@ CMake Error: ONNX Runtime을 찾을 수 없습니다. ONNXRUNTIME_ROOT_DIR='' �
 fatal error: cv_bridge/cv_bridge.h: No such file or directory
 ```
 
-ROS 2 Jazzy부터 `cv_bridge` 헤더 확장자가 `.h` → `.hpp`로 변경되었습니다.
-소스 코드의 include를 아래와 같이 수정하세요.
+`cv_bridge` 헤더 확장자는 ROS 배포판에 따라 다릅니다. 이 프로젝트는 Humble에서 `.h`,
+Jazzy에서 `.hpp`를 사용합니다. 빌드 환경의 배포판과 source include가 일치하는지 확인합니다.
 
 ```cpp
 // 변경 전
@@ -72,9 +72,11 @@ ROS 2 Jazzy부터 `cv_bridge` 헤더 확장자가 `.h` → `.hpp`로 변경되�
 
 ## 패키지 설치 오류
 
-### `ros-humble-moveit-ros` 설치 시 `libdw-dev` 의존성 충돌
+### Ubuntu 22.04 / ROS 2 Humble에서 MoveIt 설치 시 `libdw-dev` 의존성 충돌
 
-`ros-humble-moveit-ros` 패키지를 설치할 때 아래와 같이 `libdw-dev` 및 `libdw1` 간의 버젼 충돌이 발생하는 경우입니다:
+Ubuntu 22.04의 ROS 2 Humble 환경에서 `ros-humble-moveit-ros`를 설치할 때,
+`jammy-backports`의 `libdw1`이 이미 설치된 특정 패키지 상태에서 발생할 수 있는 사례입니다.
+아래 명령을 일반 해결책으로 적용하지 말고, 먼저 실제 apt 후보 버전을 확인합니다.
 
 ```text
 The following packages have unmet dependencies:

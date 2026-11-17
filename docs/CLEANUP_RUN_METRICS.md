@@ -9,7 +9,7 @@
 | 항목 | 산출 방법 |
 | --- | --- |
 | 반복 횟수 | `cleanup_run` 레코드 수 |
-| 전체 성공률 | `success=true` 비율. 방문한 모든 장소가 `handled`·`delegated`·`delegated_demo` 일 때만 성공으로 기록합니다 |
+| 전체 성공률 | `success=true` 비율. 방문한 모든 장소가 `handled`·`delegated`·`delegated_demo`·`reported_to_maestro` 중 하나일 때 성공으로 기록합니다 |
 | 할당 정확도 | 차단되지 않은 위임 결정 중 기대 동료(`--expect-peer`)와 일치한 비율 |
 | 위임 성공률 | `cleanup_delegate` 레코드의 `success` 비율. 레코드가 없는 이전 로그에서는 `delegated`·`delegated_demo` 상태인 실행의 비율로 대신 계산합니다 |
 | 평균 시간 | `phase_ms` 의 구간별 평균(`navigate`, `observe`, `discovery`, `delegate`, `handle`)과 `elapsed_ms` 평균 |
@@ -104,9 +104,9 @@ python3 scripts/cleanup_run_report.py "$RC_CLEANUP_RUN_LOG_PATH" \
 
 | 범주 | 판정 표지 | 집계 |
 | --- | --- | --- |
-| 네트워크 단절 | `no route to host`, `network is unreachable`, `unreachable`, `네트워크 단절` | 제외 |
-| 커뮤니케이션 실패 | `grpc`, `connection`, `unavailable`, `socket`, `timeout after`, `인증`, `연결`, `응답 없음` | 실패 |
-| 네비게이션 타임아웃 | `visit_place`, `도착하지 못`, `도달하지 못`, `주행`, `타임아웃` | 제외 |
+| 네트워크 단절 | `no route to host`, `network is unreachable`, `unreachable`, `네트워크 단절`, `네트워크 이탈`, `통신 두절` | 제외 |
+| 커뮤니케이션 실패 | `grpc`, `connection`, `connect`, `unavailable`, `socket`, `timeout after`, `인증`, `연결`, `응답 없음`, `응답을 받지 못` | 실패 |
+| 네비게이션 타임아웃 | `visit_place`, `도착하지 못`, `도달하지 못`, `주행`, `타임아웃`, `timeout` 또는 `unreachable`·`navigation_failed`·`visit_failed` 상태 | 제외 |
 | 그 외 | 위 표지 없음(예: 위임 전 계획 실패) | 실패 |
 
 예외 회차 하나에 `cleanup_delegate` 가 여러 건 있으면, 전달 실패 표지가 하나라도 있으면

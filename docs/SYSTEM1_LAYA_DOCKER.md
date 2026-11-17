@@ -73,18 +73,15 @@ Jetson GPU를 쓰려면 NVIDIA Jetson용 torch 휠이 필요합니다. 일반 Py
 |---|---|---|---|---|---|
 | R36.4.x | 6.1 / 6.2 | 12.6 | 3.10 | `https://pypi.jetson-ai-lab.io/jp6/cu126` | `nvcr.io/nvidia/l4t-jetpack:<호스트와 같은 r36.4 태그>` |
 | R36.4.x + CUDA 12.8/12.9 설치 | 6.x | 12.8 / 12.9 | 3.10 | `.../jp6/cu128`, `.../jp6/cu129` | CUDA가 그 버전인 이미지 |
-| R36.3.x | 6.0 | 12.2 | 3.10 | 해당 인덱스 없음 → JetPack 6.2로 업그레이드 권장 | — |
+| R36.3.x | 6.0 | 12.2 | 3.10 | 현재 제공되는 호환 인덱스와 wheel 확인 | 호스트와 일치하는 CUDA 이미지 |
 | R38 이상 (예: 39.x) | 7.x (SBSA) | 13.x | 3.12 | `https://pypi.jetson-ai-lab.io/sbsa/cu130` | CUDA 13 + cuDNN이 포함된 Ubuntu 24.04 arm64 이미지 |
 
-- 인덱스별 Python 태그가 다릅니다. `jp6/*`는 `cp310`, `sbsa/cu130`은 `cp312` 휠만 있습니다. 베이스 이미지의 Python이 이와 다르면 `is not a supported wheel on this platform`으로 실패합니다.
-- 작성 시점 기준으로 `jp6/cu126`에는 torch 2.8.0, 2.9.1, 2.10.0, 2.11.0이 있고, `sbsa/cu130`에는 2.9.0, 2.9.1, 2.10.0, 2.11.0이 있습니다. NVIDIA 포럼에서 JetPack 6.2와 함께 가장 많이 검증된 버전은 2.8.0이므로 `LAYA_TORCH_SPEC=torch==2.8.0`으로 고정하는 것을 권장합니다.
+- 표의 조합은 대표 예시이며, 정확한 호환성은 호스트 L4T·JetPack·CUDA·Python과 현재 인덱스의 wheel metadata를 함께 확인합니다. 불일치하면 표의 이미지나 버전을 그대로 사용하지 않습니다.
+- wheel의 Python ABI 태그와 베이스 이미지 Python 버전이 맞지 않으면 `is not a supported wheel on this platform` 오류가 발생합니다.
+- 인덱스에서 제공하는 torch 버전은 JetPack·CUDA·Python 조합에 따라 바뀝니다. 빌드 전에 선택한 인덱스에서 현재 설치 가능한 버전을 확인하고, 테스트한 버전을 `LAYA_TORCH_SPEC=torch==<버전>`으로 고정합니다. 아래 버전 예시를 최신 호환성 보증으로 간주하지 않습니다.
 - 베이스 이미지 태그는 NGC 카탈로그에서 호스트의 L4T/CUDA와 같은 것을 고릅니다. Jetson torch 휠은 컨테이너 안의 CUDA 라이브러리를 쓰므로, 라이브러리가 없는 이미지(`python:slim` 등)에서는 오류 없이 CPU로만 동작합니다.
-- 인덱스에 원하는 버전이 있는지 미리 확인할 수 있습니다.
-
-  ```bash
-  pip index versions torch --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
-  # 또는 브라우저로 https://pypi.jetson-ai-lab.io/jp6/cu126/torch/
-  ```
+선택한 인덱스의 현재 wheel 목록은 해당 인덱스의 `/torch/` 페이지에서 확인합니다
+(예: `https://pypi.jetson-ai-lab.io/jp6/cu126/torch/`).
 
 #### 빌드와 실행
 
@@ -92,10 +89,11 @@ JetPack 6 (AGX Orin, L4T R36.4.x):
 
 ```bash
 cd ~/workspace-OpenEdgeRobotics/A.RobotAI-Robot-RoboClaw
+: "${LAYA_TORCH_VERSION:?인덱스에서 확인한 호환 버전을 먼저 지정합니다}"
 docker build -f docker/laya/Dockerfile -t robo-claw-laya:jp6 \
   --build-arg BASE_IMAGE=nvcr.io/nvidia/l4t-jetpack:<호스트 L4T와 같은 r36.4 태그> \
   --build-arg LAYA_TORCH_INDEX_URL=https://pypi.jetson-ai-lab.io/jp6/cu126 \
-  --build-arg LAYA_TORCH_SPEC=torch==2.8.0 \
+  --build-arg "LAYA_TORCH_SPEC=torch==${LAYA_TORCH_VERSION}" \
   docker/laya
 ```
 
@@ -229,7 +227,7 @@ robo-claw 컨테이너 안에서도 응답해야 합니다. 토큰이 틀리면 
     -d '{"state":{"instruction":"지금 배터리 얼마 남았어?"},"questions":{"intent":{"type":"choice","instructions":"말의 종류?","criteria":{"smalltalk":"인사","single_skill":"기능 하나","multi_step":"여러 단계"}}}}'
   ```
   ```bash
-  curl -s -H "Authorization: Bearer <System 1 Token | Laya_Token>" http://192.168.50.212:8000/v1/  systemone -H 'Content-Type: application/json' \
+  curl -s -H "Authorization: Bearer <System 1 Token | Laya_Token>" http://192.168.50.212:8000/v1/systemone -H 'Content-Type: application/json' \
     -d '{"state":{"instruction":"지금 배터리 얼마 남았어?"},"questions":{"intent":{"type":"choice","instructions":"말의 종류?","criteria":{"smalltalk":"인사","single_skill":"기능 하나","multi_step":"여러 단계"}}}}'
   ```
    정상 응답에는 `answers.intent.choice`, `answers.intent.confidence`, `routing.model`(multilingual)이 들어 있습니다.
@@ -276,7 +274,7 @@ robo-claw의 스킬 정의에서 추출한 카탈로그(`validation/system1/skil
 
 | 데이터 | 내용 |
 |---|---|
-| `tool_cases.jsonl` | 모든 공개 스킬(95개)마다 1개 이상의 자연어 명령, 인사·질문 케이스. 필요한 인자는 `params`에 적습니다. |
+| `tool_cases.jsonl` | 공개 스킬 98개마다 1개 이상의 자연어 명령, 인사·질문 케이스. 필요한 인자는 `params`에 적습니다. |
 | `compound_cases.jsonl` | 여러 스킬이 필요한 명령 20건과 기대 스킬 순서(`steps`) |
 
 | 평가 | 판정 |

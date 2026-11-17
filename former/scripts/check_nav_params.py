@@ -3,7 +3,7 @@
 
 실기에서 반복된 두 가지 회귀를 코드로 막는다.
 
-1. `recovery_alpha_fast/slow != 0.0` -> nav2_amcl SIGSEGV (NAVI_ISSUE.md 3.5절)
+1. `recovery_alpha_fast/slow != 0.0` -> nav2_amcl SIGSEGV (former/FORMER_GUIDE.md 9.5절)
 2. 코스트맵 기하/인플레이션 불일치 -> 좁은 문에서 경로는 그려지는데 통과 실패
    (global `robot_radius` 가 실측 half-width 보다 크거나, local footprint 와 다르거나,
    `cost_scaling_factor` 가 낮아 inflation 이 계단이 되는 조합)
@@ -111,7 +111,7 @@ def check_file(path: Path) -> list[str]:
                 f"amcl.{key} 가 없습니다(기본값 0.1/0.001 이 적용되어 크래시 경로가 열릴 수 있음)"
             )
         elif float(value) != 0.0:
-            errors.append(f"amcl.{key}={value} — 0.0 이어야 합니다(NAVI_ISSUE.md 3.5절)")
+            errors.append(f"amcl.{key}={value} — 0.0 이어야 합니다(former/FORMER_GUIDE.md 9.5절)")
     if str(amcl.get("scan_topic", "")).lstrip("/") != SCAN_TOPIC.lstrip("/"):
         errors.append(f"amcl.scan_topic={amcl.get('scan_topic')!r} — {SCAN_TOPIC} 이어야 합니다")
 

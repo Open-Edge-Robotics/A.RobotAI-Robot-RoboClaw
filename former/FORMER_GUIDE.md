@@ -228,7 +228,7 @@ RC_EXTRA_VOLUMES="-v $PWD/patch/bringup_launch.py:/root/dev_ws/install/former_na
 - 로봇 개발사 소스/이미지 Dockerfile 이 없어도, 현재 이미지를 베이스로 한 파생 이미지(`FROM former_docker:1.0` + `COPY` 로 launch/파라미터 교체)로 수정본을 구울 수 있습니다.
 - 또는 `map_server` 를 컴포넌트에서 분리해 별도 프로세스로 띄워 크래시 영향을 국소화합니다.
 - 운영 중에는 컨테이너 생존을 주기적으로 확인해 죽으면 재기동하는 감시(systemd 등)를 두는 것이 안전합니다.
-- 참고: 이 이미지 안에서는 `apt-get update` 가 실패합니다(dpkg DB 비어 있음, ROS apt 키 만료). 분석 전용 파생 이미지에 gdb 를 넣고 core dump 로 백트레이스를 얻는 절차는 [내비게이션 장애 기록](../docs/NAVI_ISSUE.md) 6절을 참고합니다.
+- 참고: 이 이미지 안에서는 `apt-get update` 가 실패합니다(dpkg DB 비어 있음, ROS apt 키 만료). 분석용 이미지와 core dump 절차는 9.8절을 참고합니다.
 
 ## 9. Nav2 기동/구동 이슈 (실기 적용값)
 
@@ -306,7 +306,7 @@ amcl:
     recovery_alpha_slow: 0.0
 ```
 
-위치를 크게 잃은 경우의 자동 복구는 꺼지므로 RViz 에서 initial pose 를 다시 지정합니다. 상세 분석은 [내비게이션 장애 기록](../docs/NAVI_ISSUE.md) 3.5절을 참고합니다.
+위치를 크게 잃은 경우의 자동 복구는 꺼지므로 RViz 에서 initial pose 를 다시 지정합니다.
 
 ### 9.6 좁은 문 통과 실패 — costmap 기하/인플레이션 (실기 적용값)
 
@@ -336,6 +336,9 @@ python3 former/scripts/check_nav_params.py
 ```
 
 이 스크립트는 `recovery_alpha` 0.0, footprint/inscribed 범위, global·local inscribed 일치, inflation 절벽(경계 cost ≤ 140), 지도 해상도 일치, `scan_restamped` 토픽을 검사합니다.
+정적 파라미터 검사는 실제 좁은 문 통과나 장시간 주행 성공을 보증하지 않습니다.
+실기 주행 전 시뮬레이션과 제한된 저속 검증을 수행하고, door passage 성공률과 계획 실패를
+별도로 확인합니다.
 
 주의할 점:
 
@@ -393,6 +396,64 @@ RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./restart_nav.sh
 - 지도 origin 과 해상도가 같으므로 `initpose.md` 의 초기 위치는 그대로 쓸 수 있습니다.
 - 로봇 폭보다 좁은 통로를 지도에서 막는 `--min-passage=0.42` 옵션도 있습니다. 이 맵에서는 1,171 셀이 추가로 막혀 지도 형상이 크게 바뀌므로 기본적으로 쓰지 않습니다. 0.41 m 보다 좁은 틈은 `inscribed 0.205` 때문에 계획 단계에서 이미 통행 불가로 처리됩니다.
 
+### 9.8 AMCL 크래시 core dump 확인
+
+`process has died`에서 AMCL의 SIGSEGV가 확인되고 `recovery_alpha_fast/slow`가 모두 `0.0`이면,
+기존 원인을 반복 가정하지 말고 새 core dump와 backtrace를 확보합니다. 벤더 이미지 자체는
+변경하지 않고 분석 전용 파생 이미지를 사용합니다. 이미지의 `apt-get update`는 dpkg DB와
+ROS apt key 문제로 실패할 수 있으므로 gdb가 포함된 분석 이미지에서만 작업합니다.
+
+1. 디버깅 도구를 포함한 파생 이미지를 만듭니다. 이 이미지의 libc/libstdc++는 갱신될 수
+   있으므로 분석에만 사용하고 원본 이미지는 변경하지 않습니다.
+
+   ```bash
+   docker run --name gdb_build --entrypoint bash former_docker:1.0 -c '
+     export DEBIAN_FRONTEND=noninteractive
+     rm -f /etc/apt/sources.list.d/ros2-latest.list
+     rm -rf /var/lib/apt/lists/*
+     apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+       -o Dpkg::Options::=--force-confold \
+       -o Dpkg::Options::=--force-confdef gdb'
+   docker commit gdb_build former_docker:1.0-gdb
+   docker rm gdb_build
+   ```
+
+2. 호스트의 원래 core pattern을 보관하고 core 생성 경로를 설정합니다. 이 값은 호스트
+   전역 설정이므로 작업 전 원래 값을 보관합니다.
+
+   ```bash
+   cat /proc/sys/kernel/core_pattern > core_pattern.orig
+   docker run --rm --privileged --entrypoint sh former_docker:1.0 \
+     -c 'echo /tmp/core.%e.%p.%t > /proc/sys/kernel/core_pattern'
+   ```
+
+3. 크래시 후 core를 컨테이너에서 꺼냅니다.
+
+   ```bash
+   docker cp former00XX_nav:/tmp/core.amcl.<pid>.<timestamp> ./debug/
+   ```
+
+4. 동일한 실행 환경의 라이브러리를 sysroot로 지정해 backtrace를 확인합니다.
+
+   ```bash
+   docker run --rm --pid=container:former00XX_nav --cap-add SYS_PTRACE \
+     -v "$PWD/debug:/dbg" --entrypoint bash former_docker:1.0-gdb -c '
+       P=$(pgrep -f planner_server | head -1)
+       gdb -batch -ex "set sysroot /proc/$P/root" \
+         -ex "file /proc/$P/root/opt/ros/humble/lib/nav2_amcl/amcl" \
+         -ex "core-file /dbg/core.amcl.<pid>.<timestamp>" \
+         -ex bt -ex "thread apply all bt 25"'
+   ```
+
+5. 분석이 끝나면 호스트의 core pattern을 복원합니다.
+
+   ```bash
+   docker run --rm --privileged \
+     -v "$PWD/core_pattern.orig:/tmp/core_pattern.orig:ro" \
+     --entrypoint sh former_docker:1.0 \
+     -c 'cat /tmp/core_pattern.orig > /proc/sys/kernel/core_pattern'
+   ```
+
 ## 10. 부팅 시 자동 시작 (베이스, nav2, RoboClaw 에이전트)
 
 두 로봇(`former0045`, `former0047`)은 로봇 베이스(`former_bringup.service`)와 카메라
@@ -439,8 +500,16 @@ watchdog 은 30분에 3회까지만 재기동하고 그 뒤에는 `failed` 로 �
 
 DDS 인터페이스를 바꾸려면 `former/autostart/cyclonedds.xml` 을 고치고
 `sudo ./install_autostart.sh <robot> base` 로 배포합니다. USB 이더넷처럼 부팅 후에
-나타나는 인터페이스나, 다른 ROS 배포판(jazzy) 노드가 있는 링크를 바인딩하면 베이스가
-통째로 죽습니다(2026-10-29 former0045 사례, `docs/NAVI_ISSUE.md` 3.9).
+나타나는 인터페이스를 바인딩하면 DDS 참가자 생성 전에 주소가 없어 베이스가 실패할 수
+있습니다. `wait_for_net.sh`가 설정된 인터페이스의 IPv4 주소를 확인하는지 함께 검증합니다.
+
+현재 저장소의 former0045·former0047 자동 시작 unit과 수동 실행 스크립트는 모두
+`ROS_DOMAIN_ID=4`를 기본으로 사용합니다. 두 로봇이 같은 네트워크에서 이 값을 사용하면
+ROS 그래프를 공유하므로, CycloneDDS 인터페이스 선택만으로 서로를 격리할 수 없습니다.
+독립 그래프가 필요하면 base·nav·agent·RViz 및 기타 ROS client의 도메인 값을 로봇별로
+함께 조정하고, 서로 다른 도메인 사이에는 ROS discovery가 되지 않는 점을 고려해 peer
+통신 경로도 확인합니다. 도메인을 변경하기 전에는 운영 네트워크의 공통 값을 합의하고,
+변경 후 `ros2 node list`와 서비스 대상이 의도한 로봇만 가리키는지 확인합니다.
 
 ### 10.3 전경 실행이 필요한 이유
 

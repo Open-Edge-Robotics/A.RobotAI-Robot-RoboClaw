@@ -189,7 +189,8 @@ redaction을 적용해야 합니다.
 
 ```bash
 docker ps --format '{{.ID}} {{.Names}}'
-docker exec <container-name-or-id> env | grep -E '^(LANGSMITH|LANGCHAIN)_'
+docker exec <container-name-or-id> sh -c \
+  "env | grep -E '^(LANGSMITH|LANGCHAIN)_' | sed -E 's/^((LANGSMITH|LANGCHAIN)_API_KEY=).*/\\1<redacted>/'"
 ```
 
 최소한 다음 값이 보여야 합니다.

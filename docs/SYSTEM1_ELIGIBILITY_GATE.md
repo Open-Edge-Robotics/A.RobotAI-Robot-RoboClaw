@@ -122,4 +122,4 @@ System1 step gate: {"mode": "shadow", "step_index": 2, "step": "촬영한 카메
 
 - 판정은 한국어 표현 규칙에 기반합니다. 규칙에 없는 지시어나 조건 표현은 통과될 수 있으며, 이때는 라우터의 확신도·범위·가드가 다음 방어선입니다.
 - 분해기(LLM)가 단계 문장을 어떻게 쓰느냐에 따라 판정이 달라집니다. "그 이미지를 보내" 대신 "카메라 이미지를 보내"로 쓰면 통과될 수 있으므로, `shadow` 기록으로 실제 분해 문장을 확인합니다.
-- AI Config Server 웹 설정에는 아직 `SYSTEM1_STEP_ROUTING` 필드가 없습니다. 웹 설정으로 관리하려면 서버에 필드를 추가해야 하며, 그 전에는 기본값(`shadow`)이 적용됩니다.
+- 저장소의 runtime contract에는 `SYSTEM1_STEP_ROUTING` 필드가 등록되어 있습니다. 실제 AI Config Server UI에서 보이지 않으면 배포된 서버가 사용하는 contract 버전을 확인합니다. 설정이 전달되지 않으면 기본값(`shadow`)이 적용됩니다.

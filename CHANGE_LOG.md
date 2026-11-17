@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 문서 현행화 및 일회성 이슈 기록 통합
+
+- **Changed**: API·Docker·로봇 설정·System 1·RAG·시뮬레이션·매니퓰레이션·대시보드·메신저 문서를 현재 구현과 설정 contract에 맞춥니다. 기술 문서의 기준 커밋을 갱신하고 작업 보고 성격의 문구를 제거합니다.
+- **Changed**: Former Nav2·DDS 진단의 재사용 가능한 절차는 `former/FORMER_GUIDE.md`에, CLOiD EtherCAT 상태 점검은 `docs/CLOiD_GUIDE.md`에 통합합니다.
+- **Removed**: Nav2 장애 조사 노트, 미적용 DDS 도메인 메모, 특정 장비 실측 라이선스 보고서를 삭제합니다. 실기 문 통과 검증이 완료된 것으로 간주하지 않습니다.
+- **검증**: Markdown 상대 링크 검사에서 깨진 링크가 없고, `python3 scripts/validate_skill_catalog.py`에서 소스·문서 스킬 106개가 일치합니다. `python3 former/scripts/check_nav_params.py`는 PASS(2/2), `git diff --check`는 오류 없이 완료했습니다.
+
 ## 2026-11-17 — 프로세스 정리 로직이 도구·셸을 죽이던 문제와 런치 고아 노드 수정
 
 - **Fixed**: `rclaw run`/`rclaw sim`/`rclaw kill` 의 정리 로직이 RoboClaw 와 무관한 프로세스를 종료하던 문제를 수정합니다. 이전에는 `pkill -9 -f <노드명>` 으로 전체 명령줄 문자열을 매칭해 해당 문자열을 인자로 가진 셸·래퍼까지 죽였고, `lsof -t -i:<포트>` 로 찾은 점유 프로세스를 무조건 `kill -9` 했습니다. 후자는 50052 를 사용하는 pi-bot-connect(코딩 에이전트)를 즉시 종료시켜, 에이전트가 스스로 실행한 `rclaw sim` 이 자기 자신을 SIGKILL 로 죽이는 경로였습니다(SIGKILL 은 잡을 수 없어 크래시 로그·메시지 없이 세션이 tool call 도중 끊김).
@@ -63,7 +70,7 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
 - **Changed**: `task lint`에 `ruff format --check src/`를 포함하고, 저장소 전체 Python 소스를 `ruff format`으로 정렬합니다(141개 파일, 포맷만 변경). `E501` ignore의 전제("line-length는 formatter가 담당")를 실제 게이트로 만족시키기 위함입니다. `task unit-test`는 `task preflight`를 먼저 실행해 빌드 산출물·proto 생성물 누락을 코드 오류로 오해하지 않도록 안내합니다.
 - **Changed**: `pyproject.toml` ↔ `Dockerfile` 역방향 의존성 검사를 `scripts/check_docker_deps.py`에 추가합니다. Dockerfile에 `pytest-asyncio`를 추가해 이미지 안에서 async 테스트가 수집 실패하지 않게 하고, `opencv-python`은 ROS `cv_bridge`/`python3-opencv` 제공 사실을 `PROJECT_ONLY`에 사유와 함께 등록합니다.
 - **Fixed**: `prompts.py`와 `SKILLS.former*.md`의 중복 강제 표현 3건을 정리해 프롬프트 톤 게이트(`check_prompt_tone.py`, 한도 10)를 다시 통과시킵니다. 기준 커밋에서 재현되던 `test_manipulation_grasp_place.py` 10개 실패는 메모리 fake의 `get_object_location` 시그니처(`include_objects`) 미반영이 원인이었으며 대역을 실제 API에 맞춰 해소했습니다.
-- **Removed**: 규칙 위반 문서를 정리합니다. 미구현 설계안 `docs/FUTURE_SYSTEM1_DECOMPOSED_TASK_ROUTING_PROPOSAL.md`, 중복 구조 문서 `docs/gemini/`, 생성물 `docs/TECHNICAL_DOCUMENT.pdf`·`docs/SYSTEM1_LAYA_REQUEST_FLOW_PRESENTATION_v1.pptx`를 삭제하고, `docs/NAVI_ISSUE.md`·`docs/SYSTEM1_LAYA_REQUEST_FLOW_ANALYSIS.md`를 README 상세 가이드 표에 등록합니다. `AGENTS.md` 패키지 표에 `robo_claw_dashboard`·`robo_claw_cli`·`tofu_msgs`·`task_manager_msgs`를 추가합니다.
+- **Removed**: 규칙 위반 문서를 정리합니다. 미구현 설계안·중복 구조 문서·생성물을 삭제하고, 당시의 이슈 기록과 요청 흐름 가이드를 README 상세 가이드 표에 등록합니다. `AGENTS.md` 패키지 표에 `robo_claw_dashboard`·`robo_claw_cli`·`tofu_msgs`·`task_manager_msgs`를 추가합니다.
 - **검증**: `ruff check`·`ruff format --check`·스킬 카탈로그·프롬프트 톤·Dockerfile 의존성·`go vet` 통과, `rclaw contract check` 3항목 통과. 단위 테스트 3137 passed/167 deselected(agent·channel·discovery·grpc·dashboard·bringup, `-m "not ros2 and not hardware"`). 선별 컬럼 빌드(`robo_claw_msgs`·`task_manager_msgs`·`tofu_msgs`·`robo_claw_core`·agent·channel·discovery·grpc·dashboard·bringup) 완료. 실기 로봇 명령·실제 Maestro 연결·대시보드 브라우저 확인은 미검증입니다.
 
 ## 2026-11-12 — CLOiD latched 지도 freshness 차단 수정
@@ -113,7 +120,7 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
 
 ## 2026-11-10 — CLOiD EtherCAT 라이선스 운영 진단 문서
 
-- **Added**: [CLOiD EtherCAT 라이선스 진단 문서](docs/TOFU_ETHERCAT_LICENSE.md)를 추가합니다. CLOiD2의 약 62분 후 관절 제어 중단과 라이선스 누락 검증 결과를 정리하며, 미해결 상태와 정식 키 발급 후 70분 이상 재검증 필요성을 명시합니다.
+- **Added**: CLOiD EtherCAT 라이선스 진단 문서를 추가합니다. CLOiD2의 약 62분 후 관절 제어 중단과 라이선스 누락 검증 결과를 정리하고, 이후 재사용 가능한 상태 점검 절차를 CLOiD 가이드에 통합합니다.
 
 ## 2026-11-10 — AGX 보존 관절을 포함한 전체 명령 한계 검증
 
@@ -441,8 +448,8 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
   시간초과·오류 경로를 로컬과 실기에서 실행해 확인했습니다. 실기 0045 에서 `ros2 control
   list_controllers`(`base_controller ... active`)와 `/base_controller/odom` publisher 확인
   명령이 그대로 동작하는 것도 확인했습니다. 재부팅 검증 결과는 아래 두 항목에 적었습니다.
-- 문서: `former/FORMER_GUIDE.md` 10절(unit 구성·베이스 준비·DDS 설정·설치 절차),
-  `docs/NAVI_ISSUE.md` 3.9절(같은 증상의 진단 절차)을 갱신했습니다.
+- 문서: `former/FORMER_GUIDE.md` 10절(unit 구성·베이스 준비·DDS 설정·설치 절차와
+  같은 증상의 진단 절차)을 갱신했습니다.
 - 재부팅 검증 1차(2026-10-29 18:14, 두 로봇): base·nav·agent unit 모두 `active`,
   `NRestarts 0`, `base_controller` active, `/base_controller/odom` publisher 1,
   `odom→base_link` TF 존재, `/amcl_pose` 발행, nav 로그의 `Message Filter dropping`
@@ -974,7 +981,7 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
   - `former/scripts/check_nav_params.py` 추가: `recovery_alpha` 0.0, footprint/inscribed 범위, global·local 일치, inflation 절벽, 해상도, `scan_restamped` 토픽을 계약으로 검사합니다(이전 파라미터는 FAIL, 현재 PASS).
   - `former/scripts/nav_map_tools.py` 추가: 지도 잡음 통계·병목 폭·clearance 임계값별 계획 가능 면적을 계산하고(`analyze`), 고립 점 제거 + 벽 1셀 구멍 폐쇄(`clean`)를 수행합니다.
   - `former/maps/map_konjiam_L_107-1_clean.pgm/.yaml` 생성: occupied 2,968→2,697, 고립 점 216→25, clearance>0.205 계획 가능 면적 79,317→82,598, 최대 연결 영역 77,445→82,592(컴포넌트 8→3). 경로별 최소 통과 폭은 `(6.59,-2.28)` 0.70→0.80 m, `(9.55,0.45)` 0.70→0.73 m, `(-1.90,3.50)` 0.20→0.60 m, `(-4.90,3.00)` 0.36→0.45 m 로 넓어졌습니다. 원본 지도는 유지합니다.
-- **검증**: `python3 former/scripts/check_nav_params.py` PASS(2/2), 정리 지도 재분석 결과 위 수치 재현. 실기 주행 검증(0.70~0.73 m 문 왕복, `failed to create plan`/`spin failed` 0건)은 대기 상태이며, 절차와 주의사항은 `former/FORMER_GUIDE.md` 9.6~9.7절과 `NAVI_ISSUE.md` 3.8절에 정리했습니다.
+- **검증**: `python3 former/scripts/check_nav_params.py` PASS(2/2), 정리 지도 재분석 결과 위 수치 재현. 실기 주행 검증(0.70~0.73 m 문 왕복, `failed to create plan`/`spin failed` 0건)은 대기 상태이며, 절차와 주의사항은 `former/FORMER_GUIDE.md` 9.6~9.7절에 정리했습니다.
 
 ## 2026-10-24 — 복합 명령 하위 단계 Eligibility Gate
 

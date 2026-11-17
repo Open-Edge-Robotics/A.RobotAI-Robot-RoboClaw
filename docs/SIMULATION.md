@@ -8,7 +8,7 @@ Gazebo 경로(`sim_engine:=classic|gz`)와 전용 시뮬레이터(`sim_engine:=s
 
 | 계층 | 엔진 | 용도 | 필요한 외부 패키지 |
 | --- | --- | --- | --- |
-| T1 전용 시뮬레이터 | `robo_claw_sim` (자체 구현) | 커밋 게이트·시나리오 회귀, 결정론적 판정 | 표준 메시지 패키지 |
+| T1 전용 시뮬레이터 | `robo_claw_sim` (자체 구현) | 커밋 게이트·시나리오 회귀, 결정론적 판정 | `nav2_msgs`, `vision_msgs`, `tf2_ros` 및 ROS 메시지 패키지 |
 | T2 Gazebo Harmonic | `turtlebot4_gz_bringup` | 3D 시각화, Nav2 파라미터 실검증 | `ros_gz_sim`, `turtlebot4_*` |
 | T2 Gazebo Classic | `turtlebot3_gazebo` | 위와 동일 (humble 한정) | `gazebo_ros`, `turtlebot3_*` |
 
@@ -131,7 +131,7 @@ injections:
 | 구분 | 이름 | 비고 |
 | --- | --- | --- |
 | 구독 | `/cmd_vel`, `/initialpose` | `cmd_vel_topic` 등으로 변경 가능 |
-| 발행 | `/odom`, `/scan`, `/imu`, `/map`, `/battery_state`, `/joint_states`, `/amcl_pose`, `/detections` | `/map`은 `TRANSIENT_LOCAL` |
+| 발행 | `/odom`, `/scan`, `/imu`, `/map`, `/battery_state`, `/joint_states`, `/amcl_pose`, `/object_detector_node/detections` | `/map`은 `TRANSIENT_LOCAL`; detection 토픽은 파라미터로 변경 가능 |
 | TF | `map`→`odom`(정적), `odom`→`base_link`(동적), `base_link`→`base_scan`·`camera_link`(정적) | 위치추정을 대체 |
 | 액션 | `/navigate_to_pose`, `/spin`, `/follow_waypoints` | `nav2_msgs` 동일 타입 |
 

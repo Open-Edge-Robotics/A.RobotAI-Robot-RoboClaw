@@ -5,7 +5,7 @@
 | 파일                 | 형식     | 역할                                               | `.env` 변수                     |
 | -------------------- | -------- | -------------------------------------------------- | ------------------------------- |
 | `ROBOT.md`           | 마크다운 | 이름·성격·가치관 등 로봇 개성                      | `RC_ROBOT_SOUL_FILE`            |
-| `ROBOT_LIMITS.json`  | JSON     | 주행 속도·위험 구역·조인트 한계 등 물리 제약       | `RC_ROBOT_LIMITS_FILE`          |
+| `ROBOT_LIMITS.json`  | JSON     | 상대 이동·회전·위험 구역·관절 한계 등 스킬 검증값  | `RC_ROBOT_LIMITS_FILE`          |
 | `TROUBLESHOOTING.md` | 마크다운 | 내비게이션 실패·배터리 부족 등 예외 상황 조치 지침 | `RC_TROUBLESHOOTING_GUIDE_FILE` |
 
 설정 방식은 다음 중 하나입니다.
@@ -19,7 +19,7 @@
 robo_claw_agent_node:
   ros__parameters:
     robot_soul_file: "/path/to/ROBOT.md" # 비워두면 개성 없음
-    robot_limits_file: "/path/to/ROBOT_LIMITS.json" # 비워두면 기본 제약 없음
+    robot_limits_file: "/path/to/ROBOT_LIMITS.json" # 비워두면 일부 코드 기본값을 적용
     troubleshooting_guide_file: "/path/to/TROUBLESHOOTING.md" # 비워두면 기본 가이드 없음
 ```
 
@@ -118,13 +118,17 @@ ros2 launch robo_claw_bringup robo_claw.launch.py \
 
 ## 2. 물리 제약 스펙 (`ROBOT_LIMITS.json`)
 
-로봇의 주행 속도 범위, 위험 영역(Forbidden Zones), 팔 조인트 각도 한계 등 물리적 구동 스펙을 LLM이 확인해 가동 범위 초과 동작을 방지합니다.
+`ROBOT_LIMITS.json`은 프롬프트 참고 정보와 일부 스킬의 실행 직전 검증값을 제공합니다.
+이 파일의 모든 필드가 하드웨어 명령에 강제 적용되는 것은 아니며, 실제 제한은 스킬별
+코드 경로에 따라 다릅니다. 파일이 없더라도 상대 이동 거리 기본 상한 5 m와 회전 기본
+상한 180°가 적용됩니다. 관절 목표는 필요한 제한값을 확인할 수 없으면 실행을 거부하는
+경로가 있습니다.
 
 ```json
 {
   "navigation": {
-    "max_linear_velocity_mps": 1.0,
-    "max_angular_velocity_radps": 0.8,
+    "max_relative_distance_m": 5.0,
+    "max_rotation_deg": 180.0,
     "arrival_tolerance_m": 0.25,
     "forbidden_zones": [
       {
@@ -147,7 +151,12 @@ ros2 launch robo_claw_bringup robo_claw.launch.py \
 }
 ```
 
-`navigation.arrival_tolerance_m`는 `navigate_to`의 도착 판정 허용 오차(m)입니다. 기본값은 Nav2 `xy_goal_tolerance`와 동일한 `0.25`입니다. 로봇이 이미 이 오차 안에 있으면 Nav2 goal을 보내지 않고 즉시 도착으로 처리하며, Nav2가 `ABORTED`를 반환해도 최종 위치가 오차 안이면 도착으로 판정합니다. 좁은 공간에서 위치는 도달했지만 정렬 실패로 `status=6/ABORTED`가 반복되는 오탐을 줄이기 위한 값이므로, 로봇 크기와 현지화 정확도에 맞게 조정합니다.
+`navigation.max_relative_distance_m`와 `max_rotation_deg`는 상대 이동·회전 스킬의 입력
+검사에 사용합니다. `max_linear_velocity_mps`, `max_angular_velocity_radps`와
+`manipulation.max_payload_kg`는 이 파일만으로 모든 제어 경로의 속도·하중 제한을
+강제하지 않습니다. `navigation.arrival_tolerance_m`는 `navigate_to`의 도착 판정 허용
+오차(m)입니다. 기본값은 Nav2 `xy_goal_tolerance`와 같은 `0.25`입니다. 로봇 크기와
+현지화 정확도에 맞게 설정하고 실기에서 도착 판정 동작을 검증합니다.
 
 ---
 

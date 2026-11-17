@@ -1,7 +1,9 @@
-# MoveIt 기반 Manipulation 설정
+# 매니퓰레이션 설정과 백엔드
 
-manipulation 스킬은 MoveIt 설정이 준비된 로봇에서 공통 인터페이스로 동작합니다.
-현재 저장소에는 MoveIt bringup 패키지가 포함되어 있지 않으므로, 실제 하드웨어/시뮬레이터 연동 시에는 별도 `moveit_config` 패키지와 환경 source가 필요합니다.
+RoboClaw는 `moveit`, `stretch`, `agx` 등 로봇별 백엔드로 매니퓰레이션 스킬을 실행합니다.
+이 문서의 앞부분은 MoveIt 백엔드 설정을, 뒤쪽은 Stretch3 및 AGX 직접 제어 경로를 설명합니다.
+MoveIt bringup 패키지는 이 저장소에 포함되지 않으므로 MoveIt 백엔드를 쓰려면 별도
+`moveit_config` 패키지와 ROS 환경을 준비합니다.
 
 `src/robo_claw_bringup/config/agent.yaml`
 
@@ -250,7 +252,14 @@ RoboClaw는 MoveIt을 거치지 않고 드라이버가 노출하는 표준 ROS 2
 
 ## Stretch3 백엔드 및 VLA 스타일 폐루프 집기
 
-`src/robo_claw_agent/robo_claw_agent/manipulation_runtime/`에는 Stretch3 전용 IK/드라이버 백엔드(`stretch_backend.py`, `stretch_kinematics.py`)가 있고, `skills/manipulation_skill/sequence/`에는 `vla_pick_skills.py`, `align_skill.py`, `grasp_place_skills.py`, `right_side_pick_skills.py` 등 카메라 depth 기반으로 대상에 정렬하며 폐루프로 접근하는 확장 시퀀스 스킬들이 있습니다. bbox+depth를 3D 좌표로 역투영하는 로직은 `skills/perception_skill/depth3d.py`에 있습니다. Stretch3 실기 테스트 절차는 [STRETCH3_TEST_GUIDE.md](STRETCH3_TEST_GUIDE.md), 헤드 카메라 회전 보정 이슈는 [HEAD_CAMERA_UPRIGHT_ROTATION.md](HEAD_CAMERA_UPRIGHT_ROTATION.md)를 참고하세요.
+`adaptive_pick_object`는 기본적으로 `use_fixed_pattern_grasp=true`인 고정 패턴 파지 경로를
+사용합니다. `use_fixed_pattern_grasp=false`일 때 선택되는 VLA/그리퍼 카메라 경로에는
+`vla_pick_skills.py`, `align_skill.py`, `grasp_place_skills.py` 등의 선택적 확장 시퀀스가
+있습니다. Stretch3 전용 IK/드라이버 백엔드와 bbox+depth 역투영 설명은 각각
+`manipulation_runtime/stretch_kinematics.py` 및 `skills/perception_skill/depth3d.py`에
+있습니다. 실기 테스트는 [STRETCH3_TEST_GUIDE.md](STRETCH3_TEST_GUIDE.md),
+헤드 카메라 회전 보정은 [HEAD_CAMERA_UPRIGHT_ROTATION.md](HEAD_CAMERA_UPRIGHT_ROTATION.md)를
+참고합니다.
 
 ## 물체 탐지 개선 (오픈어휘 폴백, 탐색/필터 강화)
 

@@ -12,7 +12,11 @@ rm -rf ~/workspace/robo-claw/robo-claw/agent_workspace/memory     # 에이전트
 ```
 
 - **config 캐시 삭제** → 다음 `launch` 때 config 서버에서 프로파일(soul/skill/troubleshooting/limits)을 다시 내려받음.
-- **메모리 삭제** → 위치·지식 기억이 빈 상태로 시작.
+- **메모리 삭제** → 로컬 메모리 경로만 비웁니다. Qdrant와 로컬 미러를 함께 쓰면 원격 데이터가 다시 동기화될 수 있으므로, 완전 초기화가 목적이면 아래의 전체 초기화 절차를 사용합니다.
+
+`reset_robot_state.sh`는 로컬 memory 디렉터리 자체를 삭제합니다. 해당 경로가 Docker bind mount
+소스인 배포에서는 디렉터리를 다시 만들 때 소유권·권한 문제가 생길 수 있습니다. 전체 초기화
+스크립트는 메모리 디렉터리를 유지하고 그 안의 데이터 파일만 삭제합니다.
 
 ## 요구사항
 
@@ -50,5 +54,5 @@ cd robo-claw/scripts
 
 ## 관련
 
-- **더 깊은 초기화**(Qdrant 컬렉션까지): 로봇에서 `bash scripts/reset_memory.sh -y` — 컨테이너 정지 + 로컬 미러/시맨틱/콜드 삭제 + Qdrant 컬렉션 DELETE.
+- **전체 초기화**(Qdrant 컬렉션까지): [RESET_ROBOT_STATE_SERVER_DB.md](RESET_ROBOT_STATE_SERVER_DB.md)의 `reset_robot_state_server_db.sh` 절차를 사용합니다. Qdrant와 로컬 미러를 함께 초기화합니다.
 - 이 스크립트는 그 전 단계로, **config 캐시 + 로컬 메모리 폴더**만 빠르게 지웁니다.

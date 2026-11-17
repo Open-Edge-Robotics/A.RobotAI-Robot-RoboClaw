@@ -504,3 +504,20 @@ vision 패키지는 모델 파일 없이도 빌드에 성공할 수 있습니다
 ```
 
 이것은 Azure LLM 연결 문제와 별개입니다.
+
+### EtherCAT이 연결된 상태처럼 보이지만 관절 제어가 중단
+
+한 CLOiD 배포에서 EtherCAT 라이선스가 유효하지 않은 경우 기동 후 약 60분 뒤 프레임
+송신과 관절 제어가 중단된 사례가 있습니다. Docker가 `running`·`healthy`이거나
+`/safety/motor_enable`이 true인 것만으로 EtherCAT과 관절 상태가 정상이라고 판단하지
+않습니다. 현재 기기의 라이선스·상태는 배포 설정과 controller manager에서 다시 확인합니다.
+
+```bash
+ros2 control list_controllers -c /controller_manager
+timeout 6s ros2 topic hz /joint_states
+```
+
+`joint_state_broadcaster` 또는 관절 상태·팔 TF가 갱신되지 않으면 새로운 팔 동작을
+요청하지 말고 로봇을 안전하게 정지한 뒤 EtherCAT 로그와 controller 상태를 확인합니다.
+라이선스가 필요하면 해당 EtherCAT NIC에 유효한 키를 발급받아 기기별 설정 경로로
+전달합니다. 다른 기기의 키를 복사하지 않으며 키 값은 로그나 문서에 기록하지 않습니다.

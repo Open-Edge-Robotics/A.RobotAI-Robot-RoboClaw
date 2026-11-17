@@ -3,6 +3,8 @@
 Stretch3 헤드 카메라가 물리적으로 세로(90도 회전)로 장착되어 있어, `object_detector_node`가
 구독하는 `/camera/color/image_raw`가 90도 회전된 상태로 들어온다. YOLO(ONNX) 모델은 회전
 불변이 아니므로 이 상태에서 `find_object` / `get_detections`의 인식률이 크게 떨어진다.
+현재 Stretch3 프로필은 원본 토픽과 `head_image_rotate_deg: 0.0`을 기본으로 사용하므로,
+이 문서의 회전 보정 절차가 기본 활성화되어 있다고 가정하지 않는다.
 
 ## 원인 요약
 
