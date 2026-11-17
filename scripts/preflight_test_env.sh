@@ -15,8 +15,14 @@ fi
 
 for generated in \
   "src/robo_claw_grpc/robo_claw_grpc/robo_pb2.py" \
+  "src/robo_claw_grpc/robo_claw_grpc/robo_pb2_grpc.py" \
+  "src/robo_claw_grpc/robo_claw_grpc/robo_pb2.pyi" \
   "src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2.py" \
-  "src/robo_claw_channel/robo_claw_channel/messenger_pb2.py"; do
+  "src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2_grpc.py" \
+  "src/robo_claw_grpc/robo_claw_grpc/fleet_control_pb2.pyi" \
+  "src/robo_claw_channel/robo_claw_channel/messenger_pb2.py" \
+  "src/robo_claw_channel/robo_claw_channel/messenger_pb2_grpc.py" \
+  "src/robo_claw_channel/robo_claw_channel/messenger_pb2.pyi"; do
   if [[ ! -f "${SCRIPT_DIR}/${generated}" ]]; then
     missing+=("${generated} — proto 생성물이 없습니다. 'task proto'를 실행하세요.")
   fi

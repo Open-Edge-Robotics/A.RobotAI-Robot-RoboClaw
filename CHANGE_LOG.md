@@ -5,6 +5,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 보조 스크립트 및 테스트 preflight 정리
+
+- **Removed**: 저장소 내 호출·문서·테스트 참조가 없고, 현재 초기화 도구 외에는 `memory.semantic.json` 사용처가 없는 레거시 `scripts/compact_semantic_memory.py`를 제거합니다.
+- **Fixed**: 테스트 preflight가 `task proto`의 9개 생성물(pb2, gRPC stub, pyi)을 모두 검사하도록 확장합니다. 로봇 초기화 스크립트의 직접 실행 권한과 `validation/reset_memory.sh`로 남아 있던 경로도 현행 `scripts/` 구조에 맞춥니다.
+- **검증**: `task verify` 통과(단위 테스트 3,330건, 178건 제외). Preflight 회귀 테스트 10건, `task preflight`, 변경 셸 스크립트 `bash -n`, Ruff, `git diff --check`도 통과했습니다.
+
 ## 2026-11-17 — Humble(Gazebo Classic) 시뮬레이션 지원 제거
 
 - **Removed**: `sim/humble/`(env·run_simulation)을 삭제하고, 시뮬레이션은 ROS 2 Jazzy(Gazebo Harmonic)와 Gazebo 불필요한 `stub` 엔진만 남깁니다. 두 Gazebo 스택(`gazebo_ros` Classic ↔ `ros_gz_sim` Harmonic)을 동시에 유지하려면 런치 분기·환경변수·의존성 점검이 배포판별로 갈라져야 하고, humble 쪽에서 런치가 조용히 잘못된 분기로 진행되는 문제가 반복되었습니다.

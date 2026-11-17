@@ -22,7 +22,7 @@
 #   MEMORY_DIR=~/workspace/robo-claw/robo-claw/agent_workspace/memory
 #   CONTAINER=robo_claw_container
 #
-# 주의: Qdrant 컬렉션까지 지우는 더 깊은 초기화는 로봇에서 validation/reset_memory.sh 를 쓰세요.
+# 주의: Qdrant 컬렉션까지 지우는 더 깊은 초기화는 로봇에서 scripts/reset_memory.sh 를 쓰세요.
 set -euo pipefail
 
 ROBOT="${ROBOT:-former@10.159.172.69}"
@@ -96,5 +96,5 @@ fi
 
 echo "==============================================================="
 echo " 초기화 완료. 다음 launch 시 config가 재-fetch되고 메모리가 비어 시작됩니다."
-echo "   (Qdrant 컬렉션까지 지우려면 로봇에서: bash validation/reset_memory.sh -y)"
+echo "   (Qdrant 컬렉션까지 지우려면 로봇에서: bash scripts/reset_memory.sh -y)"
 echo "==============================================================="

@@ -181,7 +181,7 @@ python3 robo_talk.py --host localhost --scenario ...
   (기동: 터미널1에서 `robo_claw_cli launch former 0047_w2_2f --docker --image-tag <태그> --pull --use-grpc`)
 - 외부 호스트에서 `<로봇IP>:50052`로 네트워크 접근이 가능해야 합니다(방화벽 확인).
 - 로봇 준비: 맵 `w2_2f` 로드 + 초기 위치(AMCL) + 시나리오 좌표 도달 가능.
-- (선택) 테스트 간 메모리 격리가 필요하면 실행 전 `validation/reset_memory.sh -y` 후 컨테이너 재기동.
+- (선택) 테스트 간 메모리 격리가 필요하면 실행 전 `scripts/reset_memory.sh -y` 후 컨테이너 재기동.
 
 ## 테스트 케이스 형식 (확장 방법)
 
