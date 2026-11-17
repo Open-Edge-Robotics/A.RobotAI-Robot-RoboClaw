@@ -186,6 +186,28 @@ ros2 run robo_claw_sim sim_runner --backend mujoco \
 튜닝하지 않았습니다. `task sim-compare` 는 조작 시나리오를 기본 비교에서 제외합니다
 (kinematic 백엔드가 조작을 지원하지 않음).
 
+### 2.4 카메라 RGB-D 렌더 (실험적, `mujoco` 백엔드)
+
+`mujoco` 백엔드는 로봇 헤드 카메라(`head_cam`, 정적 TF `base_link→camera_link`와 같은
+위치/자세)로 오프스크린 렌더를 수행합니다. `publish_camera:=true` 로 켜면
+`camera_publish_every_n_ticks`(기본 10 = 20Hz에서 2fps)마다 RGB와 depth를 발행합니다.
+
+| 파라미터 | 기본값 | 설명 |
+| --- | --- | --- |
+| `publish_camera` | `false` | 카메라 렌더/발행 활성화(kinematic 백엔드는 경고 후 무시) |
+| `camera_topic` | `/camera/color/image_raw` | RGB(`rgb8`) |
+| `camera_depth_topic` | `/camera/depth/image_raw` | depth(`32FC1`, m) |
+| `camera_publish_every_n_ticks` | `10` | 발행 주기(tick 배수) |
+
+오프스크린 렌더에는 GL 백엔드가 필요합니다. GPU 호스트는 `MUJOCO_GL=egl`, GL이 없는
+CI는 `MUJOCO_GL=osmesa`(CPU) 또는 미설정(렌더 테스트 skip)으로 둡니다. 렌더러 생성에
+실패하면 노드는 한 번 경고하고 카메라 발행을 끄며, 나머지 시뮬레이션은 계속 돕니다.
+
+```bash
+MUJOCO_GL=egl ros2 run robo_claw_sim sim_node --ros-args \
+  -p backend:=mujoco -p publish_camera:=true
+```
+
 ## 3. 시나리오 스키마
 
 ```yaml

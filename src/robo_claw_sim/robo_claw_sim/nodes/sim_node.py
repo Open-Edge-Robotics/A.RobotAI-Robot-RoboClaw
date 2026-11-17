@@ -102,6 +102,7 @@ class SimulationNode(Node):
         self._wheel_angles = [0.0] * len(self._joint_names)
         self._battery_percent = float(self.get_parameter("battery_start_percent").value)
         self._last_tick = time.monotonic()
+        self._camera_tick = 0
         self._setup_io()
         self.navigation = None
         self.manipulation = None
@@ -161,6 +162,10 @@ class SimulationNode(Node):
             "publish_battery": True,
             "publish_joint_states": True,
             "publish_detections": True,
+            "publish_camera": False,
+            "camera_topic": "/camera/color/image_raw",
+            "camera_depth_topic": "/camera/depth/image_raw",
+            "camera_publish_every_n_ticks": 10,
             "publish_clock": False,
             "battery_start_percent": 100.0,
             "battery_drain_percent_per_sec": 0.0,
@@ -219,6 +224,21 @@ class SimulationNode(Node):
         map_qos.reliability = ReliabilityPolicy.RELIABLE
         self.map_pub = self.create_publisher(OccupancyGrid, str(self._p("map_topic")), map_qos)
         self._publish_map()
+        self.camera_pub = None
+        self.camera_depth_pub = None
+        if bool(self._p("publish_camera")):
+            if not hasattr(self.backend, "render_camera"):
+                self.get_logger().warning(
+                    f"backend={self.backend.name} 는 카메라 렌더를 지원하지 않습니다. "
+                    "publish_camera 를 무시합니다(backend:=mujoco 필요)."
+                )
+            else:
+                from sensor_msgs.msg import Image
+
+                self.camera_pub = self.create_publisher(Image, str(self._p("camera_topic")), 5)
+                self.camera_depth_pub = self.create_publisher(
+                    Image, str(self._p("camera_depth_topic")), 5
+                )
         if bool(self._p("publish_clock")):
             from rosgraph_msgs.msg import Clock
 
@@ -313,6 +333,11 @@ class SimulationNode(Node):
             self._publish_battery(stamp)
         if bool(self._p("publish_detections")):
             self._publish_detections(stamp)
+        if self.camera_pub is not None:
+            self._camera_tick += 1
+            every = max(1, int(self._p("camera_publish_every_n_ticks")))
+            if self._camera_tick % every == 0:
+                self._publish_camera(stamp)
         if bool(self._p("publish_clock")):
             self._publish_clock(stamp)
 
@@ -468,6 +493,43 @@ class SimulationNode(Node):
         msg.info.origin.orientation.w = 1.0
         msg.data = occupancy_values(self.world)
         self.map_pub.publish(msg)
+
+    def _publish_camera(self, stamp) -> None:  # noqa: ANN001
+        """MuJoCo 헤드 카메라 RGB-D를 Image 로 발행한다(오프스크린 렌더)."""
+        from sensor_msgs.msg import Image
+
+        try:
+            rgb, depth = self.backend.render_camera(
+                width=self.camera_config.width, height=self.camera_config.height
+            )
+        except RuntimeError as exc:
+            # GL 백엔드가 없으면 매 tick 경고를 반복하지 않고 한 번만 알린다.
+            if self.camera_pub is not None:
+                self.get_logger().error(f"카메라 렌더 실패: {exc}")
+                self.camera_pub = None
+                self.camera_depth_pub = None
+            return
+
+        rgb_msg = Image()
+        rgb_msg.header.stamp = stamp
+        rgb_msg.header.frame_id = self._frames["camera"]
+        rgb_msg.height, rgb_msg.width = int(rgb.shape[0]), int(rgb.shape[1])
+        rgb_msg.encoding = "rgb8"
+        rgb_msg.is_bigendian = 0
+        rgb_msg.step = int(rgb.shape[1]) * 3
+        rgb_msg.data = rgb.tobytes()
+        self.camera_pub.publish(rgb_msg)
+
+        if self.camera_depth_pub is not None:
+            depth_msg = Image()
+            depth_msg.header.stamp = stamp
+            depth_msg.header.frame_id = self._frames["camera"]
+            depth_msg.height, depth_msg.width = int(depth.shape[0]), int(depth.shape[1])
+            depth_msg.encoding = "32FC1"
+            depth_msg.is_bigendian = 0
+            depth_msg.step = int(depth.shape[1]) * 4
+            depth_msg.data = depth.astype("float32").tobytes()
+            self.camera_depth_pub.publish(depth_msg)
 
     def _publish_clock(self, stamp) -> None:  # noqa: ANN001
         from rosgraph_msgs.msg import Clock

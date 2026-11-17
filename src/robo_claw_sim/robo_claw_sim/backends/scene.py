@@ -30,6 +30,8 @@ WALL_PREFIX = "wall_"
 OBSTACLE_PREFIX = "obstacle_"
 ROBOT_GEOM_NAME = "base_geom"
 ROBOT_BODY_NAME = "base"
+# 로봇 헤드 카메라(정적 TF base_link→camera_link 와 같은 위치/자세).
+HEAD_CAMERA_NAME = "head_cam"
 
 
 def build_scene_xml(
@@ -120,6 +122,7 @@ def _robot_body(world: World, manipulation: ManipulationConfig | None = None) ->
             ' rgba="0.2 0.45 0.85 1"/>'
         ),
         '      <site name="scan_site" pos="0 0 0" size="0.01"/>',
+        (f'      <camera name="{HEAD_CAMERA_NAME}" pos="0.15 0 0.23" euler="-0.26 0 0"/>'),
     ]
     if manipulation is not None:
         lines.extend(arm_xml(manipulation))

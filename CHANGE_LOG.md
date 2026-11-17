@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — MuJoCo 헤드 카메라 RGB-D 렌더(Phase 3)
+
+- **Added**: 장면에 로봇 헤드 카메라(`head_cam`)를 추가하고, `MujocoBackend.render_camera()`로 RGB(uint8 HxWx3)와 depth(float32 HxW)를 오프스크린 렌더합니다. `MUJOCO_GL=egl`(GPU) 또는 `osmesa`(CPU)가 필요하며, 렌더러 생성 실패 시 안내 메시지와 함께 예외를 올립니다.
+- **Added**: 시뮬레이터 노드 파라미터 `publish_camera`, `camera_topic`, `camera_depth_topic`, `camera_publish_every_n_ticks`. 렌더 실패 시 한 번 경고하고 카메라 발행만 끄며 시뮬레이션은 계속합니다. kinematic 백엔드에서 켜면 경고 후 무시합니다.
+- **Added**: `tests/test_mujoco_camera.py` 4건(형상/타입, 장면 기하·깊이 유효성, 렌더러 재사용, kinematic 미지원). GL 백엔드가 없는 환경은 skip 합니다.
+- **검증**: `MUJOCO_GL=egl` 로 노드를 띄워 `/camera/color/image_raw` 640x480, `/camera/depth/image_raw` 인코딩 `32FC1` 수신을 확인했습니다. `uv run pytest src/robo_claw_sim/tests` 90 passed. ONNX 검출기 폐루프 시나리오(검출 정확도 비교)는 다음 단계입니다.
+
 ## 2026-11-17 — 조작 액션 서버와 시나리오 파지 판정(Phase 2b)
 
 - **Added**: `nodes/manipulation_servers.py` — `control_msgs/FollowJointTrajectory` 액션 서버. 궤적을 시뮬레이션 시간으로 샘플링해 백엔드 관절 목표로 넘기고, 종료 후 goal tolerance 를 검사해 성공/실패를 반환합니다. 조작 중 파지 성공 물체를 수집합니다. 노드 파라미터 `serve_manipulation`, `manipulation_action_name`(기본 `/sim_arm_controller/follow_joint_trajectory`), `manipulation_timeout_sec` 로 켭니다.

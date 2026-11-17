@@ -33,6 +33,7 @@ from .manipulation import (
     ManipulationConfig,
 )
 from .scene import (
+    HEAD_CAMERA_NAME,
     OBSTACLE_PREFIX,
     ROBOT_BODY_NAME,
     ROBOT_GEOM_NAME,
@@ -66,6 +67,7 @@ class MujocoBackend:
         self._point = np.zeros(3, dtype=np.float64)
         self._vector = np.zeros(3, dtype=np.float64)
         self._geomid = np.zeros(1, dtype=np.int32)
+        self._renderer = None
         self._setup_manipulation()
 
     # ------------------------------------------------------------------ 계약
@@ -130,8 +132,40 @@ class MujocoBackend:
         mujoco.mj_forward(self._model, self._data)
         return True
 
+    # ------------------------------------------------------------- 카메라
+    def render_camera(self, width: int = 640, height: int = 480) -> tuple[np.ndarray, np.ndarray]:
+        """헤드 카메라 RGB(uint8 HxWx3)와 depth(float32 HxW, m)를 렌더한다.
+
+        오프스크린 렌더링이므로 ``MUJOCO_GL=egl``(GPU) 또는 ``osmesa``(CPU)가
+        필요하다. 설정이 없으면 렌더러 생성이 실패하므로 안내와 함께 예외를 올린다.
+        """
+        renderer = self._ensure_renderer(width, height)
+        renderer.update_scene(self._data, camera=HEAD_CAMERA_NAME)
+        rgb = renderer.render().copy()
+        renderer.enable_depth_rendering()
+        try:
+            depth = renderer.render().copy()
+        finally:
+            renderer.disable_depth_rendering()
+        return rgb.astype(np.uint8), depth.astype(np.float32)
+
+    def _ensure_renderer(self, width: int, height: int):  # noqa: ANN202
+        if self._renderer is not None:
+            return self._renderer
+        try:
+            self._renderer = mujoco.Renderer(self._model, height=height, width=width)
+        except Exception as exc:
+            raise RuntimeError(
+                "MuJoCo 오프스크린 렌더러를 만들 수 없습니다. "
+                "MUJOCO_GL=egl(GPU) 또는 MUJOCO_GL=osmesa(CPU)를 설정한 뒤 다시 실행하세요."
+            ) from exc
+        return self._renderer
+
     def close(self) -> None:
         """MuJoCo 핸들은 참조가 끊기면 해제된다. 명시적으로 참조만 지운다."""
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
         self._data = None  # type: ignore[assignment]
         self._model = None  # type: ignore[assignment]
 
