@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 시뮬레이터 시각화(RViz 마커·MuJoCo 뷰어)
+
+- **Added**: `robo_claw_sim/viz.py`(순수 파이썬 마커 스펙)와 `sim_viz` 파라미터로 `/sim/world_markers`(`visualization_msgs/MarkerArray`)를 발행합니다. 로봇 footprint·장애물·객체를 RViz에서 바로 볼 수 있습니다.
+- **Added**: RViz 설정 `src/robo_claw_bringup/config/sim.rviz`(Map/LaserScan/TF/MarkerArray/Camera/Depth), `scripts/sim_view.sh`, `task sim-view`. 시뮬레이터를 백그라운드로 띄우고 RViz를 엽니다(kinematic/mujoco 공통).
+- **Added**: `viewer` 노드 파라미터 + `sim_viewer` 런치 인자로 MuJoCo 대화형 뷰어(`mujoco.viewer.launch_passive`)를 지원합니다. 매 물리 스텝마다 `sync()` 하며, DISPLAY가 없으면 안내와 함께 기동 시 오류를 냅니다.
+- **Added**: `docs/SIMULATION.md` §2.5 시각화 절(RViz·MuJoCo 뷰어·Foxglove 안내).
+- **Added**: `tests/test_viz.py`(마커 스펙).
+- **검증**: `uv run pytest src/robo_claw_sim/tests src/robo_claw_bringup/tests` 207 passed, `ruff` 통과. RViz/MuJoCo 뷰어 실화면 확인은 디스플레이가 있는 세션에서 미검증입니다.
+
 ## 2026-11-17 — 검출 판정 종단 검증(Phase 3b 완료)
 
 - **Fixed**: `sim_runner` 가 검출 결과를 판정에 반영하지 못하던 문제를 수정했습니다. 노드 속성(`last_detected_objects`)을 읽는 방식이 타이밍에 따라 빈 값이 되어, 러너가 `/object_detector_node/detections` 를 직접 구독해 클래스 ID를 수집하도록 바꿨습니다. `detect_seed`·`detect_false_negative_rate` 등 발행 조건과 무관하게 동작합니다.

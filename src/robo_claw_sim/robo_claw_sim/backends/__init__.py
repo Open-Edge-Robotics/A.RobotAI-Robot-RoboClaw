@@ -28,6 +28,7 @@ def build_backend(
     world: World,
     scan_config: ScanConfig | None = None,
     manipulation: ManipulationConfig | None = None,
+    viewer: bool = False,
 ) -> Backend:
     """``backend`` 이름으로 백엔드를 만든다."""
     key = (name or DEFAULT_BACKEND).strip().lower()
@@ -43,7 +44,7 @@ def build_backend(
             from .mujoco_backend import MujocoBackend
         except ImportError as exc:  # mujoco 미설치
             raise RuntimeError(MUJOCO_INSTALL_HINT) from exc
-        return MujocoBackend(world, scan_config, manipulation)
+        return MujocoBackend(world, scan_config, manipulation, viewer)
     raise ValueError(
         f"지원하지 않는 시뮬레이션 backend 입니다: {name!r} (가능: {', '.join(SUPPORTED_BACKENDS)})"
     )

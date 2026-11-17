@@ -212,6 +212,11 @@ tasks:
         ./scripts/run_in_ros_env.sh --ws env ros2 run robo_claw_sim sim_runner \
           --backend mujoco {{.SCENARIO}}
 
+  sim-view:
+    desc: 시뮬레이터 + RViz2 시각화 (X 디스플레이 필요)
+    cmds:
+      - ./scripts/sim_view.sh {{.CLI_ARGS}}
+
   sim-compare:
     desc: kinematic/MuJoCo 백엔드 판정 비교 (모든 시나리오)
     cmds:

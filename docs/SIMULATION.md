@@ -181,6 +181,27 @@ ros2 run robo_claw_sim sim_runner --backend mujoco \
 튜닝하지 않았습니다. `task sim-compare` 는 조작 시나리오를 기본 비교에서 제외합니다
 (kinematic 백엔드가 조작을 지원하지 않음).
 
+### 2.5 시각화
+
+| 방법 | 보이는 것 | 사용 |
+| --- | --- | --- |
+| RViz2 + 마커 | 지도·`/scan`·TF·장애물/객체 마커·카메라 영상 | `task sim-view` (kinematic/mujoco 공통) |
+| MuJoCo 대화형 뷰어 | 실제 지오메트리·접촉·팔/그리퍼 상태 | `sim_backend:=mujoco sim_viewer:=true` (DISPLAY 필요) |
+| Foxglove Studio | 같은 토픽을 브라우저/원격에서, mcap 기록 | `ros2 run foxglove_bridge foxglove_bridge` 후 웹 접속 |
+
+```bash
+task sim-view                          # 시뮬레이터(sim_viz:=true) + RViz2
+./scripts/sim_view.sh mujoco           # MuJoCo 백엔드로 RViz2
+ros2 launch robo_claw_bringup robo_claw_sim.launch.py \
+  sim_engine:=stub sim_backend:=mujoco sim_viewer:=true   # MuJoCo 뷰어
+```
+
+`sim_viz:=true` 는 `/sim/world_markers`(`visualization_msgs/MarkerArray`)로 로봇
+footprint·장애물·객체를 발행합니다. RViz 설정은
+`src/robo_claw_bringup/config/sim.rviz`이며 Map/LaserScan/TF/MarkerArray/Image 표시가
+켜져 있습니다. 원격 리뷰가 필요하면 `foxglove_bridge`를 같은 토픽에 붙이면 됩니다
+(별도 설치: `sudo apt install ros-jazzy-foxglove-bridge`).
+
 ### 2.4 카메라 RGB-D 렌더 (실험적, `mujoco` 백엔드)
 
 `mujoco` 백엔드는 로봇 헤드 카메라(`head_cam`, 정적 TF `base_link→camera_link`와 같은

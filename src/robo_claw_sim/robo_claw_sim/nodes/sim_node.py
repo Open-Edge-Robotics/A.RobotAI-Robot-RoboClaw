@@ -35,6 +35,7 @@ from ..nav import ControllerConfig
 from ..perception import CameraConfig, detect
 from ..raycast import ScanConfig, occupancy_values
 from ..scenario import Scenario, ScenarioError, build_scenario, load_scenario
+from ..viz import world_markers
 from ..world import Pose2D, Twist2D
 
 DEFAULT_SCENARIO: dict = {
@@ -88,6 +89,7 @@ class SimulationNode(Node):
             world=self.world,
             scan_config=self.scan_config,
             manipulation=manipulation,
+            viewer=bool(self._p("viewer")),
         )
         self._frames = {
             "map": self.get_parameter("map_frame").value,
@@ -163,6 +165,9 @@ class SimulationNode(Node):
             "publish_battery": True,
             "publish_joint_states": True,
             "publish_detections": True,
+            "viewer": False,
+            "sim_viz": False,
+            "world_markers_topic": "/sim/world_markers",
             "publish_camera": False,
             "camera_topic": "/camera/color/image_raw",
             "camera_depth_topic": "/camera/depth/image_raw",
@@ -225,6 +230,13 @@ class SimulationNode(Node):
         map_qos.reliability = ReliabilityPolicy.RELIABLE
         self.map_pub = self.create_publisher(OccupancyGrid, str(self._p("map_topic")), map_qos)
         self._publish_map()
+        self.markers_pub = None
+        if bool(self._p("sim_viz")):
+            from visualization_msgs.msg import MarkerArray
+
+            self.markers_pub = self.create_publisher(
+                MarkerArray, str(self._p("world_markers_topic")), 1
+            )
         self.camera_pub = None
         self.camera_depth_pub = None
         if bool(self._p("publish_camera")):
@@ -334,6 +346,8 @@ class SimulationNode(Node):
             self._publish_battery(stamp)
         if bool(self._p("publish_detections")):
             self._publish_detections(stamp)
+        if self.markers_pub is not None:
+            self._publish_world_markers(stamp)
         if self.camera_pub is not None:
             self._camera_tick += 1
             every = max(1, int(self._p("camera_publish_every_n_ticks")))
@@ -495,6 +509,31 @@ class SimulationNode(Node):
         msg.info.origin.orientation.w = 1.0
         msg.data = occupancy_values(self.world)
         self.map_pub.publish(msg)
+
+    def _publish_world_markers(self, stamp) -> None:  # noqa: ANN001
+        """시나리오 세계를 MarkerArray 로 발행한다(RViz 시각화)."""
+        from visualization_msgs.msg import Marker, MarkerArray
+
+        kinds = {"box": Marker.CUBE, "cylinder": Marker.CYLINDER, "sphere": Marker.SPHERE}
+        msg = MarkerArray()
+        for spec in world_markers(self.world):
+            marker = Marker()
+            marker.header.stamp = stamp
+            marker.header.frame_id = self._frames["map"]
+            marker.ns = spec["ns"]
+            marker.id = spec["id"]
+            marker.type = kinds[spec["type"]]
+            marker.action = Marker.ADD
+            marker.pose.position.x = spec["x"]
+            marker.pose.position.y = spec["y"]
+            marker.pose.position.z = spec["z"]
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = spec["sx"]
+            marker.scale.y = spec["sy"]
+            marker.scale.z = spec["sz"]
+            marker.color.r, marker.color.g, marker.color.b, marker.color.a = spec["rgba"]
+            msg.markers.append(marker)
+        self.markers_pub.publish(msg)
 
     def _publish_camera(self, stamp) -> None:  # noqa: ANN001
         """MuJoCo 헤드 카메라 RGB-D를 Image 로 발행한다(오프스크린 렌더)."""

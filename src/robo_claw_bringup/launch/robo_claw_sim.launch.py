@@ -98,6 +98,8 @@ def launch_setup(context, *args, **kwargs):
         sim_parameters = {
             "scenario_file": scenario_file,
             "backend": LaunchConfiguration("sim_backend"),
+            "sim_viz": LaunchConfiguration("sim_viz"),
+            "viewer": LaunchConfiguration("sim_viewer"),
             "use_sim_time": False,
             "serve_navigation": True,
             "update_rate_hz": LaunchConfiguration("sim_update_rate_hz"),
@@ -271,6 +273,16 @@ def generate_launch_description() -> LaunchDescription:
                 description="sim_engine:=stub 에서 사용할 시나리오 YAML 경로",
             ),
             DeclareLaunchArgument("sim_update_rate_hz", default_value="20.0"),
+            DeclareLaunchArgument(
+                "sim_viewer",
+                default_value="false",
+                description="MuJoCo 대화형 뷰어 사용 여부(backend:=mujoco, DISPLAY 필요)",
+            ),
+            DeclareLaunchArgument(
+                "sim_viz",
+                default_value="false",
+                description="RViz 시각화용 마커(/sim/world_markers) 발행 여부",
+            ),
             DeclareLaunchArgument(
                 "sim_backend",
                 default_value="kinematic",

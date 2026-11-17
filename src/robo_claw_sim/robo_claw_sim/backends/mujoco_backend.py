@@ -53,6 +53,7 @@ class MujocoBackend:
         world: World,
         scan_config: ScanConfig | None = None,
         manipulation: ManipulationConfig | None = None,
+        viewer: bool = False,
     ) -> None:
         self.world = world
         self.scan_config = scan_config or ScanConfig()
@@ -69,6 +70,15 @@ class MujocoBackend:
         self._geomid = np.zeros(1, dtype=np.int32)
         self._renderer = None
         self._setup_manipulation()
+        # 대화형 뷰어(디스플레이 필요). 시각화 전용이며 판정에는 영향을 주지 않는다.
+        self._viewer = None
+        if viewer:
+            try:
+                self._viewer = mujoco.viewer.launch_passive(self._model, self._data)
+            except Exception as exc:
+                raise RuntimeError(
+                    "MuJoCo 뷰어를 열 수 없습니다. DISPLAY/X11(또는 GUI 세션)에서 실행하세요."
+                ) from exc
 
     # ------------------------------------------------------------------ 계약
     def step(self, twist: Twist2D, dt: float) -> None:
@@ -86,6 +96,8 @@ class MujocoBackend:
             self._apply_joint_targets()
             mujoco.mj_step(self._model, self._data)
             self._update_grasp()
+            if self._viewer is not None and self._viewer.is_running():
+                self._viewer.sync()
             if self._in_contact_with_obstacle():
                 # 운동학 백엔드와 같은 규칙: 충돌하면 남은 이동을 버린다.
                 self.world.collisions += 1
@@ -150,6 +162,9 @@ class MujocoBackend:
         return rgb.astype(np.uint8), depth.astype(np.float32)
 
     def _ensure_renderer(self, width: int, height: int):  # noqa: ANN202
+        if self._viewer is not None:
+            self._viewer.close()
+            self._viewer = None
         if self._renderer is not None:
             return self._renderer
         try:
