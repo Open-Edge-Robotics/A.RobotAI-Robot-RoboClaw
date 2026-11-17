@@ -42,6 +42,32 @@ def is_heartbeat_stale(last_beat: float | None, now: float, timeout_sec: float) 
     return (now - last_beat) >= timeout_sec
 
 
+def node_uses_sim_time(node: object) -> bool:
+    """노드가 시뮬레이션 시간을 쓰는지 확인한다(파라미터 미선언 시 False)."""
+    try:
+        return bool(node.get_parameter("use_sim_time").value)  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - 파라미터가 없으면 실시간으로 본다
+        return False
+
+
+def clock_for_node(node: object) -> Callable[[], float]:
+    """워치독이 쓸 초 단위 시계를 고른다.
+
+    ``use_sim_time`` 이 참이면 노드 시계(ROS time = 시뮬레이터 시간)를 쓴다.
+    벽시계를 쓰면 Gazebo 의 실시간 배율(real-time factor)이 낮을 때(센서 렌더 초기화,
+    헤비 월드) 하트비트 타이머가 1초 sim 시간당 수십 초 벽시계가 걸려, 정상 동작
+    중에도 "30초 무음" 오판으로 에이전트를 종료한다(2026-11-17 gz 실측).
+    실기기에서는 두 시계가 같으므로 동작이 변하지 않는다.
+
+    트레이드오프: 시뮬레이션에서 executor 가 실제로 멈추면 ``/clock`` 구독도 멈추어
+    sim 시간이 정지하므로 이 워치독이 침묵한다. 시뮬레이션에서는 런치 로그·액션
+    타임아웃으로 판단하고, 실기기(실시간)에서는 기존 감시가 그대로 동작한다.
+    """
+    if node_uses_sim_time(node):
+        return lambda: node.get_clock().now().nanoseconds / 1e9  # type: ignore[attr-defined]
+    return time.monotonic
+
+
 def _in_container() -> bool:
     """docker/podman 컨테이너 안에서 실행 중인지 확인한다."""
     return os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")

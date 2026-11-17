@@ -31,7 +31,7 @@ from ..skills.limits import load_limits_dict
 from ..types import AgentState
 from .eligibility_gate import step_routing_mode
 from .execution import ExecutionMixin
-from .heartbeat_watchdog import HeartbeatWatchdog
+from .heartbeat_watchdog import HeartbeatWatchdog, clock_for_node
 from .initialization import (
     load_skills,
     setup_last_pose_tracking,
@@ -740,6 +740,9 @@ def main() -> None:
 
     node._heartbeat_watchdog = HeartbeatWatchdog(
         timeout_sec=node._status_heartbeat_timeout_sec,
+        # use_sim_time 이면 시뮬레이터 시간으로 잰다(벽시계 사용 시 낮은 실시간
+        # 배율에서 정상 동작을 무음으로 오판해 프로세스를 종료한다).
+        clock=clock_for_node(node),
         recover=_recover_executor,
     )
     node._heartbeat_watchdog.start()

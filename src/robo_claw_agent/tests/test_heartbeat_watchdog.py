@@ -7,6 +7,7 @@ import threading
 import time
 
 import pytest
+from robo_claw_agent.agent_node import heartbeat_watchdog
 from robo_claw_agent.agent_node.heartbeat_watchdog import (
     HeartbeatWatchdog,
     is_heartbeat_stale,
@@ -119,3 +120,73 @@ def test_stop_prevents_timeout_callback():
     time.sleep(0.1)
 
     assert timeout_called.is_set() is False
+
+
+class _SimTimeNode:
+    """use_sim_time 파라미터와 ROS 시계만 흉내 내는 노드 대역."""
+
+    def __init__(self, use_sim_time: bool | None, now_ns: int = 0) -> None:
+        self._value = use_sim_time
+        self._now_ns = now_ns
+
+    def get_parameter(self, name: str):  # noqa: ANN201
+        from types import SimpleNamespace
+
+        if name != "use_sim_time" or self._value is None:
+            raise KeyError(name)
+        return SimpleNamespace(value=self._value)
+
+    def get_clock(self):  # noqa: ANN201
+        from types import SimpleNamespace
+
+        node = self
+
+        class _Clock:
+            def now(self):  # noqa: ANN202
+                return SimpleNamespace(nanoseconds=node._now_ns)
+
+        return _Clock()
+
+
+def test_clock_for_node_uses_ros_clock_when_sim_time() -> None:
+    """use_sim_time 이면 벽시계가 아니라 ROS(sim) 시계로 잰다."""
+    node = _SimTimeNode(use_sim_time=True, now_ns=12_500_000_000)
+
+    clock = heartbeat_watchdog.clock_for_node(node)
+
+    assert clock() == pytest.approx(12.5)
+
+
+def test_clock_for_node_uses_monotonic_without_sim_time() -> None:
+    """실기기(use_sim_time=false)에서는 기존 벽시계 감시를 유지한다."""
+    node = _SimTimeNode(use_sim_time=False)
+
+    assert heartbeat_watchdog.clock_for_node(node) is time.monotonic
+
+
+def test_clock_for_node_defaults_to_monotonic_when_parameter_missing() -> None:
+    node = _SimTimeNode(use_sim_time=None)
+
+    assert heartbeat_watchdog.clock_for_node(node) is time.monotonic
+
+
+def test_sim_clock_watchdog_ignores_wall_clock_slowdown() -> None:
+    """sim 시간이 느리게 흘러도 sim 기준 30초가 지나기 전에는 종료하지 않는다."""
+    node = _SimTimeNode(use_sim_time=True, now_ns=0)
+    terminated: list[str] = []
+
+    watchdog = heartbeat_watchdog.HeartbeatWatchdog(
+        timeout_sec=30.0,
+        check_interval_sec=0.05,
+        clock=heartbeat_watchdog.clock_for_node(node),
+        on_timeout=lambda: terminated.append("terminated"),
+    )
+    watchdog.start()
+    try:
+        # 벽시계로 0.2초 지나는 동안 sim 시간은 1초만 진행된다.
+        node._now_ns = 1_000_000_000
+        time.sleep(0.2)
+    finally:
+        watchdog.stop()
+
+    assert terminated == []
