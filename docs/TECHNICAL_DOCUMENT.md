@@ -428,7 +428,7 @@ Discord·Slack·Telegram을 선택적으로 활성화하고 메시지를 에이�
 
 | 구성 | 기준 |
 | --- | --- |
-| ROS 환경 | Jazzy·Ubuntu 24.04를 로컬 개발 기준으로 사용하며 Humble 경로도 제공합니다. |
+| ROS 환경 | Jazzy·Ubuntu 24.04를 로컬 개발 기준으로 사용합니다. 시뮬레이션(Gazebo Harmonic)도 Jazzy만 지원하며, Humble 시뮬레이션 경로는 제거되었습니다. |
 | Python 선언 | `>=3.10,<3.13`을 요구합니다. 실제 ROS 배포판 Python과 함께 맞춥니다. |
 | 빌드 | colcon, C++ toolchain, ROS dependencies, Go, Task를 사용합니다. |
 | Python 도구 | uv·pip와 pytest·ruff를 사용합니다. |

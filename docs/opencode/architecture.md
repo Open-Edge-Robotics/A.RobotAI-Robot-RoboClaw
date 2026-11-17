@@ -59,7 +59,7 @@ graph LR
 
     subgraph Simulation Path
         STUB[robo_claw_sim]
-        GZ[Gazebo Harmonic / Classic]
+        GZ[Gazebo Harmonic<br/>Jazzy 전용]
         NAV2[Nav2 / AMCL / SLAM]
     end
 

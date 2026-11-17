@@ -1,42 +1,44 @@
 #!/usr/bin/env bash
 # 시뮬레이션 실행 전 의존성 점검.
 #
-# Gazebo 기반 시뮬레이션 패키지는 배포판마다 이름이 다르고(humble=gazebo_ros,
-# jazzy=ros_gz_sim) 서로 호환되지 않는다. package.xml 에 한쪽만 선언하면 다른
-# 배포판에서 rosdep 해석이 실패하므로, 여기서 현재 배포판 기준으로 점검하고
-# 설치 명령을 안내한다.
+# Gazebo 시뮬레이션은 ROS 2 Jazzy(Harmonic, ros_gz_sim)만 지원한다. Humble
+# (Gazebo Classic, gazebo_ros) 지원은 제거되었으므로 두 스택을 함께 다루지 않는다.
+# Gazebo 없이 도는 전용 시뮬레이터(stub)는 표준 메시지 패키지만 있으면 동작한다.
 #
 # 사용법:
-#   ./scripts/check_sim_deps.sh              # 현재 배포판 기준 Gazebo 시뮬레이션 점검
+#   ./scripts/check_sim_deps.sh                 # Gazebo Harmonic(ros_gz_sim) 점검
 #   ./scripts/check_sim_deps.sh --engine stub   # Gazebo 없는 기본 시뮬레이터 점검
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SUPPORTED_DISTRO="jazzy"
 
 ENGINE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --engine) ENGINE="${2:-}"; shift 2 ;;
     -h|--help)
-      sed -n '2,14p' "${BASH_SOURCE[0]}"
+      sed -n '2,10p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *) echo "[sim-check] 알 수 없는 옵션: $1" >&2; exit 2 ;;
   esac
 done
 
-# ROS 배포판 감지 (scripts/run_in_ros_env.sh, sim/run_sim.sh 와 동일 순서)
+# ROS 배포판 검증. 시뮬레이션은 Jazzy 단일 지원이다.
 if [[ -z "${ROS_DISTRO:-}" ]]; then
-  [[ -f "/opt/ros/humble/setup.bash" ]] && ROS_DISTRO="humble"
-  [[ -z "${ROS_DISTRO:-}" && -f "/opt/ros/jazzy/setup.bash" ]] && ROS_DISTRO="jazzy"
+  if [[ -f "/opt/ros/${SUPPORTED_DISTRO}/setup.bash" ]]; then
+    ROS_DISTRO="${SUPPORTED_DISTRO}"
+  fi
 fi
-ROS_DISTRO="${ROS_DISTRO:-jazzy}"
+if [[ "${ROS_DISTRO:-}" != "${SUPPORTED_DISTRO}" ]]; then
+  echo "[sim-check] 시뮬레이션은 ROS 2 ${SUPPORTED_DISTRO}만 지원합니다 (ROS_DISTRO=${ROS_DISTRO:-unset})." >&2
+  echo "[sim-check] Humble(Gazebo Classic) 지원은 제거되었습니다. /opt/ros/${SUPPORTED_DISTRO}/setup.bash 를 소싱하세요." >&2
+  exit 1
+fi
 
 if [[ -z "${ENGINE}" ]]; then
-  case "${ROS_DISTRO}" in
-    jazzy) ENGINE="gz" ;;
-    *) ENGINE="classic" ;;
-  esac
+  ENGINE="gz"
 fi
 
 case "${ENGINE}" in
@@ -48,21 +50,13 @@ case "${ENGINE}" in
     )
     APT_HINT="ros-${ROS_DISTRO}-ros-gz-sim ros-${ROS_DISTRO}-turtlebot4-simulator ros-${ROS_DISTRO}-turtlebot4-navigation"
     ;;
-  classic)
-    REQUIRED=(
-      "gazebo_ros"
-      "turtlebot3_gazebo"
-      "nav2_bringup"
-    )
-    APT_HINT="ros-${ROS_DISTRO}-gazebo-ros-pkgs ros-${ROS_DISTRO}-turtlebot3-gazebo ros-${ROS_DISTRO}-navigation2"
-    ;;
   stub)
     # Gazebo 없는 기본 시뮬레이터는 표준 메시지 패키지만 있으면 동작한다.
     REQUIRED=()
     APT_HINT=""
     ;;
   *)
-    echo "[sim-check] 지원하지 않는 엔진: ${ENGINE} (gz|classic|stub)" >&2
+    echo "[sim-check] 지원하지 않는 엔진: ${ENGINE} (gz|stub). Humble(Gazebo Classic) 의 classic 엔진은 제거되었습니다." >&2
     exit 2
     ;;
 esac

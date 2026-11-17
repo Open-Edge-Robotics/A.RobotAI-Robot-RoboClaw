@@ -43,15 +43,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[./rclaw sim] --> B[ROS_DISTRO 감지]
-    B --> C{배포판}
-    C -->|--engine stub| D[robo_claw_sim]
-    C -->|auto 또는 Gazebo 엔진| E{배포판}
-    E -->|jazzy| F[Gazebo Harmonic + TurtleBot4]
-    E -->|humble| G[Gazebo Classic + TurtleBot3]
+    A[./rclaw sim] --> B{sim_engine}
+    B -->|"gz (기본)"| F["Gazebo Harmonic + TurtleBot4<br/>ROS 2 Jazzy 전용"]
+    B -->|stub| D[robo_claw_sim<br/>Gazebo 불필요]
     D --> H[Agent/Discovery/Channel 기동]
     F --> I{옵션}
-    G --> I
     I -->|--nav2| J[Nav2 활성화]
     I -->|--slam| K[SLAM + Nav2 활성화]
     I -->|기본| L[기본 Gazebo 시뮬레이션]

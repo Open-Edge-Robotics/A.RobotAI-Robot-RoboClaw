@@ -22,6 +22,33 @@ if _LAUNCH_DIR not in sys.path:
     sys.path.insert(0, _LAUNCH_DIR)
 from _common_launch_args import common_launch_arguments  # pyright: ignore[reportMissingImports]
 
+# Gazebo 시뮬레이션은 Jazzy(Harmonic, ros_gz_sim)만 지원한다. Humble(Gazebo Classic)은
+# 지원하지 않으므로 `sim_engine:=classic` 이나 humble 환경에서 조용히 다른 경로로
+# 진행하지 않고 즉시 중단한다.
+SUPPORTED_SIM_ENGINES = ("gz", "stub")
+GAZEBO_ROS_DISTRO = "jazzy"
+
+
+def _validate_sim_engine(sim_engine: str) -> None:
+    if sim_engine in SUPPORTED_SIM_ENGINES:
+        return
+    raise RuntimeError(
+        f"지원하지 않는 sim_engine 입니다: {sim_engine!r}. "
+        "Humble(Gazebo Classic) 시뮬레이션 지원은 제거되었습니다. "
+        f"사용 가능: {', '.join(SUPPORTED_SIM_ENGINES)}"
+    )
+
+
+def _validate_ros_distro(ros_distro: str) -> None:
+    # Gazebo(Harmonic)는 Jazzy 배포판에만 있다. distro 를 알 수 없으면(비어 있으면)
+    # 검증을 건너뛰고 패키지 탐색 실패에 맡긴다.
+    if not ros_distro or ros_distro == GAZEBO_ROS_DISTRO:
+        return
+    raise RuntimeError(
+        f"Gazebo 시뮬레이션은 ROS 2 {GAZEBO_ROS_DISTRO} 만 지원합니다(ROS_DISTRO={ros_distro!r}). "
+        "Humble 지원은 제거되었습니다. /opt/ros/jazzy/setup.bash 를 소싱한 뒤 다시 실행하세요."
+    )
+
 
 def launch_setup(context, *args, **kwargs):
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -74,19 +101,19 @@ def launch_setup(context, *args, **kwargs):
     bringup_share = get_package_share_directory("robo_claw_bringup")
     scenario_file = LaunchConfiguration("scenario_file").perform(context)
 
+    _validate_sim_engine(sim_engine)
+    if sim_engine == "gz":
+        _validate_ros_distro(os.environ.get("ROS_DISTRO", ""))
+
     # 월드 이름에 따른 맵 파일 자동 설정
     if sim_engine == "gz":
         tb4_nav_share = FindPackageShare("turtlebot4_navigation")
         default_map = PathJoinSubstitution([tb4_nav_share, "maps", world + ".yaml"])
         camera_topic_val = "/oakd/rgb/preview/image_raw"
-    elif sim_engine == "stub":
+    else:
         # 무거운 시뮬레이터: 지도/카메라는 robo_claw_sim 노드가 직접 발행한다.
         default_map = ""
         camera_topic_val = "/sim/camera/image_raw"
-    else:
-        tb3_nav_share = FindPackageShare("nav2_bringup")
-        default_map = PathJoinSubstitution([tb3_nav_share, "maps", "turtlebot3_world.yaml"])
-        camera_topic_val = "/camera/image_raw"
 
     if requested_camera_topic:
         camera_topic_val = requested_camera_topic
@@ -177,104 +204,6 @@ def launch_setup(context, *args, **kwargs):
                         "use_sim_time": use_sim_time,
                         "params_file": custom_nav2_params,
                     }.items(),
-                )
-            )
-    elif sim_engine == "classic":
-        # --- Humble (Turtlebot3 + Gazebo Classic) ---
-        # bare `else` 로 두면 sim_engine:=stub 에서도 turtlebot3_gazebo/gazebo_ros 를
-        # 찾다가 런치 전체가 예외로 종료된다. 엔진별 분기는 항상 명시적으로 비교한다.
-        tb3_gazebo_share = FindPackageShare("turtlebot3_gazebo")
-        actual_world = world if world != "warehouse" else "turtlebot3_world"
-        world_path = PathJoinSubstitution([tb3_gazebo_share, "worlds", actual_world + ".world"])
-
-        nodes_to_launch.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution(
-                        [tb3_gazebo_share, "launch", "robot_state_publisher.launch.py"]
-                    )
-                ),
-                launch_arguments={"use_sim_time": use_sim_time}.items(),
-            )
-        )
-
-        nodes_to_launch.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution(
-                        [FindPackageShare("gazebo_ros"), "launch", "gzserver.launch.py"]
-                    )
-                ),
-                launch_arguments={"world": world_path, "verbose": "true"}.items(),
-            )
-        )
-
-        nodes_to_launch.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution(
-                        [FindPackageShare("gazebo_ros"), "launch", "gzclient.launch.py"]
-                    )
-                ),
-                launch_arguments={"verbose": "true"}.items(),
-            )
-        )
-
-        nodes_to_launch.append(
-            Node(
-                package="gazebo_ros",
-                executable="spawn_entity.py",
-                arguments=[
-                    "-entity",
-                    "turtlebot3_waffle",
-                    "-file",
-                    PathJoinSubstitution(
-                        [tb3_gazebo_share, "models", "turtlebot3_waffle", "model.sdf"]
-                    ),
-                    "-x",
-                    "-2.0",
-                    "-y",
-                    "-0.5",
-                    "-z",
-                    "0.01",
-                ],
-                output="screen",
-            )
-        )
-
-        is_slam_str = "True" if use_slam.perform(context).lower() == "true" else "False"
-        if use_nav2.perform(context).lower() == "true":
-            nav2_bringup_share = FindPackageShare("nav2_bringup")
-            # 커스텀 파라미터 파일 경로 사용
-            custom_nav2_params = PathJoinSubstitution([bringup_share, "config", "nav2_params.yaml"])
-
-            nodes_to_launch.append(
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        PathJoinSubstitution([nav2_bringup_share, "launch", "bringup_launch.py"])
-                    ),
-                    launch_arguments={
-                        "use_sim_time": use_sim_time,
-                        "slam": is_slam_str,
-                        "map": map_file if map_file.perform(context) != "" else default_map,
-                        "params_file": custom_nav2_params,
-                        "autostart": "True",
-                        "use_composition": "True",
-                        "use_rviz": "False",
-                    }.items(),
-                )
-            )
-            rviz_config_path = PathJoinSubstitution(
-                [nav2_bringup_share, "rviz", "nav2_default_view.rviz"]
-            )
-            nodes_to_launch.append(
-                Node(
-                    package="rviz2",
-                    executable="rviz2",
-                    name="rviz2",
-                    arguments=["-d", rviz_config_path],
-                    parameters=[{"use_sim_time": use_sim_time}],
-                    output="screen",
                 )
             )
 
@@ -430,7 +359,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("robot_model", default_value="standard"),
             DeclareLaunchArgument("world", default_value="warehouse"),
-            DeclareLaunchArgument("sim_engine", default_value="classic"),
+            DeclareLaunchArgument("sim_engine", default_value="gz"),
             DeclareLaunchArgument(
                 "scenario_file",
                 default_value="",

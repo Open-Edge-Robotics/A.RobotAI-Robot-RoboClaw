@@ -154,8 +154,8 @@ type LaunchFlags struct {
 	World      string
 	RobotModel string
 	MapFile    string
-	// SimEngine 시뮬레이션 엔진 선택: auto(기본) | stub | gz | classic.
-	// 비어 있으면 auto 로 해석되어 배포판에 맞는 Gazebo 엔진이 선택된다.
+	// SimEngine 시뮬레이션 엔진 선택: auto(기본, Gazebo Harmonic) | stub | gz.
+	// Humble(Gazebo Classic) 엔진은 제거되었습니다.
 	SimEngine string
 	// ScenarioFile stub 엔진이 사용할 시나리오 YAML 경로.
 	ScenarioFile string

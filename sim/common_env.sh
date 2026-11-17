@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# ROS 배포판 자동 감지 후 distro별 env.sh 소싱
+# ROS + workspace 환경 소싱. 시뮬레이션은 ROS 2 Jazzy만 지원한다
+# (Humble/Gazebo Classic 지원 제거).
 # sim/run_sim.sh 또는 외부 스크립트에서 사용
 
 _COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${_COMMON_DIR}/.." && pwd)"
+SUPPORTED_DISTRO="jazzy"
 
-# ROS Distro 감지 (scripts/run_in_ros_env.sh, rclaw DetectRosDistro() 와 동일 순서)
 if [[ -z "${ROS_DISTRO:-}" ]]; then
-  [[ -f "/opt/ros/humble/setup.bash" ]] && export ROS_DISTRO="humble"
-  [[ -z "${ROS_DISTRO:-}" && -f "/opt/ros/jazzy/setup.bash" ]] && export ROS_DISTRO="jazzy"
+  export ROS_DISTRO="${SUPPORTED_DISTRO}"
+elif [[ "${ROS_DISTRO}" != "${SUPPORTED_DISTRO}" ]]; then
+  echo "[rc] Error: 시뮬레이션은 ROS 2 ${SUPPORTED_DISTRO}만 지원합니다 (ROS_DISTRO=${ROS_DISTRO}). Humble(Gazebo Classic) 지원은 제거되었습니다." >&2
+  unset _COMMON_DIR PROJECT_ROOT SUPPORTED_DISTRO
+  # source 로 불릴 때는 호출한 셸을 죽이지 않고 소싱만 중단한다.
+  if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    return 1
+  fi
+  exit 1
 fi
 
 # ROS + workspace 소싱
@@ -16,10 +24,6 @@ fi
 [[ -f "${PROJECT_ROOT}/install/setup.bash" ]] && source "${PROJECT_ROOT}/install/setup.bash"
 
 # 배포판별 환경변수 적용
-case "${ROS_DISTRO:-}" in
-  jazzy)  source "${_COMMON_DIR}/jazzy/env.sh" ;;
-  humble) source "${_COMMON_DIR}/humble/env.sh" ;;
-  *) echo "[rc] Warning: ROS_DISTRO not set or unsupported (${ROS_DISTRO:-})" ;;
-esac
+source "${_COMMON_DIR}/${SUPPORTED_DISTRO}/env.sh"
 
-unset _COMMON_DIR PROJECT_ROOT
+unset _COMMON_DIR PROJECT_ROOT SUPPORTED_DISTRO

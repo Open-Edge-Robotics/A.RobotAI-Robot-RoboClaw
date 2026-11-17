@@ -45,6 +45,17 @@ func LaunchCmd() *wcli.Command {
 			if !sim && (resolvedEngine != launcher.SimEngineAuto || scenarioFile != "") {
 				return fmt.Errorf("--engine/--scenario는 시뮬레이션 모드에서만 사용할 수 있습니다. --sim과 함께 사용하세요")
 			}
+			if sim {
+				if docker {
+					// 이미지에는 Gazebo(ros_gz_sim)가 없다. gz 로 진행하면 컨테이너 안에서
+					// 패키지 탐색 단계에서 늦게 실패하므로 여기서 막는다.
+					if resolvedEngine != launcher.SimEngineStub {
+						return fmt.Errorf("Docker 모드 시뮬레이션은 --engine stub 만 지원합니다(이미지에 Gazebo가 없습니다)")
+					}
+				} else if err := launcher.ValidateSimDistro(launcher.DetectRosDistro()); err != nil {
+					return err
+				}
+			}
 			if scenarioFile != "" && !launcher.PathExists(scenarioFile) {
 				return fmt.Errorf("시나리오 파일을 찾을 수 없습니다: %s", scenarioFile)
 			}
@@ -109,7 +120,7 @@ func LaunchCmd() *wcli.Command {
 	cmd.Flags().StringVar(&world, "world", "", "", "(Sim) 로드할 시뮬레이션 월드 파일명")
 	cmd.Flags().StringVar(&robotModel, "model", "", "", "(Sim) 사용할 로봇 모델 (예: waffle)")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "(Sim) 사용할 맵(.yaml) 파일 경로")
-	cmd.Flags().StringVar(&engine, "engine", "", "auto", "(Sim) 시뮬레이션 엔진: auto | stub(Gazebo 불필요) | gz | classic")
+	cmd.Flags().StringVar(&engine, "engine", "", "auto", "(Sim) 시뮬레이션 엔진: auto(Gazebo Harmonic) | stub(Gazebo 불필요) | gz")
 	cmd.Flags().StringVar(&scenarioFile, "scenario", "", "", "(Sim) stub 엔진이 사용할 시나리오 YAML 경로")
 	cmd.Flags().StringVar(&imageName, "image", "", "lgecloudroboticstask/robo-claw", "(Docker) 사용할 컨테이너 이미지명 (예: myrepo/robo-claw)")
 	cmd.Flags().StringVar(&imageTag, "image-tag", "", "latest", "(Docker) 사용할 컨테이너 이미지 태그")

@@ -1,7 +1,7 @@
 # 시뮬레이션
 
 RoboClaw를 Gazebo/실기 없이 폐루프로 검증하기 위한 시뮬레이션 구성을 설명합니다.
-Gazebo 경로(`sim_engine:=classic|gz`)와 전용 시뮬레이터(`sim_engine:=stub`)의
+Gazebo 경로(`sim_engine:=gz`, ROS 2 Jazzy 전용)와 전용 시뮬레이터(`sim_engine:=stub`)의
 차이, 시나리오 작성법, 제공 인터페이스와 한계를 다룹니다.
 
 ## 1. 구성
@@ -10,7 +10,10 @@ Gazebo 경로(`sim_engine:=classic|gz`)와 전용 시뮬레이터(`sim_engine:=s
 | --- | --- | --- | --- |
 | T1 전용 시뮬레이터 | `robo_claw_sim` (자체 구현) | 커밋 게이트·시나리오 회귀, 결정론적 판정 | `nav2_msgs`, `vision_msgs`, `tf2_ros` 및 ROS 메시지 패키지 |
 | T2 Gazebo Harmonic | `turtlebot4_gz_bringup` | 3D 시각화, Nav2 파라미터 실검증 | `ros_gz_sim`, `turtlebot4_*` |
-| T2 Gazebo Classic | `turtlebot3_gazebo` | 위와 동일 (humble 한정) | `gazebo_ros`, `turtlebot3_*` |
+
+Gazebo 시뮬레이션은 **ROS 2 Jazzy(Harmonic)** 만 지원합니다. Humble의 Gazebo
+Classic(`gazebo_ros`, `turtlebot3_*`) 경로는 유지 비용과 런치 분기 오류 때문에
+제거되었고, humble 환경에서는 런치·CLI·스크립트가 모두 즉시 오류로 중단합니다.
 
 `robo_claw_core`는 `ros2_control`을 사용하지 않고 `/joint_states`를 구독하며
 `cmd_vel`을 발행합니다. 따라서 시뮬레이터가 재현해야 하는 것은 Twist 적분,
@@ -38,8 +41,8 @@ ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml --output /tmp/ou
 ```
 
 `rclaw sim`/`rclaw launch ... --sim`/`sim/run_sim.sh`는 모두 같은 런치 파일을
-사용하며, `sim_engine`은 배포판에서 자동 결정됩니다(`jazzy`→`gz`,
-그 외 `classic`). Gazebo 없이 전체 스택을 띄우려면 `--engine stub`을 지정합니다.
+사용하며, `sim_engine`은 Gazebo Harmonic(`gz`)이 기본값입니다. Gazebo 없이 전체
+스택을 띄우려면 `--engine stub`을 지정합니다.
 
 ### 2.1 CLI 실행
 
@@ -54,14 +57,14 @@ ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml --output /tmp/ou
 ./rclaw launch former w2_2f_2 --sim --engine stub \
   --scenario src/robo_claw_sim/scenarios/navigate_basic.yaml
 
-# 기존 Gazebo 경로 (배포판 자동 선택)
-./rclaw sim               # jazzy→gz, humble→classic
-./rclaw sim --engine gz   # Gazebo Harmonic 강제
+# 기존 Gazebo 경로 (Jazzy/Harmonic)
+./rclaw sim               # 기본 엔진은 gz
+./rclaw sim --engine gz   # Gazebo Harmonic 명시
 ```
 
 | 플래그 | 값 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `--engine` | `auto` · `stub` · `gz` · `classic` | `auto` | 시뮬레이션 엔진. `auto`는 배포판에 맞는 Gazebo를 고릅니다(`gz`/`classic` 별칭: `harmonic`/`gazebo`) |
+| `--engine` | `auto` · `stub` · `gz` | `auto` | 시뮬레이션 엔진. `auto`는 Gazebo Harmonic(`gz`)입니다(`gz` 별칭: `harmonic`). 제거된 `classic`/`gazebo` 값은 오류로 거부합니다 |
 | `--scenario` | YAML 경로 | 없음 | `stub` 엔진이 사용할 시나리오. 미지정 시 기본 방(8×6m)을 사용합니다 |
 
 `rclaw` 는 시뮬레이션을 전용 ROS 도메인(기본 42, `RC_SIM_DOMAIN_ID`)으로 격리해
@@ -166,7 +169,7 @@ task test            # ROS 그래프 테스트 + colcon test 포함
 
 ## 7. 트러블슈팅
 
-Gazebo 경로(`sim_engine:=gz|classic`)에서 실제로 관측된 실패와 조치입니다.
+Gazebo 경로(`sim_engine:=gz`)에서 실제로 관측된 실패와 조치입니다.
 
 ### 7.1 `Failed to find a free participant index`
 
@@ -183,7 +186,7 @@ CycloneDDS의 참여자 자동 인덱스 범위를 넘으면 노드가 기동 �
 
 `CYCLONEDDS_URI`에 `Discovery/MaxAutoParticipantIndex`를 넣어 상한을 올립니다
 (`robo_claw_cli/launcher/dds.go`가 인라인 URI를 생성하며, `Dockerfile`·
-`sim/humble/env.sh`·`sim/jazzy/cyclonedds_config.xml`도 같은 값을 씁니다).
+`sim/jazzy/cyclonedds_config.xml`도 같은 값을 씁니다).
 
 | 설정 | 한 도메인 동시 참여자(실측) |
 | --- | --- |
@@ -223,10 +226,10 @@ executor가 실제로 멈추면 `/clock` 구독도 멈춰 sim 시간이 정지�
 월드 목록을 받지 못해 로봇이 스폰되지 않고, 이후 단계(컨트롤러 스폰·토픽)가 모두
 멈춥니다.
 
-`rclaw` 는 시뮬레이션 실행 전후와 `rclaw kill` 에서 이 프로세스를 회수합니다
-(`gz sim`, `gzserver`, `gzclient`, `spawn_entity.py`). `gz` 는 프로세스 타이틀을
-`"gz sim server"` 처럼 한 덩어리로 바꿔치기하므로 회수 로직은 argv[0] 을 공백으로
-다시 나눠 비교합니다. 수동 정리가 필요하면 다음을 실행합니다.
+`rclaw` 는 시뮬레이션 실행 전후와 `rclaw kill` 에서 이 프로세스(`gz sim`)를
+회수합니다. `gz` 는 프로세스 타이틀을 `"gz sim server"` 처럼 한 덩어리로
+바꿔치기하므로 회수 로직은 argv[0] 을 공백으로 다시 나눠 비교합니다. 수동 정리가
+필요하면 다음을 실행합니다.
 
 ```bash
 ./rclaw kill                 # RoboClaw 노드 + gz 시뮬레이터 프로세스 정리

@@ -183,11 +183,12 @@ task build
 
 ## 🎮 시뮬레이션
 
-ROS 배포판에 따라 최적화된 시뮬레이션 엔진을 자동으로 선택합니다.
+Gazebo 시뮬레이션(Harmonic)과 Gazebo 없이 도는 전용 시뮬레이터를 제공합니다.
 
-- **Jazzy**: Gazebo Harmonic (Turtlebot4 기반)
-- **Humble**: Gazebo Classic (Turtlebot3 기반)
+- **Jazzy**: Gazebo Harmonic (Turtlebot4 기반) — Gazebo 시뮬레이션은 Jazzy만 지원합니다.
 - **Gazebo 없는 검증**: 전용 `robo_claw_sim` (`--engine stub`)
+
+Humble(Gazebo Classic, Turtlebot3 기반) 시뮬레이션 지원은 제거되었습니다.
 
 ```bash
 # 기본 시뮬레이션

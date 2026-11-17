@@ -256,10 +256,7 @@ func selectPortKillTargets(pids []int, byPID map[int]procCmdline, protected map[
 // (2026-11-17 재현). 실행 전후로 반드시 회수해야 한다.
 func DefaultKillSimArgvPatterns() [][]string {
 	return [][]string{
-		{"gz", "sim"},       // gz sim <world> / gz sim server / gz sim gui
-		{"gzserver"},        // Gazebo Classic(humble)
-		{"gzclient"},        // Gazebo Classic(humble)
-		{"spawn_entity.py"}, // gazebo_ros 스폰 스크립트
+		{"gz", "sim"}, // gz sim <world> / gz sim server / gz sim gui
 	}
 }
 

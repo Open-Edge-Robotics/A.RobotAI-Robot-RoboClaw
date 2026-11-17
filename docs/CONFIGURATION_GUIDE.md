@@ -493,7 +493,7 @@ ROS distro, DDS, 모델 저장 경로, workspace, Docker mount처럼 로봇 호�
 
 - `.env.example`
 - `robo_claw_cli/launcher/docker.go`
-- `sim/humble/env.sh` 또는 `sim/jazzy/env.sh`
+- `sim/jazzy/env.sh`
 
 ### 필수 테스트
 

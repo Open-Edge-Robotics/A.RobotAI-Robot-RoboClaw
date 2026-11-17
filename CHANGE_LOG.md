@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — Humble(Gazebo Classic) 시뮬레이션 지원 제거
+
+- **Removed**: `sim/humble/`(env·run_simulation)을 삭제하고, 시뮬레이션은 ROS 2 Jazzy(Gazebo Harmonic)와 Gazebo 불필요한 `stub` 엔진만 남깁니다. 두 Gazebo 스택(`gazebo_ros` Classic ↔ `ros_gz_sim` Harmonic)을 동시에 유지하려면 런치 분기·환경변수·의존성 점검이 배포판별로 갈라져야 하고, humble 쪽에서 런치가 조용히 잘못된 분기로 진행되는 문제가 반복되었습니다.
+- **Changed**: `robo_claw_sim.launch.py` 의 `sim_engine` 기본값을 `classic` → `gz` 로 바꾸고 Gazebo Classic 분기를 제거합니다. 허용 엔진은 `gz`·`stub` 이며, 그 외 값은 `RuntimeError` 로 중단합니다. Gazebo 경로에서 `ROS_DISTRO` 가 jazzy 가 아니면 `ros_gz_sim` 부재로 늦게 실패하지 않고 시작 전에 오류로 멈춥니다.
+- **Changed**: CLI(`rclaw sim`/`rclaw launch --sim`)에서 `--engine classic`/`gazebo` 를 안내 메시지와 함께 거부하고, `launcher.ValidateSimDistro` 로 jazzy 여부를 먼저 검증합니다. 배포판별 엔진 분기(`SimEngineForDistro`)와 humble 전용 환경변수 주입(`applyHumbleSimEnv`)은 삭제했습니다. Docker 모드 시뮬레이션은 이미지에 Gazebo가 없으므로 `--engine stub` 만 허용합니다.
+- **Changed**: `sim/run_sim.sh`·`sim/common_env.sh`·`scripts/check_sim_deps.sh` 는 jazzy 외 배포판에서 안내 메시지와 함께 종료하고, 의존성 점검 엔진 목록에서 `classic` 을 제거합니다.
+- **Fixed**: `rclaw kill` 의 시뮬레이터 회수 패턴에서 Gazebo Classic 전용 실행 파일(`gzserver`, `gzclient`, `spawn_entity.py`)을 없앱니다. `gz sim` 회수 동작은 그대로입니다.
+- **검증**: `task verify`(preflight → lint → contract-check → unit-test) 통과, 마지막 테스트 실행은 `3295 passed, 178 deselected` 입니다. `robo_claw_cli` 의 `go build`/`go vet`/`go test ./...` 도 통과했습니다. 동작 확인: `./rclaw sim --engine classic|gazebo` 는 안내 메시지와 함께 거부되고, `ros2 launch robo_claw_bringup robo_claw_sim.launch.py --show-args` 의 `sim_engine` 기본값이 `gz` 이며, `ROS_DISTRO=humble` 로 `sim/run_sim.sh`·`sim/common_env.sh`·`scripts/check_sim_deps.sh` 를 실행하면 각각 오류로 중단합니다. Gazebo GUI 실기동과 humble 호스트 실행은 해당 환경이 없어 미검증입니다.
+
 ## 2026-11-17 — 문서 현행화 및 일회성 이슈 기록 통합
 
 - **Changed**: API·Docker·로봇 설정·System 1·RAG·시뮬레이션·매니퓰레이션·대시보드·메신저 문서를 현재 구현과 설정 contract에 맞춥니다. 기술 문서의 기준 커밋을 갱신하고 작업 보고 성격의 문구를 제거합니다.

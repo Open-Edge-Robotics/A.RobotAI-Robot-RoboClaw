@@ -160,28 +160,54 @@ def test_stub_engine_starts_robo_claw_sim_node() -> None:
     assert sim_nodes[0].node_executable == "sim_node"
 
 
-def test_gazebo_classic_branch_requires_explicit_engine() -> None:
-    """Gazebo Classic 자산은 bare ``else`` 분기에서 요구하면 안 된다.
+def test_launch_file_drops_gazebo_classic_assets() -> None:
+    """Humble/Gazebo Classic 지원이 남아 있으면 안 된다.
 
-    ``sim_engine == "gz"`` 의 ``else`` 가 classic 분기였기 때문에 ``sim_engine:=stub``
-    에서도 ``FindPackageShare("turtlebot3_gazebo")`` 를 평가해 런치가 즉시 예외로
-    종료되었다. 엔진 분기는 항상 명시적 비교(``elif sim_engine == "classic"``)로 끝나야 한다.
+    ``sim_engine:=classic`` 분기가 다시 살아나면 jazzy 호스트에서 ``gazebo_ros``
+    부재로 런치가 즉시 예외로 종료되고, ``stub`` 엔진에서도 classic 자산을 찾다가
+    같은 실패가 난다. Gazebo 자산은 Harmonic(``ros_gz_sim``)만 참조한다.
     """
     src = _LAUNCH_FILE.read_text(encoding="utf-8")
-    offenders: list[str] = []
-    for node in ast.walk(ast.parse(src)):
-        if not isinstance(node, ast.If) or not node.orelse:
-            continue
-        if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
-            continue  # elif 사슬
-        body = "\n".join(ast.get_source_segment(src, stmt) or "" for stmt in node.orelse)
-        if "turtlebot3_gazebo" in body or "gazebo_ros" in body:
-            offenders.append(ast.get_source_segment(src, node.test) or "<else>")
 
-    assert not offenders, (
-        "Gazebo Classic 자산을 bare else 분기에서 요구하고 있습니다. "
-        f"sim_engine:=stub 에서도 turtlebot3_gazebo 를 찾다가 런치가 실패합니다: {offenders}"
-    )
+    for legacy in ("turtlebot3_gazebo", "gazebo_ros", "turtlebot3_world"):
+        assert legacy not in src, f"Gazebo Classic(Humble) 전용 자산 참조가 남아 있습니다: {legacy}"
+
+
+def test_sim_engine_default_is_gz() -> None:
+    """런치 기본 엔진은 Gazebo Harmonic 이어야 한다.
+
+    기본값이 classic 이면 ``sim_engine`` 을 넘기지 않는 진입점에서 gazebo_ros 부재로
+    런치가 즉시 실패한다.
+    """
+    for node in ast.walk(_parse()):
+        if not isinstance(node, ast.Call):
+            continue
+        func = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if func != "DeclareLaunchArgument" or not node.args:
+            continue
+        first = node.args[0]
+        if not (isinstance(first, ast.Constant) and first.value == "sim_engine"):
+            continue
+        defaults = [
+            keyword.value.value
+            for keyword in node.keywords
+            if keyword.arg == "default_value" and isinstance(keyword.value, ast.Constant)
+        ]
+        assert defaults == ["gz"], f"sim_engine 기본값은 gz 여야 합니다: {defaults}"
+        return
+
+    pytest.fail("sim_engine 인자 선언을 찾지 못했습니다")
+
+
+@pytest.mark.ros2
+def test_removed_classic_engine_is_rejected() -> None:
+    """제거된 ``sim_engine:=classic`` 은 조용히 진행하지 않고 즉시 실패해야 한다."""
+    module = _load_launch_module()
+    description = module.generate_launch_description()
+    context = _build_context(description, {"sim_engine": "classic"})
+
+    with pytest.raises(RuntimeError, match="classic"):
+        module.launch_setup(context)
 
 
 @pytest.mark.ros2

@@ -337,6 +337,11 @@ func SimCmd() *wcli.Command {
 			if err != nil {
 				return err
 			}
+			// Gazebo(Harmonic)는 Jazzy에만 있다. humble 호스트에서 gz 를 띄우면
+			// ros_gz_sim 부재로 늦게 실패하므로 시작 전에 배포판을 검증한다.
+			if err := launcher.ValidateSimDistro(launcher.DetectRosDistro()); err != nil {
+				return err
+			}
 			if scenarioFile != "" && !launcher.PathExists(scenarioFile) {
 				return fmt.Errorf("시나리오 파일을 찾을 수 없습니다: %s", scenarioFile)
 			}
@@ -359,13 +364,10 @@ func SimCmd() *wcli.Command {
 			if nav2 {
 				extraArgs = append(extraArgs, "use_nav2:=true")
 			}
-			// 시뮬레이션 엔진은 배포판에 종속된다. 지정하지 않으면 launch 기본값(classic)이
-			// 적용되어 jazzy 전용 호스트에서 gazebo_ros 부재로 즉시 실패한다.
+			// 시뮬레이션 엔진은 Jazzy(Harmonic) 또는 stub 만 있다. 지정하지 않으면
+			// gz 로 해석되어 launch 기본값과 같은 값이 전달된다.
 			if !hasLaunchArg(extraArgs, "sim_engine") {
-				simEngine := resolvedEngine
-				if simEngine == launcher.SimEngineAuto {
-					simEngine = launcher.SimEngineForDistro(launcher.DetectRosDistro())
-				}
+				simEngine := launcher.ResolveSimEngine(resolvedEngine)
 				extraArgs = append(extraArgs, fmt.Sprintf("sim_engine:=%s", simEngine))
 			}
 			if scenarioFile != "" && !hasLaunchArg(extraArgs, "scenario_file") {
@@ -409,7 +411,7 @@ func SimCmd() *wcli.Command {
 	cmd.Flags().StringVar(&model, "model", "", "", "로봇 모델 지정")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "맵 파일 경로 지정")
 	cmd.Flags().StringVar(&engine, "engine", "", "auto",
-		"시뮬레이션 엔진: auto | stub(Gazebo 불필요) | gz | classic")
+		"시뮬레이션 엔진: auto(Gazebo Harmonic) | stub(Gazebo 불필요) | gz")
 	cmd.Flags().StringVar(&scenarioFile, "scenario", "",
 		"", "stub 엔진이 사용할 시나리오 YAML 경로")
 

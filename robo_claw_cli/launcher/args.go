@@ -334,17 +334,13 @@ func resolveVisionModelPath(lctx *LaunchContext, requested string) string {
 
 // BuildSimArgs 시뮬레이션 모드 전용 런치 아규먼트를 빌드합니다.
 //
-// 엔진 선택 우선순위: `--engine` 명시값 -> 배포판 기본값(jazzy=gz, 그 외 classic).
-// `--engine stub` 은 Gazebo 없이 도는 전용 시뮬레이터(robo_claw_sim)를 사용한다.
+// Gazebo 엔진은 Jazzy(Harmonic)만 지원하고, `--engine stub` 은 Gazebo 없이 도는
+// 전용 시뮬레이터(robo_claw_sim)를 사용합니다. Humble(Gazebo Classic) 지원은 제거되어
+// 배포판에 따른 엔진 분기가 없습니다.
 func BuildSimArgs(lctx *LaunchContext) []string {
 	var args []string
 
-	distro := lctx.RosDistro
-	if distro == "" {
-		distro = DetectRosDistro()
-	}
-	engine := ResolveSimEngine(lctx.SimEngine, distro)
-	args = append(args, fmt.Sprintf("sim_engine:=%s", engine))
+	args = append(args, fmt.Sprintf("sim_engine:=%s", ResolveSimEngine(lctx.SimEngine)))
 
 	// 시나리오는 stub 엔진에서만 의미가 있다(월드·객체·기대치·실패 주입 정의).
 	if lctx.ScenarioFile != "" {

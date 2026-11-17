@@ -467,22 +467,15 @@ func TestBuildCommonLaunchArgsGripperCameraTopics(t *testing.T) {
 	}
 }
 
-// 시뮬레이션 엔진은 배포판에 종속된다. jazzy 에서 launch 기본값(classic)이
-// 적용되면 gazebo_ros 부재로 기동이 실패하므로, 인자 생성 단계에서 결정되어야 한다.
-func TestBuildSimArgsSimEngineFollowsDistro(t *testing.T) {
-	cases := []struct {
-		distro string
-		want   string
-	}{
-		{"jazzy", "sim_engine:=gz"},
-		{"humble", "sim_engine:=classic"},
-	}
-	for _, tc := range cases {
+// 시뮬레이션 엔진은 Jazzy(Gazebo Harmonic) 또는 Gazebo 불필요한 stub 만 지원한다.
+// Humble(Gazebo Classic) 지원은 제거되어 인자 생성 단계에서 distro 분기가 없다.
+func TestBuildSimArgsSimEngineIgnoresDistro(t *testing.T) {
+	for _, distro := range []string{"jazzy", "humble", ""} {
 		lctx := baseCtx(map[string]string{})
-		lctx.RosDistro = tc.distro
+		lctx.RosDistro = distro
 		joined := strings.Join(BuildSimArgs(lctx), " ")
-		if !strings.Contains(joined, tc.want) {
-			t.Fatalf("%s 배포판에서 %q 가 필요합니다. 실제: %s", tc.distro, tc.want, joined)
+		if !strings.Contains(joined, "sim_engine:=gz") {
+			t.Fatalf("distro=%q 에서도 gz 여야 합니다. 실제: %s", distro, joined)
 		}
 	}
 }
@@ -506,12 +499,19 @@ func TestDetectRosDistroPrefersEnvironment(t *testing.T) {
 	}
 }
 
-func TestSimEngineForDistro(t *testing.T) {
-	if got := SimEngineForDistro("jazzy"); got != "gz" {
-		t.Fatalf("jazzy -> gz 기대, 실제 %s", got)
+// 시뮬레이션은 Jazzy 단일 지원이다. humble 배포판에서는 조용히 gz 를 띄우지 않고
+// 시작 전에 명확한 오류로 중단해야 한다(ros_gz_sim 부재로 늦게 실패하는 것을 막는다).
+func TestValidateSimDistro(t *testing.T) {
+	if err := ValidateSimDistro("jazzy"); err != nil {
+		t.Fatalf("jazzy 는 지원해야 합니다: %v", err)
 	}
-	if got := SimEngineForDistro("humble"); got != "classic" {
-		t.Fatalf("humble -> classic 기대, 실제 %s", got)
+
+	err := ValidateSimDistro("humble")
+	if err == nil {
+		t.Fatal("humble 은 지원하지 않아야 합니다")
+	}
+	if !strings.Contains(err.Error(), "jazzy") {
+		t.Fatalf("오류 메시지에 지원 배포판이 드러나야 합니다: %v", err)
 	}
 }
 
@@ -554,8 +554,6 @@ func TestNormalizeSimEngine(t *testing.T) {
 		"stub":     SimEngineStub,
 		"STUB":     SimEngineStub,
 		" gz ":     SimEngineGz,
-		"classic":  SimEngineClassic,
-		"gazebo":   SimEngineClassic,
 		"harmonic": SimEngineGz,
 	}
 	for input, want := range cases {
@@ -568,20 +566,36 @@ func TestNormalizeSimEngine(t *testing.T) {
 		}
 	}
 
-	if _, err := NormalizeSimEngine("mujoco"); err == nil {
-		t.Fatal("지원하지 않는 엔진은 오류여야 합니다")
+	for _, removed := range []string{"classic", "gazebo", "mujoco"} {
+		if _, err := NormalizeSimEngine(removed); err == nil {
+			t.Fatalf("%q 는 거부해야 합니다", removed)
+		}
 	}
 }
 
 func TestResolveSimEngine(t *testing.T) {
-	if got := ResolveSimEngine("stub", "jazzy"); got != SimEngineStub {
+	if got := ResolveSimEngine("stub"); got != SimEngineStub {
 		t.Fatalf("명시값 우선 실패: %s", got)
 	}
-	if got := ResolveSimEngine("", "humble"); got != SimEngineClassic {
-		t.Fatalf("humble 기본값은 classic 이어야 합니다: %s", got)
+	if got := ResolveSimEngine(""); got != SimEngineGz {
+		t.Fatalf("auto 기본값은 gz 이어야 합니다: %s", got)
 	}
-	if got := ResolveSimEngine("알수없음", "jazzy"); got != SimEngineGz {
-		t.Fatalf("잘못된 값은 배포판 기본값으로 되돌아야 합니다: %s", got)
+	if got := ResolveSimEngine("알수없음"); got != SimEngineGz {
+		t.Fatalf("잘못된 값은 기본값으로 되돌아야 합니다: %s", got)
+	}
+	if got := ResolveSimEngine("classic"); got != SimEngineGz {
+		t.Fatalf("제거된 엔진은 기본값으로 되돌아야 합니다: %s", got)
+	}
+}
+
+// 제거된 classic 엔진을 명시하면 안내 메시지와 함께 거부해야 한다.
+func TestNormalizeSimEngineExplainsRemovedClassic(t *testing.T) {
+	_, err := NormalizeSimEngine("classic")
+	if err == nil {
+		t.Fatal("classic 은 거부해야 합니다")
+	}
+	if !strings.Contains(err.Error(), "Jazzy") {
+		t.Fatalf("대체 엔진(gz/Jazzy) 안내가 필요합니다: %v", err)
 	}
 }
 

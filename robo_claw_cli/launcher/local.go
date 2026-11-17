@@ -274,25 +274,21 @@ func applySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string 
 
 	// stub 엔진은 Gazebo 를 쓰지 않으므로 Gazebo 전용 환경변수를 주입하지 않는다.
 	// (존재하지 않는 모델 경로나 소프트웨어 렌더링 설정은 혼동만 만든다)
-	if ResolveSimEngine(lctx.SimEngine, lctx.RosDistro) == SimEngineStub {
+	if ResolveSimEngine(lctx.SimEngine) == SimEngineStub {
 		logging.Debug("stub 시뮬레이터: Gazebo 환경변수 주입 생략")
 		rich.Println("[green]✔[/green] 전용 시뮬레이터(stub) 환경으로 기동합니다 (Gazebo 불필요)")
 		return env
 	}
 
-	if lctx.RosDistro == "jazzy" {
-		env = applyJazzySimEnv(ctx, lctx, env)
-	} else {
-		env = applyHumbleSimEnv(ctx, lctx, env)
-	}
+	env = applyGazeboSimEnv(ctx, lctx, env)
 
-	logging.Debug("시뮬레이션 최적화 환경변수 설정 완료 (Distro: %s)", lctx.RosDistro)
-	rich.Println("[green]✔[/green] 시뮬레이션 최적화 환경변수 설정 완료 (Distro: %s)", lctx.RosDistro)
+	logging.Debug("시뮬레이션 최적화 환경변수 설정 완료")
+	rich.Println("[green]✔[/green] 시뮬레이션 최적화 환경변수 설정 완료")
 	return env
 }
 
-// applyJazzySimEnv Jazzy(Harmonic/Gazebo) 시뮬레이션 환경변수를 추가합니다.
-func applyJazzySimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string {
+// applyGazeboSimEnv Gazebo Harmonic(Jazzy) 시뮬레이션 환경변수를 추가합니다.
+func applyGazeboSimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string {
 	env = applySimDdsEnv(lctx, "131072B", "2097152B", env)
 	// 이 저장소는 Gazebo 모델/world 자산을 포함하지 않는다. 사용자가 지정한 리소스
 	// 경로가 있을 때만 그대로 전달하고, 빈 항목(=CWD)이 섞이지 않도록 join 한다.
@@ -331,32 +327,5 @@ func applySimDdsEnv(lctx *LaunchContext, maxMessageSize, whcHigh string, env []s
 		}
 		env = append(env, "ROS_DOMAIN_ID="+domain)
 	}
-	return env
-}
-
-// applyHumbleSimEnv Humble(Gazebo Classic) 시뮬레이션 환경변수를 추가합니다.
-func applyHumbleSimEnv(ctx *wcli.Context, lctx *LaunchContext, env []string) []string {
-	env = applySimDdsEnv(lctx, "65535B", "", env)
-	env = append(env,
-		"LIBGL_ALWAYS_SOFTWARE=1",
-		"MESA_GL_VERSION_OVERRIDE=3.3",
-		"MESA_GLSL_VERSION_OVERRIDE=330",
-		"OGRE_RTT_MODE=Copy",
-	)
-	if os.Getenv("TURTLEBOT3_MODEL") == "" {
-		env = append(env, "TURTLEBOT3_MODEL=waffle")
-	}
-
-	// Gazebo Classic 기본 경로 보정
-	gazeboResourcePath := os.Getenv("GAZEBO_RESOURCE_PATH")
-	if !strings.Contains(gazeboResourcePath, "/usr/share/gazebo-11") {
-		if gazeboResourcePath != "" {
-			env = append(env, fmt.Sprintf("GAZEBO_RESOURCE_PATH=/usr/share/gazebo-11:%s", gazeboResourcePath))
-		} else {
-			env = append(env, "GAZEBO_RESOURCE_PATH=/usr/share/gazebo-11")
-		}
-	}
-
-	logging.Debug("Humble 시뮬레이션 환경 변수 적용 (RMW_IMPLEMENTATION=rmw_cyclonedds_cpp)")
 	return env
 }
