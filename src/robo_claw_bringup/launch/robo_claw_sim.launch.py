@@ -104,7 +104,7 @@ def launch_setup(context, *args, **kwargs):
             "camera_depth_topic": "/sim/camera/depth/image_raw",
             "viewer": LaunchConfiguration("sim_viewer"),
             "use_sim_time": False,
-            "serve_navigation": True,
+            "serve_navigation": LaunchConfiguration("serve_navigation"),
             "update_rate_hz": LaunchConfiguration("sim_update_rate_hz"),
         }
         nodes_to_launch.append(
@@ -297,6 +297,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "RoboClaw 전용 시뮬레이터 백엔드: kinematic(기본, 외부 의존성 없음) "
                     "| mujoco(선택, 접촉/카메라 확장 기반)"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "serve_navigation",
+                default_value="true",
+                description=(
+                    "시뮬레이터 내장 내비게이션 액션 서버(/navigate_to_pose 등) 사용 여부. "
+                    "실제 Nav2를 붙일 때는 false로 두어 액션 서버 이름 충돌을 피한다"
                 ),
             ),
             DeclareLaunchArgument("use_nav2", default_value="false"),

@@ -181,6 +181,33 @@ ros2 run robo_claw_sim sim_runner --backend mujoco \
 튜닝하지 않았습니다. `task sim-compare` 는 조작 시나리오를 기본 비교에서 제외합니다
 (kinematic 백엔드가 조작을 지원하지 않음).
 
+### 2.6 Nav2 와의 관계
+
+시뮬레이터는 **자체 내비게이션 액션 서버**(`/navigate_to_pose`, `/spin`,
+`/follow_waypoints`)를 제공하므로, 에이전트 스킬로 로봇을 움직이는 데는 Nav2가
+필요 없습니다(`serve_navigation:=true`, 기본값).
+
+실제 Nav2(costmap·BT·플래너)를 검증하려면 **내장 액션 서버를 끄고** Nav2를 같은
+토픽/TF에 붙입니다. 두 액션 서버가 같은 이름으로 동시에 뜨면 goal 라우팅이
+비결정적이 되므로 반드시 분리합니다.
+
+```bash
+# 1) 시뮬레이터: 내장 내비게이션 끄기, 센서/TF/지도는 그대로 발행
+ros2 launch robo_claw_bringup robo_claw_sim.launch.py \
+  sim_engine:=stub sim_backend:=mujoco serve_navigation:=false
+
+# 2) Nav2: 실기와 같은 방식으로 기동(맵/파라미터는 로봇 설정 사용)
+ros2 launch nav2_bringup bringup_launch.py \
+  use_sim_time:=false map:=<지도.yaml> params_file:=<nav2_params.yaml>
+
+# 3) 확인
+ros2 action list | grep navigate_to_pose     # 서버가 하나여야 함
+```
+
+주의: stub 엔진은 `/clock`을 발행하지 않으므로 Nav2에는 `use_sim_time:=false`를
+넘깁니다. `rclaw sim --nav2/--slam` 플래그는 Gazebo 분기 제거 이후 내장 액션
+서버만 쓰는 경로이며, 실제 Nav2 기동은 위처럼 별도 실행입니다.
+
 ### 2.5 시각화
 
 | 방법 | 보이는 것 | 사용 |

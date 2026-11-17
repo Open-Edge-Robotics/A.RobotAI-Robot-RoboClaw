@@ -5,6 +5,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 시뮬레이터 내비게이션 서버 토글, Nav2 병행 절차 문서화
+
+- **Added**: 런치 인자 `serve_navigation`(기본 true)을 추가해 시뮬레이터 내장 내비게이션 액션 서버를 끌 수 있게 했습니다. 실제 Nav2를 붙일 때 액션 서버 이름 충돌(`/navigate_to_pose` 중복)을 피하기 위한 것입니다.
+- **Added**: `docs/SIMULATION.md` §2.6 에 Nav2 병행 절차(내장 서버 off → nav2_bringup → 서버 1개 확인, `use_sim_time:=false`)를 정리했습니다.
+- **검증**: `uv run pytest src/robo_claw_bringup/tests` 통과. 실제 Nav2 기동은 이 환경에서 미검증입니다.
+
 ## 2026-11-17 — MuJoCo 뷰어 기동 오류 수정, 시뮬 카메라 배선
 
 - **Fixed**: `--viewer` 실행 시 `AttributeError: module 'mujoco' has no attribute 'viewer'` 로 죽던 문제를 수정했습니다. `mujoco.viewer` 는 하위 모듈이라 명시적으로 import 해야 하며, 이제 안내 메시지도 import 실패와 DISPLAY 실패를 구분합니다. 별도 설치(pip/apt)는 필요 없습니다(`mujoco` 패키지에 포함, glfw 사용).
