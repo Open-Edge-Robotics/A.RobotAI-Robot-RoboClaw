@@ -10,7 +10,7 @@ Gazebo 경로(`sim_engine:=gz`, ROS 2 Jazzy 전용)와 전용 시뮬레이터(`s
 | --- | --- | --- | --- |
 | T1 전용 시뮬레이터 | `robo_claw_sim` (자체 구현) | 커밋 게이트·시나리오 회귀, 결정론적 판정 | `nav2_msgs`, `vision_msgs`, `tf2_ros` 및 ROS 메시지 패키지 |
 | T1 백엔드 `kinematic` | 2D 운동학 세계 + ray marching | 기본값. 외부 의존성 없음 | 없음 |
-| T1 백엔드 `mujoco` | MuJoCo 물리 + ray casting | 접촉 판정, 후속 파지·카메라 검증 기반 | `mujoco`(선택, `sim-mujoco` extra) |
+| T1 백엔드 `mujoco` | MuJoCo 물리 + ray casting | 접촉·파지 판정, 후속 카메라 검증 기반 | `mujoco`(선택, `sim-mujoco` extra) |
 | T2 Gazebo Harmonic | `turtlebot4_gz_bringup` | 3D 시각화, Nav2 파라미터 실검증 | `ros_gz_sim`, `turtlebot4_*` |
 
 Gazebo 시뮬레이션은 **ROS 2 Jazzy(Harmonic)** 만 지원합니다. Humble의 Gazebo
@@ -132,6 +132,38 @@ MuJoCo 백엔드의 설계와 한계는 다음과 같습니다.
 - LaserScan은 `mj_ray`로 합성하며 로봇 body는 광선 대상에서 제외합니다.
 - 아직 하지 않는 것: 카메라 렌더, 관절/파지 동역학, 물체 질량·마찰. 이들은
   후속 단계(조작·인지 검증)에서 추가합니다.
+
+### 2.3 조작·파지 판정 (실험적, `mujoco` 백엔드)
+
+`mujoco` 백엔드는 로봇에 3축 직교 슬라이더 팔(`arm_x`/`arm_y`/`arm_z`)과 평행 조
+그리퍼(`gripper_joint`)를 붙이고, 시나리오의 `objects`를 free body로 장면에 넣습니다.
+파지 성공 여부는 **양쪽 조가 물체에 접촉하고 조 간격이 물체 지름 이하**일 때로
+판정합니다(운동학 백엔드는 조작을 지원하지 않으며, 요청하면 명확한 오류로 중단).
+
+| 항목 | 구현 |
+| --- | --- |
+| 관절 목표 | `set_joint_targets()` — 목표값으로 스텝당 0.02m씩 이동(위치 서보 근사) |
+| 파지 판정 | `grasp_state()` — 접촉 수·조 간격·말단-물체 거리 조합, 성립 후 조가 열릴 때까지 유지 |
+| 운반 | 파지 중 물체 자세를 말단에 맞추는 부착 근사(kinematic attach) |
+| 물체 자세 | `object_pose(name)` — 시나리오 객체의 (x, y, yaw) |
+
+```python
+from robo_claw_sim.backends import build_backend
+from robo_claw_sim.backends.manipulation import ManipulationConfig
+
+backend = build_backend(
+    "mujoco", world=scenario.world, manipulation=ManipulationConfig()
+)
+backend.set_joint_targets({"arm_x": 0.35, "arm_z": -0.07, "gripper_joint": 0.10})
+backend.step(Twist2D(), 0.3)          # 접근
+backend.set_joint_targets({"gripper_joint": -0.02})
+backend.step(Twist2D(), 0.3)          # 폐합
+assert backend.grasp_state().grasped_object == "cup_1"
+```
+
+한계: 실제 매니퓰레이터의 관절 구성·IK를 재현하지 않고, 마찰 기반 파지력도
+튜닝하지 않았습니다. `control_msgs/FollowJointTrajectory` 액션 서버와 시나리오
+`expect.grasped_objects` 판정은 다음 단계에서 이 백엔드 위에 올립니다.
 
 ## 3. 시나리오 스키마
 

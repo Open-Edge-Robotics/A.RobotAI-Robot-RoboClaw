@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — MuJoCo 백엔드 조작·파지 판정 기반(Phase 2a)
+
+- **Added**: `backends/manipulation.py`에 3축 직교 슬라이더 팔(`arm_x`/`arm_y`/`arm_z`)과 평행 조 그리퍼(`gripper_joint`) 모델, `GraspState`, MJCF 조각 생성을 추가했습니다. 시나리오의 `objects`가 free body로 장면에 들어가 실제 접촉 대상이 됩니다.
+- **Added**: `MujocoBackend`에 `set_joint_targets`/`joint_positions`/`grasp_state`/`object_pose`를 추가했습니다. 파지는 양쪽 조 접촉 + 조 간격 ≤ 물체 지름일 때 성립하고, 성립 후에는 조가 열릴 때까지 유지(히스테리시스)하며 물체를 말단에 붙여 운반하는 부착 근사(kinematic attach)를 씁니다.
+- **Changed**: 관절 목표는 즉시 대입하지 않고 스텝당 0.02m씩 이동(위치 서보 근사)하도록 해 접촉이 순간적으로 소멸하지 않게 했습니다. 평면 주행 모델의 베이스 높이도 고정해 조작 기준 높이가 중력으로 흘러내리지 않게 했습니다.
+- **Changed**: `kinematic` 백엔드에 조작 설정을 넘기면 지원하지 않는다는 오류로 중단합니다(조용히 무시하지 않음).
+- **Added**: `tests/test_mujoco_manipulation.py` 8건(장면 구성, 초기 자세, 한계 포화, 파지 성공/실패 3종, 운반, 해제).
+- **검증**: `uv run pytest src/robo_claw_sim/tests` 81 passed(조작 8건 포함). 조작 대상 관절·부착 근사는 백엔드 단위 테스트로만 검증했고, 실기 파지와의 상관 및 `FollowJointTrajectory` 액션 서버 연동은 미검증입니다.
+
 ## 2026-11-17 — 시뮬레이터 백엔드 판정 일치 검증(Phase 1)
 
 - **Added**: 시나리오 5개(`navigate_three_goals`, `navigate_corridor`, `navigate_obstacle_field`, `navigate_small_room`, `navigate_scan_drop`)를 추가해 저장소 시나리오를 7개로 늘렸습니다. 목표 3개 연속 수행, 좁은 복도, 장애물 필드, 좁은 방 근접 주행, `/scan` 발행 중단 주입을 각각 다룹니다.

@@ -14,6 +14,7 @@ from __future__ import annotations
 from xml.sax.saxutils import quoteattr
 
 from ..world import BoxObstacle, CircleObstacle, World
+from .manipulation import ManipulationConfig, arm_xml, objects_xml
 
 # 물리 스텝(초). 20Hz 노드 갱신 대비 4배 세밀도면 접촉 판정에 충분하다.
 TIMESTEP = 0.005
@@ -31,8 +32,15 @@ ROBOT_GEOM_NAME = "base_geom"
 ROBOT_BODY_NAME = "base"
 
 
-def build_scene_xml(world: World) -> str:
-    """``World`` 배치를 MJCF 문자열로 만든다."""
+def build_scene_xml(
+    world: World,
+    manipulation: ManipulationConfig | None = None,
+) -> str:
+    """``World`` 배치를 MJCF 문자열로 만든다.
+
+    ``manipulation`` 을 주면 로봇에 3축 팔 + 그리퍼를 붙이고, 파지 대상 객체를
+    free body 로 장면에 넣는다(기본값 None 은 주행 전용 장면).
+    """
     lines: list[str] = [
         '<mujoco model="robo_claw_sim">',
         '  <compiler angle="radian" autolimits="true"/>',
@@ -50,7 +58,9 @@ def build_scene_xml(world: World) -> str:
     ]
     lines.extend(_wall_geoms(world))
     lines.extend(_obstacle_geoms(world))
-    lines.extend(_robot_body(world))
+    lines.extend(_robot_body(world, manipulation))
+    if manipulation is not None:
+        lines.extend(objects_xml(world, manipulation))
     lines.append("  </worldbody>")
     lines.append("</mujoco>")
     return "\n".join(lines) + "\n"
@@ -99,9 +109,9 @@ def _obstacle_geoms(world: World) -> list[str]:
     return geoms
 
 
-def _robot_body(world: World) -> list[str]:
+def _robot_body(world: World, manipulation: ManipulationConfig | None = None) -> list[str]:
     robot = world.robot
-    return [
+    lines = [
         f'    <body name="{ROBOT_BODY_NAME}" pos="{_f(robot.x)} {_f(robot.y)} {_f(ROBOT_Z)}">',
         '      <freejoint name="base_free"/>',
         (
@@ -110,8 +120,11 @@ def _robot_body(world: World) -> list[str]:
             ' rgba="0.2 0.45 0.85 1"/>'
         ),
         '      <site name="scan_site" pos="0 0 0" size="0.01"/>',
-        "    </body>",
     ]
+    if manipulation is not None:
+        lines.extend(arm_xml(manipulation))
+    lines.append("    </body>")
+    return lines
 
 
 def _safe_name(prefix: str, raw: str) -> str:
