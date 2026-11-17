@@ -425,7 +425,7 @@ func SimCmd() *wcli.Command {
 	cmd.Flags().StringVar(&model, "model", "", "", "로봇 모델 지정")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "맵 파일 경로 지정")
 	cmd.Flags().StringVar(&engine, "engine", "", "auto",
-		"시뮬레이션 엔진: auto | stub(Gazebo 불필요)")
+		"시뮬레이션 엔진: auto | stub (Gazebo 제거로 둘 다 동일, 하위 호환용)")
 	cmd.Flags().StringVar(&scenarioFile, "scenario", "",
 		"", "stub 엔진이 사용할 시나리오 YAML 경로")
 	cmd.Flags().StringVar(&simBackend, "sim-backend", "", "",

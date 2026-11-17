@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — rclaw·Taskfile 중복 정리
+
+- **Removed**: `task sim-test-mujoco` 를 제거하고 `task sim-test -- --backend mujoco [경로]` 로 통합했습니다. 두 태스크가 같은 `sim_runner` 호출에서 `--backend` 유무만 달랐습니다.
+- **Changed**: `task sim-check`/`sim-test` 설명을 현행 동작(백엔드 passthrough, Gazebo 불필요 점검)으로 수정했습니다.
+- **Changed**: `rclaw sim|launch --engine` 도움말에 "Gazebo 제거로 auto/stub 동일(하위 호환용)"임을 명시했습니다. 플래그는 기존 스크립트 호환을 위해 유지합니다.
+- **유지(의도적 중복)**: `sim_runner` 하네스(`task sim-test`)와 전체 스택(`rclaw sim`)은 대상이 다르고, `sim-check`/`sim-compare`/`sim-view` 태스크는 각각 단일 스크립트를 감싸는 얇은 래퍼라 중복이 아닙니다. `scripts/run_robo_claw_docker.sh` 와 `rclaw launch --docker` 는 CI 수동 실행용과 표준 경로로 역할이 달라 이번 범위에서 손대지 않았습니다.
+- **검증**: `task --list` 로 태스크 4종(sim-check/sim-test/sim-compare/sim-view) 확인, `task sim-test -- --backend mujoco <시나리오>` 실행 시 `passed: true`, `go build`/`go test ./...` 통과.
+
 ## 2026-11-17 — 시뮬레이션 변경에 따른 기존 스크립트·런치 정합성 점검
 
 - **Fixed**: `docs/SIMULATION.md` 의 `check_sim_deps.sh --engine stub` 안내를 제거했습니다(스크립트가 더 이상 `--engine` 을 받지 않음). `task sim-check` 설명도 Gazebo 대신 `nav2_msgs`·`vision_msgs`·`tf2_ros`·`robo_claw_sim` 점검으로 수정했습니다.
@@ -84,7 +92,7 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
 
 - **Added**: `robo_claw_sim` 에 교체 가능한 백엔드 계층(`backends/`)을 두고, MuJoCo 물리 백엔드를 추가합니다. 시나리오 YAML·판정·ROS 인터페이스는 두 백엔드가 공유하므로 같은 시나리오를 양쪽에서 돌려 비교할 수 있습니다. 기본값은 기존과 동일한 `kinematic`(외부 의존성 없음)이고 `mujoco` 는 선택입니다.
 - **Added**: MuJoCo 세계는 시나리오에서 매 실행 MJCF 로 생성합니다(`backends/scene.py`). 별도 자산을 저장소에 두지 않아, 로봇/장애물 배치가 시나리오 파일 하나로 유지됩니다. 로봇은 free joint + 원기둥 베이스로 모델링하고 `cmd_vel` 을 물리 스텝마다 자유 관절 속도로 주입합니다(바퀴 마찰·서스펜션 튜닝 없이 재현성 유지). 접촉은 벽·장애물로 한정하고, 충돌 시 운동학 백엔드와 같은 규칙(카운트 후 남은 이동 폐기)을 씁니다. LaserScan 은 `mj_ray` 로 합성하며 로봇 body 는 광선에서 제외합니다.
-- **Added**: `sim_runner --backend kinematic|mujoco`, launch 인자 `sim_backend`(기본 `kinematic`), `task sim-test-mujoco`, `task sim-compare`, `scripts/compare_sim_backends.sh`. `mujoco` 미설치 시 조용히 대체하지 않고 설치 명령과 함께 실패합니다.
+- **Added**: `sim_runner --backend kinematic|mujoco`, launch 인자 `sim_backend`(기본 `kinematic`), `task sim-test -- --backend mujoco`, `task sim-compare`, `scripts/compare_sim_backends.sh`. `mujoco` 미설치 시 조용히 대체하지 않고 설치 명령과 함께 실패합니다.
 - **Added**: 시나리오 `navigate_two_rooms.yaml`(벽+문 구조, 두 goal).
 - **Added**: `mujoco >=3.2,<4` 를 optional extra `sim-mujoco` 로 선언하고 pytest 마커 `mujoco` 를 등록했습니다. 테스트 20건(장면 생성 6, 백엔드 계약 7, MuJoCo 백엔드 7)을 추가했습니다.
 - **검증**: `task sim-compare` 로 두 백엔드 판정을 비교했습니다. `navigate_basic` kinematic 4.482m / mujoco 4.457m(11.8s / 13.4s), `navigate_two_rooms` 6.661m / 6.661m(15.4s / 17.3s)로 모두 통과했고 goal 은 2/2, 충돌 0으로 같았습니다. `uv run pytest src/robo_claw_sim/tests` 66 passed. Gazebo/Humble 경로는 변경하지 않았습니다.

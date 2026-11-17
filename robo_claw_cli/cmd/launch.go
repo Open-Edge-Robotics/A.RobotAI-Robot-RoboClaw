@@ -109,7 +109,7 @@ func LaunchCmd() *wcli.Command {
 	cmd.Flags().StringVar(&world, "world", "", "", "(Sim) 로드할 시뮬레이션 월드 파일명")
 	cmd.Flags().StringVar(&robotModel, "model", "", "", "(Sim) 사용할 로봇 모델 (예: waffle)")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "(Sim) 사용할 맵(.yaml) 파일 경로")
-	cmd.Flags().StringVar(&engine, "engine", "", "auto", "(Sim) 시뮬레이션 엔진: auto | stub(Gazebo 불필요)")
+	cmd.Flags().StringVar(&engine, "engine", "", "auto", "(Sim) 시뮬레이션 엔진: auto | stub (하위 호환용, 동일)")
 	cmd.Flags().StringVar(&scenarioFile, "scenario", "", "", "(Sim) stub 엔진이 사용할 시나리오 YAML 경로")
 	cmd.Flags().StringVar(&imageName, "image", "", "lgecloudroboticstask/robo-claw", "(Docker) 사용할 컨테이너 이미지명 (예: myrepo/robo-claw)")
 	cmd.Flags().StringVar(&imageTag, "image-tag", "", "latest", "(Docker) 사용할 컨테이너 이미지 태그")

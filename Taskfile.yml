@@ -190,27 +190,18 @@ tasks:
       - ./scripts/preflight_test_env.sh
 
   sim-check:
-    desc: 시뮬레이션 의존성 점검 (distro별 Gazebo 패키지 / Gazebo 없는 stub)
+    desc: '시뮬레이션 의존성 점검(Gazebo 불필요: nav2_msgs·vision_msgs·tf2_ros·robo_claw_sim)'
     cmds:
       - ./scripts/check_sim_deps.sh {{.CLI_ARGS}}
 
   sim-test:
-    desc: Gazebo 없는 전용 시뮬레이터로 시나리오 검증 (기본 navigate_basic)
+    desc: '시나리오 검증(기본 navigate_basic). 백엔드 지정: task sim-test -- --backend mujoco [경로]'
     vars:
       SCENARIO: '{{default "src/robo_claw_sim/scenarios/navigate_basic.yaml" .CLI_ARGS}}'
     cmds:
       - |
         ./scripts/run_in_ros_env.sh --ws env ros2 run robo_claw_sim sim_runner \
           {{.SCENARIO}}
-
-  sim-test-mujoco:
-    desc: MuJoCo 백엔드로 시나리오 검증 (sim-mujoco extra 필요)
-    vars:
-      SCENARIO: '{{default "src/robo_claw_sim/scenarios/navigate_basic.yaml" .CLI_ARGS}}'
-    cmds:
-      - |
-        ./scripts/run_in_ros_env.sh --ws env ros2 run robo_claw_sim sim_runner \
-          --backend mujoco {{.SCENARIO}}
 
   sim-view:
     desc: 시뮬레이터 + RViz2 시각화 (X 디스플레이 필요)

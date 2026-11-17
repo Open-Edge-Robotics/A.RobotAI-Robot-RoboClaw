@@ -107,7 +107,7 @@ uv sync --extra sim-mujoco      # 개발 환경
 pip install mujoco              # 이미지/호스트
 
 # 백엔드 선택
-task sim-test-mujoco                                 # 시나리오를 MuJoCo 로 실행
+task sim-test -- --backend mujoco                    # 같은 시나리오를 MuJoCo 로 실행
 task sim-compare                                     # 두 백엔드 판정 비교
 RC_SIM_RUN_TIMEOUT=180 task sim-compare              # 실행당 제한 시간(초) 조정
 ros2 run robo_claw_sim sim_runner --backend mujoco \
@@ -294,7 +294,7 @@ injections:
 
 ```bash
 task sim-test        # 시나리오 회귀 (Gazebo 불필요, kinematic 백엔드)
-task sim-test-mujoco # 같은 시나리오를 MuJoCo 백엔드로 회귀
+task sim-test -- --backend mujoco   # 같은 시나리오를 MuJoCo 백엔드로 회귀
 task sim-compare     # 두 백엔드의 판정/계측 비교
 task unit-test       # 순수 모듈 단위 테스트 포함
 task test            # ROS 그래프 테스트 + colcon test 포함
