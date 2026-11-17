@@ -462,7 +462,7 @@ task unit-test
   --scenario src/robo_claw_sim/scenarios/navigate_basic.yaml
 
 # Gazebo 경로의 Nav2 시뮬레이션을 시작합니다.
-./rclaw sim --nav2 sim_engine:=gz
+./rclaw sim --nav2
 
 # 중앙 프로필·LLM을 유지하고 로봇 동작만 대체합니다.
 ./rclaw launch former <environment> --mock-robot

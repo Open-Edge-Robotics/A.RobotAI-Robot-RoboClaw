@@ -12,7 +12,6 @@ from launch.actions import (
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 
 # ros2 launch 는 SourceFileLoader 로 이 파일을 로드하며 launch 파일 디렉토리를
 # sys.path 에 추가하지 않는다. 동반 헬퍼 모듈(_common_launch_args) import를 위해
@@ -25,8 +24,7 @@ from _common_launch_args import common_launch_arguments  # pyright: ignore[repor
 # Gazebo 시뮬레이션은 Jazzy(Harmonic, ros_gz_sim)만 지원한다. Humble(Gazebo Classic)은
 # 지원하지 않으므로 `sim_engine:=classic` 이나 humble 환경에서 조용히 다른 경로로
 # 진행하지 않고 즉시 중단한다.
-SUPPORTED_SIM_ENGINES = ("gz", "stub")
-GAZEBO_ROS_DISTRO = "jazzy"
+SUPPORTED_SIM_ENGINES = ("stub",)
 
 
 def _validate_sim_engine(sim_engine: str) -> None:
@@ -39,26 +37,9 @@ def _validate_sim_engine(sim_engine: str) -> None:
     )
 
 
-def _validate_ros_distro(ros_distro: str) -> None:
-    # Gazebo(Harmonic)는 Jazzy 배포판에만 있다. distro 를 알 수 없으면(비어 있으면)
-    # 검증을 건너뛰고 패키지 탐색 실패에 맡긴다.
-    if not ros_distro or ros_distro == GAZEBO_ROS_DISTRO:
-        return
-    raise RuntimeError(
-        f"Gazebo 시뮬레이션은 ROS 2 {GAZEBO_ROS_DISTRO} 만 지원합니다(ROS_DISTRO={ros_distro!r}). "
-        "Humble 지원은 제거되었습니다. /opt/ros/jazzy/setup.bash 를 소싱한 뒤 다시 실행하세요."
-    )
-
-
 def launch_setup(context, *args, **kwargs):
-    use_sim_time = LaunchConfiguration("use_sim_time")
-    robot_model = LaunchConfiguration("robot_model").perform(context)
-    world = LaunchConfiguration("world").perform(context)
     sim_engine = LaunchConfiguration("sim_engine").perform(context)
     requested_camera_topic = LaunchConfiguration("camera_topic").perform(context)
-    use_nav2 = LaunchConfiguration("use_nav2")
-    use_slam = LaunchConfiguration("use_slam")
-    map_file = LaunchConfiguration("map")
 
     # LLM 및 메신저 설정
     llm_provider = LaunchConfiguration("llm_provider").perform(context)
@@ -102,18 +83,8 @@ def launch_setup(context, *args, **kwargs):
     scenario_file = LaunchConfiguration("scenario_file").perform(context)
 
     _validate_sim_engine(sim_engine)
-    if sim_engine == "gz":
-        _validate_ros_distro(os.environ.get("ROS_DISTRO", ""))
-
-    # 월드 이름에 따른 맵 파일 자동 설정
-    if sim_engine == "gz":
-        tb4_nav_share = FindPackageShare("turtlebot4_navigation")
-        default_map = PathJoinSubstitution([tb4_nav_share, "maps", world + ".yaml"])
-        camera_topic_val = "/oakd/rgb/preview/image_raw"
-    else:
-        # 무거운 시뮬레이터: 지도/카메라는 robo_claw_sim 노드가 직접 발행한다.
-        default_map = ""
-        camera_topic_val = "/sim/camera/image_raw"
+    # 지도/카메라는 robo_claw_sim 노드가 직접 발행한다(Gazebo 경로는 제거됨).
+    camera_topic_val = "/sim/camera/image_raw"
 
     if requested_camera_topic:
         camera_topic_val = requested_camera_topic
@@ -141,73 +112,6 @@ def launch_setup(context, *args, **kwargs):
             )
         )
 
-    if sim_engine == "gz":
-        # --- Jazzy (Turtlebot4 + Gazebo Harmonic) ---
-        tb4_gz_share = FindPackageShare("turtlebot4_gz_bringup")
-        is_nav2 = use_nav2.perform(context).lower() == "true"
-        is_slam = use_slam.perform(context).lower() == "true"
-        final_map = map_file.perform(context)
-        if not final_map:
-            final_map = default_map.perform(context)
-
-        # turtlebot4_gz.launch.py 가 선언한 인자는 namespace/rviz/world/model/pose 뿐이다.
-        # nav2/slam/localization/map/params_file 을 여기에 넘기면 미선언 인자로
-        # 조용히 무시되어 시뮬레이터만 뜨고 내비게이션 스택이 사라진다.
-        # 내비게이션 계층은 turtlebot4_navigation 런치를 직접 include 한다.
-        nodes_to_launch.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution([tb4_gz_share, "launch", "turtlebot4_gz.launch.py"])
-                ),
-                launch_arguments={
-                    "model": robot_model,
-                    "world": world,
-                    "rviz": "true" if is_nav2 else "false",
-                }.items(),
-            )
-        )
-
-        # 지도 기반 위치추정(AMCL + map_server)은 SLAM 사용 시 비활성화한다.
-        if is_nav2 and not is_slam:
-            nodes_to_launch.append(
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        PathJoinSubstitution([tb4_nav_share, "launch", "localization.launch.py"])
-                    ),
-                    launch_arguments={
-                        "use_sim_time": use_sim_time,
-                        "map": final_map,
-                    }.items(),
-                )
-            )
-
-        if is_slam:
-            nodes_to_launch.append(
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        PathJoinSubstitution([tb4_nav_share, "launch", "slam.launch.py"])
-                    ),
-                    launch_arguments={"use_sim_time": use_sim_time}.items(),
-                )
-            )
-
-        if is_nav2:
-            # TurtleBot4 Gazebo는 /cmd_vel에 TwistStamped를 사용한다.
-            custom_nav2_params = PathJoinSubstitution(
-                [bringup_share, "config", "nav2_params_gz.yaml"]
-            )
-            nodes_to_launch.append(
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        PathJoinSubstitution([tb4_nav_share, "launch", "nav2.launch.py"])
-                    ),
-                    launch_arguments={
-                        "use_sim_time": use_sim_time,
-                        "params_file": custom_nav2_params,
-                    }.items(),
-                )
-            )
-
     # RoboClaw 핵심 노드들(agent_node, discovery_node, channel_node 등)을
     # robo_claw.launch.py를 인클루드하여 구동
     robo_claw_launch_file = PathJoinSubstitution([bringup_share, "launch", "robo_claw.launch.py"])
@@ -215,7 +119,7 @@ def launch_setup(context, *args, **kwargs):
     # stub 엔진의 sim_node 는 실시간(20Hz)으로 동작하고 /clock 을 발행하지 않는다.
     # 이때 하위 스택에 use_sim_time:=true 를 넘기면 ROS 타이머가 전진하지 않아
     # heartbeat 가 30초 뒤 watchdog 에 의해 노드가 종료된다.
-    stack_use_sim_time = "false" if sim_engine == "stub" else use_sim_time.perform(context)
+    stack_use_sim_time = "false"
 
     nodes_to_launch.append(
         IncludeLaunchDescription(
@@ -360,7 +264,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("robot_model", default_value="standard"),
             DeclareLaunchArgument("world", default_value="warehouse"),
-            DeclareLaunchArgument("sim_engine", default_value="gz"),
+            DeclareLaunchArgument("sim_engine", default_value="stub"),
             DeclareLaunchArgument(
                 "scenario_file",
                 default_value="",

@@ -337,11 +337,6 @@ func SimCmd() *wcli.Command {
 			if err != nil {
 				return err
 			}
-			// Gazebo(Harmonic)는 Jazzy에만 있다. humble 호스트에서 gz 를 띄우면
-			// ros_gz_sim 부재로 늦게 실패하므로 시작 전에 배포판을 검증한다.
-			if err := launcher.ValidateSimDistro(launcher.DetectRosDistro()); err != nil {
-				return err
-			}
 			if scenarioFile != "" && !launcher.PathExists(scenarioFile) {
 				return fmt.Errorf("시나리오 파일을 찾을 수 없습니다: %s", scenarioFile)
 			}
@@ -411,7 +406,7 @@ func SimCmd() *wcli.Command {
 	cmd.Flags().StringVar(&model, "model", "", "", "로봇 모델 지정")
 	cmd.Flags().StringVar(&mapFile, "map", "", "", "맵 파일 경로 지정")
 	cmd.Flags().StringVar(&engine, "engine", "", "auto",
-		"시뮬레이션 엔진: auto(Gazebo Harmonic) | stub(Gazebo 불필요) | gz")
+		"시뮬레이션 엔진: auto | stub(Gazebo 불필요)")
 	cmd.Flags().StringVar(&scenarioFile, "scenario", "",
 		"", "stub 엔진이 사용할 시나리오 YAML 경로")
 

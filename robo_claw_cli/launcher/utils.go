@@ -170,31 +170,12 @@ func DetectRosDistro() string {
 	return "jazzy"
 }
 
-// SimSupportedDistro 시뮬레이션(Gazebo Harmonic)을 실행할 수 있는 ROS 배포판입니다.
-// Humble(Gazebo Classic) 시뮬레이션 지원은 제거되었습니다.
-const SimSupportedDistro = "jazzy"
-
-// ValidateSimDistro 시뮬레이션을 실행할 수 있는 배포판인지 확인합니다.
-//
-// Gazebo 시뮬레이션은 Jazzy 의 ros_gz_sim(Harmonic)만 사용합니다. humble 에서는
-// gazebo_ros(Classic)가 필요했는데, 두 스택은 서로 호환되지 않아 한쪽만 지원합니다.
-func ValidateSimDistro(distro string) error {
-	if distro == SimSupportedDistro {
-		return nil
-	}
-	return fmt.Errorf(
-		"시뮬레이션은 ROS 2 %s만 지원합니다(현재: %q). Humble(Gazebo Classic) 지원은 제거되었습니다",
-		SimSupportedDistro, distro)
-}
-
 // 시뮬레이션 엔진 선택값.
 const (
-	// SimEngineAuto Gazebo 엔진을 자동 선택합니다(= gz).
+	// SimEngineAuto 기본 엔진을 자동 선택합니다(= stub).
 	SimEngineAuto = "auto"
 	// SimEngineStub Gazebo 없이 도는 RoboClaw 전용 시뮬레이터(robo_claw_sim).
 	SimEngineStub = "stub"
-	// SimEngineGz Gazebo Harmonic(ros_gz, jazzy).
-	SimEngineGz = "gz"
 )
 
 // simEngineAliases 사용자가 입력할 수 있는 별칭.
@@ -203,18 +184,18 @@ var simEngineAliases = map[string]string{
 	"auto":     SimEngineAuto,
 	"stub":     SimEngineStub,
 	"lite":     SimEngineStub,
-	"gz":       SimEngineGz,
-	"harmonic": SimEngineGz,
 }
 
 // removedSimEngines 제거된 엔진 별칭과 안내 메시지입니다.
 var removedSimEngines = map[string]string{
-	"classic": "Humble(Gazebo Classic) 시뮬레이션 지원은 제거되었습니다. Gazebo는 Jazzy/Harmonic(gz)만 지원합니다",
-	"gazebo":  "Humble(Gazebo Classic) 시뮬레이션 지원은 제거되었습니다. Gazebo는 Jazzy/Harmonic(gz)만 지원합니다",
+	"gz":       "Gazebo 시뮬레이션 경로는 제거되었습니다. Gazebo 없이 도는 stub 엔진을 쓰세요",
+	"harmonic": "Gazebo 시뮬레이션 경로는 제거되었습니다. Gazebo 없이 도는 stub 엔진을 쓰세요",
+	"classic":  "Gazebo 시뮬레이션 경로는 제거되었습니다. Gazebo 없이 도는 stub 엔진을 쓰세요",
+	"gazebo":   "Gazebo 시뮬레이션 경로는 제거되었습니다. Gazebo 없이 도는 stub 엔진을 쓰세요",
 }
 
 // SupportedSimEngines `--engine` 로 지정 가능한 값 목록(도움말·오류 메시지용).
-var SupportedSimEngines = []string{SimEngineAuto, SimEngineStub, SimEngineGz}
+var SupportedSimEngines = []string{SimEngineAuto, SimEngineStub}
 
 // NormalizeSimEngine `--engine` 값을 정규화합니다. 지원하지 않는 값이면 오류를 반환합니다.
 func NormalizeSimEngine(requested string) (string, error) {
@@ -233,14 +214,9 @@ func NormalizeSimEngine(requested string) (string, error) {
 
 // ResolveSimEngine 요청값으로 실제 launch 에 넣을 엔진을 결정합니다.
 //
-// auto(또는 빈 값)는 Gazebo Harmonic(gz) 입니다. Gazebo 엔진은 배포판에 종속되지
-// 않습니다(Jazzy 단일 지원).
+// Gazebo 경로 제거로 지원 엔진은 stub 뿐이므로, auto(또는 잘못된 값)는 stub 입니다.
 func ResolveSimEngine(requested string) string {
-	normalized, err := NormalizeSimEngine(requested)
-	if err != nil || normalized == SimEngineAuto {
-		return SimEngineGz
-	}
-	return normalized
+	return SimEngineStub
 }
 
 // DefaultButlerScriptsDir butler 실행 스크립트의 고정 경로.

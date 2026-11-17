@@ -474,8 +474,8 @@ func TestBuildSimArgsSimEngineIgnoresDistro(t *testing.T) {
 		lctx := baseCtx(map[string]string{})
 		lctx.RosDistro = distro
 		joined := strings.Join(BuildSimArgs(lctx), " ")
-		if !strings.Contains(joined, "sim_engine:=gz") {
-			t.Fatalf("distro=%q 에서도 gz 여야 합니다. 실제: %s", distro, joined)
+		if !strings.Contains(joined, "sim_engine:=stub") {
+			t.Fatalf("distro=%q 에서도 stub 이어야 합니다. 실제: %s", distro, joined)
 		}
 	}
 }
@@ -487,8 +487,8 @@ func TestBuildSimArgsFallsBackToDetectedDistro(t *testing.T) {
 	lctx.RosDistro = ""
 
 	joined := strings.Join(BuildSimArgs(lctx), " ")
-	if !strings.Contains(joined, "sim_engine:=gz") {
-		t.Fatalf("ROS_DISTRO=jazzy 인데 gz 엔진이 선택되지 않았습니다. 실제: %s", joined)
+	if !strings.Contains(joined, "sim_engine:=stub") {
+		t.Fatalf("기본 엔진은 stub 이어야 합니다. 실제: %s", joined)
 	}
 }
 
@@ -501,17 +501,12 @@ func TestDetectRosDistroPrefersEnvironment(t *testing.T) {
 
 // 시뮬레이션은 Jazzy 단일 지원이다. humble 배포판에서는 조용히 gz 를 띄우지 않고
 // 시작 전에 명확한 오류로 중단해야 한다(ros_gz_sim 부재로 늦게 실패하는 것을 막는다).
-func TestValidateSimDistro(t *testing.T) {
-	if err := ValidateSimDistro("jazzy"); err != nil {
-		t.Fatalf("jazzy 는 지원해야 합니다: %v", err)
-	}
-
-	err := ValidateSimDistro("humble")
-	if err == nil {
-		t.Fatal("humble 은 지원하지 않아야 합니다")
-	}
-	if !strings.Contains(err.Error(), "jazzy") {
-		t.Fatalf("오류 메시지에 지원 배포판이 드러나야 합니다: %v", err)
+// Gazebo 경로가 제거되어 배포판 검증은 더 이상 필요하지 않다.
+func TestSimEngineRejectsRemovedGazebo(t *testing.T) {
+	for _, removed := range []string{"gz", "harmonic", "classic", "gazebo"} {
+		if _, err := NormalizeSimEngine(removed); err == nil {
+			t.Fatalf("%q 는 거부해야 합니다", removed)
+		}
 	}
 }
 
@@ -539,8 +534,8 @@ func TestBuildSimArgsAutoEngineKeepsDistroDefault(t *testing.T) {
 	lctx.SimEngine = SimEngineAuto
 
 	joined := strings.Join(BuildSimArgs(lctx), " ")
-	if !strings.Contains(joined, "sim_engine:=gz") {
-		t.Fatalf("auto 는 배포판 기본값(gz)이어야 합니다: %s", joined)
+	if !strings.Contains(joined, "sim_engine:=stub") {
+		t.Fatalf("auto 는 stub 이어야 합니다: %s", joined)
 	}
 	if strings.Contains(joined, "scenario_file:=") {
 		t.Fatalf("시나리오 미지정 시 인자를 만들면 안 됩니다: %s", joined)
@@ -553,8 +548,6 @@ func TestNormalizeSimEngine(t *testing.T) {
 		"auto":     SimEngineAuto,
 		"stub":     SimEngineStub,
 		"STUB":     SimEngineStub,
-		" gz ":     SimEngineGz,
-		"harmonic": SimEngineGz,
 	}
 	for input, want := range cases {
 		got, err := NormalizeSimEngine(input)
@@ -566,7 +559,7 @@ func TestNormalizeSimEngine(t *testing.T) {
 		}
 	}
 
-	for _, removed := range []string{"classic", "gazebo", "mujoco"} {
+	for _, removed := range []string{"classic", "gazebo", "gz", "harmonic", "mujoco"} {
 		if _, err := NormalizeSimEngine(removed); err == nil {
 			t.Fatalf("%q 는 거부해야 합니다", removed)
 		}
@@ -577,14 +570,11 @@ func TestResolveSimEngine(t *testing.T) {
 	if got := ResolveSimEngine("stub"); got != SimEngineStub {
 		t.Fatalf("명시값 우선 실패: %s", got)
 	}
-	if got := ResolveSimEngine(""); got != SimEngineGz {
-		t.Fatalf("auto 기본값은 gz 이어야 합니다: %s", got)
+	if got := ResolveSimEngine(""); got != SimEngineStub {
+		t.Fatalf("auto 기본값은 stub 이어야 합니다: %s", got)
 	}
-	if got := ResolveSimEngine("알수없음"); got != SimEngineGz {
-		t.Fatalf("잘못된 값은 기본값으로 되돌아야 합니다: %s", got)
-	}
-	if got := ResolveSimEngine("classic"); got != SimEngineGz {
-		t.Fatalf("제거된 엔진은 기본값으로 되돌아야 합니다: %s", got)
+	if got := ResolveSimEngine("gz"); got != SimEngineStub {
+		t.Fatalf("제거된 엔진은 stub 으로 되돌아야 합니다: %s", got)
 	}
 }
 
@@ -594,7 +584,7 @@ func TestNormalizeSimEngineExplainsRemovedClassic(t *testing.T) {
 	if err == nil {
 		t.Fatal("classic 은 거부해야 합니다")
 	}
-	if !strings.Contains(err.Error(), "Jazzy") {
+	if !strings.Contains(err.Error(), "제거") {
 		t.Fatalf("대체 엔진(gz/Jazzy) 안내가 필요합니다: %v", err)
 	}
 }

@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — Gazebo 시뮬레이션 경로 제거
+
+- **Removed**: Gazebo 경로(`sim_engine:=gz`, turtlebot4/ros_gz)를 제거했습니다. 시뮬레이터는 Gazebo 없이 도는 `robo_claw_sim`(`sim_engine:=stub`)만 사용합니다. 런치의 Gazebo 분기와 `robot_model` 기반 TB4 include, `sim/jazzy` 런처·`sim/run_sim.sh`·`sim/common_env.sh`, `rclaw` 의 `gz` 엔진·Gazebo 전용 환경변수 주입(`applyGazeboSimEnv`), `rclaw kill` 의 `gz sim` 회수를 삭제했습니다.
+- **Changed**: `sim_engine` 기본값을 `stub` 으로 바꾸고, `gz`/`classic`/`gazebo` 를 주면 안내 메시지와 함께 거부합니다. `--engine` 도움말은 `auto | stub` 로 줄었습니다.
+- **Changed**: `scripts/check_sim_deps.sh` 는 Gazebo 패키지 대신 `nav2_msgs`·`vision_msgs`·`tf2_ros`·`robo_claw_sim` 존재만 점검합니다.
+- **Changed**: README·`docs/SIMULATION.md`에서 Gazebo/T2 서술과 Gazebo 트러블슈팅(§7)을 삭제하고, Gazebo 제거 사실과 stub 단일 엔진 기준으로 정리했습니다.
+- **검증**: `uv run pytest src/robo_claw_bringup/tests src/robo_claw_sim/tests` 203 passed, `robo_claw_cli` `go vet`/`go test ./...` 통과. Gazebo 실기동 검증은 대상 자체가 제거되어 수행하지 않았습니다.
+
 ## 2026-11-17 — MuJoCo 헤드 카메라 RGB-D 렌더(Phase 3)
 
 - **Added**: 장면에 로봇 헤드 카메라(`head_cam`)를 추가하고, `MujocoBackend.render_camera()`로 RGB(uint8 HxWx3)와 depth(float32 HxW)를 오프스크린 렌더합니다. `MUJOCO_GL=egl`(GPU) 또는 `osmesa`(CPU)가 필요하며, 렌더러 생성 실패 시 안내 메시지와 함께 예외를 올립니다.

@@ -249,15 +249,10 @@ func selectPortKillTargets(pids []int, byPID map[int]procCmdline, protected map[
 
 // DefaultKillSimArgvPatterns 시뮬레이터 런타임 명령줄 패턴입니다.
 //
-// `gz sim` 은 GUI/server 를 각각 **새 프로세스 그룹**으로 띄운다. 그래서 런치
-// 프로세스 그룹을 정리해도 `gz sim server` 는 살아남아 부모가 systemd 로 바뀌고,
-// 다음 실행에서 두 개의 gz 서버가 같은 파티션에 뜬다. 이때 `ros_gz_sim create` 가
-// "Requesting list of world names" 를 반복하며 무한 대기해 로봇이 스폰되지 않는다
-// (2026-11-17 재현). 실행 전후로 반드시 회수해야 한다.
+// Gazebo(gz sim) 경로가 제거되어 별도로 회수할 시뮬레이터 프로세스가 없다.
+// robo_claw_sim 노드는 런치 프로세스 그룹에 속하므로 일반 노드 정리로 회수된다.
 func DefaultKillSimArgvPatterns() [][]string {
-	return [][]string{
-		{"gz", "sim"}, // gz sim <world> / gz sim server / gz sim gui
-	}
+	return nil
 }
 
 // simArgvTokens 프로세스 명령줄을 비교용 토큰 목록으로 정규화합니다.

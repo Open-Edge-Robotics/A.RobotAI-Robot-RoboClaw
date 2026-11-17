@@ -103,7 +103,7 @@ task unit-test
 ./rclaw run camera_topic:=/camera/color/image_raw
 
 # 6. 시뮬레이션 실행 (Nav2/AMCL 포함)
-./rclaw sim --nav2 sim_engine:=gz
+./rclaw sim --nav2
 
 # 7. 실행 프로세스 및 점유 포트 강제 정리
 ./rclaw kill
@@ -183,13 +183,12 @@ task build
 
 ## 🎮 시뮬레이션
 
-Gazebo 시뮬레이션(Harmonic)과 Gazebo 없이 도는 전용 시뮬레이터를 제공합니다.
+Gazebo 없이 도는 전용 시뮬레이터 `robo_claw_sim`을 제공합니다.
 
-- **Jazzy**: Gazebo Harmonic (Turtlebot4 기반) — Gazebo 시뮬레이션은 Jazzy만 지원합니다.
-- **Gazebo 없는 검증**: 전용 `robo_claw_sim` (`--engine stub`)
+- **시뮬레이터 엔진**: `--engine stub` (Gazebo 불필요)
 - **시뮬레이터 백엔드**: `kinematic`(기본, 외부 의존성 없음) · `mujoco`(선택, `uv sync --extra sim-mujoco`)
 
-Humble(Gazebo Classic, Turtlebot3 기반) 시뮬레이션 지원은 제거되었습니다.
+Gazebo 경로(Harmonic/Turtlebot4, Classic/Turtlebot3)는 제거되었습니다.
 
 ```bash
 # 기본 시뮬레이션

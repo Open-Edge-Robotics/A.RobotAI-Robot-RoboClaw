@@ -58,33 +58,6 @@ def _included_launch_files(tree: ast.Module) -> dict[str, set[str]]:
     return result
 
 
-def test_gz_include_passes_only_declared_arguments() -> None:
-    included = _included_launch_files(_parse())
-    assert "turtlebot4_gz.launch.py" in included, "Gazebo(Harmonic) 분기가 사라졌습니다"
-    unknown = included["turtlebot4_gz.launch.py"] - _GZ_LAUNCH_ALLOWED_ARGS
-    assert not unknown, (
-        "turtlebot4_gz.launch.py 에 선언되지 않은 인자를 넘기고 있습니다(조용히 무시됨): "
-        f"{sorted(unknown)}"
-    )
-
-
-@pytest.mark.parametrize(
-    "launch_file",
-    [
-        "turtlebot4_gz.launch.py",
-        "localization.launch.py",
-        "slam.launch.py",
-        "nav2.launch.py",
-    ],
-)
-def test_gz_branch_includes_navigation_stack(launch_file: str) -> None:
-    included = _included_launch_files(_parse())
-    assert launch_file in included, (
-        f"jazzy 분기가 {launch_file} 를 include 하지 않습니다. "
-        "이 경우 --nav2/--slam 이 무동작이 됩니다."
-    )
-
-
 def _load_launch_module() -> Any:
     spec = importlib.util.spec_from_file_location("probe_robo_claw_sim_launch", _LAUNCH_FILE)
     assert spec is not None and spec.loader is not None
@@ -119,28 +92,6 @@ def _include_targets(entities: list[Any]) -> list[str]:
 
 
 @pytest.mark.ros2
-def test_gz_launch_setup_includes_navigation_when_nav2_enabled() -> None:
-    """실제 LaunchContext 로 jazzy 분기를 평가해 내비게이션 include 를 확인한다."""
-    module = _load_launch_module()
-    description = module.generate_launch_description()
-    context = _build_context(
-        description,
-        {"sim_engine": "gz", "use_nav2": "true", "use_slam": "false", "world": "warehouse"},
-    )
-
-    try:
-        entities = module.launch_setup(context)
-    except Exception as exc:  # turtlebot4 패키지 미설치 환경
-        pytest.skip(f"turtlebot4 시뮬레이션 패키지가 없어 평가할 수 없습니다: {exc}")
-
-    targets = " ".join(_include_targets(entities))
-    assert "turtlebot4_gz.launch.py" in targets
-    assert "localization.launch.py" in targets
-    assert "nav2.launch.py" in targets
-    assert "slam.launch.py" not in targets
-
-
-@pytest.mark.ros2
 def test_stub_engine_starts_robo_claw_sim_node() -> None:
     """sim_engine:=stub 이면 Gazebo 대신 robo_claw_sim 노드가 떠야 한다."""
     from launch_ros.actions import Node
@@ -169,15 +120,14 @@ def test_launch_file_drops_gazebo_classic_assets() -> None:
     """
     src = _LAUNCH_FILE.read_text(encoding="utf-8")
 
-    for legacy in ("turtlebot3_gazebo", "gazebo_ros", "turtlebot3_world"):
+    for legacy in ("turtlebot3_gazebo", "gazebo_ros", "turtlebot3_world", "turtlebot4_gz"):
         assert legacy not in src, f"Gazebo Classic(Humble) 전용 자산 참조가 남아 있습니다: {legacy}"
 
 
-def test_sim_engine_default_is_gz() -> None:
-    """런치 기본 엔진은 Gazebo Harmonic 이어야 한다.
+def test_sim_engine_default_is_stub() -> None:
+    """런치 기본 엔진은 Gazebo 불필요한 stub 이어야 한다.
 
-    기본값이 classic 이면 ``sim_engine`` 을 넘기지 않는 진입점에서 gazebo_ros 부재로
-    런치가 즉시 실패한다.
+    Gazebo 경로가 제거되어 launch 는 stub 기본값으로만 동작한다.
     """
     for node in ast.walk(_parse()):
         if not isinstance(node, ast.Call):
@@ -193,7 +143,7 @@ def test_sim_engine_default_is_gz() -> None:
             for keyword in node.keywords
             if keyword.arg == "default_value" and isinstance(keyword.value, ast.Constant)
         ]
-        assert defaults == ["gz"], f"sim_engine 기본값은 gz 여야 합니다: {defaults}"
+        assert defaults == ["stub"], f"sim_engine 기본값은 stub 이어야 합니다: {defaults}"
         return
 
     pytest.fail("sim_engine 인자 선언을 찾지 못했습니다")

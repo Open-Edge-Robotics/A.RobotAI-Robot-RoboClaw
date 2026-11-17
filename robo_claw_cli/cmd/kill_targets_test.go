@@ -186,13 +186,13 @@ func TestMatchesSimArgvPattern(t *testing.T) {
 		argv []string
 		want bool
 	}{
-		{"gz sim world", []string{"gz", "sim", "warehouse.sdf", "-r", "-v", "4"}, true},
+		{"gz sim world", []string{"gz", "sim", "warehouse.sdf", "-r", "-v", "4"}, false},
 		// gz 는 프로세스 타이틀을 한 덩어리로 바꿔치기한다(실측 /proc 형식).
-		{"gz sim server title-style", []string{"gz sim server"}, true},
-		{"gz sim gui title-style", []string{"gz sim gui"}, true},
-		{"gz sim world title-style", []string{"gz sim warehouse.sdf -r -v 4"}, true},
-		{"gz sim server (detached)", []string{"gz", "sim", "server"}, true},
-		{"gz sim gui (detached)", []string{"gz", "sim", "gui"}, true},
+		{"gz sim server title-style", []string{"gz sim server"}, false},
+		{"gz sim gui title-style", []string{"gz sim gui"}, false},
+		{"gz sim world title-style", []string{"gz sim warehouse.sdf -r -v 4"}, false},
+		{"gz sim server (detached)", []string{"gz", "sim", "server"}, false},
+		{"gz sim gui (detached)", []string{"gz", "sim", "gui"}, false},
 		{"gz other subcommand", []string{"gz", "topic", "-l"}, false},
 		{"gz alone", []string{"gz"}, false},
 		{"tool shell mentioning gz", []string{"bash", "-c", "gz sim warehouse.sdf"}, false},
@@ -208,24 +208,13 @@ func TestMatchesSimArgvPattern(t *testing.T) {
 }
 
 func TestSelectSimRuntimeTargetsExcludesSelfAndAncestors(t *testing.T) {
+	// Gazebo 경로 제거로 회수 패턴이 없으므로 어떤 프로세스도 선택되지 않아야 한다.
 	procs := []procCmdline{
-		{PID: 100, Argv: []string{"gz", "sim", "server"}}, // self 의 조상
-		{PID: 101, Argv: []string{"gz", "sim", "gui"}},    // self
-		{PID: 102, Argv: []string{"python3", "-m", "pytest"}},
-		{PID: 103, Argv: []string{"gz", "sim", "server"}}, // 무관한 잔여 프로세스
+		{PID: 101, Argv: []string{"gz", "sim", "server"}},
+		{PID: 103, Argv: []string{"gz", "sim", "warehouse.sdf"}},
 	}
-	parentOf := func(pid int) (int, bool) {
-		switch pid {
-		case 101:
-			return 100, true // self 의 부모
-		default:
-			return 1, true
-		}
-	}
-
-	got := selectSimRuntimeTargets(procs, 101, parentOf)
-
-	if len(got) != 1 || got[0].PID != 103 {
-		t.Fatalf("자기 자신(101)과 조상(100)은 제외하고 잔여(103)만 대상이어야 합니다: %#v", got)
+	got := selectSimRuntimeTargets(procs, 101, func(pid int) (int, bool) { return 0, false })
+	if len(got) != 0 {
+		t.Fatalf("회수 대상이 없어야 합니다: %v", got)
 	}
 }

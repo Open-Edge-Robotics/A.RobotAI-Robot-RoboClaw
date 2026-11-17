@@ -1,8 +1,8 @@
 # 시뮬레이션
 
 RoboClaw를 Gazebo/실기 없이 폐루프로 검증하기 위한 시뮬레이션 구성을 설명합니다.
-Gazebo 경로(`sim_engine:=gz`, ROS 2 Jazzy 전용)와 전용 시뮬레이터(`sim_engine:=stub`)의
-차이, 시나리오 작성법, 제공 인터페이스와 한계를 다룹니다.
+전용 시뮬레이터(`sim_engine:=stub`)의 시나리오 작성법, 제공 인터페이스와 한계를
+다룹니다. Gazebo 경로(Harmonic/Turtlebot4, Classic/Turtlebot3)는 제거되었습니다.
 
 ## 1. 구성
 
@@ -11,11 +11,9 @@ Gazebo 경로(`sim_engine:=gz`, ROS 2 Jazzy 전용)와 전용 시뮬레이터(`s
 | T1 전용 시뮬레이터 | `robo_claw_sim` (자체 구현) | 커밋 게이트·시나리오 회귀, 결정론적 판정 | `nav2_msgs`, `vision_msgs`, `tf2_ros` 및 ROS 메시지 패키지 |
 | T1 백엔드 `kinematic` | 2D 운동학 세계 + ray marching | 기본값. 외부 의존성 없음 | 없음 |
 | T1 백엔드 `mujoco` | MuJoCo 물리 + ray casting | 접촉·파지 판정, 후속 카메라 검증 기반 | `mujoco`(선택, `sim-mujoco` extra) |
-| T2 Gazebo Harmonic | `turtlebot4_gz_bringup` | 3D 시각화, Nav2 파라미터 실검증 | `ros_gz_sim`, `turtlebot4_*` |
 
-Gazebo 시뮬레이션은 **ROS 2 Jazzy(Harmonic)** 만 지원합니다. Humble의 Gazebo
-Classic(`gazebo_ros`, `turtlebot3_*`) 경로는 유지 비용과 런치 분기 오류 때문에
-제거되었고, humble 환경에서는 런치·CLI·스크립트가 모두 즉시 오류로 중단합니다.
+Gazebo 경로는 유지 비용과 런치 분기 오류 때문에 제거되었습니다. `sim_engine`은
+`stub` 하나이며, 다른 값을 주면 런치가 즉시 오류로 중단합니다.
 
 `robo_claw_core`는 `ros2_control`을 사용하지 않고 `/joint_states`를 구독하며
 `cmd_vel`을 발행합니다. 따라서 시뮬레이터가 재현해야 하는 것은 Twist 적분,
@@ -42,9 +40,8 @@ ros2 run robo_claw_sim sim_node --ros-args -p scenario_file:=/path/to/scenario.y
 ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml --output /tmp/outcome.json
 ```
 
-`rclaw sim`/`rclaw launch ... --sim`/`sim/run_sim.sh`는 모두 같은 런치 파일을
-사용하며, `sim_engine`은 Gazebo Harmonic(`gz`)이 기본값입니다. Gazebo 없이 전체
-스택을 띄우려면 `--engine stub`을 지정합니다.
+`rclaw sim`/`rclaw launch ... --sim`은 같은 런치 파일을 사용하며, 엔진은 `stub`
+하나입니다(`--engine auto`/`stub` 만 허용, `gz`/`classic` 은 거부).
 
 ### 2.1 CLI 실행
 
@@ -59,14 +56,12 @@ ros2 run robo_claw_sim sim_runner scenarios/navigate_basic.yaml --output /tmp/ou
 ./rclaw launch former w2_2f_2 --sim --engine stub \
   --scenario src/robo_claw_sim/scenarios/navigate_basic.yaml
 
-# 기존 Gazebo 경로 (Jazzy/Harmonic)
-./rclaw sim               # 기본 엔진은 gz
-./rclaw sim --engine gz   # Gazebo Harmonic 명시
+./rclaw sim               # 기본 엔진은 stub
 ```
 
 | 플래그 | 값 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `--engine` | `auto` · `stub` · `gz` | `auto` | 시뮬레이션 엔진. `auto`는 Gazebo Harmonic(`gz`)입니다(`gz` 별칭: `harmonic`). 제거된 `classic`/`gazebo` 값은 오류로 거부합니다 |
+| `--engine` | `auto` · `stub` | `auto` | 시뮬레이션 엔진. `auto`=stub. 제거된 `gz`/`classic`/`gazebo` 값은 오류로 거부합니다 |
 | `--scenario` | YAML 경로 | 없음 | `stub` 엔진이 사용할 시나리오. 미지정 시 기본 방(8×6m)을 사용합니다 |
 
 `rclaw` 는 시뮬레이션을 전용 ROS 도메인(기본 42, `RC_SIM_DOMAIN_ID`)으로 격리해
@@ -307,110 +302,3 @@ task test            # ROS 그래프 테스트 + colcon test 포함
 
 `tests/test_ros_integration.py`는 실제 노드를 띄워 `/scan`·`/joint_states` 발행과
 `NavigateToPose` 목표 도달을 확인합니다. Gazebo나 GPU가 없어도 실행됩니다.
-
-## 7. 트러블슈팅
-
-Gazebo 경로(`sim_engine:=gz`)에서 실제로 관측된 실패와 조치입니다.
-
-### 7.1 `Failed to find a free participant index`
-
-```text
-[parameter_bridge-9] Failed to find a free participant index for domain 0
-[ERROR] [rmw_cyclonedds_cpp]: rmw_create_node: failed to create domain, error Error
-terminate called after throwing an instance of 'rclcpp::exceptions::RCLError'
-```
-
-TurtleBot4 Gazebo는 브리지·컨트롤러·툴박스까지 50개 이상의 프로세스를 띄웁니다.
-CycloneDDS의 참여자 자동 인덱스 범위를 넘으면 노드가 기동 직후 `-6`으로 abort 하고,
-`clock_bridge`까지 함께 죽어 `use_sim_time` 노드가 전부 멈춥니다(그 결과
-`controller_manager: No clock received`가 반복됩니다).
-
-`CYCLONEDDS_URI`에 `Discovery/MaxAutoParticipantIndex`를 넣어 상한을 올립니다
-(`robo_claw_cli/launcher/dds.go`가 인라인 URI를 생성하며, `Dockerfile`·
-`sim/jazzy/cyclonedds_config.xml`도 같은 값을 씁니다).
-
-| 설정 | 한 도메인 동시 참여자(실측) |
-| --- | --- |
-| 기본(상한 미지정) | 32개 |
-| `MaxAutoParticipantIndex=200` | 48개 시험에서 실패 0 |
-
-`rclaw`가 만든 URI가 적용됐는지는 `RC_DEBUG` 로그의 실행 명령과
-`echo "$CYCLONEDDS_URI"`로 확인합니다.
-
-### 7.2 `Agent heartbeat missing for 30.0s`
-
-```text
-Agent heartbeat missing for 30.0s; attempting executor recovery
-Agent heartbeat missing for 30.0s after recovery attempt; terminating so the service can restart
-```
-
-에이전트 상태 하트비트는 ROS 타이머(기본 1Hz)로 발행되는데, 워치독이 **벽시계**로
-30초를 재면 Gazebo 실시간 배율이 낮은 구간(센서 렌더 초기화, 헤비 월드)에서 정상
-동작을 무음으로 오판해 에이전트를 종료합니다. `use_sim_time`이 참이면
-`clock_for_node`(`agent_node/heartbeat_watchdog.py`)가 노드 시계(시뮬레이터 시간)를
-사용합니다. 실기기에서는 두 시계가 같으므로 동작이 변하지 않습니다. 시뮬레이션에서
-executor가 실제로 멈추면 `/clock` 구독도 멈춰 sim 시간이 정지하므로 이 워치독은
-침묵합니다(시뮬레이션에서는 런치 로그와 액션 타임아웃으로 판단).
-
-### 7.3 `create` 가 `Requesting list of world names` 만 반복하며 멈춤
-
-```text
-[create-7] [INFO] [ros_gz_sim]: Requesting list of world names.
-[create-7] [INFO] [ros_gz_sim]: Requesting list of world names.   ← 5초마다 무한 반복
-[spawner-32] waiting for service /controller_manager/list_controllers to become available...
-```
-
-이전 실행이 남긴 `gz sim server` 가 살아 있어 새 실행의 서버와 같은 gz-transport
-파티션에서 충돌한 상태입니다. `gz sim` 은 GUI/server 를 **각자 새 프로세스 그룹**으로
-띄우므로 런치 프로세스 그룹을 정리해도 회수되지 않고, 부모가 systemd 로 바뀝니다
-(`ps -o pid,ppid,args -p <pid>` 로 확인). 두 서버가 있으면 `ros_gz_sim create` 가
-월드 목록을 받지 못해 로봇이 스폰되지 않고, 이후 단계(컨트롤러 스폰·토픽)가 모두
-멈춥니다.
-
-`rclaw` 는 시뮬레이션 실행 전후와 `rclaw kill` 에서 이 프로세스(`gz sim`)를
-회수합니다. `gz` 는 프로세스 타이틀을 `"gz sim server"` 처럼 한 덩어리로
-바꿔치기하므로 회수 로직은 argv[0] 을 공백으로 다시 나눠 비교합니다. 수동 정리가
-필요하면 다음을 실행합니다.
-
-```bash
-./rclaw kill                 # RoboClaw 노드 + gz 시뮬레이터 프로세스 정리
-ps -eo pid,args | grep "gz sim"
-```
-
-### 7.4 `ddsi_udp_conn_write ... failed with retcode`
-
-```text
-[parameter_bridge-29] ddsi_udp_conn_write to udp/10.177.17.218:7497 failed with retcode -58
-[gazebo-1] [WARN] [diffdrive_controller]: Velocity command timed out. Braking.
-```
-
-시뮬레이션이 실기기와 같은 DDS 도메인(기본 0)을 쓰면 사무실 LAN 의 다른 참여자와
-섞이고, 참여자 인덱스가 다른 인터페이스 바인딩으로 중복되면 한쪽 locator 로의 쓰기가
-계속 실패한다. 실패 포트는 `7400 + 250*domain + 2*index + 1` 이므로 어느 참여자인지
-역산할 수 있다(예: 도메인 0 포트 7497 → index 48, 도메인 42 포트 17997 → index 48).
-
-`rclaw` 는 시뮬레이션을 **전용 ROS 도메인(기본 42)** 으로 격리해 실기기·LAN 참여자와
-분리한다. 호스트에 `ROS_DOMAIN_ID` 를 지정했거나 `CYCLONEDDS_URI` 를 직접 지정했다면
-그 값을 존중한다.
-
-| 변수 | 기본값 | 의미 |
-| --- | --- | --- |
-| `RC_SIM_DOMAIN_ID` | `42` | 시뮬레이션 전용 도메인 |
-| `ROS_DOMAIN_ID` | (미설정) | 지정하면 시뮬레이션도 그 도메인 사용 |
-| `CYCLONEDDS_URI` | (미설정) | 지정하면 기본 DDS 설정 대신 사용(다중 NIC 등) |
-
-인터페이스를 임의로 좁히지 않는다. 시뮬레이터와 `ros2` CLI·대시보드 어댑터가 같은
-바인딩 집합을 써야 참여자 인덱스가 충돌하지 않는다(loopback 전용으로 제한하면 외부
-도구가 시뮬레이션 그래프를 보지 못하고 실패 로그가 오히려 늘어난다 — 실측).
-
-시뮬레이션 그래프를 다른 호스트에서 봐야 하면 `ROS_DOMAIN_ID=42` 로 맞추고
-`CYCLONEDDS_URI` 에 인터페이스/피어를 지정한다.
-
-### 7.5 무해한 경고
-
-| 메시지 | 의미 |
-| --- | --- |
-| `Desired controller update period (0.001 s) is faster than the gazebo simulation period (0.003 s)` | TurtleBot4 설정상 제어 주기가 물리 스텝보다 짧습니다. 컨트롤러는 정상 로드·활성화됩니다 |
-| `turtlebot4_node: Service stop_motor/oakd_stop_camera unavailable` | 기동 초기 서비스 준비 전 호출입니다. 이후 사용 가능 |
-| `kdl_parser: root link ... has an inertia` | URDF 구조 경고이며 동작에 영향이 없습니다 |
-| `diffdrive_controller: Velocity command timed out. Braking.` | 기동 시 한 번 들어온 `cmd_vel`(정지 명령) 이후 새 명령이 없어 0.5초마다 남는 경고입니다. T2 경로에는 상시 주행 명령원이 없으므로 정상입니다 |
