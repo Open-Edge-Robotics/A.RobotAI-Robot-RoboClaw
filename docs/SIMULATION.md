@@ -192,6 +192,8 @@ ros2 run robo_claw_sim sim_runner --backend mujoco \
 ```bash
 task sim-view                          # 시뮬레이터(sim_viz:=true) + RViz2
 ./scripts/sim_view.sh mujoco           # MuJoCo 백엔드로 RViz2
+./rclaw sim --viz                      # CLI 로 마커 발행(도메인 42)
+./rclaw sim --sim-backend mujoco --viewer   # CLI 로 MuJoCo 뷰어
 ros2 launch robo_claw_bringup robo_claw_sim.launch.py \
   sim_engine:=stub sim_backend:=mujoco sim_viewer:=true   # MuJoCo 뷰어
 ```

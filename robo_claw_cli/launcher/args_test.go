@@ -665,3 +665,24 @@ func TestApplySimDdsEnv(t *testing.T) {
 		t.Fatalf("RMW 설정이 빠졌습니다: %s", joined)
 	}
 }
+
+func TestNormalizeSimBackend(t *testing.T) {
+	cases := map[string]string{
+		"":          "",
+		"kinematic": "kinematic",
+		" MUJOCO ":  "mujoco",
+	}
+	for input, want := range cases {
+		got, err := NormalizeSimBackend(input)
+		if err != nil {
+			t.Fatalf("%q 정규화 실패: %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("%q -> %q 기대, 실제 %q", input, want, got)
+		}
+	}
+
+	if _, err := NormalizeSimBackend("isaac"); err == nil {
+		t.Fatal("지원하지 않는 백엔드는 오류여야 합니다")
+	}
+}

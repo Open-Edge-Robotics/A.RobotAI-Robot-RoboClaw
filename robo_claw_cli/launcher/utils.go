@@ -219,6 +219,25 @@ func ResolveSimEngine(requested string) string {
 	return SimEngineStub
 }
 
+// SupportedSimBackends 시뮬레이터 백엔드(robo_claw_sim) 선택값.
+var SupportedSimBackends = []string{"kinematic", "mujoco"}
+
+// NormalizeSimBackend `--sim-backend` 값을 검증/정규화합니다.
+func NormalizeSimBackend(requested string) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(requested))
+	if key == "" {
+		return "", nil
+	}
+	for _, candidate := range SupportedSimBackends {
+		if key == candidate {
+			return key, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"지원하지 않는 시뮬레이션 백엔드입니다: %q (가능: %s)",
+		requested, strings.Join(SupportedSimBackends, ", "))
+}
+
 // DefaultButlerScriptsDir butler 실행 스크립트의 고정 경로.
 // butler 로봇은 이 경로가 존재해야 정상 동작한다.
 const DefaultButlerScriptsDir = "/home/seoyc/Workspace/ros/butler/products/prd_butler_v01_magok_w02/script"

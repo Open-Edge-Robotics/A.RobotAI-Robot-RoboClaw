@@ -5,6 +5,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — rclaw 시뮬레이션 시각화 플래그
+
+- **Added**: `rclaw sim` 에 `--sim-backend kinematic|mujoco`, `--viz`, `--viewer` 플래그를 추가했습니다. 각각 `sim_backend`/`sim_viz`/`sim_viewer` 런치 인자로 전달되며, `--viewer` 는 `--sim-backend mujoco` 없이 쓰면 사용 오류로 중단합니다.
+- **Added**: `launcher.NormalizeSimBackend` 와 단위 테스트(정규화·미지원 값 거부).
+- **검증**: `go build`/`go vet`/`go test ./launcher ./cmd` 통과, `./rclaw sim --help` 에 세 플래그 노출, `./rclaw sim --viewer` 가 안내 오류로 중단됨을 확인했습니다. RViz 실제 화면은 디스플레이 세션에서 미검증입니다.
+
 ## 2026-11-17 — 시뮬레이터 시각화(RViz 마커·MuJoCo 뷰어)
 
 - **Added**: `robo_claw_sim/viz.py`(순수 파이썬 마커 스펙)와 `sim_viz` 파라미터로 `/sim/world_markers`(`visualization_msgs/MarkerArray`)를 발행합니다. 로봇 footprint·장애물·객체를 RViz에서 바로 볼 수 있습니다.

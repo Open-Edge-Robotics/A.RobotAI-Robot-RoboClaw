@@ -327,6 +327,9 @@ func SimCmd() *wcli.Command {
 	var mapFile string
 	var engine string
 	var scenarioFile string
+	var simBackend string
+	var viz bool
+	var viewer bool
 
 	cmd := &wcli.Command{
 		Use:   "sim [llm] [model] [channel]",
@@ -337,8 +340,15 @@ func SimCmd() *wcli.Command {
 			if err != nil {
 				return err
 			}
+			backendName, err := launcher.NormalizeSimBackend(simBackend)
+			if err != nil {
+				return err
+			}
 			if scenarioFile != "" && !launcher.PathExists(scenarioFile) {
 				return fmt.Errorf("시나리오 파일을 찾을 수 없습니다: %s", scenarioFile)
+			}
+			if viewer && backendName != "mujoco" {
+				return fmt.Errorf("--viewer 는 MuJoCo 뷰어입니다. --sim-backend mujoco 와 함께 사용하세요")
 			}
 			envFile := filepath.Join(projectRoot, ".env")
 			_, envMap, _ := launcher.ParseEnvFile(envFile)
@@ -361,6 +371,15 @@ func SimCmd() *wcli.Command {
 			}
 			// 시뮬레이션 엔진은 Jazzy(Harmonic) 또는 stub 만 있다. 지정하지 않으면
 			// gz 로 해석되어 launch 기본값과 같은 값이 전달된다.
+			if backendName != "" && !hasLaunchArg(extraArgs, "sim_backend") {
+				extraArgs = append(extraArgs, fmt.Sprintf("sim_backend:=%s", backendName))
+			}
+			if viz && !hasLaunchArg(extraArgs, "sim_viz") {
+				extraArgs = append(extraArgs, "sim_viz:=true")
+			}
+			if viewer && !hasLaunchArg(extraArgs, "sim_viewer") {
+				extraArgs = append(extraArgs, "sim_viewer:=true")
+			}
 			if !hasLaunchArg(extraArgs, "sim_engine") {
 				simEngine := launcher.ResolveSimEngine(resolvedEngine)
 				extraArgs = append(extraArgs, fmt.Sprintf("sim_engine:=%s", simEngine))
@@ -409,6 +428,12 @@ func SimCmd() *wcli.Command {
 		"시뮬레이션 엔진: auto | stub(Gazebo 불필요)")
 	cmd.Flags().StringVar(&scenarioFile, "scenario", "",
 		"", "stub 엔진이 사용할 시나리오 YAML 경로")
+	cmd.Flags().StringVar(&simBackend, "sim-backend", "", "",
+		"시뮬레이터 백엔드: kinematic(기본) | mujoco")
+	cmd.Flags().BoolVar(&viz, "viz", "", false,
+		"RViz 시각화용 마커(/sim/world_markers) 발행")
+	cmd.Flags().BoolVar(&viewer, "viewer", "", false,
+		"MuJoCo 대화형 뷰어 사용(--sim-backend mujoco, DISPLAY 필요)")
 
 	return cmd
 }
