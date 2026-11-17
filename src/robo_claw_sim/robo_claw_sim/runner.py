@@ -73,6 +73,7 @@ def run_scenario(
         result.collisions = int(node.world.collisions)
         result.traveled_m = float(node.world.traveled_m)
         result.grasped_objects = list(node.grasped_objects())
+        result.detected_objects = list(getattr(node, "last_detected_objects", []))
         if result.elapsed_sec >= timeout:
             result.timed_out = True
         node.destroy_navigation()

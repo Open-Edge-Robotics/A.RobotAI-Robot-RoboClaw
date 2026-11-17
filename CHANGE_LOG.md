@@ -5,6 +5,12 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 검출 판정 계약 추가(Phase 3b 기반)
+
+- **Added**: 시나리오 `expect.detected_objects` 와 `RunResult.detected_objects`, `evaluate` 검출 실패 사유를 추가했습니다. 시뮬레이터가 마지막 tick 에 발행한 검출 클래스(`node.last_detected_objects`)를 판정에 반영합니다.
+- **Added**: 테스트 2건(검출 실패/성공 판정, metrics 노출).
+- **미해결**: 시뮬레이터의 정답 기반 검출 발행으로 기대 객체가 실제로 잡히도록 하는 카메라 FOV/가시성 튜닝이 남았습니다(객체를 3.2m 전방에 둔 시도에서 검출 0건). 실제 ONNX 검출기(`robo_claw_vision`) 폐루프는 onnxruntime·모델·C++ 노드 빌드가 필요해 미착수입니다.
+
 ## 2026-11-17 — Gazebo 시뮬레이션 경로 제거
 
 - **Removed**: Gazebo 경로(`sim_engine:=gz`, turtlebot4/ros_gz)를 제거했습니다. 시뮬레이터는 Gazebo 없이 도는 `robo_claw_sim`(`sim_engine:=stub`)만 사용합니다. 런치의 Gazebo 분기와 `robot_model` 기반 TB4 include, `sim/jazzy` 런처·`sim/run_sim.sh`·`sim/common_env.sh`, `rclaw` 의 `gz` 엔진·Gazebo 전용 환경변수 주입(`applyGazeboSimEnv`), `rclaw kill` 의 `gz sim` 회수를 삭제했습니다.

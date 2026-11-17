@@ -103,6 +103,7 @@ class SimulationNode(Node):
         self._battery_percent = float(self.get_parameter("battery_start_percent").value)
         self._last_tick = time.monotonic()
         self._camera_tick = 0
+        self.last_detected_objects: list[str] = []
         self._setup_io()
         self.navigation = None
         self.manipulation = None
@@ -461,6 +462,7 @@ class SimulationNode(Node):
             seed=int(self._p("detect_seed")),
             false_negative_rate=float(self._p("detect_false_negative_rate")),
         )
+        self.last_detected_objects = [detection.class_id for detection in detections]
         msg = Detection2DArray()
         msg.header.stamp = stamp
         msg.header.frame_id = self._frames["camera"]

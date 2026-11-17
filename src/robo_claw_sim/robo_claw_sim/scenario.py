@@ -77,6 +77,7 @@ class Expectation:
     max_elapsed_sec: float | None = None
     require_no_abort: bool = True
     grasped_objects: tuple[str, ...] = ()
+    detected_objects: tuple[str, ...] = ()
 
 
 @dataclass
@@ -101,6 +102,7 @@ class RunResult:
     timed_out: bool = False
     error: str = ""
     grasped_objects: list[str] = field(default_factory=list)
+    detected_objects: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -158,6 +160,7 @@ def evaluate(scenario: Scenario, result: RunResult) -> Outcome:
         "traveled_m": round(result.traveled_m, 3),
         "timed_out": result.timed_out,
         "grasped_objects": sorted(result.grasped_objects),
+        "detected_objects": sorted(result.detected_objects),
     }
 
     if result.error:
@@ -177,6 +180,13 @@ def evaluate(scenario: Scenario, result: RunResult) -> Outcome:
     max_elapsed = scenario.expect.max_elapsed_sec
     if max_elapsed is not None and result.elapsed_sec > max_elapsed:
         reasons.append(f"소요 시간 {result.elapsed_sec:.1f}s > 허용 {max_elapsed:.1f}s")
+    missing_detections = [
+        name for name in scenario.expect.detected_objects if name not in result.detected_objects
+    ]
+    if missing_detections:
+        reasons.append(
+            f"검출 실패: {missing_detections} (검출된 객체: {sorted(result.detected_objects)})"
+        )
     missing_grasps = [
         name for name in scenario.expect.grasped_objects if name not in result.grasped_objects
     ]
@@ -270,6 +280,7 @@ def _build_expectation(raw: dict[str, Any], source: str) -> Expectation:
         max_elapsed_sec=None if max_elapsed is None else float(max_elapsed),
         require_no_abort=bool(raw.get("require_no_abort", True)),
         grasped_objects=tuple(str(name) for name in raw.get("grasped_objects") or []),
+        detected_objects=tuple(str(name) for name in raw.get("detected_objects") or []),
     )
 
 

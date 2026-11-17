@@ -233,3 +233,25 @@ def test_manipulation_points_must_be_ordered() -> None:
 
     with pytest.raises(ScenarioError):
         build_scenario(raw)
+
+
+def test_evaluate_reports_missing_detection() -> None:
+    raw = dict(_MINIMAL)
+    raw["expect"] = {"min_goals_reached": 1, "detected_objects": ["cup"]}
+    scenario = build_scenario(raw)
+
+    outcome = scenario_outcome(scenario, RunResult(reached=[True], detected_objects=[]))
+
+    assert outcome.passed is False
+    assert any("검출 실패" in reason for reason in outcome.reasons)
+
+
+def test_evaluate_accepts_expected_detection() -> None:
+    raw = dict(_MINIMAL)
+    raw["expect"] = {"min_goals_reached": 1, "detected_objects": ["cup"]}
+    scenario = build_scenario(raw)
+
+    outcome = scenario_outcome(scenario, RunResult(reached=[True], detected_objects=["cup"]))
+
+    assert outcome.passed is True
+    assert outcome.metrics["detected_objects"] == ["cup"]
