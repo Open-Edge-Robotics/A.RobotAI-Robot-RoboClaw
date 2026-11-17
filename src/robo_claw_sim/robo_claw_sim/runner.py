@@ -38,7 +38,12 @@ def run_scenario(
     timeout = float(timeout_sec if timeout_sec is not None else scenario.timeout_sec)
     # 노드 파라미터 override 는 CLI 인자 경로로 넘겨야 rclpy 가 값을 그대로 보존한다
     # (parameter_overrides=... 로 넘기면 ParameterValue msg 가 기본값과 충돌한다).
-    cli_args = ["--ros-args", "-p", f"backend:={backend}"] if backend else None
+    # 액션 서버의 goal 대기 시간은 시나리오 예산을 넘지 않게 묶는다. 넘기지 않으면
+    # 서버가 기본 300초를 기다리는 동안 정리(destroy)가 막혀 하네스가 멈춘다.
+    ros_args = ["--ros-args", "-p", f"navigate_timeout_sec:={timeout}"]
+    if backend:
+        ros_args += ["-p", f"backend:={backend}"]
+    cli_args = ros_args
 
     rclpy.init()
     node = SimulationNode(scenario=scenario, cli_args=cli_args)

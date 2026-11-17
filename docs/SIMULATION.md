@@ -114,6 +114,7 @@ pip install mujoco              # 이미지/호스트
 # 백엔드 선택
 task sim-test-mujoco                                 # 시나리오를 MuJoCo 로 실행
 task sim-compare                                     # 두 백엔드 판정 비교
+RC_SIM_RUN_TIMEOUT=180 task sim-compare              # 실행당 제한 시간(초) 조정
 ros2 run robo_claw_sim sim_runner --backend mujoco \
   src/robo_claw_sim/scenarios/navigate_two_rooms.yaml
 ./rclaw sim --engine stub sim_backend:=mujoco        # launch 인자로 지정
@@ -207,9 +208,26 @@ task test            # ROS 그래프 테스트 + colcon test 포함
 ```
 
 `sim-compare`는 시나리오별로 두 백엔드의 `passed`·도달 goal 수·주행 거리를 나란히
-출력하고, 한쪽이라도 실패하면 exit 1로 끝납니다. 백엔드 동작을 바꿀 때 이 표의
-주행 거리 차이가 커지면 물리 모델이 어긋난 신호로 봅니다(2026-11-17 기준
-`navigate_basic` 4.482m vs 4.457m, `navigate_two_rooms` 6.661m vs 6.661m).
+출력하고, 실행 오류나 판정 불일치가 있으면 exit 1로 끝납니다. 백엔드 동작을 바꿀 때
+이 표의 주행 거리 차이가 커지면 물리 모델이 어긋난 신호로 봅니다.
+
+2026-11-17 기준 저장소 시나리오 7개가 모두 두 백엔드에서 같은 판정을 냈습니다
+(판정 불일치 0건, 최대 주행거리 차이 0.5%, 평균 0.3%, 전체 실행 약 5분).
+
+| 시나리오 | 확인하는 것 |
+| --- | --- |
+| `navigate_basic` | 기본 회귀(목표 2개, 정답 객체 2개) |
+| `navigate_two_rooms` | 벽+문 구조를 지나는 경로, 근접 ray 판정 |
+| `navigate_three_goals` | 목표 3개 연속 수행, goal 순회 |
+| `navigate_corridor` | 좁은 복도와 중간 턱, 벽 근접 주행 |
+| `navigate_obstacle_field` | 장애물이 흩어진 넓은 방에서 회피 주행 |
+| `navigate_small_room` | 좁은 방에서 벽에 붙은 목표 왕복(근접 충돌 판정) |
+| `navigate_scan_drop` | `/scan` 발행 중단 주입 하에서 판정 유지 |
+
+시나리오를 추가하면 `tests/test_scenario.py::test_shipped_scenario_is_valid`가 스키마와
+목표 도달 가능성(점유 위치 아님)을 검사합니다. 반응형 제어기는 전역 계획이 없으므로,
+목표 사이 직선 경로가 장애물을 스치지 않도록 배치해야 두 백엔드 판정이 갈라지지
+않습니다(스치는 경로에서는 MuJoCo 접촉이 미끄러져 통과하고 운동학은 정지합니다).
 
 `tests/test_ros_integration.py`는 실제 노드를 띄워 `/scan`·`/joint_states` 발행과
 `NavigateToPose` 목표 도달을 확인합니다. Gazebo나 GPU가 없어도 실행됩니다.

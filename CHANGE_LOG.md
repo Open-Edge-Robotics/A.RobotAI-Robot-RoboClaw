@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 시뮬레이터 백엔드 판정 일치 검증(Phase 1)
+
+- **Added**: 시나리오 5개(`navigate_three_goals`, `navigate_corridor`, `navigate_obstacle_field`, `navigate_small_room`, `navigate_scan_drop`)를 추가해 저장소 시나리오를 7개로 늘렸습니다. 목표 3개 연속 수행, 좁은 복도, 장애물 필드, 좁은 방 근접 주행, `/scan` 발행 중단 주입을 각각 다룹니다.
+- **Changed**: `scripts/compare_sim_backends.sh`가 실행별 제한 시간(`RC_SIM_RUN_TIMEOUT`, 기본 240초)과 판정/도달 goal/주행거리 차이 요약을 출력하도록 확장했습니다. 판정 불일치·실행 오류가 있으면 exit 1입니다.
+- **Fixed**: 시나리오가 목표에 도달하지 못해 하네스가 끝날 때 정리가 `navigate_timeout_sec`(기본 300초)까지 매달려 `task sim-test`/`sim-compare`가 멈추던 문제를 수정합니다. 러너가 노드 기동 시 `navigate_timeout_sec`를 시나리오 예산으로 넘겨, 액션 서버의 대기가 시나리오 시간을 넘지 않게 했습니다.
+- **Added**: `tests/test_scenario.py`에 커밋된 시나리오 전체의 스키마·목표 도달 가능성(점유 위치 아님) 검사를 추가했습니다.
+- **검증**: `task sim-compare` 결과 7개 시나리오 모두 두 백엔드에서 같은 판정(불일치 0건), 최대 주행거리 차이 0.5%, 평균 0.3%, 전체 약 5분. `uv run pytest src/robo_claw_sim/tests` 73 passed. 시나리오 배치 조정 전에는 `navigate_three_goals`가 kinematic에서 목표 3을 스치는 경로 때문에 실패하고 MuJoCo는 접촉 미끄러짐으로 통과해 판정이 갈렸으며(16.9% 거리 차), 목표/장애물 배치를 조정해 두 백엔드가 같은 결론을 내도록 했습니다.
+
 ## 2026-11-17 — 전용 시뮬레이터에 MuJoCo 백엔드 추가(Phase 0)
 
 - **Added**: `robo_claw_sim` 에 교체 가능한 백엔드 계층(`backends/`)을 두고, MuJoCo 물리 백엔드를 추가합니다. 시나리오 YAML·판정·ROS 인터페이스는 두 백엔드가 공유하므로 같은 시나리오를 양쪽에서 돌려 비교할 수 있습니다. 기본값은 기존과 동일한 `kinematic`(외부 의존성 없음)이고 `mujoco` 는 선택입니다.

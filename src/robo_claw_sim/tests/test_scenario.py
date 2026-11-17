@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from robo_claw_sim.scenario import (
     Injection,
@@ -146,3 +148,26 @@ def scenario_outcome(scenario, result):  # noqa: ANN001
     from robo_claw_sim.scenario import evaluate
 
     return evaluate(scenario, result)
+
+
+_SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
+_SHIPPED_SCENARIOS = sorted(_SCENARIO_DIR.glob("*.yaml"))
+
+
+@pytest.mark.parametrize("path", _SHIPPED_SCENARIOS, ids=lambda p: p.stem)
+def test_shipped_scenario_is_valid(path: Path) -> None:
+    """저장소에 커밋된 시나리오는 모두 로딩·검증을 통과해야 한다.
+
+    ``task sim-test``/``sim-compare`` 가 이 파일들을 그대로 실행하므로, 스키마 오류나
+    존재하지 않는 goal 은 CI 이전에 여기서 걸러야 한다.
+    """
+    scenario = load_scenario(path)
+
+    assert scenario.name == path.stem
+    assert scenario.goals, f"{path.name}: goals 가 비어 있습니다"
+    assert scenario.timeout_sec > 0.0
+    for goal in scenario.goals:
+        assert scenario.world.is_free(goal.x, goal.y, scenario.world.robot_radius), (
+            f"{path.name}: goal({goal.label}) 이 점유 위치입니다"
+        )
+    assert scenario.expect.min_goals_reached <= len(scenario.goals)

@@ -1,0 +1,23 @@
+name: navigate_scan_drop
+timeout_sec: 80
+# /scan 발행 중단 주입. 판정·주입 경로가 백엔드와 무관하게 동작하는지 확인한다.
+world:
+  width: 8.0
+  height: 6.0
+  resolution: 0.05
+  robot: {x: 1.0, y: 1.2, yaw: 0.0}
+  robot_radius: 0.22
+  obstacles:
+    - {type: box, name: block, x: 4.0, y: 4.6, width: 0.8, height: 1.6}
+  objects:
+    - {name: cup_1, class_id: cup, x: 2.4, y: 4.4, radius: 0.06}
+goals:
+  - {x: 2.4, y: 4.4, tolerance: 0.3, yaw: 0.0, label: near_cup}
+  - {x: 6.4, y: 1.4, tolerance: 0.3, yaw: 1.57, label: east_open}
+expect:
+  max_collisions: 0
+  min_goals_reached: 2
+  max_elapsed_sec: 80
+  require_no_abort: true
+injections:
+  - {kind: scan_drop, at_sec: 3.0, duration_sec: 2.0}

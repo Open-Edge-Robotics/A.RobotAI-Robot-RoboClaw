@@ -1,0 +1,22 @@
+name: navigate_small_room
+timeout_sec: 70
+# 좁은 방에서 벽에 붙은 목표를 왕복한다. 근접 ray/충돌 판정 비교용.
+world:
+  width: 4.0
+  height: 3.0
+  resolution: 0.05
+  robot: {x: 0.8, y: 0.8, yaw: 0.0}
+  robot_radius: 0.2
+  obstacles:
+    # 벽에 붙인 선반: 남쪽 통로(y<2.2)를 따라 이동한다.
+    - {type: box, name: shelf, x: 2.0, y: 2.6, width: 0.9, height: 0.7}
+  objects: []
+goals:
+  - {x: 3.3, y: 1.0, tolerance: 0.3, yaw: 1.57, label: corner_se}
+  - {x: 0.9, y: 1.2, tolerance: 0.3, yaw: 3.14, label: corner_sw}
+expect:
+  max_collisions: 0
+  min_goals_reached: 2
+  max_elapsed_sec: 70
+  require_no_abort: true
+injections: []

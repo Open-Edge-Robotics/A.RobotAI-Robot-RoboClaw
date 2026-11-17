@@ -1,0 +1,26 @@
+name: navigate_obstacle_field
+timeout_sec: 100
+# 장애물이 흩어진 넓은 방. 회피 주행에서 접촉 카운트가 0으로 유지되는지 확인한다.
+world:
+  width: 10.0
+  height: 8.0
+  resolution: 0.05
+  robot: {x: 1.0, y: 1.0, yaw: 0.0}
+  robot_radius: 0.22
+  obstacles:
+    - {type: circle, name: pillar_a, x: 3.0, y: 3.4, radius: 0.5}
+    - {type: box, name: crate, x: 5.6, y: 5.2, width: 1.2, height: 1.2}
+    - {type: circle, name: pillar_b, x: 8.0, y: 4.6, radius: 0.6}
+    - {type: box, name: shelf, x: 8.4, y: 1.6, width: 0.8, height: 2.0}
+    - {type: circle, name: pillar_c, x: 4.2, y: 6.6, radius: 0.4}
+  objects:
+    - {name: cup_1, class_id: cup, x: 6.0, y: 1.6, radius: 0.06}
+goals:
+  - {x: 4.4, y: 2.0, tolerance: 0.35, yaw: 0.0, label: center}
+  - {x: 8.8, y: 6.8, tolerance: 0.35, yaw: 1.57, label: far_corner}
+expect:
+  max_collisions: 0
+  min_goals_reached: 2
+  max_elapsed_sec: 100
+  require_no_abort: true
+injections: []

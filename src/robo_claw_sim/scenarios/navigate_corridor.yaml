@@ -1,0 +1,23 @@
+name: navigate_corridor
+timeout_sec: 100
+# 좁은 복도 + 중간 턱. 벽 근접 주행에서 두 백엔드의 ray/접촉 판정이 같은지 본다.
+world:
+  width: 10.0
+  height: 4.0
+  resolution: 0.05
+  robot: {x: 1.0, y: 2.0, yaw: 0.0}
+  robot_radius: 0.22
+  obstacles:
+    - {type: box, name: wall_south, x: 5.0, y: 0.85, width: 10.0, height: 0.3}
+    - {type: box, name: wall_north, x: 5.0, y: 3.15, width: 10.0, height: 0.3}
+    - {type: box, name: jog, x: 5.0, y: 1.55, width: 0.3, height: 1.1}
+  objects: []
+goals:
+  - {x: 3.0, y: 2.5, tolerance: 0.3, yaw: 0.0, label: before_jog}
+  - {x: 8.4, y: 2.5, tolerance: 0.3, yaw: 0.0, label: corridor_end}
+expect:
+  max_collisions: 0
+  min_goals_reached: 2
+  max_elapsed_sec: 100
+  require_no_abort: true
+injections: []
