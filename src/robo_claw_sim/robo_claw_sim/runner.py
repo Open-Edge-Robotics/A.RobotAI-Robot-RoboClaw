@@ -31,6 +31,7 @@ def run_scenario(
     from nav2_msgs.action import NavigateToPose
     from rclpy.action import ActionClient
     from rclpy.executors import MultiThreadedExecutor
+    from vision_msgs.msg import Detection2DArray
 
     from .nodes.sim_node import SimulationNode
 
@@ -55,6 +56,18 @@ def run_scenario(
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
 
+    # 검출은 노드 속성 대신 토픽으로 직접 수집한다(발행 타이밍과 무관하게 확실).
+    detected: set[str] = set()
+
+    def _on_detections(msg) -> None:  # noqa: ANN001
+        for detection in msg.detections:
+            for hypothesis in detection.results:
+                detected.add(str(hypothesis.hypothesis.class_id))
+
+    node.create_subscription(
+        Detection2DArray, str(node.get_parameter("detections_topic").value), _on_detections, 10
+    )
+
     client = ActionClient(node, NavigateToPose, "/navigate_to_pose")
     result = RunResult()
     started = time.monotonic()
@@ -73,7 +86,7 @@ def run_scenario(
         result.collisions = int(node.world.collisions)
         result.traveled_m = float(node.world.traveled_m)
         result.grasped_objects = list(node.grasped_objects())
-        result.detected_objects = list(getattr(node, "last_detected_objects", []))
+        result.detected_objects = sorted(detected)
         if result.elapsed_sec >= timeout:
             result.timed_out = True
         node.destroy_navigation()

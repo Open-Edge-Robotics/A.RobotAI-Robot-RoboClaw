@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-17 — 검출 판정 종단 검증(Phase 3b 완료)
+
+- **Fixed**: `sim_runner` 가 검출 결과를 판정에 반영하지 못하던 문제를 수정했습니다. 노드 속성(`last_detected_objects`)을 읽는 방식이 타이밍에 따라 빈 값이 되어, 러너가 `/object_detector_node/detections` 를 직접 구독해 클래스 ID를 수집하도록 바꿨습니다. `detect_seed`·`detect_false_negative_rate` 등 발행 조건과 무관하게 동작합니다.
+- **Added**: 시나리오 `detect_basic.yaml`(정면 1.5m 이동 중 객체 검출 1건 기대). 목표가 시작 위치와 같으면 실행이 30ms 만에 끝나 tick 이 한 번도 돌지 않아 검출이 비는 것을 확인하고, 이동이 있는 목표로 바꿔 회귀 게이트에 넣었습니다.
+- **검증**: `ros2 run robo_claw_sim sim_runner src/robo_claw_sim/scenarios/detect_basic.yaml` → `passed: true`, `elapsed_sec: 3.344`, `detected_objects: ["cup"]`. 노드 단독 확인에서도 `navigate_basic.yaml` 로드 시 `cup`·`bottle` Detection2D가 발행됨을 확인했습니다.
+- **미착수**: 실제 ONNX 검출기(`robo_claw_vision`) 폐루프는 onnxruntime·YOLO 모델·C++ 노드 빌드와 GPU/CI skip 정책이 필요해 별도 작업으로 남깁니다.
+
 ## 2026-11-17 — 검출 판정 계약 추가(Phase 3b 기반)
 
 - **Added**: 시나리오 `expect.detected_objects` 와 `RunResult.detected_objects`, `evaluate` 검출 실패 사유를 추가했습니다. 시뮬레이터가 마지막 tick 에 발행한 검출 클래스(`node.last_detected_objects`)를 판정에 반영합니다.

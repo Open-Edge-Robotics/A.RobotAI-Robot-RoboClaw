@@ -1,0 +1,22 @@
+name: detect_basic
+timeout_sec: 40
+# 검출 판정 회귀: 카메라 시야 안 객체가 Detection2DArray 로 발행되고 시나리오 판정에
+# 반영되는지 확인한다(정답 기반 발행 경로. 실제 ONNX 검출기는 robo_claw_vision).
+world:
+  width: 6.0
+  height: 4.0
+  resolution: 0.05
+  robot: {x: 1.0, y: 1.0, yaw: 0.0}
+  robot_radius: 0.22
+  obstacles: []
+  objects:
+    - {name: cup_1, class_id: cup, x: 3.2, y: 1.0, radius: 0.06}
+goals:
+  - {x: 2.6, y: 1.0, tolerance: 0.3, yaw: 0.0, label: forward}
+expect:
+  max_collisions: 0
+  min_goals_reached: 1
+  max_elapsed_sec: 40
+  require_no_abort: true
+  detected_objects: [cup]
+injections: []
