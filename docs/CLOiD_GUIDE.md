@@ -187,17 +187,18 @@ CLOi MotionCmd에는 완료 응답이 없으므로 이 경로의 결과는 모�
 
 ### 시연 cue 전송(TCP/UDP)
 
-`cleanup_demo`는 시연 모션 START 명령을 발행한 직후, 설정된 외부 장비로 UTF-8 바이트를
-**1회** 전송합니다(데모 cue). 별도 스킬이 아니라 시연 경로의 부수 효과이며, 목적지와
-바이트는 로봇 프로필 값만 사용합니다. LLM이나 요청 메시지로 목적지·payload를 바꿀 수
-없습니다.
+시연 모션 명령이 발행된 직후, 설정된 외부 장비로 UTF-8 바이트를 **1회** 전송합니다
+(데모 cue). 별도 스킬이 아니라 시연 경로의 부수 효과이며, 목적지와 바이트는 로봇
+프로필 값만 사용합니다. LLM이나 요청 메시지로 목적지·payload를 바꿀 수 없습니다.
+**기본값은 활성**이고 목적지는 시연 장비(`192.168.50.86:5005`)입니다. 끄려면
+`cloid_demo_signal_enabled: false`로 둡니다.
 
 | 파라미터 (`cloid_config.yaml`) | 기본값 | 의미 |
 | --- | --- | --- |
-| `cloid_demo_signal_enabled` | `false` | cue 전송 활성화 |
+| `cloid_demo_signal_enabled` | `true` | cue 전송 활성화(기본 활성) |
 | `cloid_demo_signal_protocol` | `"tcp"` | `tcp` 또는 `udp` |
-| `cloid_demo_signal_host` | `""` | 목적지 호스트/IP(스킴·경로 불가) |
-| `cloid_demo_signal_port` | `0` | 목적지 포트(1~65535, `0`은 미설정) |
+| `cloid_demo_signal_host` | `"192.168.50.86"` | 목적지 호스트/IP(스킴·경로 불가) |
+| `cloid_demo_signal_port` | `5005` | 목적지 포트(1~65535) |
 | `cloid_demo_signal_payload` | `"shoe pick"` | UTF-8 payload(제어문자 불가, 128바이트 상한) |
 | `cloid_demo_signal_terminator` | `"none"` | `none`/`lf`/`crlf` — 개행은 이 값으로만 붙입니다 |
 | `cloid_demo_signal_timeout_sec` | `1.0` | 연결·전송 타임아웃(0.1~3.0초) |
@@ -214,8 +215,12 @@ robo_claw_agent_node:
     cloid_demo_signal_timeout_sec: 1.0
 ```
 
-- 전송 시점은 **모션 START 발행 성공 직후**입니다. 모션 명령이 거부되거나 실패하면
-  cue를 보내지 않습니다(MotionCmd 완료 피드백이 없으므로 cue 시점도 "모션 요청" 시점입니다).
+- 전송 시점은 시연 모션 명령이 실제로 발행된 직후입니다. 두 시연 경로가 같은 cue 를 씁니다.
+  - `cleanup_demo`(동료·Maestro 시연 요청): `execute_cloid_motion` 성공 직후
+  - `tidy_home` 로컬 시연: `demo_motion_executed` 로 끝나는 실행 직후
+  모션 명령이 거부되거나 실행 노드가 실패하면 cue 를 보내지 않습니다. MotionCmd 완료
+  피드백이 없으므로 cue 시점도 "모션 요청/실행" 시점이며, 실제 동작 완료 시점은
+  확인할 수 없습니다.
 - 실패·타임아웃은 시연 결과를 바꾸지 않습니다. 시연은 그대로 `motion_requested`로 끝나고
   결과의 `demo_signal`에 `sent`/`failed`/`skipped`와 사유 코드(`disabled`,
   `invalid_host` 등), 전송 바이트 수만 남깁니다. payload 원문과 서버 응답은 기록하지
@@ -223,6 +228,13 @@ robo_claw_agent_node:
 - 재시도는 없습니다(중복 cue로 외부 효과가 두 번 트리거되는 것을 막습니다).
 - 관측 패널에는 `demo_signal` 단계로 결과가 표시됩니다.
 - 수신 측이 줄 단위로 파싱한다면 `cloid_demo_signal_terminator: "lf"`로 `\n`을 붙입니다.
+
+로컬 시연 개체(`tidy_home` → `demo_motion_executed`)는 사방 회전 관찰을 하지 않습니다.
+장소에 도착하면 정면 관찰 1회로 대상만 확인하고 곧바로 시연 모션을 요청하므로,
+`describe_surroundings`의 `capture_4way`(정면/우/후/좌 90° 회전·촬영)는 시연
+allowlist가 없는 일반 정리 로봇에서만 쓰입니다. 시연 실행 결과는 실패가 아니라
+처리 완료(`finished`)로 보고하며, 관측 문구로 "실제 물체 정리 완료는 확인되지
+않았습니다"를 함께 남깁니다.
 
 
 ## 포장용 최소 부피 자세

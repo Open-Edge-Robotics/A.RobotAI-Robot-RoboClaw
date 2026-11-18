@@ -122,7 +122,7 @@ def test_socket_timeout_is_reported_as_failure():
     assert outcome["error"] == "TimeoutError" or outcome["error"] == "timeout"
 
 
-def test_node_parameters_are_honored_and_missing_parameters_disable_cue():
+def test_node_parameters_are_honored_with_enabled_defaults():
     seen = {}
 
     class _Socket:
@@ -156,9 +156,41 @@ def test_node_parameters_are_honored_and_missing_parameters_disable_cue():
     assert seen["data"] == b"shoe pick"
     assert seen["timeout"] == 0.5
 
+    # 파라미터가 선언되지 않은 배포에서는 노드 기본값(=시연 장비, 기본 활성)을 쓴다.
+    seen.clear()
+
     def _missing(_name):
         raise KeyError("undeclared")
 
-    skipped = cue_sender.send_demo_cue(SimpleNamespace(get_parameter=_missing))
-    assert skipped["status"] == "skipped"
-    assert skipped["reason"] == "disabled"
+    default_outcome = cue_sender.send_demo_cue(
+        SimpleNamespace(get_parameter=_missing), socket_factory=lambda *_args: _Socket()
+    )
+    assert default_outcome["status"] == "sent"
+    assert seen["address"] == ("192.168.50.86", 5005)
+    assert seen["data"] == b"shoe pick"
+
+
+def test_explicit_disable_skips_without_connecting():
+    connected = []
+
+    class _Socket:
+        def settimeout(self, _value):
+            return None
+
+        def connect(self, address):
+            connected.append(address)
+
+        def sendall(self, _data):
+            return None
+
+        def close(self):
+            return None
+
+    params = {"cloid_demo_signal_enabled": False}
+    node = SimpleNamespace(get_parameter=lambda name: SimpleNamespace(value=params.get(name, "")))
+
+    outcome = cue_sender.send_demo_cue(node, socket_factory=lambda *_args: _Socket())
+
+    assert outcome["status"] == "skipped"
+    assert outcome["reason"] == "disabled"
+    assert connected == [], "비활성 설정에서는 소켓 연결을 시도하지 않는다"

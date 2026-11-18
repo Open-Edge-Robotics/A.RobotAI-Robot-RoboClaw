@@ -29,7 +29,13 @@ TERMINATORS: dict[str, bytes] = {
     "crlf": b"\r\n",
 }
 
+#: 데모 cue 기본값 — 시연 장비(수신 측)로 바로 전송되도록 기본 활성 상태다.
+DEFAULT_ENABLED = True
+DEFAULT_PROTOCOL = PROTOCOL_TCP
+DEFAULT_HOST = "192.168.50.86"
+DEFAULT_PORT = 5005
 DEFAULT_PAYLOAD = "shoe pick"
+DEFAULT_TERMINATOR = TERMINATOR_NONE
 DEFAULT_TIMEOUT_SEC = 1.0
 MIN_TIMEOUT_SEC = 0.1
 MAX_TIMEOUT_SEC = 3.0
@@ -155,7 +161,7 @@ def build_config(
     """설정을 검증한다. 사용하지 않거나 잘못된 설정은 ``(None, 사유)``."""
     if not bool_param(enabled, False):
         return None, REASON_DISABLED
-    name = str(protocol or PROTOCOL_TCP).strip().lower()
+    name = str(protocol or DEFAULT_PROTOCOL).strip().lower()
     if name not in PROTOCOLS:
         return None, REASON_INVALID_PROTOCOL
     normalized_host = normalize_host(host)
@@ -211,7 +217,12 @@ def result(
 __all__ = [
     "CueConfig",
     "CueConfigError",
+    "DEFAULT_ENABLED",
+    "DEFAULT_HOST",
     "DEFAULT_PAYLOAD",
+    "DEFAULT_PORT",
+    "DEFAULT_PROTOCOL",
+    "DEFAULT_TERMINATOR",
     "DEFAULT_TIMEOUT_SEC",
     "MAX_PAYLOAD_BYTES",
     "PROTOCOLS",

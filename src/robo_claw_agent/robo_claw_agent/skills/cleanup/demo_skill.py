@@ -11,7 +11,6 @@ from robo_claw_agent.skill_manager import BaseSkill
 
 from ..autonomous_skill.globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
 from ..cleanup_run_metrics import new_run_id
-from ..demo_signal import send_demo_cue
 from .observation import (
     SOURCE_CLEANUP_DEMO,
     TASK_STATUS_MOTION_REQUESTED,
@@ -26,6 +25,7 @@ from .policy import (
     _normalize_name,
     _select_cleanup_demo_motion,
 )
+from .signal import emit_demo_signal
 
 logger = logging.getLogger(__name__)
 
@@ -372,42 +372,13 @@ class CleanupDemoSkill(BaseSkill):
         cue 는 시연 보조 신호이므로 실패해도 시연 결과를 바꾸지 않는다. 대신 결과와
         관측에 ``sent``/``failed``/``skipped`` 와 사유 코드를 남긴다.
         """
-        try:
-            outcome = send_demo_cue(self.node)
-        except Exception as exc:  # noqa: BLE001 - cue 오류가 시연을 막지 않는다
-            logger.warning("[CleanupDemo] demo cue failed: %s", type(exc).__name__)
-            outcome = {"status": "failed", "reason": "send_failed", "bytes": 0}
-        status = str(outcome.get("status") or "")
-        if status == "sent":
-            content = (
-                f"시연 cue {outcome.get('bytes', 0)}바이트를 "
-                f"{outcome.get('protocol', '')}://{outcome.get('host', '')}:"
-                f"{outcome.get('port', '')} 로 전송했습니다."
-            )
-        else:
-            reason = str(outcome.get("reason") or "")
-            content = f"시연 cue 를 전송하지 않았습니다({status or 'unknown'}/{reason})."
-        safe_observe(
+        return emit_demo_signal(
+            self.node,
             observer,
-            "phase",
-            phase="demo_signal",
-            content=content,
             place=place_name,
             target=target,
-            observed=status,
+            logger_obj=logger,
         )
-        # 비활성/미설정 배포에서 로그를 늘리지 않는다(전송을 시도한 경우만 남긴다).
-        if status in ("sent", "failed"):
-            logger.info(
-                "[CleanupDemo] demo cue result: status=%s reason=%s endpoint=%s://%s:%s bytes=%s",
-                status,
-                outcome.get("reason", ""),
-                outcome.get("protocol", ""),
-                outcome.get("host", ""),
-                outcome.get("port", ""),
-                outcome.get("bytes", 0),
-            )
-        return outcome
 
     def _allowed_motion_ids(self) -> list[int]:
         try:

@@ -11,7 +11,12 @@ import socket
 from typing import Any
 
 from .protocol import (
+    DEFAULT_ENABLED,
+    DEFAULT_HOST,
     DEFAULT_PAYLOAD,
+    DEFAULT_PORT,
+    DEFAULT_PROTOCOL,
+    DEFAULT_TERMINATOR,
     DEFAULT_TIMEOUT_SEC,
     PROTOCOL_TCP,
     REASON_SEND_FAILED,
@@ -46,12 +51,12 @@ def _param(node: Any, name: str, default: Any = None) -> Any:
 def config_from_node(node: Any) -> tuple[CueConfig | None, str]:
     """노드 파라미터에서 cue 설정을 읽어 검증한다."""
     return build_config(
-        enabled=_param(node, PARAM_ENABLED, False),
-        protocol=_param(node, PARAM_PROTOCOL, PROTOCOL_TCP),
-        host=_param(node, PARAM_HOST, ""),
-        port=_param(node, PARAM_PORT, 0),
+        enabled=_param(node, PARAM_ENABLED, DEFAULT_ENABLED),
+        protocol=_param(node, PARAM_PROTOCOL, DEFAULT_PROTOCOL),
+        host=_param(node, PARAM_HOST, DEFAULT_HOST),
+        port=_param(node, PARAM_PORT, DEFAULT_PORT),
         payload=_param(node, PARAM_PAYLOAD, DEFAULT_PAYLOAD),
-        terminator=_param(node, PARAM_TERMINATOR, "none"),
+        terminator=_param(node, PARAM_TERMINATOR, DEFAULT_TERMINATOR),
         timeout_sec=_param(node, PARAM_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC),
     )
 

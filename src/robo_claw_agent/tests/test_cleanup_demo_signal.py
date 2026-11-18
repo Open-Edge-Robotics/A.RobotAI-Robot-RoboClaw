@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from robo_claw_agent.skills.cleanup import demo_skill as demo_module
+from robo_claw_agent.skills.cleanup import signal as signal_module
 from robo_claw_agent.skills.cleanup.demo_skill import CleanupDemoSkill
 
 pytestmark = pytest.mark.unit
@@ -61,7 +62,7 @@ def _configure(monkeypatch, skill, *, motion_result_success=True):
 
     observed: list[dict] = []
     monkeypatch.setattr(
-        demo_module,
+        signal_module,
         "safe_observe",
         lambda _observer, _method, *args, **kwargs: observed.append(kwargs),
     )
@@ -78,7 +79,7 @@ def _configure(monkeypatch, skill, *, motion_result_success=True):
             "bytes": len(b"shoe pick"),
         }
 
-    monkeypatch.setattr(demo_module, "send_demo_cue", _cue)
+    monkeypatch.setattr(signal_module, "send_demo_cue", _cue)
 
     skills = _FakeSkills(motion_result_success=motion_result_success)
     node = SimpleNamespace(
@@ -140,7 +141,7 @@ def test_cue_failure_keeps_motion_result_success(monkeypatch):
             "error": "ConnectionRefusedError",
         }
 
-    monkeypatch.setattr(demo_module, "send_demo_cue", _failing_cue)
+    monkeypatch.setattr(signal_module, "send_demo_cue", _failing_cue)
 
     result = skill.execute(dict(PARAMS))
 
@@ -163,7 +164,7 @@ def test_cue_exception_never_breaks_the_demo(monkeypatch):
     def _boom(_node):
         raise RuntimeError("socket layer exploded")
 
-    monkeypatch.setattr(demo_module, "send_demo_cue", _boom)
+    monkeypatch.setattr(signal_module, "send_demo_cue", _boom)
 
     result = skill.execute(dict(PARAMS))
 
@@ -176,7 +177,7 @@ def test_disabled_cue_reports_skipped_without_failing(monkeypatch):
     skill = CleanupDemoSkill()
     _skills, _cues, _observed = _configure(monkeypatch, skill)
     monkeypatch.setattr(
-        demo_module,
+        signal_module,
         "send_demo_cue",
         lambda _node: {"status": "skipped", "reason": "disabled", "bytes": 0},
     )
