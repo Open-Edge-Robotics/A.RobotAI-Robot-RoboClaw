@@ -42,6 +42,7 @@ PHASE_LABELS = {
     "wait_peer": "동료 응답 대기",
     "peer_result": "동료 결과 확인",
     "demo_reobserve": "요청 대상 재관찰",
+    "demo_pose": "시연 전 자세 정렬",
     "demo_motion": "정리 시연 모션 요청",
     "local_motion": "로컬 정리 동작",
     "policy": "정책 확인",

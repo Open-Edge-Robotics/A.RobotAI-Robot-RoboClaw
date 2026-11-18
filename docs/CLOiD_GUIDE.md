@@ -229,6 +229,14 @@ robo_claw_agent_node:
 - 관측 패널에는 `demo_signal` 단계로 결과가 표시됩니다.
 - 수신 측이 줄 단위로 파싱한다면 `cloid_demo_signal_terminator: "lf"`로 `\n`을 붙입니다.
 
+**신발·신발장 시연은 모션 전에 제자리 90° 회전**을 먼저 합니다. 장소/대상 텍스트에
+`신발`, `신발장`, `shoe` 등이 있으면 Nav2 `/spin` 으로 몸을 돌린 뒤 모션을 요청하며,
+회전이 실패하거나 안전 게이트에서 거부되면 모션을 실행하지 않습니다(fail closed,
+사유 `demo_turn_failed`). 각도는 로봇 프로필 `cloid_demo_shoe_turn_deg`(기본 `90.0`,
+음수=반대 방향, `0`=회전 안 함)로 조정합니다. `cleanup_demo`(동료 시연 요청)와
+`tidy_home` 로컬 시연이 같은 규칙을 씁니다. 직접 `/cmd_vel`(Twist) 제어는 CLOiD 에
+적용되지 않으므로 `rotate` 스킬 대신 Nav2 Spin 을 사용합니다.
+
 로컬 시연 개체(`tidy_home` → `demo_motion_executed`)는 사방 회전 관찰과 정리 대상
 확인을 모두 건너뜁니다. 장소에 도착하면 검토된 allowlist 모션을 골라 곧바로 실행을
 요청하고 cue 를 1회 보냅니다(관측 단계 `demo_motion`). 사방 관찰

@@ -17,6 +17,7 @@ from .autonomous_skill.globals import (
     is_autonomous_active,
     release_autonomous,
 )
+from .cleanup.demo_pose import turn_before_demo, turn_deg_for
 from .cleanup.observation import (
     SOURCE_TIDY_HOME,
     TASK_STATUS_CANCEL_REQUESTED,
@@ -929,6 +930,28 @@ class TidyHomeSkill(BaseSkill):
                 failure_reason="no_approved_cleanup_demo_motion",
             )
             return "no_approved_cleanup_demo_motion"
+
+        # 신발·신발장 시연은 모션 전에 진열대 방향으로 몸을 돌린다. 회전이 실패하면
+        # 모션을 실행하지 않는다(fail closed).
+        turn_deg = turn_deg_for(self.node, place_name)
+        if turn_deg:
+            _observe_phase(
+                observer,
+                "demo_pose",
+                f"'{place_name}' 시연 전에 {turn_deg:.0f}도 회전합니다.",
+                place=place_name,
+            )
+            turned, turn_error = turn_before_demo(self.node, turn_deg, logger_obj=logger)
+            if not turned:
+                _observe_phase(
+                    observer,
+                    "demo_pose",
+                    f"시연 전 자세 회전에 실패해 모션을 실행하지 않았습니다: {turn_error}",
+                    place=place_name,
+                    observed="failed",
+                    failure_reason="demo_turn_failed",
+                )
+                return "demo_turn_failed"
 
         _observe_phase(
             observer,

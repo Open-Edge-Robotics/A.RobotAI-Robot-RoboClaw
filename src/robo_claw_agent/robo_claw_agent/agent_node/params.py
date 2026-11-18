@@ -197,6 +197,8 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("cloid_demo_signal_payload", "shoe pick")
     node.declare_parameter("cloid_demo_signal_terminator", "none")
     node.declare_parameter("cloid_demo_signal_timeout_sec", 1.0)
+    # 신발·신발장 시연은 모션 전에 제자리 회전한다(음수=반대 방향, 0=회전 안 함).
+    node.declare_parameter("cloid_demo_shoe_turn_deg", 90.0)
     node.declare_parameter("butler_script_dir", "/ros2_ws/butler_scripts")
     node.declare_parameter("agent_workspace_dir", "/ros2_ws/agent_workspace")
 

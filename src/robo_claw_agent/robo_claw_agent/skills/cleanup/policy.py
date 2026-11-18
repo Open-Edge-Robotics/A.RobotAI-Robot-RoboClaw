@@ -141,6 +141,19 @@ _ROOM_ALIASES: dict[str, frozenset[str]] = {
 }
 
 
+#: 신발·신발장 시연은 모션 전에 몸을 돌려 진열대를 향하게 한다.
+SHOE_DEMO_KEYWORDS = ("신발장", "신발", "shoe", "sneaker")
+
+
+def is_shoe_related(*values: Any) -> bool:
+    """장소/대상 텍스트에 신발·신발장 관련 표현이 있는지 판정한다."""
+    for value in values:
+        text = _normalize_name(value)
+        if text and any(keyword in text for keyword in SHOE_DEMO_KEYWORDS):
+            return True
+    return False
+
+
 def _normalize_name(value: Any) -> str:
     return re.sub(r"[\s_\-]+", "", str(value or "").casefold())
 

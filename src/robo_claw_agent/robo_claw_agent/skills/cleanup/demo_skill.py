@@ -11,6 +11,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 
 from ..autonomous_skill.globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
 from ..cleanup_run_metrics import new_run_id
+from .demo_pose import turn_before_demo, turn_deg_for
 from .observation import (
     SOURCE_CLEANUP_DEMO,
     TASK_STATUS_MOTION_REQUESTED,
@@ -289,6 +290,28 @@ class CleanupDemoSkill(BaseSkill):
                 place=place_name,
                 target=target,
             )
+            # 신발·신발장 시연은 모션 전에 진열대 방향으로 몸을 돌린다. 회전이
+            # 실패하면 모션을 실행하지 않는다(fail closed).
+            turn_deg = turn_deg_for(self.node, place_name, target, fresh_scene)
+            if turn_deg:
+                safe_observe(
+                    observer,
+                    "phase",
+                    phase="demo_pose",
+                    content=f"'{place_name}' 시연 전에 {turn_deg:.0f}도 회전합니다.",
+                    place=place_name,
+                    target=target,
+                )
+                turned, turn_error = turn_before_demo(self.node, turn_deg, logger_obj=logger)
+                if not turned:
+                    return _fail(
+                        f"시연 전 자세 회전에 실패해 모션을 실행하지 않았습니다: {turn_error}",
+                        "demo_turn_failed",
+                        phase="demo_pose",
+                        observed="failed",
+                        recoverable=True,
+                    )
+
             result = skills.execute(
                 "execute_cloid_motion",
                 {
