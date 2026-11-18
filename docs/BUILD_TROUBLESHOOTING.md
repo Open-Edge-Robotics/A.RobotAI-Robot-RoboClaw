@@ -30,14 +30,25 @@ CMake Error: ONNX Runtime을 찾을 수 없습니다. ONNXRUNTIME_ROOT_DIR='' �
 **해결 방법:**
 
 1. **자동 설치 (권장)**:
-   `task setup-deps` 명령어를 실행하면 시스템 아키텍처(`x64` / `aarch64`)를 자동 감지하여 프로젝트 루트에 ONNX Runtime 1.19.2 C++ SDK를 다운로드 및 설정합니다.
+   `task setup-deps` 명령어를 실행하면 시스템 아키텍처(`x64` / `aarch64`)를 자동 감지하여 프로젝트 루트에 ONNX Runtime 1.19.2 C++ SDK를 배치합니다. 저장소의 `vendor/onnxruntime-linux-<arch>-1.19.2.tgz` 사본을 먼저 사용하고, 사본이 없을 때만 GitHub에서 받습니다.
 
    ```bash
    task setup-deps
    ```
 
-2. **수동 설치 및 경로 지정**:
-   직접 다운로드하여 프로젝트 루트나 원하는 경로에 해제하거나, 빌드 시 `-DONNXRUNTIME_ROOT_DIR` 옵션으로 경로를 전달할 수 있습니다.
+2. **보관된 사본 사용 (권장, 네트워크 불필요)**:
+   `vendor/`에 두 아키텍처 사본이 있으므로 아래처럼 직접 해제할 수도 있습니다.
+
+   ```bash
+   # x86_64 환경
+   tar -xzf vendor/onnxruntime-linux-x64-1.19.2.tgz -C ./
+
+   # ARM64 (aarch64) 환경
+   tar -xzf vendor/onnxruntime-linux-aarch64-1.19.2.tgz -C ./
+   ```
+
+3. **수동 다운로드 및 경로 지정**:
+   다른 버전을 쓰거나 사본이 없을 때 직접 받아 프로젝트 루트나 원하는 경로에 해제하거나, 빌드 시 `-DONNXRUNTIME_ROOT_DIR` 옵션으로 경로를 전달합니다.
 
    ```bash
    # x86_64 환경 수동 설치 (프로젝트 루트)
@@ -48,6 +59,34 @@ CMake Error: ONNX Runtime을 찾을 수 없습니다. ONNXRUNTIME_ROOT_DIR='' �
    wget -q "https://github.com/microsoft/onnxruntime/releases/download/v1.19.2/onnxruntime-linux-aarch64-1.19.2.tgz" -O /tmp/ort.tgz && \
    tar -xzf /tmp/ort.tgz -C ./ && rm /tmp/ort.tgz
    ```
+
+---
+
+### `docker build` 가 ONNX Runtime 다운로드 단계(4/27)에서 실패
+
+```bash
+ERROR: failed to solve: process "/bin/sh -c case \"${TARGETARCH}\" in ... wget ..." did not complete successfully: exit code: 8
+```
+
+**원인:**
+`wget` 종료 코드 8은 서버가 오류 응답(HTTP 404 등)을 준 경우입니다. DNS·방화벽 문제가 아닙니다. 2026-11-18 확인 결과 업스트림 `microsoft/onnxruntime` GitHub 릴리스 자산이 사라져 `v1.19.2`·`v1.23.2`의 x64/aarch64 tarball이 모두 404를 반환했습니다.
+
+**해결 방법:**
+Dockerfile 4단계는 `vendor/`의 사본을 우선 사용하므로, `vendor/onnxruntime-linux-<arch>-1.19.2.tgz`가 있으면 네트워크 없이 빌드가 진행됩니다. 사본이 없으면 아래 순서로 복구합니다.
+
+1. 이전에 빌드된 이미지에 SDK가 남아 있으면 추출해 사본을 만듭니다.
+
+   ```bash
+   mkdir -p vendor
+   docker run --rm --entrypoint tar <기존-이미지> \
+     -cf - -C /usr/local onnxruntime-linux-<arch>-1.19.2 \
+     | tar -xf - -C vendor
+   tar -czf vendor/onnxruntime-linux-<arch>-1.19.2.tgz -C vendor onnxruntime-linux-<arch>-1.19.2
+   rm -rf vendor/onnxruntime-linux-<arch>-1.19.2
+   ```
+
+2. GitHub 접근이 가능한 다른 네트워크에서 tarball을 받아 `vendor/`에 넣습니다.
+3. 다시 빌드합니다. 로그에 `Using vendored ONNX Runtime 1.19.2 (<arch>)`가 출력되면 사본이 사용된 것입니다.
 
 ---
 

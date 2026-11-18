@@ -187,7 +187,8 @@ docker buildx build --platform=linux/amd64,linux/arm64 \
 
 - `--push`이므로 도커 레지스트리에 로그인(`docker login`)되어 있어야 합니다.
 - 로컬 테스트만 급하면 `task docker-build-local`로 AMD64 전용(`--load`, push 없음)을 먼저 돌리세요. 로컬 빌드는 `:latest`와 `<hash>`를 함께 태그하므로, 빌드 직후 별도 `--image-tag` 없이 `./rclaw launch <robot> <env> --docker`를 실행하면 방금 빌드한 로컬 이미지를 사용합니다. 이미지를 특정하려면 `--image-tag <hash>`로 고정하세요.
-- arm64는 QEMU 에뮬레이션이라 colcon/cmake 컴파일 + onnxruntime(aarch64) 다운로드까지 있어 AMD64보다 몇 배 오래 걸립니다. 정상이니 기다리세요.
+- arm64는 QEMU 에뮬레이션이라 colcon/cmake 컴파일까지 있어 AMD64보다 몇 배 오래 걸립니다. 정상이니 기다리세요. ONNX Runtime C++ SDK는 `vendor/onnxruntime-linux-<arch>-1.19.2.tgz` 사본을 사용하므로 내려받기 시간은 들지 않습니다.
+- ONNX Runtime C++ SDK는 업스트림 릴리스 자산이 사라져도 빌드가 막히지 않도록 `vendor/`에 x64·aarch64 사본을 함께 보관합니다. Dockerfile 4단계는 사본이 있으면 그것을 쓰고, 없을 때만 GitHub에서 받습니다(`Using vendored ONNX Runtime ...` 로그로 확인). 사본 복구 절차는 `docs/BUILD_TROUBLESHOOTING.md`를 참고합니다.
 
 ### 버전 배너 (실행 이미지 식별)
 

@@ -61,18 +61,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 4. ONNX Runtime (amd64: x64 / arm64: aarch64)
+# vendor/에 사본이 있으면 네트워크 없이 사용하고, 없을 때만 GitHub 릴리스에서 받는다.
+# 업스트림 릴리스 자산이 사라지면(예: v1.19.2 자산 404) 빌드가 통째로 막히므로
+# 두 아키텍처 사본을 vendor/에 보관한다. 사본이 있으면 아래 wget 경로는 실행되지 않는다.
 ARG TARGETARCH
 ARG ONNXRUNTIME_VERSION=1.19.2
+COPY vendor/ /tmp/ort_vendor/
 RUN case "${TARGETARCH}" in \
       amd64) ORT_ARCH="x64" ;; \
       arm64) ORT_ARCH="aarch64" ;; \
       *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
     esac && \
-    wget -q \
-    "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" \
-    -O /tmp/ort.tgz && \
-    tar -xzf /tmp/ort.tgz -C /usr/local && \
-    rm /tmp/ort.tgz && \
+    ORT_TGZ="/tmp/ort_vendor/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" && \
+    if [ -f "${ORT_TGZ}" ]; then \
+      echo "Using vendored ONNX Runtime ${ONNXRUNTIME_VERSION} (${ORT_ARCH})"; \
+    else \
+      echo "No vendored ONNX Runtime for ${ORT_ARCH}; downloading from GitHub"; \
+      wget -q \
+        "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" \
+        -O "${ORT_TGZ}" ; \
+    fi && \
+    tar -xzf "${ORT_TGZ}" -C /usr/local && \
+    rm -rf /tmp/ort_vendor && \
     echo "/usr/local/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib" \
          > /etc/ld.so.conf.d/onnxruntime.conf && \
     ldconfig
@@ -149,6 +159,7 @@ COPY src/robo_claw_dashboard/package.xml src/robo_claw_dashboard/package.xml
 COPY src/robo_claw_discovery/package.xml src/robo_claw_discovery/package.xml
 COPY src/robo_claw_grpc/package.xml src/robo_claw_grpc/package.xml
 COPY src/robo_claw_msgs/package.xml src/robo_claw_msgs/package.xml
+COPY src/robo_claw_sim/package.xml src/robo_claw_sim/package.xml
 COPY src/robo_claw_vision/package.xml src/robo_claw_vision/package.xml
 COPY src/task_manager_msgs/package.xml src/task_manager_msgs/package.xml
 COPY src/tofu_msgs/package.xml src/tofu_msgs/package.xml

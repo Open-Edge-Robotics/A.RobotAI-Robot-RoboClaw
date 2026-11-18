@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-18 — ONNX Runtime 다운로드 404 대응, vendor 사본 보관
+
+- **Fixed**: `docker build` 4단계(ONNX Runtime C++ SDK)가 `wget exit 8`(HTTP 404)로 실패하던 문제를 수정했습니다. 업스트림 `microsoft/onnxruntime` 릴리스 자산이 사라져 v1.19.2·v1.23.2의 x64/aarch64 tarball이 모두 404였습니다(DNS·프록시 문제 아님, 같은 시점 다른 GitHub 릴리스 자산은 200).
+- **Added**: `vendor/onnxruntime-linux-x64-1.19.2.tgz`, `vendor/onnxruntime-linux-aarch64-1.19.2.tgz`를 저장소에 보관합니다. Dockerfile 4단계와 `scripts/setup_deps.sh`는 사본이 있으면 네트워크 없이 사용하고, 없을 때만 GitHub에서 받습니다.
+- **Changed**: `docs/BUILD_TROUBLESHOOTING.md`에 다운로드 실패 진단·복구 절차(기존 이미지에서 SDK 추출, vendor 배치)를 추가하고, `docs/DOCKER_GUIDE.md`의 arm64 빌드 소요 설명을 사본 사용 기준으로 수정했습니다.
+- **Fixed**: 7단계 rosdep 사전 COPY 목록에서 빠져 있던 `src/robo_claw_sim/package.xml`을 추가했습니다. 그동안 이 단계는 ONNX 단계 실패로 가려져 있었고, ONNX를 고치자 `robo_claw_bringup: Cannot locate rosdep definition for [robo_claw_sim]` 로 드러났습니다.
+- **검증**: `former0045`(aarch64)에서 `task docker-build-native` 통과(로그 `ERROR` 0건, 이미지 `robo-claw:9a29e8a`/`:latest` 2.47GB 생성). 4단계 로그는 `Using vendored ONNX Runtime 1.19.2 (aarch64)` 이고, `install/robo_claw_vision/lib/robo_claw_vision/object_detector_node`의 `ldd` 결과가 `/usr/local/onnxruntime-linux-aarch64-1.19.2/lib/libonnxruntime.so.1` 을 가리킵니다.
+
 ## 2026-11-17 — 시뮬레이터 내비게이션 서버 토글, Nav2 병행 절차 문서화
 
 - **Added**: 런치 인자 `serve_navigation`(기본 true)을 추가해 시뮬레이터 내장 내비게이션 액션 서버를 끌 수 있게 했습니다. 실제 Nav2를 붙일 때 액션 서버 이름 충돌(`/navigate_to_pose` 중복)을 피하기 위한 것입니다.
