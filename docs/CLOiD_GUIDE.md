@@ -229,12 +229,14 @@ robo_claw_agent_node:
 - 관측 패널에는 `demo_signal` 단계로 결과가 표시됩니다.
 - 수신 측이 줄 단위로 파싱한다면 `cloid_demo_signal_terminator: "lf"`로 `\n`을 붙입니다.
 
-로컬 시연 개체(`tidy_home` → `demo_motion_executed`)는 사방 회전 관찰을 하지 않습니다.
-장소에 도착하면 정면 관찰 1회로 대상만 확인하고 곧바로 시연 모션을 요청하므로,
-`describe_surroundings`의 `capture_4way`(정면/우/후/좌 90° 회전·촬영)는 시연
-allowlist가 없는 일반 정리 로봇에서만 쓰입니다. 시연 실행 결과는 실패가 아니라
-처리 완료(`finished`)로 보고하며, 관측 문구로 "실제 물체 정리 완료는 확인되지
-않았습니다"를 함께 남깁니다.
+로컬 시연 개체(`tidy_home` → `demo_motion_executed`)는 사방 회전 관찰과 정리 대상
+확인을 모두 건너뜁니다. 장소에 도착하면 검토된 allowlist 모션을 골라 곧바로 실행을
+요청하고 cue 를 1회 보냅니다(관측 단계 `demo_motion`). 사방 관찰
+(`describe_surroundings`의 `capture_4way`: 정면/우/후/좌 90° 회전·촬영)과
+`needs_clarification`/`no_target` 판정은 시연 allowlist가 없는 일반 정리 로봇에만
+적용됩니다. 모션 목록을 확인할 수 없거나 allowlist 에 실행 가능한 모션이 없으면
+실행하지 않습니다(fail closed). 시연 실행 결과는 실패가 아니라 처리 완료(`finished`)로
+보고하며, 관측 문구로 "실제 물체 정리 완료는 확인되지 않았습니다"를 함께 남깁니다.
 
 
 ## 포장용 최소 부피 자세

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import threading
 import time
 from typing import Any
@@ -25,6 +26,7 @@ from .cleanup.observation import (
 )
 from .cleanup.signal import emit_demo_signal
 from .cleanup_policy import (
+    _CLOID_INDICATOR_MOTIONS,
     _cleanup_plan_has_complete_placement,
     _cleanup_target_categories,
     _has_ambiguous_cleanup_indication,
@@ -33,6 +35,7 @@ from .cleanup_policy import (
     _resolve_cleanup_plan_destinations,
     _safe_cleanup_disposal_targets,
     _safe_cleanup_storage_targets,
+    _select_cleanup_demo_motion,
     _select_cloid_indicator_motion,
 )
 from .cleanup_run_metrics import new_run_id, record_cleanup_run
@@ -195,6 +198,7 @@ class TidyHomeSkill(BaseSkill):
     def __init__(self) -> None:
         super().__init__()
         self._previous_indicator_motion_id: int | None = None
+        self._previous_demo_motion_id: int | None = None
         self._places_truncated = False
         self._place_limit = 0
         # 현재 실행에서 Maestro에 보고할 동료 작업(fleet_handoff.py)과 마지막 실행 결과.
@@ -557,6 +561,14 @@ class TidyHomeSkill(BaseSkill):
                     )
                     continue
 
+                if self._local_demo_runs_motion_only():
+                    # 시연 개체: 사방 관찰·대상 확인 없이 검토된 모션을 바로 요청한다.
+                    demo_started = time.monotonic()
+                    demo_status = self._run_local_demo_motion(place_name, observer)
+                    self._add_phase_ms(phase_ms, "demo_motion", time.monotonic() - demo_started)
+                    results.append({"place": place_name, "status": demo_status})
+                    continue
+
                 _observe_phase(
                     observer,
                     "observe",
@@ -822,26 +834,34 @@ class TidyHomeSkill(BaseSkill):
 
         return visit_place(self.node, place_name)
 
-    def _local_demo_runs_motion_only(self) -> bool:
-        """로컬 시연(cleanup_demo)만 설정된 개체인지 판정한다.
-
-        시연 개체는 조작 계획 대신 검토된 고정 모션만 실행하므로, 사방 회전 관찰로
-        시간을 쓰지 않고 정면 관찰 한 번으로 대상만 확인한 뒤 바로 모션을 요청한다.
-        시연 allowlist가 없는 일반 정리 로봇은 기존 4방향 관찰을 유지한다.
-        """
+    def _demo_motion_ids(self) -> list[int]:
+        """검토된 로컬 시연 모션 allowlist(없으면 빈 목록)."""
         node = getattr(self, "node", None)
         if node is None:
-            return False
+            return []
         try:
             raw = node.get_parameter("cloid_cleanup_demo_motion_ids_json").value
             motion_ids = json.loads(str(raw))
-        except Exception:  # noqa: BLE001 - 미선언 배포는 기존 동작 유지
+        except Exception:  # noqa: BLE001 - 미선언 배포는 시연 비활성
+            return []
+        if not isinstance(motion_ids, list):
+            return []
+        return [
+            item
+            for item in motion_ids
+            if isinstance(item, int) and not isinstance(item, bool) and item > 0
+        ]
+
+    def _local_demo_runs_motion_only(self) -> bool:
+        """로컬 시연(cleanup_demo)만 설정된 개체인지 판정한다.
+
+        시연 개체는 조작 계획 대신 검토된 고정 모션만 실행한다. 이런 개체에서는
+        사방 회전 관찰과 정리 대상 확인을 건너뛰고, 장소 도착 직후 시연 모션을 바로
+        요청한다. allowlist가 없는 일반 정리 로봇은 기존 관찰·확인 절차를 유지한다.
+        """
+        if not self._demo_motion_ids():
             return False
-        if not isinstance(motion_ids, list) or not any(
-            isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in motion_ids
-        ):
-            return False
-        skills = getattr(node, "_skills", None)
+        skills = getattr(getattr(self, "node", None), "_skills", None)
         try:
             return bool(
                 skills is not None
@@ -851,49 +871,124 @@ class TidyHomeSkill(BaseSkill):
         except Exception:  # noqa: BLE001 - 스킬 조회 실패는 기존 동작 유지
             return False
 
-    def _single_view_analysis(self, place_name: str, observation: dict[str, Any]) -> dict[str, Any]:
-        """정면 관찰 한 번의 결과를 다방향 관찰과 같은 스키마로 돌려준다."""
-        scene = str(observation.get("scene_description") or "").strip()
-        detected = observation.get("detected_objects")
-        objects = list(detected) if isinstance(detected, (list, tuple)) else []
-        if not scene and not objects:
-            return {
-                "success": False,
-                "failure_reason": "surroundings_observation_failed",
-                "message": str(
-                    observation.get("message") or "정면 관찰에서 장면을 확인하지 못했습니다."
-                ),
-                "analysis": "",
-                "partial": True,
-                "failed_directions": ["정면"],
-                "cancelled": bool(observation.get("cancelled")),
-            }
-        analysis = f"'{place_name}' 정면 관찰 결과: {scene}".strip()
-        return {
-            "success": True,
-            "message": str(observation.get("message") or "정면 관찰을 완료했습니다."),
-            "analysis": analysis,
-            "detected_objects": objects,
-            "partial": False,
-            "failed_directions": [],
-            "successful_directions": ["정면"],
-            # 회전하지 않으므로 시작 방향이 그대로 유지된다.
-            "return_to_start_success": True,
-            "orientation_restored": True,
-            "cancelled": bool(observation.get("cancelled")),
-            "capture_4way": False,
-        }
+    def _run_local_demo_motion(self, place_name: str, observer: Any) -> str:
+        """사방 관찰·대상 확인 없이 검토된 시연 모션을 바로 요청한다.
+
+        시연 개체의 사방 회전 관찰은 시간만 쓰고 결과를 바꾸지 않으므로, 장소 도착
+        직후 allowlist 모션을 골라 실행하고 cue 를 1회 보낸다. 모션 목록을 확인할 수
+        없거나 실행 가능한 allowlist 모션이 없으면 실행하지 않는다(fail closed).
+        """
+        skills = getattr(self.node, "_skills", None)
+        allowed_ids = self._demo_motion_ids()
+        if skills is None or not allowed_ids:
+            _observe_phase(
+                observer,
+                "demo_motion",
+                "검토된 시연 모션이 설정되지 않아 실행하지 않았습니다.",
+                place=place_name,
+                observed="blocked",
+                failure_reason="no_approved_cleanup_demo_motion",
+            )
+            return "no_approved_cleanup_demo_motion"
+
+        available: list[dict[str, Any]] = []
+        try:
+            catalog = skills.execute("list_cloid_motions", {"timeout_sec": 3.0}, timeout_sec=5.0)
+        except Exception:  # noqa: BLE001 - 목록 조회 실패는 allowlist fallback 으로 처리
+            catalog = None
+        if (
+            catalog is not None
+            and getattr(catalog, "success", False) is True
+            and isinstance(getattr(catalog, "result_data", None), dict)
+            and isinstance(catalog.result_data.get("motions"), list)
+        ):
+            available = catalog.result_data["motions"]
+
+        if not available:
+            available = [
+                {
+                    "motion_id": motion_id,
+                    "motion_name": _CLOID_INDICATOR_MOTIONS.get(motion_id, f"motion_{motion_id}"),
+                }
+                for motion_id in allowed_ids
+            ]
+
+        motion = _select_cleanup_demo_motion(
+            available,
+            allowed_ids,
+            rng=random.Random(),
+            previous_motion_id=self._previous_demo_motion_id,
+        )
+        if motion is None:
+            _observe_phase(
+                observer,
+                "demo_motion",
+                "현재 모션 목록에 설정된 안전한 시연 모션이 없습니다.",
+                place=place_name,
+                observed="blocked",
+                failure_reason="no_approved_cleanup_demo_motion",
+            )
+            return "no_approved_cleanup_demo_motion"
+
+        _observe_phase(
+            observer,
+            "demo_motion",
+            (
+                f"'{place_name}'에서 사방 관찰 없이 시연 모션 "
+                f"'{motion['motion_name']}' 실행을 요청합니다."
+            ),
+            place=place_name,
+            observed="requested",
+        )
+        try:
+            result = skills.execute(
+                "execute_cloid_motion",
+                {
+                    "motion_name": motion["motion_name"],
+                    "motion_id": motion["motion_id"],
+                    "confirm": True,
+                },
+                timeout_sec=60.0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[TidyHome] local demo motion failed for %s", place_name)
+            _observe_phase(
+                observer,
+                "demo_motion",
+                f"시연 모션 실행 중 오류가 발생했습니다: {exc}",
+                place=place_name,
+                observed="failed",
+                failure_reason="execution_failed",
+            )
+            return "execution_failed"
+
+        if not getattr(result, "success", False):
+            _observe_phase(
+                observer,
+                "demo_motion",
+                f"시연 모션 실행이 거부되거나 실패했습니다: {getattr(result, 'message', '')}".strip(),
+                place=place_name,
+                observed="failed",
+                failure_reason="execution_failed",
+            )
+            return "execution_failed"
+
+        self._previous_demo_motion_id = motion["motion_id"]
+        emit_demo_signal(self.node, observer, place=place_name, logger_obj=logger)
+        self.send_user_message(
+            f"'{place_name}'에서 시연 모션 '{motion['motion_name']}' 실행을 요청했습니다. "
+            "실제 물체 정리와 모션 완료는 확인되지 않았습니다."
+        )
+        return "demo_motion_executed"
 
     def _analyze_current_scene(self, place_name: str) -> dict[str, Any]:
-        # 로컬 시연 개체는 사방 회전 관찰(4방향 회전·촬영)을 생략하고 정면만 본다.
-        capture_4way = not self._local_demo_runs_motion_only()
         try:
             observer = _create_surroundings_observer(_AUTONOMOUS_ACTIVE)
             observer.set_node(self.node)
             observation = observer.execute(
                 {
-                    "capture_4way": capture_4way,
-                    "return_to_start": capture_4way,
+                    "capture_4way": True,
+                    "return_to_start": True,
                     "observation_prompt": _CLEANUP_OBSERVATION_PROMPT,
                 }
             )
@@ -912,9 +1007,6 @@ class TidyHomeSkill(BaseSkill):
                 "message": "주변 관찰 스킬에서 유효한 결과를 받지 못했습니다.",
                 "analysis": "",
             }
-
-        if not capture_4way:
-            return self._single_view_analysis(place_name, observation)
 
         per_direction = observation.get("per_direction", {})
         per_direction_meta = observation.get("per_direction_meta", {})

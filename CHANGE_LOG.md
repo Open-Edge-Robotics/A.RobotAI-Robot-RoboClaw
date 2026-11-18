@@ -10,11 +10,11 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
 - **Added**: 시연 모션 명령이 실제로 발행된 직후 설정된 외부 장비로 UTF-8 바이트를 **1회** 전송합니다(`cloid_demo_signal_*` 파라미터). `cleanup_demo`(모션 요청 직후)와 `tidy_home` 로컬 시연(`demo_motion_executed` 직후)이 같은 cue 를 쓰며, 목적지와 payload 는 로봇 프로필 값만 사용하고 LLM/요청 메시지로 바꿀 수 없습니다. 기본값은 **활성**이며 목적지는 시연 장비 `192.168.50.86:5005`, payload 는 `shoe pick`(개행 없음)입니다. `cloid_config.yaml` 에 같은 값을 명시해 두었고, 끄려면 `cloid_demo_signal_enabled: false` 로 둡니다.
 - **Changed**: cue 전송·관측·로그 처리를 `skills/cleanup/signal.py`(`emit_demo_signal`)로 모아 두 경로가 같은 형식을 쓰도록 했습니다.
 - **Fixed**: `tidy_home`의 `demo_motion_executed`가 `_PROCESSED_PLACE_STATUSES`에 없어 시연 실행이 `status=failed`로 표시되던 문제를 수정했습니다(처리 완료로 보고하고 "실제 물체 정리 완료 아님" 문구 유지).
-- **Changed**: 시연 allowlist가 설정된 로컬 시연 개체는 `describe_surroundings`의 사방 회전 관찰(`capture_4way`)을 생략하고 정면 관찰 1회 후 바로 시연 모션을 요청합니다. 일반 정리 로봇은 기존 4방향 관찰을 유지합니다.
+- **Changed**: 시연 allowlist와 `cleanup_demo`·`execute_cloid_motion` 스킬을 가진 로컬 시연 개체는 **장소 도착 직후 사방 회전 관찰과 정리 대상 확인을 건너뛰고 검토된 시연 모션을 바로 요청**합니다(관측 단계 `demo_motion`, cue 1회). 모션 목록·allowlist 에 실행 가능한 모션이 없으면 실행하지 않습니다. 일반 정리 로봇은 기존 4방향 관찰과 `needs_clarification`/`no_target` 판정을 유지합니다.
 - **Added**: `skills/demo_signal/`(`protocol.py` 순수 설정·바이트 계약, `sender.py` 소켓 어댑터)를 추가했습니다. TCP 기본·UDP 선택, 개행은 `none`/`lf`/`crlf` 로만 붙이며 기본은 개행 없음입니다.
 - **Changed**: `cleanup_demo` 결과에 `demo_signal`(`status`/`reason`/`bytes`/`protocol`/`host`/`port`)을 추가하고, 관측 패널에 `demo_signal` 단계를 기록합니다. 전송 실패·타임아웃은 시연 결과(`motion_requested`)를 바꾸지 않으며 재시도하지 않습니다. payload 원문과 서버 응답은 로그·결과에 남기지 않습니다.
 - **Changed**: `cloid_config.yaml` 에 파라미터를 선언하고 주석 예시(`192.168.50.86:5005`, `shoe pick`, 개행 없음)를 추가했습니다. `docs/CLOiD_GUIDE.md`·`docs/SKILLS.md`·`docs/CLEANUP_EXPERIMENT_RUNBOOK.md` 에 설정·동작 계약과 도달성 점검 절차를 반영했습니다.
-- **검증**: `test_demo_signal_protocol.py` 34건, `test_demo_signal_sender.py` 6건(loopback TCP/UDP 실제 바이트), `test_cleanup_demo_signal.py` 5건, `test_tidy_home_demo_signal.py` 6건(cue 2건·관찰 생략 3건·상태 매핑 1건), `test_demo_signal_sender.py` 기본값 활성/명시적 비활성 2건, 기존 `test_cleanup_demo_skill.py`·`test_tidy_home_*`·`test_cloid_motion_skill.py`·bringup 113건 통과. 실기 cue 수신과 로봇 컨테이너 도달성은 미검증입니다.
+- **검증**: `test_demo_signal_protocol.py` 34건, `test_demo_signal_sender.py` 6건(loopback TCP/UDP 실제 바이트), `test_cleanup_demo_signal.py` 5건, `test_tidy_home_demo_signal.py` 8건(즉시 실행 3건·게이팅 1건·cue 2건·4방향 유지 1건·상태 매핑 1건), `test_demo_signal_sender.py` 기본값 활성/명시적 비활성 2건, 기존 `test_cleanup_demo_skill.py`·`test_tidy_home_*`·`test_cloid_motion_skill.py`·bringup 113건 통과. 실기 cue 수신과 로봇 컨테이너 도달성은 미검증입니다.
 
 ## 2026-11-18 — 지도 목표 진행률이 도착 후에도 갱신되지 않던 문제 수정
 
