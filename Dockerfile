@@ -163,6 +163,7 @@ COPY src/robo_claw_sim/package.xml src/robo_claw_sim/package.xml
 COPY src/robo_claw_vision/package.xml src/robo_claw_vision/package.xml
 COPY src/task_manager_msgs/package.xml src/task_manager_msgs/package.xml
 COPY src/tofu_msgs/package.xml src/tofu_msgs/package.xml
+COPY src/lio_fr_system_msgs/package.xml src/lio_fr_system_msgs/package.xml
 
 # 8. ROS 의존성 설치 (rosdep)
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \

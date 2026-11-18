@@ -7,7 +7,7 @@ rclpy / ROS 메시지 import 금지. backend protocol 을 통해 실제 ROS 어�
 import logging
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -26,10 +26,12 @@ from ..domain.localization import (
     unavailable_pose,
     validate_initial_pose,
 )
+from ..domain.localization_mode import MODE_MAPPING
 from ..domain.logs import format_log_jsonl, format_log_text, unavailable_logs
 from ..domain.map_goal import agent_identity_from_state_json
 from ..domain.peers import normalize_peers
 from ..domain.validation import validate_chat_message
+from .localization_switch import LocalizationSwitchService
 from .map_goal import MapGoalService
 from .scenario_runner import ScenarioConfig, ScenarioRunnerService
 
@@ -71,6 +73,12 @@ class DashboardBackend(Protocol):
 
     def set_initial_pose(self, pose: dict[str, Any]) -> dict[str, Any]: ...
 
+    def latest_lio_status(self) -> dict[str, Any] | None: ...
+
+    def localization_control_available(self) -> dict[str, Any]: ...
+
+    def switch_localization_map(self, plan: dict[str, Any]) -> dict[str, Any]: ...
+
     def describe_config(self) -> dict[str, Any] | None: ...
 
     def logs(
@@ -94,6 +102,11 @@ class DashboardService:
         monotonic: Callable[[], float] | None = None,
         wall_clock: Callable[[], float] | None = None,
         map_goals: MapGoalService | None = None,
+        localization: LocalizationSwitchService | None = None,
+        initialpose_covariance: float = INITIAL_POSE_COVARIANCE,
+        localization_map_names: Sequence[str] = (),
+        localization_map_root: str = "/ws/maps",
+        switch_mode_timeout_sec: float = 200.0,
     ) -> None:
         self._backend = backend
         self._scenario_runner = scenario_runner or ScenarioRunnerService(backend, scenario_config)
@@ -107,6 +120,15 @@ class DashboardService:
             agent_identity=self._agent_identity,
             wall_clock=wall_clock,
         )
+        # 지도 선택/위치추정 모드 전환(CLOiD /switch_mode). 맵 이름 목록은 노드가 주입한다.
+        self._localization = localization or LocalizationSwitchService(
+            backend,
+            map_names=localization_map_names,
+            map_root=localization_map_root,
+            timeout_sec=switch_mode_timeout_sec,
+            holds_lease=self._map_goals.holds_lease,
+        )
+        self._initialpose_covariance = self._validate_covariance(initialpose_covariance)
         self._cooperation_cached_at = 0.0
         #: ThreadingHTTPServer 는 요청마다 스레드로 status/cooperation 을 동시에 부른다.
         #: (payload, cached_at) 을 한 쌍으로 읽고 써서 서로 다른 스냅샷이 섞이지 않게 한다.
@@ -209,8 +231,17 @@ class DashboardService:
         return self._map_goals.submit(payload)
 
     def shutdown(self) -> None:
-        """진행 중인 지도 목표 워커를 정리한다."""
+        """진행 중인 지도 목표/지도 전환 워커를 정리한다."""
         self._map_goals.shutdown()
+        self._localization.shutdown()
+
+    def localization_snapshot(self) -> dict[str, Any]:
+        """LIO 상태·지도 목록·제어 가능 여부·마지막 지도 전환 기록을 반환한다."""
+        return self._localization.snapshot()
+
+    def switch_localization_map(self, payload: Any) -> dict[str, Any]:
+        """지도 선택/위치추정 모드 전환을 접수한다. HTTP 코드가 담긴 dict 를 돌려준다."""
+        return self._localization.submit(payload)
 
     def logs_snapshot(
         self,
@@ -269,6 +300,11 @@ class DashboardService:
                     "이동이 끝난 뒤 초기 위치를 변경하세요."
                 ),
             }
+        mode_error = self._initial_pose_mode_error()
+        if mode_error:
+            # CLOiD LIO 는 localization 모드에서만 /initialpose 를 소비한다.
+            # 매핑 중 발행은 조용히 무시되므로 발행 전에 거부한다.
+            return {"success": False, "error": mode_error}
         map_snapshot = self._latest_map()
         ok, error, pose = validate_initial_pose(payload, map_meta=map_snapshot)
         if not ok:
@@ -285,7 +321,7 @@ class DashboardService:
             x=pose["x"],
             y=pose["y"],
             yaw=pose["yaw"],
-            covariance=INITIAL_POSE_COVARIANCE,
+            covariance=self._initialpose_covariance,
             frame_id=pose["frame_id"],
         )
         try:
@@ -308,6 +344,39 @@ class DashboardService:
         return payload_out
 
     # ---- 내부 헬퍼 ---------------------------------------------------------
+    @staticmethod
+    def _validate_covariance(value: Any) -> float:
+        """초기 위치 공분산 파라미터를 검증한다(잘못된 값은 기본값 유지)."""
+        try:
+            covariance = float(value)
+        except (TypeError, ValueError):
+            return INITIAL_POSE_COVARIANCE
+        if not covariance > 0.0 or covariance != covariance or covariance == float("inf"):
+            logger.warning(
+                "initialpose_covariance 값이 올바르지 않아 기본값을 사용합니다: %s", value
+            )
+            return INITIAL_POSE_COVARIANCE
+        return covariance
+
+    def _initial_pose_mode_error(self) -> str | None:
+        """매핑 모드에서 초기 위치를 설정하려 할 때의 거부 사유를 만든다."""
+        fetch = getattr(self._backend, "latest_lio_status", None)
+        if fetch is None:
+            return None
+        try:
+            status = fetch()
+        except Exception:  # noqa: BLE001 - 상태 조회 실패로 초기 위치 기능을 막지 않는다
+            logger.debug("latest_lio_status failed", exc_info=True)
+            return None
+        if not isinstance(status, dict):
+            return None
+        if str(status.get("mode") or "") != MODE_MAPPING:
+            return None
+        return (
+            "로봇이 매핑(SLAM) 모드입니다. 지도를 적용해 위치추정 모드로 전환한 뒤 "
+            "초기 위치를 설정하세요."
+        )
+
     def _store_cooperation(self, state: Any) -> dict[str, Any]:
         raw = state.get("cooperation") if isinstance(state, dict) else None
         journal = normalize_cooperation(raw)

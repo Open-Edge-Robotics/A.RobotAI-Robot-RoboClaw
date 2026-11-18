@@ -16,6 +16,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from .adapters.http_handlers import make_handler
+from .adapters.param_defaults import discover_map_names
 from .adapters.ros_adapter import RosBackend
 from .adapters.security import DashboardHttpSecurityPolicy
 from .application.scenario_runner import (
@@ -25,6 +26,8 @@ from .application.scenario_runner import (
 )
 from .application.service import DashboardService
 from .domain.exposure import ERROR, exposure_findings, is_loopback_host, parse_allowed_cidrs
+from .domain.localization import INITIAL_POSE_COVARIANCE
+from .domain.localization_mode import parse_map_names
 
 DEFAULT_BLOCKED_SKILLS = [
     "delete_file",
@@ -91,6 +94,13 @@ class DashboardNode(Node):
         self._declare("map_frame", "map")
         self._declare("base_frame", "base_link")
         self._declare("initialpose_topic", "/initialpose")
+        # CLOiD LIO: 상태 토픽/모드 전환 서비스/맵 목록. 다른 로봇에서는 비워 두면 기능만 꺼진다.
+        self._declare("lio_status_topic", "/lio_node/status")
+        self._declare("switch_mode_service", "/switch_mode")
+        self._declare("localization_map_dir", "/ws/maps")
+        self._declare("localization_map_names_json", "[]")
+        self._declare("switch_mode_timeout_sec", 200.0)
+        self._declare("initialpose_covariance", INITIAL_POSE_COVARIANCE)
         self._declare("config_query_timeout_sec", 2.0)
         # 로그 패널: /rosout 구독 버퍼(최근 N 줄)와 발행 토픽.
         self._declare("log_topic", "/rosout")
@@ -125,6 +135,16 @@ class DashboardNode(Node):
         map_frame = str(self.get_parameter("map_frame").value or "map")
         base_frame = str(self.get_parameter("base_frame").value or "base_link")
         initialpose_topic = str(self.get_parameter("initialpose_topic").value or "/initialpose")
+        lio_status_topic = str(self.get_parameter("lio_status_topic").value or "")
+        switch_mode_service = str(self.get_parameter("switch_mode_service").value or "/switch_mode")
+        switch_mode_timeout = _as_float(self.get_parameter("switch_mode_timeout_sec").value, 200.0)
+        initialpose_covariance = _as_float(
+            self.get_parameter("initialpose_covariance").value, INITIAL_POSE_COVARIANCE
+        )
+        map_root = str(self.get_parameter("localization_map_dir").value or "/ws/maps")
+        map_names, map_source = self._resolve_map_names(
+            str(self.get_parameter("localization_map_names_json").value or ""), map_root
+        )
         config_timeout = _as_float(self.get_parameter("config_query_timeout_sec").value, 2.0)
         log_topic = str(self.get_parameter("log_topic").value or "/rosout")
         log_buffer_size = _as_int(self.get_parameter("log_buffer_size").value, 500)
@@ -226,8 +246,18 @@ class DashboardNode(Node):
             declared_defaults=self._declared_defaults,
             log_topic=log_topic,
             log_buffer_size=log_buffer_size,
+            lio_status_topic=lio_status_topic,
+            switch_mode_service=switch_mode_service,
+            switch_mode_timeout_sec=switch_mode_timeout,
         )
-        self._service = DashboardService(backend, scenario_config=scenario_cfg)
+        self._service = DashboardService(
+            backend,
+            scenario_config=scenario_cfg,
+            initialpose_covariance=initialpose_covariance,
+            localization_map_names=map_names,
+            localization_map_root=map_root,
+            switch_mode_timeout_sec=switch_mode_timeout,
+        )
         handler = make_handler(self._service, static_root, security)
 
         self._http_server = ThreadingHTTPServer((host, port), handler)
@@ -239,6 +269,12 @@ class DashboardNode(Node):
         )
         self.get_logger().info(
             f"[Dashboard] log topic={log_topic or '(disabled)'} buffer={backend.log_capacity}"
+        )
+        self.get_logger().info(
+            f"[Dashboard] localization status={lio_status_topic or '(disabled)'} "
+            f"switch_mode={switch_mode_service or '(disabled)'} "
+            f"maps={len(map_names)}({map_source}) root={map_root} "
+            f"interface={'ok' if backend.switch_mode_supported else 'missing(lio_fr_system_msgs)'}"
         )
         if cidr_error:
             self.get_logger().error(f"[Dashboard] {cidr_error}")
@@ -253,6 +289,16 @@ class DashboardNode(Node):
         """파라미터를 선언하고 기본값을 기록한다(설정 패널의 기본값 표시용)."""
         self._declared_defaults[name] = default
         self.declare_parameter(name, default)
+
+    def _resolve_map_names(self, raw: str, map_root: str) -> tuple[list[str], str]:
+        """맵 목록 파라미터를 우선 사용하고, 비었으면 지도 디렉터리를 읽는다."""
+        names = parse_map_names(raw)
+        if names:
+            return names, "config"
+        discovered = discover_map_names(map_root)
+        if discovered:
+            return discovered, "directory"
+        return [], "none"
 
     def _resolve_contract_file(self) -> str:
         """계약 기본값 파일(runtime-contract.json) 경로를 찾는다(없으면 빈 문자열)."""

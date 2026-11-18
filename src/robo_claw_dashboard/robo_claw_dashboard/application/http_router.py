@@ -78,11 +78,21 @@ def _handle_chat(body: Any, service: Any) -> HttpResponse:
 
 
 def _handle_initial_pose(body: Any, service: Any) -> HttpResponse:
-    """POST /api/initial_pose - 좌표를 검증하고 AMCL 초기 위치를 설정한다."""
+    """POST /api/initial_pose - 좌표를 검증하고 초기 위치(AMCL/LIO 시드)를 설정한다."""
     ok, payload = _parse_body(body)
     if not ok:
         return _json({"error": "잘못된 JSON"}, 400)
     return _json(service.set_initial_pose(payload))
+
+
+def _handle_localization_switch(body: Any, service: Any) -> HttpResponse:
+    """POST /api/localization/switch - 지도 선택/위치추정 모드 전환을 접수한다(202)."""
+    ok, payload = _parse_body(body)
+    if not ok:
+        return _json({"error": "잘못된 JSON"}, 400)
+    res = service.switch_localization_map(payload)
+    status_code = int(res.pop("status_code", 202 if res.get("success") else 400))
+    return _json(res, status=status_code)
 
 
 def _split_query(request_path: str) -> tuple[str, dict[str, str]]:
@@ -222,6 +232,8 @@ def route_http(
         return _json({"status": "ok", "dashboard": "robo_claw_dashboard"})
     if method == "GET" and path == "/api/map":
         return _json(service.map_snapshot())
+    if method == "GET" and path == "/api/localization":
+        return _json(service.localization_snapshot())
     if method == "GET" and path == "/api/config":
         return _json(service.config_snapshot())
     if method == "GET" and path == "/api/logs":
@@ -236,6 +248,8 @@ def route_http(
         return _handle_chat(body, service)
     if method == "POST" and path == "/api/initial_pose":
         return _handle_initial_pose(body, service)
+    if method == "POST" and path == "/api/localization/switch":
+        return _handle_localization_switch(body, service)
 
     # 시나리오 테스트 엔드포인트
     if method == "GET" and path == "/api/scenarios":

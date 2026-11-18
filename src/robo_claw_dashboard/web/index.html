@@ -65,6 +65,24 @@
                 <span><b>지도</b> <span id="map-info">–</span></span>
               </div>
             </div>
+            <div class="rc-localization-panel mt-2" role="group" aria-label="CLOiD 지도 선택 및 위치추정 시작">
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <label class="form-label small mb-0" for="map-select">지도</label>
+                <select id="map-select" class="form-select form-select-sm rc-map-select" aria-describedby="localization-help" disabled>
+                  <option value="">지도 대기 중…</option>
+                </select>
+                <div class="form-check form-check-inline m-0 rc-map-seed-check">
+                  <input id="map-seed" class="form-check-input" type="checkbox" aria-describedby="localization-help">
+                  <label class="form-check-label small" for="map-seed">현재 위치로 초기 위치 설정</label>
+                </div>
+                <button id="map-apply" class="btn btn-primary btn-sm rc-map-apply" type="button" disabled aria-describedby="localization-help">지도 적용 / 위치추정 시작</button>
+              </div>
+              <div class="mt-1">
+                <span id="localization-status" class="small text-body-secondary" role="status" aria-live="polite">위치추정 상태를 기다리는 중입니다…</span>
+              </div>
+              <div id="localization-result" class="small mt-1" aria-live="polite"></div>
+              <span id="localization-help" class="small text-body-secondary"></span>
+            </div>
             <div class="d-flex flex-wrap align-items-center gap-2 mt-2 rc-goal-bar">
               <button id="goal-clear" class="btn btn-outline-secondary btn-sm" type="button" disabled>선택 취소</button>
               <button id="goal-send" class="btn btn-primary rc-goal-send" type="button" disabled>이동 메시지 보내기</button>
@@ -368,6 +386,7 @@
   <script src="/assets/render_utils.js"></script>
   <script src="/assets/snapshot_view.js"></script>
   <script src="/assets/scenario_view.js"></script>
+  <script src="/assets/localization.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

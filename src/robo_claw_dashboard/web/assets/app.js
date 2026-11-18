@@ -34,6 +34,8 @@
     currentScenario: null,
     customScenarioObj: null,
     scenarioPollTimer: null,
+    localization: null,
+    localizationInFlight: false,
   };
 
   function el(id) {
@@ -103,6 +105,8 @@
     renderPose();
     syncMap(localization.map || { available: false });
     if (state.mapGoal) state.mapGoal.applySnapshot(snap);
+    // 지도 선택 패널은 pose/지도 목록을 같은 스냅샷 주기로 다시 그린다.
+    if (state.localization) state.localization.render();
     // 협동 패널은 같은 스냅샷(state.cooperation)만 소비한다(추가 HTTP/타이머 없음).
     if (state.cooperation) state.cooperation.applyStatus(snap);
   }
@@ -587,6 +591,19 @@
 
   // ---- 공통 --------------------------------------------------------------
 
+  async function refreshLocalization() {
+    if (!state.localization || state.localizationInFlight) return;
+    state.localizationInFlight = true;
+    try {
+      const { ok, data } = await fetchJson("/api/localization", loadTokens().readonly);
+      if (ok && data) state.localization.applySnapshot(data);
+    } catch (_err) {
+      // 폴링 실패는 조용히 무시하고 이전 표시를 유지합니다.
+    } finally {
+      state.localizationInFlight = false;
+    }
+  }
+
   async function refreshStatus(token) {
     const node = el("connection");
     if (state.statusInFlight) return null;
@@ -699,6 +716,17 @@
     if (!window.RcCooperation) return;
     state.cooperation = window.RcCooperation.mount({
       getToken: () => getReadToken(),
+    });
+  }
+
+  function setupLocalization() {
+    if (!window.RcLocalization) return;
+    state.localization = window.RcLocalization.mount({
+      document: document,
+      fetchJson: fetchJson,
+      getControlToken: () => getControlToken(),
+      getPose: () => state.pose,
+      confirm: (message) => window.confirm(message),
     });
   }
 
@@ -1094,6 +1122,7 @@
 
   function schedulePolling(token) {
     state.pollTimer = setTimeout(async () => {
+      await refreshLocalization();
       const nextDelay = await refreshStatus(token);
       state.pollDelay = nextDelay || STATUS_INTERVAL_MS;
       schedulePolling(token);
@@ -1102,6 +1131,7 @@
 
   function startPolling() {
     const tokens = loadTokens();
+    refreshLocalization();
     refreshStatus(tokens.readonly).then((delay) => {
       state.pollDelay = delay || STATUS_INTERVAL_MS;
       schedulePolling(tokens.readonly);
@@ -1118,6 +1148,7 @@
     setupMapInteraction();
     setupLogPanel();
     setupCooperationPanel();
+    setupLocalization();
     setupScenarios();
     // 저장된 서버 설정이 온전하면 첫 로드부터 원격 시나리오를 가져오고,
     // 아니면 내장 기본값을 보여준 뒤 설정 누락 사유를 경고로 안내한다.

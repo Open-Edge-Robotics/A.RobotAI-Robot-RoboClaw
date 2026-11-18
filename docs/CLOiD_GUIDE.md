@@ -133,6 +133,31 @@ frame이 맞지 않으면 지도 기반 판단을 차단합니다.
 발행 주기, `header.frame_id`와 `map_frame`의 일치를 확인합니다. 자세한 설정은
 [지도 설정](CONFIGURATION_GUIDE.md#로봇별-지도-토픽)을 참고합니다.
 
+### 저장된 지도 적용과 위치추정 시작(대시보드)
+
+CLOiD의 위치추정은 LIO(`lio-fr-system`)가 담당합니다. 매핑 모드에서는 현재 매핑 지도가
+`/lio/grid_map`으로 나오고, 저장된 지도를 적용하면 `/switch_mode`가 3D 맵을 읽은 뒤
+`grid_map_node`가 `/load_grid_map`으로 2D 그리드 맵을 다시 latch 합니다. 대시보드는
+이 토픽을 그대로 보므로 **맵이 교체되면 같은 화면에서 새 지도가 표시**됩니다.
+
+대시보드 화면의 `지도` 목록과 `지도 적용 / 위치추정 시작` 버튼, 그리고
+`GET /api/localization`·`POST /api/localization/switch` API가 이 동작을 담당합니다.
+계약과 안전 조건은 [대시보드 문서](DASHBOARD.md#cloid-지도-선택과-위치추정-시작)를 따릅니다.
+
+실기에서 쓰려면 두 가지가 필요합니다.
+
+- 지도 목록 소스: 대시보드 컨테이너에 지도 디렉터리를 마운트하거나(예: 호스트
+  `/home/cloi/data/maps` → 컨테이너 `/ws/maps`) `localization_map_names_json` 에 허용할
+  지도 이름을 지정합니다. 이 저장소의 `cloid_config.yaml` 은
+  `robo_claw_dashboard_node` 섹션에서 `lio_status_topic`·`switch_mode_service`·
+  `localization_map_dir` 을 지정합니다.
+- `src/lio_fr_system_msgs`(upstream `lio_fr_system_msgs` 와 와이어 호환 서브셋)를 함께
+  빌드해야 `/switch_mode`를 호출할 수 있습니다. 없으면 대시보드가 제어 불가 사유를
+  표시하고 요청을 503으로 거부합니다.
+
+`/initialpose`는 **localization 모드에서만** 효력이 있습니다. 대시보드는
+`/lio_node/status`가 `mapping`이면 초기 위치 발행을 거부합니다.
+
 ### 개체별 스킬·소울 가이드 선택
 
 CLOiD 는 같은 `cloid` 프로필을 쓰면서 개체별 개성과 운용 역할이 달라 스킬 가이드와 소울
@@ -168,7 +193,9 @@ CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 
   도달하지 않으므로 베이스 이동·회전은 Nav2 action(`navigate_to_pose`, `spin`)을
   사용합니다.
 - AMCL이 없어 `/amcl_pose` 와 `/reinitialize_global_localization` 이 없습니다
-  (`self_localize` 사용 불가).
+  (`self_localize` 사용 불가). 다만 `/initialpose` 는 `lio_node` 가 재위치추정 시드로
+  구독하므로, 초기 위치 발행(대시보드·`set_initial_pose`)은 localization 모드에서
+  유효합니다.
 - RGB 카메라는 `sensor_msgs/CompressedImage` 만 발행합니다.
 - 팔/hand 제어 백엔드가 아직 없어 `manipulation_enabled=false` 로 기동하며,
   일반 조작 계열 스킬은 실행 단에서 차단됩니다.
@@ -235,13 +262,16 @@ robo_claw_agent_node:
 - 관측 패널에는 `demo_signal` 단계로 결과가 표시됩니다.
 - 수신 측이 줄 단위로 파싱한다면 `cloid_demo_signal_terminator: "lf"`로 `\n`을 붙입니다.
 
-**신발·신발장 시연은 모션 전에 제자리 90° 회전**을 먼저 합니다. 장소/대상 텍스트에
-`신발`, `신발장`, `shoe` 등이 있으면 Nav2 `/spin` 으로 몸을 돌린 뒤 모션을 요청하며,
-회전이 실패하거나 안전 게이트에서 거부되면 모션을 실행하지 않습니다(fail closed,
-사유 `demo_turn_failed`). 각도는 로봇 프로필 `cloid_demo_shoe_turn_deg`(기본 `90.0`,
-음수=반대 방향, `0`=회전 안 함)로 조정합니다. `cleanup_demo`(동료 시연 요청)와
-`tidy_home` 로컬 시연이 같은 규칙을 씁니다. 직접 `/cmd_vel`(Twist) 제어는 CLOiD 에
-적용되지 않으므로 `rotate` 스킬 대신 Nav2 Spin 을 사용합니다.
+**신발·신발장 시연은 모션 전에 지정한 절대 방위로 정렬**합니다. 장소/대상 텍스트에
+`신발`, `신발장`, `shoe` 등이 있으면 현재 map 프레임 yaw 와 목표 방위의 최단 차이를
+계산해 Nav2 `/spin` 으로 회전한 뒤 모션을 요청합니다. 목표 방위는 로봇 프로필
+`cloid_demo_shoe_heading_deg`(기본 **`64.2`**, map 프레임 기준 도, 빈 값이면 회전 안 함)로
+조정하고, 회전이 실패하거나 안전 게이트에서 거부되면 모션을 실행하지 않습니다
+(fail closed, 사유 `demo_turn_failed`). 현재 자세(TF `map → base_link`)를 읽을 수 없으면
+회전만 생략하고 모션은 진행합니다. `cleanup_demo`(동료 시연 요청)와 `tidy_home` 로컬
+시연(도착 직후 실행·LLM 결정 분기) 세 경로가 같은 `apply_before_demo` 진입점으로
+동일한 규칙과 관측 문구를 씁니다. 직접 `/cmd_vel`(Twist) 제어는 CLOiD 에 적용되지 않으므로
+`rotate` 스킬 대신 Nav2 Spin 을 사용합니다.
 
 로컬 시연 개체(`tidy_home` → `demo_motion_executed`)는 사방 회전 관찰과 정리 대상
 확인을 모두 건너뜁니다. 장소에 도착하면 검토된 allowlist 모션을 골라 곧바로 실행을

@@ -658,6 +658,9 @@ def _launch_setup(context, *args, **kwargs):
         name="robo_claw_dashboard_node",
         output="screen",
         parameters=[
+            # 로봇 프로필(cloid_config.yaml 등)의 robo_claw_dashboard_node 섹션을 반영한다.
+            # 예: CLOiD 는 lio_status_topic/switch_mode_service/지도 목록을 여기서 지정한다.
+            *([robot_yaml] if os.path.exists(robot_yaml) else []),
             {
                 "use_sim_time": LaunchConfiguration("use_sim_time"),
                 "dashboard_host": LaunchConfiguration("dashboard_host"),
@@ -692,7 +695,7 @@ def _launch_setup(context, *args, **kwargs):
                 "robot_soul_file": robot_soul_file,
                 "robot_limits_file": robot_limits_file,
                 "agent_workspace_dir": agent_workspace_dir,
-            }
+            },
         ],
         condition=IfCondition(LaunchConfiguration("use_dashboard")),
     )

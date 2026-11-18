@@ -12,9 +12,11 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
 
     - GET  / (static), /health   : 공개
     - GET  /api/status, /api/map, /api/config, /api/logs: auth 활성 시 readonly 이상
+    - GET  /api/localization   : readonly 이상 (LIO 상태/지도 목록 조회)
     - GET  /api/cooperation, /api/cooperation/export: readonly 이상 (조회 전용)
     - POST /api/chat             : control
-    - POST /api/initial_pose     : control (AMCL 초기 위치 변경)
+    - POST /api/initial_pose     : control (AMCL/LIO 초기 위치 변경)
+    - POST /api/localization/switch : control (SLAM 모드/지도 전환 — 로봇 상태 변경)
 
     경로 판정은 쿼리 문자열을 뗀 path 로 한다(핸들러가 쿼리를 붙여 넘기더라도
     `/api/logs?level=error` 가 공개 경로로 판정되어 인증을 우회하지 않도록 한다).
@@ -25,6 +27,7 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
         {
             "/api/status",
             "/api/map",
+            "/api/localization",
             "/api/config",
             "/api/logs",
             "/api/logs/export",
@@ -41,6 +44,8 @@ class DashboardHttpSecurityPolicy(HttpSecurityPolicy):
         {
             "/api/chat",
             "/api/initial_pose",
+            # SLAM 모드/지도 전환은 로봇의 위치추정 상태를 바꾸므로 control 로 둔다.
+            "/api/localization/switch",
             "/api/scenarios/run",
             "/api/scenarios/cancel",
             # sync 는 사용자가 입력한 호스트로 대시보드가 직접 HTTP 요청을 보내는

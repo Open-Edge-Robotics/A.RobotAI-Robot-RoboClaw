@@ -5,19 +5,28 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-18 — 대시보드에서 CLOiD 저장 지도 적용과 위치추정 시작
+
+- **Added**: 대시보드 지도 패널에 지도 목록·`지도 적용 / 위치추정 시작`·`현재 위치로 초기 위치 설정`을 추가하고, `GET /api/localization`·`POST /api/localization/switch` API 를 추가했습니다. 전환은 202 로 접수하고 단일 워커 스레드가 `/switch_mode`(`lio_fr_system_msgs/srv/SwitchMode`)를 호출하며, 3D 맵 로드까지의 진행은 `/lio_node/status`(`loading_map`→`relocalizing_pose`→`loading_grid_map`→`ready`)로 표시합니다.
+- **Added**: `src/lio_fr_system_msgs`(upstream `lio_fr_system_msgs` 와 와이어 호환 서브셋, `SwitchMode.srv` only)를 추가했습니다. `task_manager_msgs`·`tofu_msgs` 와 같은 vendored 인터페이스 방식이며, 필드 구성이 달라지면 type hash 불일치로 서비스 연결이 거부됩니다.
+- **Changed**: 대시보드 노드에 `lio_status_topic`·`switch_mode_service`·`localization_map_dir`·`localization_map_names_json`·`switch_mode_timeout_sec`·`initialpose_covariance` 파라미터를 추가하고, launch 가 로봇 프로필(`<robot>_config.yaml`)의 `robo_claw_dashboard_node` 섹션을 대시보드 노드에도 전달하도록 했습니다. `cloid_config.yaml` 에 해당 섹션을 추가했습니다.
+- **Changed**: `POST /api/initial_pose` 는 `/lio_node/status` 가 `mapping` 이면 발행 전에 거부합니다(CLOiD LIO 는 localization 모드에서만 `/initialpose` 를 소비). 공분산은 `initialpose_covariance`(기본 0.05)로 조정할 수 있습니다.
+- **Changed**: 지도 이름은 `localization_map_names_json` allowlist(또는 `localization_map_dir` 하위 디렉터리)에 있는 값만 허용하고, 경로 구분자·`..`·공백이 들어간 이름은 거부합니다. `confirm=true` 없는 요청, 지도 목표 이동 lease 보유 중 요청, 이미 진행 중인 요청은 접수하지 않습니다.
+- **검증**: `task lint` 통과. 신규 테스트는 도메인 `test_localization_mode.py` 47건, 서비스 `test_localization_switch_service.py` 11건·`test_localization_service.py` 9건, HTTP `test_localization_http.py` 9건, 디렉터리 스캔 `test_localization_map_dir.py` 3건, JS `test_localization_js.py` 18건이며, 대시보드 기존 테스트(`test_localization.py`·`test_service.py`·`test_http_router.py`·`test_http_handlers.py`·`test_map_goal_http.py`)와 함께 204건 통과했습니다. cloid2 실기에서 `/switch_mode` 호출·맵 교체 표시는 **미검증**이며, `lio_fr_system_msgs` 빌드와 지도 디렉터리 마운트가 배포 선행 조건입니다.
+
 ## 2026-11-18 — 정리 시연 모션 요청 직후 TCP/UDP cue 전송
 
 - **Added**: 시연 모션 명령이 실제로 발행된 직후 설정된 외부 장비로 UTF-8 바이트를 **1회** 전송합니다(`cloid_demo_signal_*` 파라미터). `cleanup_demo`(모션 요청 직후)와 `tidy_home` 로컬 시연(`demo_motion_executed` 직후)이 같은 cue 를 쓰며, 목적지와 payload 는 로봇 프로필 값만 사용하고 LLM/요청 메시지로 바꿀 수 없습니다. 기본값은 **활성**이며 목적지는 시연 장비 `192.168.50.86:5005`, payload 는 `shoe pick`(개행 없음)입니다. `cloid_config.yaml` 에 같은 값을 명시해 두었고, 끄려면 `cloid_demo_signal_enabled: false` 로 둡니다.
 - **Changed**: cue 전송·관측·로그 처리를 `skills/cleanup/signal.py`(`emit_demo_signal`)로 모아 두 경로가 같은 형식을 쓰도록 했습니다.
 - **Fixed**: `tidy_home`의 `demo_motion_executed`가 `_PROCESSED_PLACE_STATUSES`에 없어 시연 실행이 `status=failed`로 표시되던 문제를 수정했습니다(처리 완료로 보고하고 "실제 물체 정리 완료 아님" 문구 유지).
-- **Added**: 신발·신발장(`신발`, `신발장`, `shoe` 등) 시연 요청은 **모션 전에 제자리 90° 회전**을 먼저 수행합니다(`cloid_demo_shoe_turn_deg`, 기본 90.0, 음수=반대, 0=회전 안 함). Nav2 `/spin` + 안전 게이트를 사용하고(CLOiD 는 직접 `/cmd_vel` Twist 미적용), 회전 실패 시 모션을 실행하지 않습니다(`demo_turn_failed`). `cleanup_demo` 와 `tidy_home` 로컬 시연이 같은 규칙을 씁니다.
+- **Added**: 신발·신발장(`신발`, `신발장`, `shoe` 등) 시연 요청은 **모션 전에 지정한 절대 방위로 정렬**합니다(`cloid_demo_shoe_heading_deg`, map 프레임 기준 기본 **64.2°**, 빈 값이면 회전 안 함). 현재 yaw 와의 최단 차이를 계산해 Nav2 Spin 으로 회전하며, 현재 자세를 읽을 수 없으면 회전만 생략합니다. Nav2 `/spin` + 안전 게이트를 사용하고(CLOiD 는 직접 `/cmd_vel` Twist 미적용), 회전 실패 시 모션을 실행하지 않습니다(`demo_turn_failed`). 세 시연 경로(`cleanup_demo`, `tidy_home` 로컬 시연 도착 직후 실행, `tidy_home` LLM 결정 분기)가 같은 `cleanup/demo_pose.apply_before_demo` 진입점으로 동작·관측 문구가 동일합니다.
 - **Fixed**: 시연 모션만 요청하고 끝나 tofu 의 `joint_motion_controller` 가 active 로 남아 다른 프로그램이 joint 를 제어하지 못하던 문제를 수정했습니다. 모션 길이만큼 기다린 뒤(`cloid_demo_stop_after_sec`, 기본 8.0초) `MotionCmd STOP` 을 1회 발행해 vendor 가 hold 컨트롤러로 복귀하도록 하고, **STOP 이후에 시연 cue(`shoe pick`)를 전송**합니다. 두 시연 경로(`cleanup_demo`, `tidy_home` 로컬 시연) 공통이며, STOP 실패는 시연 결과를 바꾸지 않고 `demo_stop` 결과·`demo_stop` 관측 단계로만 남깁니다.
 - **Changed**: 동료·Maestro 시연 요청(`cleanup_demo`)도 장소 도착 후 사방 재관찰(`describe_surroundings` `capture_4way`)과 대상 재확인 게이트를 수행하지 않고, 검토된 시연 모션을 바로 요청합니다(신발·신발장은 90° 회전 후). 모션 목록·allowlist 검증, 안전 게이트, cue 전송은 그대로 유지합니다.
 - **Changed**: 시연 allowlist와 `cleanup_demo`·`execute_cloid_motion` 스킬을 가진 로컬 시연 개체는 **장소 도착 직후 사방 회전 관찰과 정리 대상 확인을 건너뛰고 검토된 시연 모션을 바로 요청**합니다(관측 단계 `demo_motion`, cue 1회). 모션 목록·allowlist 에 실행 가능한 모션이 없으면 실행하지 않습니다. 일반 정리 로봇은 기존 4방향 관찰과 `needs_clarification`/`no_target` 판정을 유지합니다.
 - **Added**: `skills/demo_signal/`(`protocol.py` 순수 설정·바이트 계약, `sender.py` 소켓 어댑터)를 추가했습니다. TCP 기본·UDP 선택, 개행은 `none`/`lf`/`crlf` 로만 붙이며 기본은 개행 없음입니다.
 - **Changed**: `cleanup_demo` 결과에 `demo_signal`(`status`/`reason`/`bytes`/`protocol`/`host`/`port`)을 추가하고, 관측 패널에 `demo_signal` 단계를 기록합니다. 전송 실패·타임아웃은 시연 결과(`motion_requested`)를 바꾸지 않으며 재시도하지 않습니다. payload 원문과 서버 응답은 로그·결과에 남기지 않습니다.
 - **Changed**: `cloid_config.yaml` 에 파라미터를 선언하고 주석 예시(`192.168.50.86:5005`, `shoe pick`, 개행 없음)를 추가했습니다. `docs/CLOiD_GUIDE.md`·`docs/SKILLS.md`·`docs/CLEANUP_EXPERIMENT_RUNBOOK.md` 에 설정·동작 계약과 도달성 점검 절차를 반영했습니다.
-- **검증**: `test_demo_signal_protocol.py` 34건, `test_demo_signal_sender.py` 6건(loopback TCP/UDP 실제 바이트), `test_cleanup_demo_signal.py` 5건, `test_tidy_home_demo_signal.py` 8건(즉시 실행 3건·게이팅 1건·cue 2건·4방향 유지 1건·상태 매핑 1건), `test_demo_signal_sender.py` 기본값 활성/명시적 비활성 2건, `test_cleanup_demo_pose.py` 18건(매칭·각도·회전 실패 fail-closed·두 경로 연동), 기존 `test_cleanup_demo_skill.py`·`test_tidy_home_*`·`test_cloid_motion_skill.py`·bringup 113건 통과. 실기 cue 수신과 로봇 컨테이너 도달성은 미검증입니다.
+- **검증**: `test_demo_signal_protocol.py` 34건, `test_demo_signal_sender.py` 6건(loopback TCP/UDP 실제 바이트), `test_cleanup_demo_signal.py` 5건, `test_tidy_home_demo_signal.py` 8건(즉시 실행 3건·게이팅 1건·cue 2건·4방향 유지 1건·상태 매핑 1건), `test_demo_signal_sender.py` 기본값 활성/명시적 비활성 2건, `test_cleanup_demo_pose.py` 20건(매칭·절대 방위/최단 회전 계산·pose 없음 생략·회전 실패 fail-closed·두 경로 연동), 기존 `test_cleanup_demo_skill.py`·`test_tidy_home_*`·`test_cloid_motion_skill.py`·bringup 113건 통과. 실기 cue 수신과 로봇 컨테이너 도달성은 미검증입니다.
 
 ## 2026-11-18 — 지도 목표 진행률이 도착 후에도 갱신되지 않던 문제 수정
 

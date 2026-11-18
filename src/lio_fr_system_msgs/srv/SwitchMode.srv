@@ -1,0 +1,12 @@
+# Copyright (c) 2026 LG Electronics Inc.
+# SPDX-License-Identifier: LicenseRef-LGE-Proprietary
+# Wire-compatible subset of lio-fr-system SwitchMode (upstream: Entropos
+# services/slam/lio-fr-system/msgs/lio_fr_system_msgs/srv/SwitchMode.srv).
+# 필드 순서/타입을 바꾸면 type hash 가 달라져 CLOiD lio_node 와 연결되지 않는다.
+string mode                  # "mapping" | "localization"
+string map_path              # localization: 저장된 맵 디렉터리(mapping 에서는 무시)
+bool set_initial_pose        # localization: true=initial_pose 시드, false=GKR 360° 재위치추정
+geometry_msgs/Pose initial_pose
+---
+bool success
+string message

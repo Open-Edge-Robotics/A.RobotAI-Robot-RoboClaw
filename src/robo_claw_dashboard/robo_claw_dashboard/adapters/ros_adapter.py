@@ -19,6 +19,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import BatteryState
+from std_msgs.msg import String
 from tf2_ros import Buffer, TransformListener
 
 from robo_claw_msgs.action import ExecuteTask
@@ -31,6 +32,10 @@ from ..domain.localization import (
     parse_map_topics,
     unavailable_map,
     unavailable_pose,
+)
+from ..domain.localization_mode import (
+    normalize_lio_status,
+    unavailable_lio_status,
 )
 from ..domain.logs import (
     DEFAULT_CAPACITY,
@@ -142,6 +147,9 @@ class RosBackend:
         declared_defaults: dict[str, Any] | None = None,
         log_topic: str = "/rosout",
         log_buffer_size: int = DEFAULT_CAPACITY,
+        lio_status_topic: str = "",
+        switch_mode_service: str = "/switch_mode",
+        switch_mode_timeout_sec: float = 200.0,
     ) -> None:
         self._node = node
         self._timeout = request_timeout_sec
@@ -164,6 +172,28 @@ class RosBackend:
         self._config_cache_ttl = config_cache_ttl_sec
         self._agent_node_name = agent_namespace
         ns = f"/{agent_namespace.strip('/')}"
+
+        # CLOiD LIO 상태/모드 전환. 인터페이스 패키지가 없으면 구독/클라이언트를 만들지 않고
+        # 가용성 조회에서 이유를 돌려준다(다른 로봇에서는 기능만 비활성).
+        self._lio_status_topic = str(lio_status_topic or "")
+        self._switch_mode_service = str(switch_mode_service or "/switch_mode")
+        self._switch_timeout = max(1.0, float(switch_mode_timeout_sec))
+        self._lio_lock = threading.Lock()
+        self._lio_status: tuple[str, int] | None = None
+        self._switch_mode_type: Any = self._import_switch_mode_type()
+        self._switch_client: Any = None
+        if self._lio_status_topic:
+            node.create_subscription(
+                String,
+                self._lio_status_topic,
+                self._on_lio_status,
+                QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE),
+                callback_group=self._cb,
+            )
+        if self._switch_mode_type is not None:
+            self._switch_client = node.create_client(
+                self._switch_mode_type, self._switch_mode_service, callback_group=self._cb
+            )
 
         # 토픽별 최신 스냅샷과 도착 시각. 로봇마다 지도 토픽이 달라(예: former0047 `/map`,
         # CLOiD `/lio/grid_map`) 여러 개를 구독하고 가장 최근에 도착한 지도를 사용한다.
@@ -506,6 +536,21 @@ class RosBackend:
         """로그 링 버퍼 크기(기동 로그/진단용)."""
         return self._log_buffer.capacity
 
+    @property
+    def lio_status_topic(self) -> str:
+        """구독 중인 위치추정 상태 토픽(기동 로그/진단용)."""
+        return self._lio_status_topic
+
+    @property
+    def switch_mode_service(self) -> str:
+        """지도 전환 서비스 이름(기동 로그/진단용)."""
+        return self._switch_mode_service
+
+    @property
+    def switch_mode_supported(self) -> bool:
+        """지도 전환 서비스 타입(lio_fr_system_msgs)을 사용할 수 있는지."""
+        return self._switch_mode_type is not None
+
     def _select_map(self) -> dict[str, Any]:
         """구독 중인 지도 중 가장 최근에 도착한 스냅샷을 고른다(동시 도착은 우선순위 순)."""
         best: tuple[float, dict[str, Any]] | None = None
@@ -563,6 +608,95 @@ class RosBackend:
             time.sleep(0.05)
         self._initialpose_pub.publish(msg)
         return {"success": True, "message": "초기 위치를 발행했습니다"}
+
+    # ---- CLOiD 위치추정 상태/모드 전환 --------------------------------------
+    @staticmethod
+    def _import_switch_mode_type() -> Any:
+        """lio_fr_system_msgs/srv/SwitchMode 타입을 지연 import 한다(없으면 None)."""
+        try:
+            from lio_fr_system_msgs.srv import SwitchMode
+        except Exception:  # noqa: BLE001 - 미설치 로봇에서는 기능만 비활성화한다
+            return None
+        return SwitchMode
+
+    def _on_lio_status(self, msg: Any) -> None:
+        """`/lio_node/status`(std_msgs/String) 를 최신 값으로 보관한다."""
+        text = str(getattr(msg, "data", "") or "")
+        stamp_ns = int(self._node.get_clock().now().nanoseconds)
+        with self._lio_lock:
+            self._lio_status = (text, stamp_ns)
+
+    def latest_lio_status(self) -> dict[str, Any]:
+        """최근 LIO 상태를 정규화해 반환한다(미수신/미구성은 available=false)."""
+        if not self._lio_status_topic:
+            return unavailable_lio_status("위치추정 상태 토픽이 구성되지 않았습니다")
+        with self._lio_lock:
+            entry = self._lio_status
+        if entry is None:
+            return unavailable_lio_status("상태 미수신")
+        return normalize_lio_status(entry[0], stamp_ns=entry[1])
+
+    def localization_control_available(self) -> dict[str, Any]:
+        """지도 전환 서비스를 호출할 수 있는지 판정한다(폴링을 막지 않도록 기다리지 않음)."""
+        if self._switch_mode_type is None:
+            return {
+                "available": False,
+                "reason": "lio_fr_system_msgs 가 설치되지 않아 지도 전환을 사용할 수 없습니다",
+            }
+        if self._switch_client is None:
+            return {"available": False, "reason": "지도 전환 클라이언트가 없습니다"}
+        if not self._switch_client.service_is_ready():
+            return {
+                "available": False,
+                "reason": f"{self._switch_mode_service} 서비스를 기다리는 중입니다",
+            }
+        return {"available": True, "reason": ""}
+
+    def switch_localization_map(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """`/switch_mode` 로 SLAM 모드/맵을 전환한다(블로킹, 워커 스레드에서 호출)."""
+        srv_type = self._switch_mode_type
+        client = self._switch_client
+        if srv_type is None or client is None:
+            return {
+                "success": False,
+                "message": "lio_fr_system_msgs 가 없어 지도 전환을 호출할 수 없습니다",
+            }
+
+        timeout = self._switch_timeout
+        if not client.service_is_ready() and not client.wait_for_service(
+            timeout_sec=min(5.0, timeout)
+        ):
+            return {
+                "success": False,
+                "message": f"{self._switch_mode_service} 서비스에 연결하지 못했습니다",
+            }
+
+        request = srv_type.Request()
+        request.mode = str(plan.get("mode") or "localization")
+        request.map_path = str(plan.get("map_path") or "")
+        request.set_initial_pose = bool(plan.get("set_initial_pose"))
+        pose = plan.get("pose") if isinstance(plan.get("pose"), dict) else None
+        if pose:
+            yaw = float(pose.get("yaw") or 0.0)
+            request.initial_pose.position.x = float(pose.get("x") or 0.0)
+            request.initial_pose.position.y = float(pose.get("y") or 0.0)
+            request.initial_pose.position.z = 0.0
+            request.initial_pose.orientation.z = math.sin(yaw / 2.0)
+            request.initial_pose.orientation.w = math.cos(yaw / 2.0)
+
+        future = client.call_async(request)
+        if not _wait_future(future, timeout):
+            return {
+                "success": False,
+                "message": f"지도 전환 응답 대기 시간 초과({timeout:.0f}s)",
+            }
+        response = future.result()
+        if response is None:
+            return {"success": False, "message": "지도 전환 응답이 비어 있습니다"}
+        return {
+            "success": bool(getattr(response, "success", False)),
+            "message": str(getattr(response, "message", "") or ""),
+        }
 
     def send_chat(
         self,

@@ -139,6 +139,51 @@ main {
   margin-right: 0.25rem;
 }
 
+/* 지도 선택 / 위치추정 시작 */
+.rc-localization-panel .rc-map-select,
+.rc-localization-panel .rc-map-apply {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+.rc-localization-panel .rc-map-select {
+  width: auto;
+  min-width: 200px;
+}
+
+.rc-localization-panel .rc-map-seed-check {
+  min-height: 48px;
+}
+
+.rc-localization-panel .rc-map-seed-check .form-check-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+}
+
+#localization-status.rc-loc-ok {
+  color: var(--bs-success);
+}
+#localization-status.rc-loc-active {
+  color: var(--bs-info);
+}
+#localization-status.rc-loc-warn {
+  color: var(--bs-warning);
+}
+#localization-status.rc-loc-error {
+  color: var(--bs-danger);
+}
+#localization-status.rc-loc-muted {
+  color: var(--bs-secondary-color);
+}
+
+#localization-result.text-success {
+  color: var(--bs-success) !important;
+}
+#localization-result.text-danger {
+  color: var(--bs-danger) !important;
+}
+
 /* 배터리 */
 .rc-battery {
   height: 0.6rem;

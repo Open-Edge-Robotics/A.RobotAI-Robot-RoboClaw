@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 
 from ..domain.config_view import flatten_param_docs, parse_contract_defaults
+from ..domain.localization_mode import validate_map_name
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,27 @@ def load_param_defaults(paths: Iterable[str]) -> dict[str, Any]:
         except (OSError, yaml.YAMLError) as exc:
             logger.debug("파라미터 기본값 파일을 건너뜁니다: %s (%s)", path, exc)
     return flatten_param_docs(documents)
+
+
+def discover_map_names(map_dir: str | Path) -> list[str]:
+    """지도 저장 디렉터리(예: `/ws/maps`)의 하위 디렉터리 이름을 맵 목록으로 읽는다.
+
+    디렉터리가 마운트되지 않았거나 읽을 수 없으면 빈 목록을 돌려준다(대시보드는
+    설정 파라미터만으로도 동작해야 한다).
+    """
+    base = Path(str(map_dir or ""))
+    if not str(map_dir or "").strip():
+        return []
+    try:
+        entries = sorted(
+            entry.name
+            for entry in base.iterdir()
+            if entry.is_dir() and not entry.name.startswith(".")
+        )
+    except OSError as exc:
+        logger.debug("지도 디렉터리를 읽지 못했습니다: %s (%s)", base, exc)
+        return []
+    return [name for name in entries if validate_map_name(name)[0]]
 
 
 def load_contract_defaults(path: str | Path) -> dict[str, Any]:

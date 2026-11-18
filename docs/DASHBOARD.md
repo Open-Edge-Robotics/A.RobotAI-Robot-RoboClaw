@@ -117,6 +117,9 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | 연결 자체가 거부됨 | 호스트 방화벽 또는 다른 네트워크 | `ufw`, VLAN, 로봇 IP를 확인합니다 |
 | `dashboard_host`를 바꿨는데 그대로 | `use_dashboard`가 꺼져 있거나 다른 launch 인자를 사용 | 기동 로그의 `listening on` 줄을 확인합니다 |
 | 지도가 표시되지 않음 | 로봇 지도 토픽이 `map_topic` 목록에 없음(예: CLOiD `/lio/grid_map`) | `/api/map`의 `available`/`topic`과 기동 로그의 `map topics=` 줄을 확인합니다 |
+| 지도 목록이 비어 있음 | `localization_map_names_json`·`localization_map_dir` 미설정 또는 마운트 없음 | `/api/localization`의 `maps`/`map_root`와 기동 로그의 `localization ... maps=0(none)` 줄을 확인합니다 |
+| `지도 적용` 버튼이 비활성 | `lio_fr_system_msgs` 미설치, `/switch_mode` 서비스 없음, 이미 진행 중 | `/api/localization`의 `control.available`/`control.reason`을 확인합니다 |
+| 초기 위치 설정이 거부됨 | 로봇이 매핑(SLAM) 모드이거나 지도 목표 이동 중 | `/lio_node/status`가 `mapping`이면 먼저 지도를 적용해 위치추정 모드로 전환합니다 |
 
 `http_allowed_cidrs_json`에 작은따옴표(`['192.168.0.0/24']`)를 쓰면 JSON이 아니므로 해석에
 실패합니다. 이때 대시보드는 전체 허용으로 열리지 않고 기본 루프백 제한을 적용하고 오류 로그를
@@ -137,7 +140,9 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/cooperation` | `GET` | auth 활성 시 readonly 이상 | 마지막 상태 응답에 캐시한 협동 이벤트·작업 조회 |
 | `/api/cooperation/export` | `GET` | auth 활성 시 readonly 이상 | 캐시된 최근 협동 이벤트를 JSONL로 내보내기 |
 | `/api/chat`   | `POST` | control                 | 자연어 메시지 전달, 지도 이동 메시지는 비동기 접수 |
-| `/api/initial_pose` | `POST` | control           | AMCL 초기 위치 설정 (`/initialpose` 발행)     |
+| `/api/initial_pose` | `POST` | control           | AMCL/LIO 초기 위치 설정 (`/initialpose` 발행)     |
+| `/api/localization` | `GET` | auth 활성 시 readonly 이상 | LIO 위치추정 상태·지도 목록·제어 가능 여부 |
+| `/api/localization/switch` | `POST` | control | 저장된 지도 적용/위치추정 시작(`/switch_mode`), 202 접수 |
 | `/api/scenarios` | `GET` | auth 활성 시 readonly 이상 | 활성 테스트 시나리오 조회 (`?refresh=1` 동기화) |
 | `/api/scenarios/sync` | `POST` | control | 웹에서 입력한 AI Config 서버 설정으로 시나리오 동기화 (디바이스 토큰은 JSON 본문). 대시보드가 사용자 입력 호스트로 직접 요청하므로 control 권한이 필요합니다 |
 | `/api/scenarios/run` | `POST` | control | 테스트 시나리오 비동기 실행 |
@@ -178,6 +183,12 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `map_frame`         | `map`         | 지도/위치 기준 프레임                              |
 | `base_frame`        | `base_link`   | 로봇 기준 프레임 (map→base TF)                     |
 | `initialpose_topic` | `/initialpose`| 초기 위치 발행 토픽                                |
+| `lio_status_topic`  | `/lio_node/status` | LIO 상태 토픽(`std_msgs/String`). 빈 값이면 상태 표시/모드 판정을 끕니다 |
+| `switch_mode_service` | `/switch_mode` | LIO 모드/지도 전환 서비스(`lio_fr_system_msgs/srv/SwitchMode`) |
+| `localization_map_dir` | `/ws/maps` | 저장된 지도 디렉터리(LIO 컨테이너 기준 경로). 읽을 수 있으면 하위 디렉터리를 지도 목록으로 사용 |
+| `localization_map_names_json` | `[]` | 지도 목록 allowlist(JSON 배열). 지정하면 이 목록만 허용하고 디렉터리를 읽지 않습니다 |
+| `switch_mode_timeout_sec` | `200.0` | `/switch_mode` 응답 대기 상한(초) |
+| `initialpose_covariance` | `0.05` | `/initialpose` 공분산(대각 x/y/yaw). 잘못된 값은 기본값 유지 |
 | `config_query_timeout_sec` | `2.0`  | 실행 설정 조회 타임아웃(초)                        |
 | `param_default_files`      | `agent.yaml` | 기본값 판정에 쓸 파라미터 YAML(쉼표 구분)     |
 | `contract_file`            | `""`   | 계약 기본값 JSON 경로(비우면 자동 탐색)             |
@@ -194,6 +205,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 - `web/assets/vendor/bootstrap.min.css` · `bootstrap.LICENSE` (MIT, 5.3.8)
 - `web/assets/map_geometry.js`: 월드(m)↔캔버스(px) 좌표 변환(순수 함수, `node`로 회귀 테스트)
 - `web/assets/logs.js`: 로그 패널(레벨 색상·시각·파일명·쿼리 생성 순수 함수 + 패널 배선, `node`로 회귀 테스트)
+- `web/assets/localization.js`: CLOiD 지도 선택/위치추정 패널(상태·제어 문구, 전환 본문 생성 순수 함수 + 패널 배선, `node`로 회귀 테스트)
 - `web/assets/style.css`: Bootstrap 위에 얹는 최소 오버라이드(지도 캔버스, 설정 표 등)
 - `web/assets/render_utils.js`: 화면 표시 공용 순수 함수(`escapeHtml`, `formatConfigValue`)
 - `web/assets/snapshot_view.js`: 상태 배지·배터리·센서/피어 chip 포맷(순수 함수, `node`로 회귀 테스트)
@@ -450,6 +462,63 @@ curl -X POST http://127.0.0.1:9090/api/initial_pose \
 초기 위치는 로봇을 직접 움직이지 않지만, AMCL 파티클을 재배치하므로 잘못된 값은 이후 주행을
 잘못된 곳으로 유도합니다. 원격 노출 시 `http_control_token`을 반드시 설정하고, 주행 중에는
 초기 위치를 함부로 바꾸지 않습니다.
+
+CLOiD(LIO)에서는 AMCL 대신 `lio_node`가 `/initialpose`를 재위치추정 시드로 소비합니다.
+이때 두 가지가 다릅니다.
+
+- `/initialpose`는 **localization 모드에서만** 유효합니다. `/lio_node/status`가 `mapping`이면
+  대시보드가 발행 전에 거부합니다(조용히 무시되는 것을 막기 위해).
+- 공분산은 `initialpose_covariance`(기본 0.05)를 씁니다. CLOiD 자체 UI 값(0.25)에 맞추려면
+  파라미터로 올립니다. 값이 작을수록 시드를 더 확신하므로 잘못된 좌표에 취약합니다.
+
+## CLOiD 지도 선택과 위치추정 시작
+
+CLOiD는 매핑(SLAM) 중에는 `/lio/grid_map`에 현재 매핑된 지도를 발행하고, 저장된 지도를
+적용해 위치추정을 시작하면(localization 모드) `lio_node`가 3D 맵을 읽고 `grid_map_node`가
+`/load_grid_map`으로 2D 그리드 맵을 다시 latch 합니다. 대시보드는 `map_topic`으로
+`/lio/grid_map`을 구독하므로 **맵이 교체되면 같은 화면에서 새 지도가 표시**됩니다.
+
+```bash
+# 1) 상태·지도 목록·제어 가능 여부
+curl -s http://127.0.0.1:9090/api/localization | jq '{available, status, maps, control}'
+
+# 2) 저장된 지도 적용 + 위치추정 시작(초기 위치 시드 포함)
+curl -X POST http://127.0.0.1:9090/api/localization/switch \
+  -H "X-RoboClaw-Token: $RC_HTTP_CONTROL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"localization","map":"konjiam_L_107","set_initial_pose":true,"x":1.25,"y":-0.40,"yaw":1.57,"confirm":true}'
+```
+
+화면에서는 지도 카드의 지도 목록에서 맵을 고르고 `지도 적용 / 위치추정 시작`을 누릅니다.
+필요하면 `현재 위치로 초기 위치 설정`을 함께 체크합니다. 실행 전 확인 대화상자에서 승인해야
+전송됩니다.
+
+동작 계약은 다음과 같습니다.
+
+- `POST`는 **202 접수**이며 완료가 아닙니다. 진행 상황은 `GET /api/localization`의
+  `status`(`loading_map`→`relocalizing_pose`→`loading_grid_map`→`ready`)와 `last_switch`로
+  확인합니다.
+- `/switch_mode`는 3D 맵 로드가 끝나면 응답하므로 최대 `switch_mode_timeout_sec`(기본 200초)
+  동안 워커 스레드가 기다립니다. HTTP 응답은 즉시 돌아옵니다. 동시에 한 건만 허용합니다.
+- `set_initial_pose: false`로 보내면 LIO가 360° 회전 재위치추정(`relocalizing_gkr`)을 수행합니다.
+  이때 로봇이 실제로 회전하므로 주변 안전을 확인해야 합니다.
+- `mode: "mapping"`으로 매핑(SLAM) 모드로 되돌릴 수도 있습니다(맵 이름은 사용하지 않음).
+- 지도 이름은 설정된 allowlist(`localization_map_names_json` 또는 `localization_map_dir`의
+  하위 디렉터리)에 있는 값만 허용합니다. 경로 구분자·`..`·공백이 들어간 이름은 거부합니다.
+- `confirm: true` 없이는 접수하지 않습니다(로봇의 위치추정 모드를 바꾸는 요청이므로).
+- 지도 목표 이동이 진행 중이거나 결과를 확인하지 못한 상태(`lease` 보유)이면 409로 거부합니다.
+
+### 배포 전제
+
+CLOiD 실기에서 이 기능을 쓰려면 두 가지가 필요합니다.
+
+1. 지도 목록 소스: 대시보드 컨테이너에 지도 디렉터리를 마운트하거나(예: 호스트
+   `/home/cloi/data/maps` → 컨테이너 `/ws/maps`) `localization_map_names_json`에 허용할
+   지도 이름을 지정합니다. 마운트가 없으면 목록이 비어 기능이 비활성으로 표시됩니다.
+2. `lio_fr_system_msgs` 인터페이스: 저장소의 `src/lio_fr_system_msgs`(upstream
+   `lio-fr-system` 스키마와 **와이어 호환 서브셋**)를 같이 빌드해야 합니다. 없으면
+   `/api/localization`의 `control.reason`에 미설치 사유가 표시되고 전환 요청은 503으로
+   거부됩니다. 필드 구성이 upstream 과 달라지면 type hash 불일치로 서비스 연결이 거부됩니다.
 
 ## 지도 목표 선택과 이동 메시지
 
