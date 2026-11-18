@@ -1218,6 +1218,20 @@ class TidyHomeSkill(BaseSkill):
             exec_status = execute.tick()
             if exec_status != NodeStatus.SUCCESS:
                 return "execution_failed"
+            # 모션 종료를 기다린 뒤 STOP 으로 vendor 모션 세션을 닫고(다른 프로그램이
+            # joint 를 제어할 수 있도록) 그 다음에 cue 를 보낸다.
+            stop = stop_after_demo(self.node, logger_obj=logger)
+            _observe_phase(
+                observer,
+                "demo_stop",
+                (
+                    "시연 모션 정지 명령을 발행했습니다."
+                    if stop.get("status") == "sent"
+                    else f"시연 모션 정지 명령을 보내지 못했습니다({stop.get('reason', '')})."
+                ),
+                place=place_name,
+                observed=str(stop.get("status") or ""),
+            )
             # 모션 명령이 실제로 실행된 시점(`demo_motion_executed`)에 시연 cue 를 1회
             # 전송한다. 전송 실패는 시연 결과를 바꾸지 않고 관측에만 남긴다.
             decided_params = blackboard.get("decided_params")

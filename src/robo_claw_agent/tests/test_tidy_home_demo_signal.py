@@ -134,8 +134,11 @@ def test_local_demo_requests_allowlisted_motion_without_observation(monkeypatch)
         return {"status": "sent", "reason": "", "bytes": 9}
 
     monkeypatch.setattr(tidy_module, "emit_demo_signal", _emit)
-    # cue/실행만 검증하므로 시연 전 회전은 끈다(회전 계약은 test_cleanup_demo_pose.py).
+    # cue/실행만 검증하므로 시연 전 회전과 시연 후 STOP 은 대역으로 둔다.
     monkeypatch.setattr(tidy_module, "turn_deg_for", lambda *_args: 0.0)
+    monkeypatch.setattr(
+        tidy_module, "stop_after_demo", lambda *_a, **_kw: {"status": "sent", "reason": ""}
+    )
     skill = TidyHomeSkill()
     skill.set_node(_node())
     skill.send_user_message = lambda _msg: None
@@ -171,8 +174,11 @@ def test_local_demo_is_blocked_without_executable_allowlisted_motion(monkeypatch
 def test_local_demo_execution_failure_does_not_emit_cue(monkeypatch):
     emitted = []
     monkeypatch.setattr(tidy_module, "emit_demo_signal", lambda *_a, **_kw: emitted.append(True))
-    # cue/실행만 검증하므로 시연 전 회전은 끈다(회전 계약은 test_cleanup_demo_pose.py).
+    # cue/실행만 검증하므로 시연 전 회전과 시연 후 STOP 은 대역으로 둔다.
     monkeypatch.setattr(tidy_module, "turn_deg_for", lambda *_args: 0.0)
+    monkeypatch.setattr(
+        tidy_module, "stop_after_demo", lambda *_a, **_kw: {"status": "sent", "reason": ""}
+    )
     skill = TidyHomeSkill()
     skill.set_node(_node(skills=_Skills(motion_success=False)))
     skill.send_user_message = lambda _msg: None
