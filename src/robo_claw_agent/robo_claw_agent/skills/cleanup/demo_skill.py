@@ -18,14 +18,7 @@ from .observation import (
     open_cleanup_observation,
     safe_observe,
 )
-from .policy import (
-    _CLEANUP_TARGET_KEYWORDS,
-    _cleanup_target_category,
-    _has_cleanup_indication,
-    _matches_cleanup_keyword,
-    _normalize_name,
-    _select_cleanup_demo_motion,
-)
+from .policy import _select_cleanup_demo_motion
 from .signal import emit_demo_signal
 
 logger = logging.getLogger(__name__)
@@ -210,33 +203,6 @@ class CleanupDemoSkill(BaseSkill):
                     recoverable=True,
                 )
 
-            safe_observe(
-                observer,
-                "phase",
-                phase="demo_reobserve",
-                content=f"'{place_name}'에서 요청 대상 '{target}'을 다시 관찰합니다.",
-                place=place_name,
-                target=target,
-            )
-            observation = room._analyze_current_scene(place_name)
-            if not observation.get("success"):
-                return _fail(
-                    f"'{place_name}'에서 요청 대상을 다시 관찰하지 못했습니다. "
-                    f"{observation.get('message', '')}".strip(),
-                    "observation_failed",
-                    phase="demo_reobserve",
-                    observed="failed",
-                    recoverable=True,
-                )
-            detected = observation.get("detected_objects", []) or []
-            fresh_scene = str(observation.get("analysis", "") or "")
-            if not self._target_reobserved(target, detected, fresh_scene):
-                return _fail(
-                    f"'{place_name}'에서 정리 대상 후보를 다시 확인하지 못해 시연하지 않았습니다.",
-                    "target_not_reobserved",
-                    phase="demo_reobserve",
-                    observed="no_target",
-                )
             catalog = None
             try:
                 catalog = skills.execute(
@@ -292,7 +258,7 @@ class CleanupDemoSkill(BaseSkill):
             )
             # 신발·신발장 시연은 모션 전에 진열대 방향으로 몸을 돌린다. 회전이
             # 실패하면 모션을 실행하지 않는다(fail closed).
-            turn_deg = turn_deg_for(self.node, place_name, target, fresh_scene)
+            turn_deg = turn_deg_for(self.node, place_name, target)
             if turn_deg:
                 safe_observe(
                     observer,
@@ -330,7 +296,7 @@ class CleanupDemoSkill(BaseSkill):
                     recoverable=True,
                 )
             self._previous_motion_id = motion["motion_id"]
-            actual_target = self._effective_target(target, detected, fresh_scene)
+            actual_target = target
             # 모션 START 발행 직후 시연 cue 를 1회 전송한다. 전송 실패는 시연 결과를
             # 바꾸지 않으며, 결과와 관측에만 남긴다.
             cue = self._send_signal(place_name, actual_target, observer)
@@ -416,64 +382,3 @@ class CleanupDemoSkill(BaseSkill):
             for item in value
             if isinstance(item, int) and not isinstance(item, bool) and item > 0
         ]
-
-    @staticmethod
-    def _target_reobserved(target: str, detected: Any, scene: str) -> bool:
-        expected = _normalize_name(target)
-        labels: list[str] = []
-        if isinstance(detected, (list, tuple)):
-            labels.extend(
-                str(item.get("name", "") if isinstance(item, dict) else item).strip()
-                for item in detected
-            )
-        observed_raw = " ".join([*labels, scene])
-        observed = _normalize_name(observed_raw)
-        if expected and expected in observed:
-            return True
-
-        category = _cleanup_target_category(target)
-        if category and category in _CLEANUP_TARGET_KEYWORDS:
-            for kw in _CLEANUP_TARGET_KEYWORDS[category]:
-                norm_kw = _normalize_name(kw)
-                if norm_kw and norm_kw in observed:
-                    return True
-                if _matches_cleanup_keyword(observed_raw.casefold(), kw.casefold()):
-                    return True
-
-        # 시연 단순화: 요청 대상의 명칭과 상관없이 현장에 정리 가능한 항목이 있으면 재관찰 인정
-        from .policy import _cleanup_target_labels
-
-        if _cleanup_target_labels(detected, scene) or _has_cleanup_indication(detected, scene):
-            return True
-
-        return False
-
-    @staticmethod
-    def _effective_target(target: str, detected: Any, scene: str) -> str:
-        expected = _normalize_name(target)
-        labels: list[str] = []
-        if isinstance(detected, (list, tuple)):
-            labels.extend(
-                str(item.get("name", "") if isinstance(item, dict) else item).strip()
-                for item in detected
-            )
-        observed_raw = " ".join([*labels, scene])
-        observed = _normalize_name(observed_raw)
-        if expected and expected in observed:
-            return target
-
-        category = _cleanup_target_category(target)
-        if category and category in _CLEANUP_TARGET_KEYWORDS:
-            for kw in _CLEANUP_TARGET_KEYWORDS[category]:
-                norm_kw = _normalize_name(kw)
-                if norm_kw and norm_kw in observed:
-                    return target
-                if _matches_cleanup_keyword(observed_raw.casefold(), kw.casefold()):
-                    return target
-
-        from .policy import _cleanup_target_labels
-
-        confirmed_labels = _cleanup_target_labels(detected, scene)
-        if confirmed_labels:
-            return confirmed_labels[0]
-        return target

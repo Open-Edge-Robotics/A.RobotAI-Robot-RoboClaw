@@ -72,9 +72,8 @@ def _configure_demo(monkeypatch, skill, *, scene_result, motions=None):
     return skills, events
 
 
-def test_cleanup_demo_relocates_reobserves_target_then_requests_only_allowlisted_motion(
-    monkeypatch,
-):
+def test_cleanup_demo_requests_only_allowlisted_motion_after_arrival(monkeypatch):
+    """도착 후 사방 재관찰 없이 allowlist 모션만 요청한다(관찰 단계는 호출하지 않는다)."""
     skill = CleanupDemoSkill()
     skills, events = _configure_demo(
         monkeypatch,
@@ -99,7 +98,7 @@ def test_cleanup_demo_relocates_reobserves_target_then_requests_only_allowlisted
     assert result["status"] == "motion_requested"
     assert result["physical_cleanup_confirmed"] is False
     assert result["motion_completion_confirmed"] is False
-    assert events == [("visit", "안방"), ("observe", "안방")]
+    assert events == [("visit", "안방")], f"사방 재관찰을 호출하면 안 됨: {events}"
     assert [name for name, _params, _kwargs in skills.calls] == [
         "list_cloid_motions",
         "execute_cloid_motion",
@@ -109,9 +108,10 @@ def test_cleanup_demo_relocates_reobserves_target_then_requests_only_allowlisted
     assert skills.calls[-1][2]["timeout_sec"] == 60.0
 
 
-def test_cleanup_demo_aborts_when_requested_target_is_not_reobserved(monkeypatch):
+def test_cleanup_demo_runs_without_target_reobservation(monkeypatch):
+    """현장 재관찰로 대상을 확인하지 않아도(사방 점검 생략) 시연 모션은 실행한다."""
     skill = CleanupDemoSkill()
-    skills, _events = _configure_demo(
+    skills, events = _configure_demo(
         monkeypatch,
         skill,
         scene_result={
@@ -130,9 +130,10 @@ def test_cleanup_demo_aborts_when_requested_target_is_not_reobserved(monkeypatch
         }
     )
 
-    assert result["success"] is False
-    assert result["failure_reason"] == "target_not_reobserved"
-    assert all(name != "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
+    assert result["success"] is True
+    assert result["status"] == "motion_requested"
+    assert events == [("visit", "안방")]
+    assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
 
 
 def test_cleanup_demo_rejects_unapproved_or_prerequisite_motion(monkeypatch):
@@ -162,7 +163,8 @@ def test_cleanup_demo_rejects_unapproved_or_prerequisite_motion(monkeypatch):
     assert all(name != "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
 
 
-def test_cleanup_demo_reobserves_korean_target_with_english_detection(monkeypatch):
+def test_cleanup_demo_runs_with_korean_request_and_english_detection(monkeypatch):
+    """한국어 요청/영문 검출 조합도 재관찰 없이 그대로 시연한다."""
     skill = CleanupDemoSkill()
     skills, events = _configure_demo(
         monkeypatch,
@@ -185,11 +187,12 @@ def test_cleanup_demo_reobserves_korean_target_with_english_detection(monkeypatc
 
     assert result["success"] is True
     assert result["status"] == "motion_requested"
-    assert events == [("visit", "안방"), ("observe", "안방")]
+    assert events == [("visit", "안방")]
     assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
 
 
-def test_cleanup_demo_reobserves_cushion_with_english_detection(monkeypatch):
+def test_cleanup_demo_runs_with_cushion_request(monkeypatch):
+    """쿠션 요청도 재관찰 없이 시연 모션을 실행한다."""
     skill = CleanupDemoSkill()
     skills, events = _configure_demo(
         monkeypatch,
@@ -212,12 +215,12 @@ def test_cleanup_demo_reobserves_cushion_with_english_detection(monkeypatch):
 
     assert result["success"] is True
     assert result["status"] == "motion_requested"
-    assert events == [("visit", "거실"), ("observe", "거실")]
+    assert events == [("visit", "거실")]
     assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
 
 
-def test_cleanup_demo_executes_when_any_cleanup_candidate_is_reobserved(monkeypatch):
-    """요청 대상이 '쓰레기'여도 현장에서 수건/쿠션 등 정리 가능한 항목이 관찰되면 시연 모션을 수행한다."""
+def test_cleanup_demo_executes_regardless_of_observed_objects(monkeypatch):
+    """요청 대상이 '쓰레기'여도 재관찰 판정 없이 시연 모션을 수행한다."""
     skill = CleanupDemoSkill()
     skills, events = _configure_demo(
         monkeypatch,
@@ -240,7 +243,7 @@ def test_cleanup_demo_executes_when_any_cleanup_candidate_is_reobserved(monkeypa
 
     assert result["success"] is True
     assert result["status"] == "motion_requested"
-    assert events == [("visit", "안방"), ("observe", "안방")]
+    assert events == [("visit", "안방")]
     assert any(name == "execute_cloid_motion" for name, _params, _kwargs in skills.calls)
 
 
