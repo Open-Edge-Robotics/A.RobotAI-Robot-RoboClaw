@@ -135,7 +135,7 @@ def test_local_demo_requests_allowlisted_motion_without_observation(monkeypatch)
 
     monkeypatch.setattr(tidy_module, "emit_demo_signal", _emit)
     # cue/실행만 검증하므로 시연 전 회전과 시연 후 STOP 은 대역으로 둔다.
-    monkeypatch.setattr(tidy_module, "turn_deg_for", lambda *_args: 0.0)
+    monkeypatch.setattr(tidy_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
     monkeypatch.setattr(
         tidy_module, "stop_after_demo", lambda *_a, **_kw: {"status": "sent", "reason": ""}
     )
@@ -175,7 +175,7 @@ def test_local_demo_execution_failure_does_not_emit_cue(monkeypatch):
     emitted = []
     monkeypatch.setattr(tidy_module, "emit_demo_signal", lambda *_a, **_kw: emitted.append(True))
     # cue/실행만 검증하므로 시연 전 회전과 시연 후 STOP 은 대역으로 둔다.
-    monkeypatch.setattr(tidy_module, "turn_deg_for", lambda *_args: 0.0)
+    monkeypatch.setattr(tidy_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
     monkeypatch.setattr(
         tidy_module, "stop_after_demo", lambda *_a, **_kw: {"status": "sent", "reason": ""}
     )

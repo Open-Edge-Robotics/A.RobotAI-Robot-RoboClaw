@@ -114,7 +114,7 @@ def test_tidy_home_order_is_motion_stop_then_cue(monkeypatch):
     from robo_claw_agent.skills import tidy_home_skill as tidy_module
 
     order = []
-    monkeypatch.setattr(tidy_module, "turn_deg_for", lambda *_a: 0.0)
+    monkeypatch.setattr(tidy_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
     monkeypatch.setattr(
         tidy_module,
         "stop_after_demo",
@@ -153,7 +153,7 @@ def test_cleanup_demo_order_is_motion_stop_then_cue(monkeypatch):
     monkeypatch.setattr(TidyHomeSkill, "_visit_place", lambda _s, _name: (True, "arrived"))
     monkeypatch.setattr(demo_module, "claim_autonomous", lambda _event: True)
     monkeypatch.setattr(demo_module, "release_autonomous", lambda: None)
-    monkeypatch.setattr(demo_module, "turn_deg_for", lambda *_texts: 0.0)
+    monkeypatch.setattr(demo_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
 
     order = []
     monkeypatch.setattr(
@@ -204,7 +204,7 @@ def test_cleanup_demo_reports_stop_failure_without_failing(monkeypatch):
     monkeypatch.setattr(TidyHomeSkill, "_visit_place", lambda _s, _name: (True, "arrived"))
     monkeypatch.setattr(demo_module, "claim_autonomous", lambda _event: True)
     monkeypatch.setattr(demo_module, "release_autonomous", lambda: None)
-    monkeypatch.setattr(demo_module, "turn_deg_for", lambda *_texts: 0.0)
+    monkeypatch.setattr(demo_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
     monkeypatch.setattr(
         demo_module,
         "stop_after_demo",

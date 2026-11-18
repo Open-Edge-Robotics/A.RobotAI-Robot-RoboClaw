@@ -17,7 +17,7 @@ from .autonomous_skill.globals import (
     is_autonomous_active,
     release_autonomous,
 )
-from .cleanup.demo_pose import turn_before_demo, turn_deg_for
+from .cleanup.demo_pose import apply_before_demo
 from .cleanup.demo_stop import stop_after_demo
 from .cleanup.observation import (
     SOURCE_TIDY_HOME,
@@ -932,27 +932,17 @@ class TidyHomeSkill(BaseSkill):
             )
             return "no_approved_cleanup_demo_motion"
 
-        # 신발·신발장 시연은 모션 전에 진열대 방향으로 몸을 돌린다. 회전이 실패하면
-        # 모션을 실행하지 않는다(fail closed).
-        turn_deg = turn_deg_for(self.node, place_name)
-        if turn_deg:
-            _observe_phase(
-                observer,
-                "demo_pose",
-                f"'{place_name}' 시연 전에 {turn_deg:.0f}도 회전합니다.",
-                place=place_name,
-            )
-            turned, turn_error = turn_before_demo(self.node, turn_deg, logger_obj=logger)
-            if not turned:
-                _observe_phase(
-                    observer,
-                    "demo_pose",
-                    f"시연 전 자세 회전에 실패해 모션을 실행하지 않았습니다: {turn_error}",
-                    place=place_name,
-                    observed="failed",
-                    failure_reason="demo_turn_failed",
-                )
-                return "demo_turn_failed"
+        # 신발·신발장 시연은 모션 전에 지정한 절대 방위로 몸을 돌린다. 세 시연 경로가
+        # 같은 규칙을 쓰며, 회전이 실패하면 모션을 실행하지 않는다.
+        turned, _turn_error, _turn = apply_before_demo(
+            self.node,
+            observer,
+            place=place_name,
+            pose=self.get_map_pose(),
+            logger_obj=logger,
+        )
+        if not turned:
+            return "demo_turn_failed"
 
         _observe_phase(
             observer,
@@ -1215,6 +1205,21 @@ class TidyHomeSkill(BaseSkill):
                     return "handoff_staging_failed"
         elif blackboard.get("decided_skill") == "execute_cloid_motion":
             # 로컬 정리 시연 모션 실행 (cleanup_demo 스킬이 등록된 시연 가능 개체)
+            decided_params = blackboard.get("decided_params")
+            cue_target = ""
+            if isinstance(decided_params, dict):
+                cue_target = str(decided_params.get("target_object") or "")
+            # 신발·신발장 시연은 모션 전에 지정한 절대 방위로 몸을 돌린다(세 경로 공통).
+            turned, _turn_error, _turn = apply_before_demo(
+                self.node,
+                observer,
+                place=place_name,
+                target=cue_target,
+                pose=self.get_map_pose(),
+                logger_obj=logger,
+            )
+            if not turned:
+                return "demo_turn_failed"
             exec_status = execute.tick()
             if exec_status != NodeStatus.SUCCESS:
                 return "execution_failed"
@@ -1234,10 +1239,6 @@ class TidyHomeSkill(BaseSkill):
             )
             # 모션 명령이 실제로 실행된 시점(`demo_motion_executed`)에 시연 cue 를 1회
             # 전송한다. 전송 실패는 시연 결과를 바꾸지 않고 관측에만 남긴다.
-            decided_params = blackboard.get("decided_params")
-            cue_target = ""
-            if isinstance(decided_params, dict):
-                cue_target = str(decided_params.get("target_object") or "")
             emit_demo_signal(
                 self.node,
                 observer,

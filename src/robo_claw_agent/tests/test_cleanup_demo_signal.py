@@ -58,7 +58,7 @@ def _configure(monkeypatch, skill, *, motion_result_success=True):
     monkeypatch.setattr(TidyHomeSkill, "_visit_place", lambda _self, _location: (True, "arrived"))
     monkeypatch.setattr(TidyHomeSkill, "_analyze_current_scene", lambda _self, _location: SCENE)
     # cue 동작만 검증하므로 시연 전 회전은 끈다(회전 계약은 test_cleanup_demo_pose.py).
-    monkeypatch.setattr(demo_module, "turn_deg_for", lambda *_args: 0.0)
+    monkeypatch.setattr(demo_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
     monkeypatch.setattr(demo_module, "claim_autonomous", lambda _event: True)
     monkeypatch.setattr(demo_module, "release_autonomous", lambda: None)
 
