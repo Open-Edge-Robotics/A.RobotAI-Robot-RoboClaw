@@ -70,6 +70,17 @@ robo_claw_agent_node:
     cloid_cleanup_indicator_enabled: false
     cloid_cleanup_indicator_motion_ids_json: '[]'
 
+    # 정리 시연(`cleanup_demo`)이 모션 START 를 발행한 직후 외부 장비로 UTF-8 바이트를
+    # 1회 전송한다(데모 cue). 기본은 비활성이며, 전송 실패는 시연 결과를 바꾸지 않는다.
+    # payload 는 설정값만 사용하고, 개행은 terminator(none|lf|crlf)로만 붙인다.
+    # cloid_demo_signal_enabled: true
+    # cloid_demo_signal_protocol: "tcp"
+    # cloid_demo_signal_host: "192.168.50.86"
+    # cloid_demo_signal_port: 5005
+    # cloid_demo_signal_payload: "shoe pick"
+    # cloid_demo_signal_terminator: "none"
+    # cloid_demo_signal_timeout_sec: 1.0
+
     # manipulation — CLOiD 팔/hand 제어 백엔드는 아직 구현되지 않았다.
     # manipulation_enabled=false 로 조작 계열 스킬을 실행 단에서 차단한다.
     manipulation_enabled: false

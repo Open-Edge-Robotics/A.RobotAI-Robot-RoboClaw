@@ -185,6 +185,46 @@ CLOi MotionCmd에는 완료 응답이 없으므로 이 경로의 결과는 모�
 
 직접 모션 스킬 `execute_cloid_motion`은 사용자가 `confirm=true`로 실행을 명시 승인하면 카탈로그의 단일 `pre_id` 선행 모션을 먼저 요청하고 10초 뒤 대상 모션을 요청합니다. 선행 ID 누락·순환·중첩은 차단합니다. 완료 피드백은 없으므로 10초는 완료 보장이 아닌 간격 설정입니다. 이 순차 실행은 정리 시연에 적용되지 않습니다. 정리 시연은 기존처럼 `pre_id` 모션을 선택하지 않으며, `pre_id` 선행 모션도 실행하지 않습니다.
 
+### 시연 cue 전송(TCP/UDP)
+
+`cleanup_demo`는 시연 모션 START 명령을 발행한 직후, 설정된 외부 장비로 UTF-8 바이트를
+**1회** 전송합니다(데모 cue). 별도 스킬이 아니라 시연 경로의 부수 효과이며, 목적지와
+바이트는 로봇 프로필 값만 사용합니다. LLM이나 요청 메시지로 목적지·payload를 바꿀 수
+없습니다.
+
+| 파라미터 (`cloid_config.yaml`) | 기본값 | 의미 |
+| --- | --- | --- |
+| `cloid_demo_signal_enabled` | `false` | cue 전송 활성화 |
+| `cloid_demo_signal_protocol` | `"tcp"` | `tcp` 또는 `udp` |
+| `cloid_demo_signal_host` | `""` | 목적지 호스트/IP(스킴·경로 불가) |
+| `cloid_demo_signal_port` | `0` | 목적지 포트(1~65535, `0`은 미설정) |
+| `cloid_demo_signal_payload` | `"shoe pick"` | UTF-8 payload(제어문자 불가, 128바이트 상한) |
+| `cloid_demo_signal_terminator` | `"none"` | `none`/`lf`/`crlf` — 개행은 이 값으로만 붙입니다 |
+| `cloid_demo_signal_timeout_sec` | `1.0` | 연결·전송 타임아웃(0.1~3.0초) |
+
+```yaml
+robo_claw_agent_node:
+  ros__parameters:
+    cloid_demo_signal_enabled: true
+    cloid_demo_signal_protocol: "tcp"
+    cloid_demo_signal_host: "192.168.50.86"
+    cloid_demo_signal_port: 5005
+    cloid_demo_signal_payload: "shoe pick"
+    cloid_demo_signal_terminator: "none"
+    cloid_demo_signal_timeout_sec: 1.0
+```
+
+- 전송 시점은 **모션 START 발행 성공 직후**입니다. 모션 명령이 거부되거나 실패하면
+  cue를 보내지 않습니다(MotionCmd 완료 피드백이 없으므로 cue 시점도 "모션 요청" 시점입니다).
+- 실패·타임아웃은 시연 결과를 바꾸지 않습니다. 시연은 그대로 `motion_requested`로 끝나고
+  결과의 `demo_signal`에 `sent`/`failed`/`skipped`와 사유 코드(`disabled`,
+  `invalid_host` 등), 전송 바이트 수만 남깁니다. payload 원문과 서버 응답은 기록하지
+  않습니다.
+- 재시도는 없습니다(중복 cue로 외부 효과가 두 번 트리거되는 것을 막습니다).
+- 관측 패널에는 `demo_signal` 단계로 결과가 표시됩니다.
+- 수신 측이 줄 단위로 파싱한다면 `cloid_demo_signal_terminator: "lf"`로 `\n`을 붙입니다.
+
+
 ## 포장용 최소 부피 자세
 
 CLOiD 는 출하 포장처럼 로봇 부피를 최소로 줄여야 할 때 boxing 자세를 사용합니다. 이

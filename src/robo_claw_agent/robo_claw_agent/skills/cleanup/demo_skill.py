@@ -11,6 +11,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 
 from ..autonomous_skill.globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
 from ..cleanup_run_metrics import new_run_id
+from ..demo_signal import send_demo_cue
 from .observation import (
     SOURCE_CLEANUP_DEMO,
     TASK_STATUS_MOTION_REQUESTED,
@@ -307,6 +308,9 @@ class CleanupDemoSkill(BaseSkill):
                 )
             self._previous_motion_id = motion["motion_id"]
             actual_target = self._effective_target(target, detected, fresh_scene)
+            # 모션 START 발행 직후 시연 cue 를 1회 전송한다. 전송 실패는 시연 결과를
+            # 바꾸지 않으며, 결과와 관측에만 남긴다.
+            cue = self._send_signal(place_name, actual_target, observer)
             logger.info(
                 "[CleanupDemo] 정리 시연 모션 실행을 요청했습니다: "
                 "place=%s target=%s motion=%s(id=%s) request_id=%s "
@@ -350,6 +354,7 @@ class CleanupDemoSkill(BaseSkill):
                 motion_id=motion["motion_id"],
                 physical_cleanup_confirmed=False,
                 motion_completion_confirmed=False,
+                demo_signal=cue,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("[CleanupDemo] Demo task failed")
@@ -360,6 +365,49 @@ class CleanupDemoSkill(BaseSkill):
             )
         finally:
             release_autonomous()
+
+    def _send_signal(self, place_name: str, target: str, observer: Any) -> dict[str, Any]:
+        """모션 요청 직후 설정된 데모 cue 를 1회 전송한다(best-effort).
+
+        cue 는 시연 보조 신호이므로 실패해도 시연 결과를 바꾸지 않는다. 대신 결과와
+        관측에 ``sent``/``failed``/``skipped`` 와 사유 코드를 남긴다.
+        """
+        try:
+            outcome = send_demo_cue(self.node)
+        except Exception as exc:  # noqa: BLE001 - cue 오류가 시연을 막지 않는다
+            logger.warning("[CleanupDemo] demo cue failed: %s", type(exc).__name__)
+            outcome = {"status": "failed", "reason": "send_failed", "bytes": 0}
+        status = str(outcome.get("status") or "")
+        if status == "sent":
+            content = (
+                f"시연 cue {outcome.get('bytes', 0)}바이트를 "
+                f"{outcome.get('protocol', '')}://{outcome.get('host', '')}:"
+                f"{outcome.get('port', '')} 로 전송했습니다."
+            )
+        else:
+            reason = str(outcome.get("reason") or "")
+            content = f"시연 cue 를 전송하지 않았습니다({status or 'unknown'}/{reason})."
+        safe_observe(
+            observer,
+            "phase",
+            phase="demo_signal",
+            content=content,
+            place=place_name,
+            target=target,
+            observed=status,
+        )
+        # 비활성/미설정 배포에서 로그를 늘리지 않는다(전송을 시도한 경우만 남긴다).
+        if status in ("sent", "failed"):
+            logger.info(
+                "[CleanupDemo] demo cue result: status=%s reason=%s endpoint=%s://%s:%s bytes=%s",
+                status,
+                outcome.get("reason", ""),
+                outcome.get("protocol", ""),
+                outcome.get("host", ""),
+                outcome.get("port", ""),
+                outcome.get("bytes", 0),
+            )
+        return outcome
 
     def _allowed_motion_ids(self) -> list[int]:
         try:

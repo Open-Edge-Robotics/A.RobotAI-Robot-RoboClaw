@@ -188,6 +188,15 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("cloid_cleanup_indicator_enabled", False)
     node.declare_parameter("cloid_cleanup_indicator_motion_ids_json", "[]")
     node.declare_parameter("cloid_cleanup_demo_motion_ids_json", "[]")
+    # 지도 목표/모션과 무관한 시연 cue(TCP/UDP) — 기본 비활성. 값이 설정된 경우에만
+    # cleanup_demo 가 모션 요청 직후 UTF-8 바이트를 1회 전송한다.
+    node.declare_parameter("cloid_demo_signal_enabled", False)
+    node.declare_parameter("cloid_demo_signal_protocol", "tcp")
+    node.declare_parameter("cloid_demo_signal_host", "")
+    node.declare_parameter("cloid_demo_signal_port", 0)
+    node.declare_parameter("cloid_demo_signal_payload", "shoe pick")
+    node.declare_parameter("cloid_demo_signal_terminator", "none")
+    node.declare_parameter("cloid_demo_signal_timeout_sec", 1.0)
     node.declare_parameter("butler_script_dir", "/ros2_ws/butler_scripts")
     node.declare_parameter("agent_workspace_dir", "/ros2_ws/agent_workspace")
 

@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-18 — 정리 시연 모션 요청 직후 TCP/UDP cue 전송
+
+- **Added**: `cleanup_demo`가 시연 모션 START 를 발행한 직후 설정된 외부 장비로 UTF-8 바이트를 **1회** 전송합니다(`cloid_demo_signal_*` 파라미터, 기본 비활성). 목적지와 payload 는 로봇 프로필 값만 사용하며 LLM/요청 메시지로 바꿀 수 없습니다.
+- **Added**: `skills/demo_signal/`(`protocol.py` 순수 설정·바이트 계약, `sender.py` 소켓 어댑터)를 추가했습니다. TCP 기본·UDP 선택, 개행은 `none`/`lf`/`crlf` 로만 붙이며 기본은 개행 없음입니다.
+- **Changed**: `cleanup_demo` 결과에 `demo_signal`(`status`/`reason`/`bytes`/`protocol`/`host`/`port`)을 추가하고, 관측 패널에 `demo_signal` 단계를 기록합니다. 전송 실패·타임아웃은 시연 결과(`motion_requested`)를 바꾸지 않으며 재시도하지 않습니다. payload 원문과 서버 응답은 로그·결과에 남기지 않습니다.
+- **Changed**: `cloid_config.yaml` 에 파라미터를 선언하고 주석 예시(`192.168.50.86:5005`, `shoe pick`, 개행 없음)를 추가했습니다. `docs/CLOiD_GUIDE.md`·`docs/SKILLS.md`·`docs/CLEANUP_EXPERIMENT_RUNBOOK.md` 에 설정·동작 계약과 도달성 점검 절차를 반영했습니다.
+- **검증**: `test_demo_signal_protocol.py` 34건, `test_demo_signal_sender.py` 6건(loopback TCP/UDP 실제 바이트), `test_cleanup_demo_signal.py` 5건, 기존 `test_cleanup_demo_skill.py`·`test_cloid_motion_skill.py`·bringup 113건 통과. 실기 cue 수신과 로봇 컨테이너 도달성은 미검증입니다.
+
 ## 2026-11-18 — 지도 목표 진행률이 도착 후에도 갱신되지 않던 문제 수정
 
 - **Fixed**: 지도 목표 이동이 성공했는데도 대시보드 진행률이 `20%`에 멈추고, 새로고침 후에만 `100%`로 바뀌던 문제를 수정했습니다. 에이전트가 `reached`를 먼저 보고한 시점(진행률 없음)과 대시보드 워커가 결과를 확정하기 전 기록(`running`, `progress=20`)이 병합되어 `reached + 20%` 기록이 만들어지고, 프런트가 그 종료 기록을 retire 하면서 뒤에 온 확정 기록(`progress=100`)을 버렸습니다(폴링 3초 주기에서 재현 확률이 높음).

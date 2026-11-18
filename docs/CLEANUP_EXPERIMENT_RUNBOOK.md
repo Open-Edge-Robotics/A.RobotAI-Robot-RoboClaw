@@ -96,6 +96,17 @@ docker logs --tail 80 cloi-robo-claw 2>&1 | grep "Loaded" | tail -1 | grep -o cl
 `cleanup_demo`가 보이고 50152가 LISTEN이어야 합니다. `cloi` 명령은 cloid2 호스트의
 `~/ws/cloi_entropos/scripts/cloi.sh`로 실행합니다(비대화형 셸에서는 `cloi`가 PATH에 없습니다).
 
+시연 cue(모션 요청 직후 TCP/UDP 1회 전송)를 사용하는 경우, 그 엔드포인트의 도달성을
+로봇 컨테이너 안에서 확인합니다. 호스트 PC에서의 도달성은 증거가 아닙니다.
+
+```bash
+docker exec -t cloi-robo-claw python3 -c \
+  "import socket; s=socket.create_connection(('192.168.50.86', 5005), 3); s.close(); print('cue endpoint reachable')"
+```
+
+수신 측 동작까지 확인하려면 cue 대상을 수신 스텁(예: `nc -l 5005`)으로 잠시 바꿔
+`cloid_demo_signal_host`/`port`를 그 주소로 두고 1회 실행해 바이트를 확인합니다.
+
 ### 4.4 러너 준비 (former0047 호스트, 최초 1회)
 
 ```bash
@@ -380,6 +391,7 @@ python3 scripts/cleanup_run_report.py "$RUNLOG" --expect-peer "Cloid 2호" \
 - [ ] 신발 별칭을 등록했다면 실험 후 남길지 지울지 정했는가
 - [ ] former0047 컨테이너에 `RC_CLEANUP_RUN_LOG_PATH`와 정상 피어 목록이 주입되었는가
 - [ ] Cloid 2호 컨테이너가 기동 중이고 `cleanup_demo`가 등록되었는가
+- [ ] 시연 cue를 쓰는 경우 로봇 컨테이너에서 `cloid_demo_signal_host`:`port` 도달성과 `demo_signal` 결과(`sent`/`failed`)를 확인했는가
 - [ ] 수집한 run log와 리포트를 실험 기록 폴더로 복사했는가(저장소에는 커밋하지 않음)
 - [ ] 기능 제약 조건을 실행했다면 원복 후 에이전트를 재기동했는가
 
