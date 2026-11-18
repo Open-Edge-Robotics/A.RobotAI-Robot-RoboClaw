@@ -305,6 +305,55 @@ def test_unknown_lease_blocks_new_map_request_but_not_ordinary_tasks():
     assert (ordinary_scope, ordinary_error) == (None, "")
 
 
+# ── 진행률 확정(도착 = 100%) ─────────────────────────────────
+
+
+def test_reached_transition_pins_progress_to_100():
+    """도착 전이에서 마지막 부분 진행률이 종료 기록에 남지 않는다."""
+    tracker = MapGoalTracker()
+    context = _context()
+    tracker.admit(context)
+    tracker.transition(
+        context.request_id, STATUS_RUNNING, message="주행을 시작했습니다.", progress=20
+    )
+
+    reached = tracker.transition(
+        context.request_id, STATUS_REACHED, message="이동 완료", authoritative=True
+    )
+
+    assert reached is not None
+    assert reached["status"] == STATUS_REACHED
+    assert reached["progress"] == 100
+
+
+def test_navigation_evidence_pins_reached_progress_to_100():
+    """증거에 부분 진행률이 적혀 있어도 도착 기록은 100% 다."""
+    tracker = MapGoalTracker()
+    context = _context()
+    tracker.admit(context)
+    tracker.transition(context.request_id, STATUS_RUNNING, progress=20)
+
+    applied = tracker.apply_evidence(
+        {
+            "request_id": context.request_id,
+            "status": STATUS_REACHED,
+            "message": "이동 완료",
+            "reason": "",
+            "frame_id": FRAME,
+            "x": TARGET_X,
+            "y": TARGET_Y,
+            "geometry_id": GEOMETRY_ID,
+            "execution_started": True,
+            "cancel_confirmed": False,
+            "progress": 20,
+        }
+    )
+
+    assert applied is not None
+    assert applied["status"] == STATUS_REACHED
+    assert applied["progress"] == 100
+
+
 # ── P2-2: already-within-tolerance 증거/실행 표시 ─────────────────────────
 
 

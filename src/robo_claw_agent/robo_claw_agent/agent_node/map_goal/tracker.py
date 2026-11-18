@@ -184,7 +184,11 @@ class MapGoalTracker:
                 record["message"] = str(message)
             if reason is not None:
                 record["reason"] = str(reason)
-            if progress is not None:
+            # 도착은 진행률 100으로 확정한다. 마지막으로 받은 부분 진행률(예: 20)이
+            # 종료 기록에 남으면 대시보드가 도착 상태에서 옛 진행률을 계속 표시한다.
+            if status == STATUS_REACHED:
+                record["progress"] = 100
+            elif progress is not None:
                 record["progress"] = max(0, min(100, int(progress)))
             if execution_started is not None:
                 record["execution_started"] = bool(execution_started)

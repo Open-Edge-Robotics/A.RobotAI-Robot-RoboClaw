@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-18 — 지도 목표 진행률이 도착 후에도 갱신되지 않던 문제 수정
+
+- **Fixed**: 지도 목표 이동이 성공했는데도 대시보드 진행률이 `20%`에 멈추고, 새로고침 후에만 `100%`로 바뀌던 문제를 수정했습니다. 에이전트가 `reached`를 먼저 보고한 시점(진행률 없음)과 대시보드 워커가 결과를 확정하기 전 기록(`running`, `progress=20`)이 병합되어 `reached + 20%` 기록이 만들어지고, 프런트가 그 종료 기록을 retire 하면서 뒤에 온 확정 기록(`progress=100`)을 버렸습니다(폴링 3초 주기에서 재현 확률이 높음).
+- **Changed**: `agent_node/map_goal/tracker.py`는 `reached` 전이에서 진행률을 항상 `100`으로 고정합니다(증거에 부분 진행률이 적혀 있어도 동일).
+- **Changed**: `domain/map_goal_records.py`의 `merge_records`는 진행률을 단조 증가로 병합하고, 결과가 `reached`면 `100`으로 확정합니다(로컬/에이전트 도착 순서와 무관).
+- **Changed**: `web/assets/goal_picker.js`는 retire 를 "다른 요청의 재채택 차단"에만 쓰고, 표시 중인 같은 요청은 `updated_at` 최신성·신원(로봇/프레임/지도/좌표) 검사를 통과하면 계속 갱신합니다. `reached`는 진행률 값과 무관하게 100%로 표시합니다.
+- **검증**: `task verify` 통과(unit-test 3334 passed, 3 skipped, 177 deselected; ruff check·format 통과). 신규 회귀 테스트는 agent `test_map_goal_lease_safety.py` 2건, dashboard `test_map_goal_domain.py` 3건, JS 러너 `goal_picker.js` 1건(41 checks)이며 로봇 재배포 후 실기 재검증은 미실시입니다.
+
 ## 2026-11-18 — ONNX Runtime 다운로드 404 대응, vendor 사본 보관
 
 - **Fixed**: `docker build` 4단계(ONNX Runtime C++ SDK)가 `wget exit 8`(HTTP 404)로 실패하던 문제를 수정했습니다. 업스트림 `microsoft/onnxruntime` 릴리스 자산이 사라져 v1.19.2·v1.23.2의 x64/aarch64 tarball이 모두 404였습니다(DNS·프록시 문제 아님, 같은 시점 다른 GitHub 릴리스 자산은 200).

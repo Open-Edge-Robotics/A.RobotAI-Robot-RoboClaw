@@ -410,6 +410,24 @@ class TestMergeAuthorityGuards:
         assert merged["status"] == "running"
         assert merged["execution_started"] is True
 
+    def test_agent_reached_pins_progress_to_100(self):
+        """에이전트가 먼저 도착을 보고하고 워커가 미확정이어도 100% 다."""
+        local = self._record("running", updated_at=12.0, progress=20)
+        agent = self._record("reached", updated_at=11.0)
+        merged = merge_records(local, agent)
+        assert merged["status"] == "reached"
+        assert merged["progress"] == 100
+
+    def test_reached_local_record_pins_progress_to_100(self):
+        local = self._record("reached", updated_at=12.0, progress=20)
+        agent = self._record("reached", updated_at=11.0)
+        assert merge_records(local, agent)["progress"] == 100
+
+    def test_progress_never_regresses_on_merge(self):
+        local = self._record("running", updated_at=12.0, progress=40)
+        agent = self._record("running", updated_at=11.0, progress=20)
+        assert merge_records(local, agent)["progress"] == 40
+
     @pytest.mark.parametrize(
         "overrides",
         [

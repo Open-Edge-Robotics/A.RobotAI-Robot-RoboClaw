@@ -68,6 +68,27 @@ def _target(raw: Any) -> dict[str, Any] | None:
     return {"x": float(x), "y": float(y), "frame_id": frame_id}
 
 
+def _progress_value(raw: Any) -> int | None:
+    """기록의 진행률을 0~100 정수로 정규화한다(없거나 잘못된 값은 None)."""
+    if not is_number(raw):
+        return None
+    value = float(raw)
+    if not math.isfinite(value):
+        return None
+    return max(0, min(100, int(value)))
+
+
+def _pin_terminal_progress(record: dict[str, Any]) -> dict[str, Any]:
+    """도착으로 확정된 기록의 진행률을 100으로 고정한다.
+
+    에이전트는 도착을 마지막 부분 진행률(예: 20)과 함께, 진행률 없이 보고할 수도
+    있으므로 종료 상태와 진행률이 어긋나지 않게 맞춘다.
+    """
+    if record.get("status") == STATUS_REACHED:
+        record["progress"] = 100
+    return record
+
+
 def normalize_record(raw: Any) -> dict[str, Any] | None:
     """에이전트/내부 기록을 공유 스키마로 방어 정규화한다(request_id 없으면 None)."""
     if not isinstance(raw, Mapping):
@@ -170,7 +191,7 @@ def merge_records(
     if agent is None:
         return local
     if local is None:
-        return dict(agent)
+        return _pin_terminal_progress(dict(agent))
     if not records_compatible(local, agent):
         return local
 
@@ -180,7 +201,7 @@ def merge_records(
     if local_terminal or (
         local.get("status") in {STATUS_UNKNOWN, STATUS_CANCEL_REQUESTED} and not agent_terminal
     ):
-        return merged
+        return _pin_terminal_progress(merged)
     local_updated = _number(local.get("updated_at"), _number(local.get("created_at")))
     agent_updated = _number(agent.get("updated_at"), _number(agent.get("created_at")))
     # Feedback/cancel-ACK timestamps are not navigation outcome authority.
@@ -188,12 +209,11 @@ def merge_records(
     if agent_terminal and (
         agent_updated <= 0.0 or agent_updated < _number(agent.get("created_at"))
     ):
-        return merged
+        return _pin_terminal_progress(merged)
     for key in (
         "status",
         "message",
         "reason",
-        "progress",
         "execution_started",
         "cancel_confirmed",
         "robot_id",
@@ -203,11 +223,22 @@ def merge_records(
             merged[key] = value
         elif key in ("status", "message"):
             merged[key] = value
+    # 진행률은 단조 증가로 병합한다. 에이전트가 마지막 부분 진행률을 남긴 채 도착을
+    # 보고해도 화면의 진행률이 뒤로 가지 않는다.
+    progress_values = [
+        value
+        for value in (
+            _progress_value(local.get("progress")),
+            _progress_value(agent.get("progress")),
+        )
+        if value is not None
+    ]
+    merged["progress"] = max(progress_values) if progress_values else None
     if merged.get("status") in (STATUS_QUEUED, STATUS_PLANNING):
         # planning/queued 는 실제 guarded 주행 효과의 증거가 아니다.
         merged["execution_started"] = False
     merged["updated_at"] = max(local_updated, agent_updated)
-    return merged
+    return _pin_terminal_progress(merged)
 
 
 def can_submit(record: Mapping[str, Any] | None, lease_held: bool) -> bool:

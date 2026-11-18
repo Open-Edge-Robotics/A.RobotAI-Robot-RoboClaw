@@ -751,6 +751,42 @@ async function main() {
     observed.statusLabels = labels;
   });
 
+  await asyncCheck("controller: 도착 직후의 미확정 진행률도 retire 후 확정값으로 갱신한다", async () => {
+    const picked = mount();
+    ready(picked);
+    picked.controller.toggleGoalMode();
+    picked.clickWorld(fixtures.makeMap(), 5, 5);
+    await picked.controller.submit();
+    const requestId = picked.controller.getState().requestId;
+    const rec = (extra) => fixtures.makeRecord(Object.assign({ request_id: requestId }, extra));
+    const snap = (record) => fixtures.makeSnapshot({ navigation_request: record });
+
+    picked.controller.applySnapshot(snap(rec({ status: "running", progress: 20, updated_at: 1700000400 })));
+    assertEqual(picked.controller.getState().record.progress, 20, "주행 중 진행률을 반영하지 않음");
+
+    // 에이전트가 먼저 도착을 보고하고 대시보드 워커는 아직 확정 전인 병합 결과
+    picked.controller.applySnapshot(
+      snap(rec({ status: "reached", progress: 20, updated_at: 1700000410, can_submit: false }))
+    );
+    assertEqual(picked.controller.getState().record.status, "reached", "도착 상태를 반영하지 않음");
+    assertEqual(
+      goalPicker.describeRecord(picked.controller.getState().record).progress,
+      100,
+      "도착 상태를 100% 로 표시하지 않음"
+    );
+
+    // retire 이후 도착한 확정 진행률 기록도 반영되어야 한다(새로고침 없이 100%).
+    picked.controller.applySnapshot(
+      snap(rec({ status: "reached", progress: 100, updated_at: 1700000420, can_submit: true }))
+    );
+    assertEqual(picked.controller.getState().record.progress, 100, "retire 이후 확정 진행률을 버림");
+    assert(
+      statusText(picked.nodes).indexOf("100") !== -1,
+      "화면 진행률이 갱신되지 않음: " + statusText(picked.nodes)
+    );
+    assertEqual(picked.nodes["goal-progress"].style.width, "100%", "진행률 바가 갱신되지 않음");
+  });
+
   await asyncCheck("controller: 다른 request_id 의 도착 기록은 내 요청 도착으로 표시하지 않는다", async () => {
     const picked = mount();
     ready(picked);

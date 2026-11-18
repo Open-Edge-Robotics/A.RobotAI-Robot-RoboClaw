@@ -219,7 +219,22 @@
       return { ...state, statusMisses: misses, record: { ...base, status: "unknown", reason: base.reason || "에이전트 상태에서 요청을 확인할 수 없습니다.", can_submit: false } };
 
     }
-    if (!isRecord(incoming) || state.retiredIds.indexOf(incoming.request_id) !== -1) return state;
+    if (!isRecord(incoming)) return state;
+    // 표시 중인 "내" 요청은 retire 이후에도 더 새로운 기록으로 갱신한다. 도착 직후의
+    // 병합 기록(예: reached + 아직 확정되지 않은 진행률)이 먼저 도착해 retire 되면,
+    // 뒤에 오는 확정 진행률 기록을 영구히 버려 화면이 옛 진행률에 멈추기 때문이다.
+    // retire 는 "다른 요청을 내 요청으로 다시 채택하는 것"을 막는 용도로만 쓴다.
+    if (state.record && state.record.request_id === incoming.request_id) {
+      // 같은 요청이라도 로봇/프레임/지도/좌표 신원이 바뀌면 내 도착으로 채택하지 않는다.
+      if (!identityMatches(state, incoming)) return state;
+      if (incoming.updated_at < state.record.updated_at) return state;
+      // 종결된 내 요청을 늦은 비종결 기록으로 되돌리지 않는다.
+      if (TERMINAL[state.record.status] && !TERMINAL[incoming.status]) return state;
+      const next = { ...state, record: incoming, statusMisses: 0, foreignRecord: null };
+      if (TERMINAL[incoming.status]) next.retiredIds = retire(state, incoming.request_id);
+      return next;
+    }
+    if (state.retiredIds.indexOf(incoming.request_id) !== -1) return state;
     if (state.conflictWait) {
       if (state.requestId && incoming.request_id === state.requestId && identityMatches(state, incoming)) return adoptOwn(state, incoming);
       if (TERMINAL[incoming.status]) return releaseForeign(state, "진행 중이던 목표 요청이 종료되었습니다. 선택 지점을 확인한 뒤 다시 전송할 수 있습니다.", incoming.request_id);
@@ -284,7 +299,9 @@
   }
   function describeRecord(record) {
     if (!record) return { label: "", progress: null };
-    const progress = typeof record.progress === "number" ? Math.max(0, Math.min(100, record.progress)) : null;
+    const raw = typeof record.progress === "number" ? Math.max(0, Math.min(100, record.progress)) : null;
+    // 도착은 항상 100% 로 표시한다(부분 진행률이 남아 있어도 종료 상태가 우선).
+    const progress = record.status === "reached" ? 100 : raw;
     return { label: LABELS[record.status] || "알 수 없는 상태", progress };
   }
   function themeColor(doc, id, fallback) {
