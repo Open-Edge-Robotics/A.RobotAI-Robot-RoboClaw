@@ -238,6 +238,33 @@ def _wait_for_subscription(publisher: Any, timeout_sec: float) -> bool:
         time.sleep(min(_SUBSCRIPTION_POLL_SEC, remaining))
 
 
+def publish_motion_stop(
+    node: Any, *, connection_timeout_sec: float = _DEFAULT_CONNECTION_TIMEOUT_SEC
+) -> tuple[bool, str]:
+    """MotionCmd STOP(command_type=1, motion_id=0)을 1회 발행한다.
+
+    시연/모션 종료 후 vendor 모션 세션을 닫아 joint 제어를 돌려줄 때 쓴다. 발행
+    실패는 ``(False, 사유)``로 돌려주고 예외를 밖으로 던지지 않는다.
+    """
+    try:
+        publisher, message_type = _create_motion_publisher(node)
+    except (ImportError, AttributeError):
+        return False, "motion_interface_unavailable"
+    if not _wait_for_subscription(publisher, connection_timeout_sec):
+        return False, "motion_player_unavailable"
+
+    command = message_type()
+    command.motion_id = 0
+    command.command_type = MOTION_COMMAND_STOP
+    try:
+        with _MOTION_COMMAND_LOCK:
+            publisher.publish(command)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("CLOi MotionCmd stop publish failed: %s", exc)
+        return False, "motion_publish_failed"
+    return True, ""
+
+
 class ListCloidMotionsSkill(BaseSkill):
     """Read the concrete name/id catalog registered by CLOi's ScenarioManager."""
 

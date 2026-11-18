@@ -12,6 +12,7 @@ from robo_claw_agent.skill_manager import BaseSkill
 from ..autonomous_skill.globals import _AUTONOMOUS_ACTIVE, claim_autonomous, release_autonomous
 from ..cleanup_run_metrics import new_run_id
 from .demo_pose import turn_before_demo, turn_deg_for
+from .demo_stop import stop_after_demo
 from .observation import (
     SOURCE_CLEANUP_DEMO,
     TASK_STATUS_MOTION_REQUESTED,
@@ -297,8 +298,9 @@ class CleanupDemoSkill(BaseSkill):
                 )
             self._previous_motion_id = motion["motion_id"]
             actual_target = target
-            # 모션 START 발행 직후 시연 cue 를 1회 전송한다. 전송 실패는 시연 결과를
-            # 바꾸지 않으며, 결과와 관측에만 남긴다.
+            # 모션 길이만큼 기다린 뒤 STOP 을 보내 vendor 모션 세션을 닫고(다른 프로그램이
+            # joint 를 제어할 수 있도록), 그 다음에 시연 cue 를 1회 전송한다.
+            stop = self._stop_motion(place_name, observer)
             cue = self._send_signal(place_name, actual_target, observer)
             logger.info(
                 "[CleanupDemo] 정리 시연 모션 실행을 요청했습니다: "
@@ -343,6 +345,7 @@ class CleanupDemoSkill(BaseSkill):
                 motion_id=motion["motion_id"],
                 physical_cleanup_confirmed=False,
                 motion_completion_confirmed=False,
+                demo_stop=stop,
                 demo_signal=cue,
             )
         except Exception as exc:  # noqa: BLE001
@@ -354,6 +357,18 @@ class CleanupDemoSkill(BaseSkill):
             )
         finally:
             release_autonomous()
+
+    def _stop_motion(self, place_name: str, observer: Any) -> dict[str, Any]:
+        """시연 모션 종료 후 STOP 을 1회 보내 joint 제어를 vendor 로 돌려준다."""
+        outcome = stop_after_demo(self.node, logger_obj=logger)
+        status = str(outcome.get("status") or "")
+        content = (
+            "시연 모션 정지 명령을 발행했습니다. 정지 완료 여부는 확인되지 않습니다."
+            if status == "sent"
+            else f"시연 모션 정지 명령을 보내지 못했습니다({outcome.get('reason', '')})."
+        )
+        safe_observe(observer, "phase", phase="demo_stop", content=content, place=place_name)
+        return outcome
 
     def _send_signal(self, place_name: str, target: str, observer: Any) -> dict[str, Any]:
         """모션 요청 직후 설정된 데모 cue 를 1회 전송한다(best-effort).

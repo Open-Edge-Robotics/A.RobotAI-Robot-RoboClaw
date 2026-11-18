@@ -18,6 +18,7 @@ from .autonomous_skill.globals import (
     release_autonomous,
 )
 from .cleanup.demo_pose import turn_before_demo, turn_deg_for
+from .cleanup.demo_stop import stop_after_demo
 from .cleanup.observation import (
     SOURCE_TIDY_HOME,
     TASK_STATUS_CANCEL_REQUESTED,
@@ -997,6 +998,20 @@ class TidyHomeSkill(BaseSkill):
             return "execution_failed"
 
         self._previous_demo_motion_id = motion["motion_id"]
+        # 모션 길이만큼 기다린 뒤 STOP 으로 vendor 모션 세션을 닫고(다른 프로그램이 joint
+        # 를 제어할 수 있도록) 그 다음에 cue 를 보낸다.
+        stop = stop_after_demo(self.node, logger_obj=logger)
+        _observe_phase(
+            observer,
+            "demo_stop",
+            (
+                "시연 모션 정지 명령을 발행했습니다."
+                if stop.get("status") == "sent"
+                else f"시연 모션 정지 명령을 보내지 못했습니다({stop.get('reason', '')})."
+            ),
+            place=place_name,
+            observed=str(stop.get("status") or ""),
+        )
         emit_demo_signal(self.node, observer, place=place_name, logger_obj=logger)
         self.send_user_message(
             f"'{place_name}'에서 시연 모션 '{motion['motion_name']}' 실행을 요청했습니다. "

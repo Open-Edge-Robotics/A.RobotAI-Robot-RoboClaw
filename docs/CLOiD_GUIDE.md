@@ -202,6 +202,7 @@ CLOi MotionCmd에는 완료 응답이 없으므로 이 경로의 결과는 모�
 | `cloid_demo_signal_payload` | `"shoe pick"` | UTF-8 payload(제어문자 불가, 128바이트 상한) |
 | `cloid_demo_signal_terminator` | `"none"` | `none`/`lf`/`crlf` — 개행은 이 값으로만 붙입니다 |
 | `cloid_demo_signal_timeout_sec` | `1.0` | 연결·전송 타임아웃(0.1~3.0초) |
+| `cloid_demo_stop_after_sec` | `8.0` | 시연 모션 요청 후 `MotionCmd STOP` 까지 대기(0~60초, 모션 길이보다 길게) |
 
 ```yaml
 robo_claw_agent_node:
@@ -215,7 +216,12 @@ robo_claw_agent_node:
     cloid_demo_signal_timeout_sec: 1.0
 ```
 
-- 전송 시점은 시연 모션 명령이 실제로 발행된 직후입니다. 두 시연 경로가 같은 cue 를 씁니다.
+- 순서는 **모션 요청 → `cloid_demo_stop_after_sec` 대기 → `MotionCmd STOP` → cue 전송**입니다.
+  모션만 요청하면 tofu 의 `joint_motion_controller` 가 active 로 남아 다른 프로그램이 joint 를
+  제어하지 못하므로, 모션 길이만큼 기다린 뒤 STOP 을 1회 보내 vendor 가 hold 컨트롤러로
+  복귀하도록 합니다. STOP 실패는 시연 결과를 바꾸지 않고(`demo_stop.status=failed`) cue 는
+  그대로 전송합니다.
+- 전송 시점은 시연 모션 명령이 실제로 발행되고 STOP 까지 마친 직후입니다. 두 시연 경로가 같은 cue 를 씁니다.
   - `cleanup_demo`(동료·Maestro 시연 요청): `execute_cloid_motion` 성공 직후
   - `tidy_home` 로컬 시연: `demo_motion_executed` 로 끝나는 실행 직후
   모션 명령이 거부되거나 실행 노드가 실패하면 cue 를 보내지 않습니다. MotionCmd 완료
