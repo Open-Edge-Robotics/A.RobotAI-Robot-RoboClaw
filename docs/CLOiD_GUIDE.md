@@ -159,7 +159,9 @@ CLOiD의 위치추정은 LIO(`lio-fr-system`)가 담당합니다. 매핑 모드�
 없었습니다**. `lio_node`가 토픽을 받고 `/lio_node/status`를 `relocalizing_pose`로 바꾸지만
 재위치추정을 끝내지 않아 `ready`로 돌아오지 않습니다. 그래서 대시보드의 초기 위치 설정은
 CLOiD에서 `/initialpose` 대신 **현재 지도 + 시드 좌표로 `/switch_mode`를 호출**하며(202 접수),
-완료는 `/api/localization` 상태로 확인합니다. `/lio_node/status`가 `mapping`이면 두 경우
+완료는 `/api/localization` 상태로 확인합니다. 이 경로는 대시보드 파라미터로 선택합니다
+(`cloid_config.yaml` 은 `initial_pose_mode: "lio"` 를 명시하고, 기본값 `auto` 도
+`robot_config:=cloid` 프로필을 보고 LIO 를 고름). `/lio_node/status`가 `mapping`이면 두 경우
 모두 요청을 거부합니다.
 
 ### 개체별 스킬·소울 가이드 선택

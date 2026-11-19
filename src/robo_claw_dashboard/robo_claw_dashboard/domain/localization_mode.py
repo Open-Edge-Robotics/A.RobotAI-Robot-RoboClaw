@@ -43,6 +43,28 @@ _STATUS_TABLE: dict[str, tuple[str, str, str]] = {
 #: 진행 중으로 표시할 단계(화면 진행 표시/중복 요청 차단에 사용).
 ACTIVE_PHASES = frozenset({"mapping", "saving", "loading", "relocalizing", "recovering"})
 
+#: 초기 위치 적용 경로 설정값. `auto` 는 로봇 프로필로 결정한다.
+INITIAL_POSE_MODES = ("auto", "amcl", "lio")
+#: LIO(lio-fr-system) 기반 위치추정을 쓰는 로봇 프로필. `auto` 의 판단 근거다.
+LIO_ROBOT_PROFILES = ("cloid",)
+#: 설정을 해석할 수 없을 때의 안전한 기본값(2D AMCL 로봇).
+DEFAULT_INITIAL_POSE_MODE = "amcl"
+
+
+def parse_initial_pose_mode(raw: Any, robot_profile: Any = "") -> str:
+    """초기 위치 적용 경로 설정을 해석한다(`auto`|`amcl`|`lio` → `amcl`|`lio`).
+
+    LIO 로봇은 `/switch_mode` 시드가 필요하고 AMCL 로봇은 `/initialpose` 발행이
+    필요하므로 토픽/서비스 이름 같은 간접 신호로 판단하지 않고 설정으로 정한다.
+    대시보드 노드 기본값은 `auto` 이며, `robot_config` 프로필이 `cloid` 이면 LIO,
+    그 외(former·butler·stretch 등)는 AMCL 이다.
+    """
+    text = str(raw or "").strip().lower()
+    if text in ("amcl", "lio"):
+        return text
+    profile = str(robot_profile or "").strip().lower()
+    return "lio" if profile in LIO_ROBOT_PROFILES else DEFAULT_INITIAL_POSE_MODE
+
 
 def parse_map_names(raw: Any) -> list[str]:
     """설정값(JSON 배열 또는 쉼표 구분 문자열)을 유효한 맵 이름 목록으로 바꾼다."""

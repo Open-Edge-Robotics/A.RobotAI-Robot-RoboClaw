@@ -92,8 +92,36 @@
       status: null,
       control: {},
       lastSwitch: null,
+      initialPoseSource: "",
       signature: "",
     };
+  }
+
+  /**
+   * 로봇의 초기 위치 적용 방식(`lio`|`amcl`|확인 중)을 스냅샷에서 읽는다(순수 함수).
+   * 서버가 보내지 않으면 "" 을 돌려주고, UI 는 이전 표시를 유지한다.
+   */
+  function resolveInitialPoseSource(snapshot) {
+    const snap = snapshot && typeof snapshot === "object" ? snapshot : {};
+    const raw = typeof snap.initial_pose_source === "string" ? snap.initial_pose_source.trim().toLowerCase() : "";
+    return raw === "lio" || raw === "amcl" ? raw : "";
+  }
+
+  /** 위치추정 방식 배지 문구(순수 함수). */
+  function describeRobotMode(source) {
+    if (source === "lio") {
+      return {
+        text: "CLOiD LIO 위치추정",
+        title: "초기 위치는 현재 지도에 시드로 주입되며(/switch_mode), 위치추정이 다시 시작됩니다.",
+      };
+    }
+    if (source === "amcl") {
+      return {
+        text: "AMCL 위치추정",
+        title: "초기 위치는 /initialpose 발행으로 AMCL 파티클을 재배치합니다.",
+      };
+    }
+    return { text: "위치추정 확인 중", title: "로봇의 초기 위치 적용 방식을 확인하는 중입니다." };
   }
 
   /**
@@ -122,6 +150,7 @@
     const lastSwitch = Object.prototype.hasOwnProperty.call(snap, "last_switch")
       ? snap.last_switch || null
       : prev.lastSwitch || null;
+    const initialPoseSource = resolveInitialPoseSource(snap) || prev.initialPoseSource || "";
     return {
       available: snap.available === true,
       maps: maps,
@@ -132,6 +161,7 @@
       status: status,
       control: control,
       lastSwitch: lastSwitch,
+      initialPoseSource: initialPoseSource,
       signature: names.join("\u0000"),
     };
   }
@@ -186,6 +216,8 @@
         : (message) => (typeof global.confirm === "function" ? global.confirm(message) : false);
 
     const nodes = {
+      panel: byId("localization-panel"),
+      robotMode: byId("robot-mode"),
       select: byId("map-select"),
       seed: byId("map-seed"),
       apply: byId("map-apply"),
@@ -257,6 +289,17 @@
       nodes.status.className = "small " + (TONE_CLASS[tone] || TONE_CLASS.muted);
     }
 
+    function renderRobotMode() {
+      const mode = describeRobotMode(state.initialPoseSource);
+      if (nodes.robotMode) {
+        nodes.robotMode.textContent = mode.text;
+        nodes.robotMode.title = mode.title;
+      }
+      // LIO 를 쓰지 않는 로봇(AMCL)에는 지도 선택/위치추정 카드를 숨긴다.
+      // 지도 적용(/switch_mode) 자체가 없는 로봇에서 빈 카드와 "상태 미수신" 만 보이던 문제를 막는다.
+      if (nodes.panel) nodes.panel.hidden = state.initialPoseSource === "amcl";
+    }
+
     function render() {
       if (nodes.select) {
         // HTML 초기 상태(disabled)를 그대로 두면 목록이 있어도 드롭다운이 열리지 않는다.
@@ -267,6 +310,7 @@
           : "사용할 수 있는 지도 목록이 없습니다.";
       }
       renderMaps();
+      renderRobotMode();
       const pose = usablePose();
       if (nodes.seed) {
         if (!pose) {
@@ -387,6 +431,8 @@
     createState,
     applySnapshot,
     isSwitchActive,
+    resolveInitialPoseSource,
+    describeRobotMode,
     mount,
   };
   global.RcLocalization = api;

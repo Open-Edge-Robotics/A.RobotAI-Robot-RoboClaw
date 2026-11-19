@@ -8,6 +8,7 @@ from robo_claw_dashboard.domain.localization_mode import (
     MODE_MAPPING,
     normalize_lio_status,
     normalize_map_listing,
+    parse_initial_pose_mode,
     parse_map_names,
     resolve_map_path,
     unavailable_lio_status,
@@ -262,3 +263,30 @@ class TestValidateSwitchRequest:
         ok, error, _ = validate_switch_request(None, maps=MAP_NAMES, map_root=MAP_ROOT)
         assert ok is False
         assert "JSON" in error
+
+
+class TestInitialPoseMode:
+    """초기 위치 적용 경로는 토픽/서비스 존재가 아니라 설정으로 정한다."""
+
+    def test_auto_resolves_from_robot_profile(self):
+        assert parse_initial_pose_mode("auto", "cloid") == "lio"
+        assert parse_initial_pose_mode("auto", "CLOiD") == "lio"
+        assert parse_initial_pose_mode("auto", "former") == "amcl"
+        assert parse_initial_pose_mode("auto", "butler") == "amcl"
+
+    def test_auto_without_profile_falls_back_to_amcl(self):
+        assert parse_initial_pose_mode("auto", "") == "amcl"
+        assert parse_initial_pose_mode(None, None) == "amcl"
+        assert parse_initial_pose_mode("", "  ") == "amcl"
+
+    def test_explicit_mode_overrides_profile(self):
+        assert parse_initial_pose_mode("amcl", "cloid") == "amcl"
+        assert parse_initial_pose_mode("lio", "former") == "lio"
+        assert parse_initial_pose_mode(" LIO ", "former") == "lio"
+
+    def test_unknown_mode_is_not_guessed(self):
+        # 오타나 미지원 값은 auto 로 해석한다. AMCL 로봇이면 그대로 amcl 이므로 안전하고,
+        # CLOiD 프로필이면 lio_node 에 맞는 경로로 간다(오타로 기능이 깨지지 않는다).
+        assert parse_initial_pose_mode("lio_fr", "former") == "amcl"
+        assert parse_initial_pose_mode("topic", "cloid") == "lio"
+        assert parse_initial_pose_mode("whatever", "") == "amcl"

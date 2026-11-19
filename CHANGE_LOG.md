@@ -13,6 +13,13 @@ AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저
 - **Added**: `domain/paths.py` 에 `referenced_web_assets` · `missing_web_assets` 를 두고, `index.html` 이 참조하는 `/assets/*` 중 설치본에 없는 항목을 대시보드 노드가 기동 시 `WARN` 으로 남깁니다. 같은 유형(설치 누락 → 404 → 패널만 조용히 고장)을 브라우저 콘솔 없이도 알 수 있습니다.
 - **검증**: 설치본에 `chat_view.js`·`localization.js` 가 포함되도록 `colcon build --symlink-install --packages-up-to robo_claw_dashboard` 를 실행했고, 설치된 정적 루트로 실제 `ThreadingHTTPServer` 를 띄워 `GET /assets/chat_view.js` → 200(`application/javascript`), `GET /assets/localization.js` → 200, `POST /api/chat`(control 토큰) → 200 `{"success": true, ...}`, 토큰 없음 → 401 을 확인했습니다. 테스트는 대시보드 `test_paths.py`/`test_chat_send_js.py`/`test_chat_view_js.py`/`test_cooperation_dom.py` 68건 통과, 신규 `test_chat_send_js.py` 9건과 웹 리소스 누락 점검 5건을 추가했습니다. `ruff check`·`ruff format --check` 통과. 실기(cloid2 등) 브라우저에서 새 이미지로 전송이 되는 것은 **미검증**입니다.
 
+## 2026-11-19 — 로봇별 초기 위치 방식 분리(AMCL·CLOiD)와 화면 구분
+
+- **Fixed**: former 로봇(AMCL)에서 대시보드 초기 위치 설정이 실패하던 회귀를 수정했습니다. 직전 변경이 “LIO 상태 토픽 이름이 있고 `lio_fr_system_msgs` 가 빌드되었으면 LIO” 로 판단했는데, 대시보드 노드 기본 파라미터에 `/lio_node/status` 가 들어 있고 인터페이스 패키지도 모든 로봇 워크스페이스에 빌드되어 **AMCL 로봇도 LIO 로 오인**해 `/switch_mode` 시드 경로로 빠졌습니다(서비스가 없어 503/409).
+- **Changed**: 초기 위치 적용 경로를 설정으로 정합니다. 새 파라미터 `initial_pose_mode`(기본 `auto`)를 추가하고, `auto` 는 `robot_config` 프로필로 `cloid` → `lio`, 그 외(former·butler·stretch 등) → `amcl` 을 고릅니다. `cloid_config.yaml` 은 `initial_pose_mode: "lio"` 를 명시했습니다. 알 수 없는 값은 `auto` 로 처리하고 기동 시 경고를 남깁니다.
+- **Changed**: `GET /api/localization` 이 `initial_pose_source`(`lio`|`amcl`)를 함께 돌려주고, 웹 UI 가 이 값으로 화면을 나눕니다. 지도 카드 헤더의 위치추정 방식 배지(AMCL/LIO), AMCL 로봇에서 LIO 지도 카드 숨김(사용할 수 없는 제어와 "상태 미수신" 표시 제거), 초기 위치 확인 대화상자·결과 문구(AMCL "설정", LIO "시드 전송/위치추정 재시작")를 분리했습니다.
+- **Verification**: 대시보드 테스트 995건 통과(신규: 초기 위치 모드 해석·스냅샷 `initial_pose_source`·JS 소스 해석과 배지/카드 숨김 배선), `ruff check`/`ruff format --check` 통과. former0047 실기에서 `/switch_mode` 서비스 부재와 `lio_node` 부재를 확인해 원인을 확정했으며, **수정 이미지로 former 실기에서 초기 위치 설정이 되는지는 미검증**입니다(재배포 필요).
+
 ## 2026-11-19 — CLOiD 대시보드 초기 위치 설정이 적용되지 않던 문제 수정
 
 - **Fixed**: CLOiD 에서 대시보드 `초기 위치 설정`(지도 클릭)이 적용되지 않던 문제를 수정했습니다. 실기(cloid2, 2026-11-19)에서 `/initialpose` 를 발행하면 `lio_node` 가 `/lio_node/status` 를 `relocalizing_pose` 로 바꾸기만 하고 재위치추정을 완료하지 않아 **`ready` 로 돌아오지 않고 위치도 바뀌지 않았습니다**(같은 시드를 다시 보내도 동일, 3분 이상 유지). 반면 `/switch_mode`(`mode=localization`, `set_initial_pose=true`, `initial_pose`)는 즉시 `relocalizeFromGuess success` 로 끝나는 것을 확인했습니다.

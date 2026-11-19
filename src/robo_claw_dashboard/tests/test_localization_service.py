@@ -127,6 +127,19 @@ def test_localization_snapshot_exposes_maps_and_status():
     assert snapshot["control"]["available"] is True
 
 
+def test_localization_snapshot_reports_initial_pose_source_amcl_by_default():
+    """AMCL 로봇(대부)은 lio 후보가 아니므로 amcl 로 내려간다(UI 가 LIO 카드를 숨긴다)."""
+    snapshot = _service(FakeBackend()).localization_snapshot()
+    assert snapshot["initial_pose_source"] == "amcl"
+
+
+def test_localization_snapshot_reports_lio_for_lio_robot():
+    backend = FakeBackend()
+    backend.initial_pose_semantics = lambda: "lio"
+    snapshot = _service(backend).localization_snapshot()
+    assert snapshot["initial_pose_source"] == "lio"
+
+
 def test_switch_is_accepted_and_runs_worker():
     backend = FakeBackend()
     service = _service(backend)

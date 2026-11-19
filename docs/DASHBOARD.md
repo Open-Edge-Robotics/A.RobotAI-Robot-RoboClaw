@@ -184,7 +184,8 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `peers_service`     | `/robo_claw_messenger_client_node/list_peers` | 동료 로봇 목록 서비스(에이전트 경로로 자동 폴백) |
 | `map_frame`         | `map`         | 지도/위치 기준 프레임                              |
 | `base_frame`        | `base_link`   | 로봇 기준 프레임 (map→base TF)                     |
-| `initialpose_topic` | `/initialpose`| 초기 위치 발행 토픽                                |
+| `initialpose_topic` | `/initialpose`| 초기 위치 발행 토픽(AMCL 경로)                    |
+| `initial_pose_mode` | `auto` | 초기 위치 적용 경로. `auto`(=`robot_config` 로 판단) / `amcl` / `lio` |
 | `lio_status_topic`  | `/lio_node/status` | LIO 상태 토픽(`std_msgs/String`). 빈 값이면 상태 표시/모드 판정을 끕니다 |
 | `switch_mode_service` | `/switch_mode` | LIO 모드/지도 전환 서비스(`lio_fr_system_msgs/srv/SwitchMode`) |
 | `localization_map_dir` | `/ws/maps` | 저장된 지도 디렉터리(LIO 컨테이너 기준 경로). 읽을 수 있으면 하위 디렉터리를 지도 목록으로 사용 |
@@ -473,8 +474,17 @@ CLOiD(LIO)에서는 AMCL 대신 `lio_node`가 초기 위치를 재위치추정 �
 `lio_node`가 `/lio_node/status`를 `relocalizing_pose`로 바꾸기만 하고 재위치추정을 완료하지
 않아, 이후 `ready`로 돌아오지 않고 위치도 바뀌지 않습니다(같은 시드를 다시 보내도 같음).
 
-그래서 대시보드는 LIO 로봇(`lio_status_topic`과 `/switch_mode`가 모두 구성된 경우)에서
-`/api/initial_pose`를 다음처럼 처리합니다.
+그래서 대시보드는 초기 위치 적용 경로를 **로봇 설정으로 정합니다**(`initial_pose_mode`).
+토픽/서비스 이름의 존재 여부로 추론하지 않습니다. AMCL 로봇도 대시보드 기본 파라미터에
+`/lio_node/status` 이름이 들어 있어 존재 여부만 보면 LIO 로 오인하기 때문입니다.
+
+| `initial_pose_mode` | 동작 | 사용 예 |
+| --- | --- | --- |
+| `auto`(기본) | `robot_config` 프로필로 결정. `cloid` → `lio`, 그 외(former·butler·stretch 등) → `amcl` | 대부분의 배포 |
+| `amcl` | `/initialpose` 발행(200) | AMCL 로봇, LIO 가 아닌 2D 위치추정 |
+| `lio` | `/switch_mode` 시드(202) | CLOiD |
+
+LIO 경로의 계약은 다음과 같습니다.
 
 - `/initialpose`를 발행하지 않고, **현재 적용된 지도 + 시드 좌표**로 `/switch_mode`
   (`set_initial_pose: true`)를 호출합니다. 실기에서 이 경로는 즉시 재위치추정을 수행합니다.
@@ -491,6 +501,19 @@ CLOiD(LIO)에서는 AMCL 대신 `lio_node`가 초기 위치를 재위치추정 �
 
 `robo_claw_agent`의 `set_initial_pose` 스킬은 아직 `/initialpose`만 발행하므로, CLOiD에서는
 같은 이유로 시드가 반영되지 않습니다(지도 카드의 지도 적용 경로를 사용).
+
+### 로봇별 화면 구분
+
+`GET /api/localization`은 `initial_pose_source`(`lio`|`amcl`)를 함께 돌려주고, 웹 UI는
+이 값으로 화면을 나눠 표시합니다.
+
+- 지도 카드 헤더의 **위치추정 방식 배지**: `CLOiD LIO 위치추정` 또는 `AMCL 위치추정`
+  (마우스를 올리면 초기 위치 적용 방식 설명이 나옴).
+- `amcl` 로봇에서는 **지도 목록·지도 적용 카드를 숨깁니다**(`/switch_mode` 자체가 없어
+  상태가 항상 "미수신"으로 보이던 카드).
+- 지도 클릭 초기 위치 확인 대화상자와 결과 문구도 다릅니다. AMCL 은 "초기 위치를 … 로
+  설정할까요?", LIO 는 "현재 지도 기준 초기 위치 시드를 … 로 보낼까요? 위치추정을 다시
+  시작합니다" 로 표시합니다.
 
 ## CLOiD 지도 선택과 위치추정 시작
 

@@ -238,8 +238,17 @@ class DashboardService:
         self._localization.shutdown()
 
     def localization_snapshot(self) -> dict[str, Any]:
-        """LIO 상태·지도 목록·제어 가능 여부·마지막 지도 전환 기록을 반환한다."""
-        return self._localization.snapshot()
+        """LIO 상태·지도 목록·제어 가능 여부·마지막 지도 전환 기록을 반환한다.
+
+        `initial_pose_source`(`lio`|`amcl`)를 함께 실어 보내, 웹 UI 가 로봇에 맞는 초기 위치
+        흐름만 보여 줄 수 있게 한다(AMCL 로봇에는 LIO 지도 카드를 숨김).
+        """
+        snapshot = self._localization.snapshot()
+        if isinstance(snapshot, dict):
+            snapshot["initial_pose_source"] = (
+                "lio" if self._initial_pose_semantics() == "lio" else "amcl"
+            )
+        return snapshot
 
     def switch_localization_map(self, payload: Any) -> dict[str, Any]:
         """지도 선택/위치추정 모드 전환을 접수한다. HTTP 코드가 담긴 dict 를 돌려준다."""

@@ -31,7 +31,7 @@ from .application.scenario_runner import (
 from .application.service import DashboardService
 from .domain.exposure import ERROR, exposure_findings, is_loopback_host, parse_allowed_cidrs
 from .domain.localization import INITIAL_POSE_COVARIANCE
-from .domain.localization_mode import parse_map_names
+from .domain.localization_mode import parse_initial_pose_mode, parse_map_names
 from .domain.paths import missing_web_assets
 
 DEFAULT_BLOCKED_SKILLS = [
@@ -103,6 +103,8 @@ class DashboardNode(Node):
         self._declare("map_frame", "map")
         self._declare("base_frame", "base_link")
         self._declare("initialpose_topic", "/initialpose")
+        # 초기 위치 적용 경로: auto(프로필 기반) | amcl(/initialpose) | lio(/switch_mode 시드).
+        self._declare("initial_pose_mode", "auto")
         # CLOiD LIO: 상태 토픽/모드 전환 서비스/맵 목록. 다른 로봇에서는 비워 두면 기능만 꺼진다.
         self._declare("lio_status_topic", "/lio_node/status")
         self._declare("switch_mode_service", "/switch_mode")
@@ -156,6 +158,20 @@ class DashboardNode(Node):
         initialpose_covariance = _as_float(
             self.get_parameter("initialpose_covariance").value, INITIAL_POSE_COVARIANCE
         )
+        # 로봇 프로필(cloid/former/...)에 따라 초기 위치 적용 경로가 다르다.
+        # 이름만 보고 판단하면 AMCL 로봇도 기본 토픽 이름 때문에 LIO 로 오인하므로,
+        # 프로필 설정을 SSOT 로 쓴다(파라미터로 명시적 override 가능).
+        initial_pose_mode = parse_initial_pose_mode(
+            self.get_parameter("initial_pose_mode").value,
+            str(self.get_parameter("robot_config").value or "")
+            or os.environ.get("RC_ROBOT_CONFIG", ""),
+        )
+        raw_initial_pose_mode = str(self.get_parameter("initial_pose_mode").value or "")
+        if raw_initial_pose_mode.strip().lower() not in ("", "auto", "amcl", "lio"):
+            self.get_logger().warn(
+                f"[Dashboard] initial_pose_mode 값이 올바르지 않아 auto 로 처리합니다: "
+                f"{raw_initial_pose_mode!r} → {initial_pose_mode}"
+            )
         map_root = str(self.get_parameter("localization_map_dir").value or "/ws/maps")
         map_names, map_source = self._resolve_map_names(
             str(self.get_parameter("localization_map_names_json").value or ""), map_root
@@ -275,6 +291,7 @@ class DashboardNode(Node):
             lio_status_topic=lio_status_topic,
             switch_mode_service=switch_mode_service,
             switch_mode_timeout_sec=switch_mode_timeout,
+            initial_pose_mode=initial_pose_mode,
         )
         self._service = DashboardService(
             backend,
@@ -299,6 +316,7 @@ class DashboardNode(Node):
         self.get_logger().info(
             f"[Dashboard] localization status={lio_status_topic or '(disabled)'} "
             f"switch_mode={switch_mode_service or '(disabled)'} "
+            f"initial_pose={initial_pose_mode} "
             f"maps={len(map_names)}({map_source}) root={map_root} "
             f"interface={'ok' if backend.switch_mode_supported else 'missing(lio_fr_system_msgs)'}"
         )

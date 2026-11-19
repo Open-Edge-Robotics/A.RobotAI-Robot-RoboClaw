@@ -49,7 +49,10 @@
         <section class="card h-100">
           <div class="card-header d-flex justify-content-between align-items-baseline gap-2 flex-wrap">
             <h2 class="h6 mb-0 text-primary-emphasis">지도 / 현재 위치</h2>
-            <span id="map-status" class="small text-body-secondary">지도 대기 중…</span>
+            <span class="d-flex align-items-baseline gap-2">
+              <span id="robot-mode" class="small rc-robot-mode" title="위치추정 방식">위치추정 확인 중</span>
+              <span id="map-status" class="small text-body-secondary">지도 대기 중…</span>
+            </span>
           </div>
           <div class="card-body">
             <div class="rc-map-wrap">
@@ -65,7 +68,7 @@
                 <span><b>지도</b> <span id="map-info">–</span></span>
               </div>
             </div>
-            <div class="rc-localization-panel mt-2" role="group" aria-label="CLOiD 지도 선택 및 위치추정 시작">
+            <div id="localization-panel" class="rc-localization-panel mt-2" role="group" aria-label="CLOiD 지도 선택 및 위치추정 시작">
               <div class="d-flex flex-wrap align-items-center gap-2">
                 <label class="form-label small mb-0" for="map-select">지도</label>
                 <select id="map-select" class="form-select form-select-sm rc-map-select" aria-describedby="localization-help" disabled>

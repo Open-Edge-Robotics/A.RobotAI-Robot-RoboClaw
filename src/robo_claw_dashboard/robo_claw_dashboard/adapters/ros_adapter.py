@@ -159,6 +159,7 @@ class RosBackend:
         lio_status_topic: str = "",
         switch_mode_service: str = "/switch_mode",
         switch_mode_timeout_sec: float = 200.0,
+        initial_pose_mode: str = "amcl",
     ) -> None:
         self._node = node
         self._timeout = request_timeout_sec
@@ -169,6 +170,9 @@ class RosBackend:
         self._map_frame = map_frame
         self._base_frame = base_frame
         self._initialpose_wait = initialpose_subscriber_wait_sec
+        #: 초기 위치 적용 경로(`amcl` = /initialpose 발행, `lio` = /switch_mode 시드).
+        #: 로봇 프로필로 결정되는 값이며, 노드가 파라미터로 넣어 준다.
+        self._initial_pose_mode = "lio" if str(initial_pose_mode or "") == "lio" else "amcl"
         self._config_timeout = config_query_timeout_sec
         self._config_cache: tuple[float, dict[str, Any]] | None = None
         # 기본값 파일: launch 가 쓰는 파라미터 파일에서 "작성하지 않은 값"을 판정한다.
@@ -626,12 +630,13 @@ class RosBackend:
 
         CLOiD 의 `lio_node` 는 `/initialpose` 를 받으면 `relocalizing_pose` 상태만 남기고
         재위치추정을 완료하지 않는다(실기 확인). `/switch_mode` 에 지도와 함께
-        `set_initial_pose=true` 로 넘길 때만 시드가 반영되므로, LIO 상태 토픽과
-        지도 전환 서비스가 모두 구성된 경우에 LIO 경로를 쓴다.
+        `set_initial_pose=true` 로 넘길 때만 시드가 반영된다.
+
+        어느 경로를 쓸지는 토픽/서비스 존재 여부로 추론하지 않고 **설정**으로 정한다
+        (`initial_pose_mode`). AMCL 로봇도 대시보드 기본 파라미터에 LIO 상태 토픽 이름이
+        들어 있어 존재 여부만으로 판단하면 LIO 로 오인하기 때문이다.
         """
-        if self._lio_status_topic and self._switch_mode_type is not None:
-            return "lio"
-        return "topic"
+        return "lio" if self._initial_pose_mode == "lio" else "topic"
 
     # ---- CLOiD 위치추정 상태/모드 전환 --------------------------------------
     @staticmethod

@@ -113,6 +113,9 @@ robo_claw_dashboard_node:
     localization_map_names_json: '[]'
     # /switch_mode 응답 대기 상한(초). LIO 는 3D 맵 로드 후 응답하므로 넉넉히 둔다.
     switch_mode_timeout_sec: 200.0
-    # /initialpose 공분산(대각 x/y/yaw). CLOiD 자체 UI(0.25/0.07)와 동작을 맞추려면
-    # 0.25 로 올린다. 값이 작을수록 초기 추정을 더 확신하므로 잘못된 좌표에 취약하다.
+    # 초기 위치 적용 경로: auto(robot_config 기반) | amcl(/initialpose 발행) | lio(/switch_mode 시드).
+    # cloid 의 lio_node 는 /initialpose 로는 재위치추정을 완료하지 않으므로 lio 를 명시한다.
+    initial_pose_mode: "lio"
+    # /initialpose 공분산(대각 x/y/yaw). AMCL 로봇에서만 쓰인다. CLOiD 자체 UI(0.25/0.07)와
+    # 동작을 맞추려면 0.25 로 올린다. 값이 작을수록 초기 추정을 더 확신하므로 잘못된 좌표에 취약하다.
     initialpose_covariance: 0.05

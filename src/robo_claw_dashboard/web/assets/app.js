@@ -462,9 +462,13 @@
   async function sendInitialPose(candidate) {
     const result = el("map-result");
     const yawDeg = ((candidate.yaw * 180) / Math.PI).toFixed(1);
-    const label =
-      "초기 위치를 (" + candidate.x.toFixed(2) + ", " + candidate.y.toFixed(2) + "), " +
-      yawDeg + "° 로 설정할까요?";
+    const isLio = initialPoseSource() === "lio";
+    const poseText =
+      "(" + candidate.x.toFixed(2) + ", " + candidate.y.toFixed(2) + "), " + yawDeg + "°";
+    const label = isLio
+      ? "현재 지도 기준 초기 위치 시드를 " + poseText + " 로 보낼까요?\n" +
+        "위치추정을 다시 시작하므로 수 초 걸리고, 정합 결과로 좌표가 보정될 수 있습니다."
+      : "초기 위치를 " + poseText + " 로 설정할까요?";
     if (!window.confirm(label)) return;
 
     if (result) {
@@ -609,11 +613,39 @@
     state.localizationInFlight = true;
     try {
       const { ok, data } = await fetchJson("/api/localization", loadTokens().readonly);
-      if (ok && data) state.localization.applySnapshot(data);
+      if (ok && data) {
+        state.localization.applySnapshot(data);
+        updatePoseModeHint();
+      }
     } catch (_err) {
       // 폴링 실패는 조용히 무시하고 이전 표시를 유지합니다.
     } finally {
       state.localizationInFlight = false;
+    }
+  }
+
+  // ---- 초기 위치 (로봇별 방식 차이) -------------------------------------
+  // CLOiD(LIO)는 현재 지도 + 시드로 /switch_mode 를 호출해 위치추정을 다시 시작하고(202),
+  // AMCL 로봇은 /initialpose 발행으로 끝난다(200). 서버가 보낸 initial_pose_source 로
+  // 문구와 확인 대화상자를 다르게 보여 준다.
+  function initialPoseSource() {
+    const panel = state.localization;
+    if (!panel || typeof panel.getState !== "function") return "";
+    const panelState = panel.getState() || {};
+    return panelState.initialPoseSource || "";
+  }
+
+  function updatePoseModeHint() {
+    const button = el("pose-mode");
+    if (!button) return;
+    const source = initialPoseSource();
+    if (source === "lio") {
+      button.title =
+        "지도에서 클릭해 현재 지도 기준 초기 위치 시드를 보냅니다(위치추정 재시작).";
+    } else if (source === "amcl") {
+      button.title = "지도에서 클릭해 AMCL 초기 위치를 설정합니다(파티클 재배치).";
+    } else {
+      button.title = "지도에서 클릭해 초기 위치를 설정합니다.";
     }
   }
 

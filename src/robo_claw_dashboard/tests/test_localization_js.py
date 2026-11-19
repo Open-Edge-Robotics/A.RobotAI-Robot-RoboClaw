@@ -32,6 +32,8 @@ REQUIRED_IDS = [
     "map-apply",
     "localization-status",
     "localization-result",
+    "localization-panel",
+    "robot-mode",
 ]
 
 NODE_SCRIPT = """
@@ -109,6 +111,16 @@ console.log(JSON.stringify({
   controlOk, controlBlocked, controlBusy,
   noSeed, withSeed, mapping, kept, fallback,
   selectUsable, selectEmpty, selectMissing,
+  sourceLio: loc.resolveInitialPoseSource({ initial_pose_source: "lio" }),
+  sourceAmcl: loc.resolveInitialPoseSource({ initial_pose_source: "AMCL" }),
+  sourceUnknown: loc.resolveInitialPoseSource({}),
+  sourceStale: loc.applySnapshot(
+    { maps: [], control: { available: false } },
+    { initialPoseSource: "lio" }
+  ).initialPoseSource,
+  modeLio: loc.describeRobotMode("lio"),
+  modeAmcl: loc.describeRobotMode("amcl"),
+  modeUnknown: loc.describeRobotMode(""),
 }));
 """
 
@@ -203,6 +215,26 @@ def test_map_select_is_usable_only_when_maps_exist(observed):
     assert observed["selectMissing"] is False
 
 
+def test_initial_pose_source_is_normalized(observed):
+    # AMCL 로봇과 CLOiD 로봇의 초기 위치 흐름을 화면에서 나누기 위한 값이다.
+    assert observed["sourceLio"] == "lio"
+    assert observed["sourceAmcl"] == "amcl"
+    assert observed["sourceUnknown"] == ""
+
+
+def test_initial_pose_source_is_not_dropped_by_empty_snapshot(observed):
+    # 서버가 필드를 잠시 안 보내도 카드가 깜박이지 않도록 이전 값을 유지한다.
+    assert observed["sourceStale"] == "lio"
+
+
+def test_robot_mode_badge_describes_pose_semantics(observed):
+    assert observed["modeLio"]["text"] == "CLOiD LIO 위치추정"
+    assert "switch_mode" in observed["modeLio"]["title"]
+    assert observed["modeAmcl"]["text"] == "AMCL 위치추정"
+    assert "/initialpose" in observed["modeAmcl"]["title"]
+    assert observed["modeUnknown"]["text"] == "위치추정 확인 중"
+
+
 class TestStaticContract:
     def test_render_toggles_map_select_disabled(self):
         script = LOCALIZATION_JS.read_text(encoding="utf-8")
@@ -227,6 +259,18 @@ class TestStaticContract:
         assert "state.localization.applySnapshot(data)" in app
         assert "RcLocalization.mount" in app
         assert "async function refreshLocalization" in app
+
+    def test_amcl_robot_hides_lio_map_card(self):
+        script = LOCALIZATION_JS.read_text(encoding="utf-8")
+        assert 'nodes.panel.hidden = state.initialPoseSource === "amcl"' in script, (
+            "AMCL 로봇에서 LIO 지도 카드가 그대로 보이면 사용할 수 없는 제어를 노출합니다"
+        )
+
+    def test_app_adapts_initial_pose_flow_to_robot_source(self):
+        app = APP_JS.read_text(encoding="utf-8")
+        assert "function initialPoseSource()" in app
+        assert 'initialPoseSource() === "lio"' in app
+        assert "위치추정을 다시 시작하므로" in app
 
     def test_status_regions_are_live(self):
         html = INDEX_HTML.read_text(encoding="utf-8")
