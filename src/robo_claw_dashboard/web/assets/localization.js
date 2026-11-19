@@ -136,6 +136,16 @@
     };
   }
 
+  /**
+   * 지도 목록 select 를 열 수 있는지 판정한다(순수 함수).
+   * HTML 초기 상태가 disabled 이므로, 목록이 준비되면 이 값으로 풀어 준다.
+   */
+  function isMapSelectUsable(snapshot) {
+    const snap = snapshot && typeof snapshot === "object" ? snapshot : {};
+    const maps = Array.isArray(snap.maps) ? snap.maps : [];
+    return maps.length > 0;
+  }
+
   /** queued/running 인 요청은 아직 끝나지 않았으므로 화면에 진행 중으로 표시한다. */
   function isSwitchActive(record) {
     return Boolean(record && (record.status === "queued" || record.status === "running"));
@@ -248,6 +258,14 @@
     }
 
     function render() {
+      if (nodes.select) {
+        // HTML 초기 상태(disabled)를 그대로 두면 목록이 있어도 드롭다운이 열리지 않는다.
+        const usable = isMapSelectUsable(state);
+        nodes.select.disabled = !usable;
+        nodes.select.title = usable
+          ? "적용할 지도를 선택합니다."
+          : "사용할 수 있는 지도 목록이 없습니다.";
+      }
       renderMaps();
       const pose = usablePose();
       if (nodes.seed) {
@@ -364,6 +382,7 @@
   const api = {
     formatStatus,
     describeControl,
+    isMapSelectUsable,
     buildSwitchPayload,
     createState,
     applySnapshot,

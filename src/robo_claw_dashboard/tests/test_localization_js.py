@@ -75,6 +75,12 @@ const mapping = loc.buildSwitchPayload({
   map: "ignored", seed: false, pose: null, mode: "mapping",
 });
 
+const selectUsable = loc.isMapSelectUsable({
+  maps: [{ name: "m1", path: "/m1" }, { name: "m2", path: "/m2" }],
+});
+const selectEmpty = loc.isMapSelectUsable({ maps: [] });
+const selectMissing = loc.isMapSelectUsable(null);
+
 const kept = loc.applySnapshot(
   {
     available: true,
@@ -102,6 +108,7 @@ console.log(JSON.stringify({
   ready, active, failed, unavailable,
   controlOk, controlBlocked, controlBusy,
   noSeed, withSeed, mapping, kept, fallback,
+  selectUsable, selectEmpty, selectMissing,
 }));
 """
 
@@ -189,7 +196,21 @@ def test_apply_snapshot_falls_back_to_first_map(observed):
     assert observed["fallback"]["selectedMap"] == "m1"
 
 
+def test_map_select_is_usable_only_when_maps_exist(observed):
+    # HTML 초기 상태가 disabled 이므로, 목록이 있을 때만 select 를 풀어야 한다.
+    assert observed["selectUsable"] is True
+    assert observed["selectEmpty"] is False
+    assert observed["selectMissing"] is False
+
+
 class TestStaticContract:
+    def test_render_toggles_map_select_disabled(self):
+        script = LOCALIZATION_JS.read_text(encoding="utf-8")
+        assert "nodes.select.disabled = !usable" in script, (
+            "지도 목록이 있어도 select 가 disabled 로 남으면 드롭다운이 열리지 않습니다"
+        )
+        assert "isMapSelectUsable" in script
+
     def test_required_element_ids_exist_in_html(self):
         html = INDEX_HTML.read_text(encoding="utf-8")
         declared = set(re.findall(r'id="([^"]+)"', html))
