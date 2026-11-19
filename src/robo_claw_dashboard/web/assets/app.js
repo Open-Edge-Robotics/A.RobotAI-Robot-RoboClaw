@@ -685,37 +685,35 @@
     if (filter) filter.addEventListener("input", (ev) => applyConfigFilter(ev.target.value));
   }
 
+  // chat_view.js 가 없을 때(설치 누락/404) 화면에 남길 사유. 조용히 예외로 죽으면
+  // 사용자는 "전송이 아무 반응 없다"만 보게 되므로 원인과 조치를 함께 적는다.
+  const CHAT_MODULE_MISSING_TEXT =
+    "채팅 모듈(chat_view.js)을 불러오지 못했습니다. 대시보드 패키지를 다시 빌드한 뒤 새로고침하세요.";
+
   function setupChat() {
     const form = el("chat-form");
+    const input = el("chat-input");
+    const result = el("chat-result");
+    if (!form || !input) return;
+    // 결과 대기 상한을 넘긴 응답(unknown)은 실패가 아니다. 에이전트가 계속 실행 중일
+    // 수 있으므로 상태·스킬·로그로 확인하라는 문구는 chat_view.js 가 만든다.
     const view = window.RcChatView;
-    form.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const message = el("chat-input").value.trim();
-      const result = el("chat-result");
-      if (!message) return;
-      const token = loadTokens().control;
-      const pending = view.pendingView();
-      result.className = pending.className;
-      result.textContent = pending.text;
-      try {
-        const { ok, status, data } = await fetchJson("/api/chat", token, {
-          method: "POST",
-          body: JSON.stringify({ message }),
-        });
-        if (!ok) {
-          result.className = "small mt-2 text-danger";
-          result.textContent = "실패(" + status + "): " + (data.error || "요청 실패");
-          return;
-        }
-        // 결과 대기 상한을 넘긴 응답(unknown)은 실패가 아니다. 에이전트가 계속
-        // 실행 중일 수 있으므로 상태·스킬·로그로 확인하라는 문구로 표시한다.
-        const rendered = view.resultView(data);
-        result.className = rendered.className;
-        result.textContent = rendered.text;
-      } catch (err) {
+    if (!view || typeof view.bindSubmit !== "function") {
+      if (result) {
         result.className = "small mt-2 text-danger";
-        result.textContent = "실패: " + err.message;
+        result.textContent = CHAT_MODULE_MISSING_TEXT;
       }
+      console.error("RcChatView 를 사용할 수 없습니다: /assets/chat_view.js 로드 실패");
+      return;
+    }
+    view.bindSubmit({
+      form: form,
+      input: input,
+      result: result,
+      sendButton: el("chat-send"),
+      fetchJson: fetchJson,
+      getControlToken: () => loadTokens().control,
+      url: "/api/chat",
     });
   }
 

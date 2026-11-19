@@ -26,6 +26,7 @@ WEB = Path(__file__).resolve().parents[1] / "web"
 ASSETS = WEB / "assets"
 INDEX_HTML = WEB / "index.html"
 GOAL_JS = ASSETS / "goal_picker.js"
+CHAT_JS = ASSETS / "chat_view.js"
 GEOMETRY_JS = ASSETS / "map_geometry.js"
 APP_JS = ASSETS / "app.js"
 STYLE_CSS = ASSETS / "style.css"
@@ -97,8 +98,10 @@ def test_goal_picker_uses_status_snapshot_only_and_no_extra_fetch():
     assert "navigation_request" in script
     assert "state.mapGoal.applySnapshot" in app
     assert "state.mapGoal.applyMap" in app
-    # 일반 채팅 동작은 그대로 둔다.
-    assert "JSON.stringify({ message })" in app
+    # 일반 채팅 동작은 그대로 둔다(전송 배선은 chat_view.js bindSubmit 이 맡는다).
+    assert "JSON.stringify({ message: message })" in CHAT_JS.read_text(encoding="utf-8")
+    assert "view.bindSubmit(" in app
+    assert "/api/chat" in app
 
 
 def test_goal_picker_never_calls_skill_nav2_or_initial_pose_endpoints():

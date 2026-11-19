@@ -49,7 +49,110 @@
     return { className: BASE_CLASS, text: PENDING_TEXT };
   }
 
-  const api = { resultView, pendingView, isUnconfirmed };
+  /** 입력이 비어 있을 때의 안내(전송하지 않는다). */
+  function emptyInputView() {
+    return { className: classOf("warning"), text: "메시지를 입력하세요." };
+  }
+
+  /** HTTP 실패 응답 → { className, text }. 상태 코드를 함께 남겨 원인 파악을 돕는다. */
+  function failureView(status, payload) {
+    const body = payload || {};
+    const reason = textOf(body.error) || textOf(body.message) || "요청 실패";
+    return { className: classOf("danger"), text: "실패(" + String(status) + "): " + reason };
+  }
+
+  /** 예외(네트워크/토큰 오류) → { className, text }. */
+  function errorView(err) {
+    const reason = err && err.message ? err.message : String(err);
+    return { className: classOf("danger"), text: "실패: " + reason };
+  }
+
+  /** 채팅 폼 전송 배선 — 전송 중복 차단, pending/결과 표시, 실패 시 입력 보존.
+   *
+   * `window.RcChatView` 를 쓰는 쪽(app.js)이 폼·입력·결과 노드와 fetch 구현을 넘긴다.
+   * 전송이 진행 중일 때 다시 제출해도 HTTP 요청은 한 번만 나간다(에이전트 중복 실행 방지).
+   *
+   * @param {object} options form/input/result/sendButton/fetchJson/getControlToken/url
+   * @returns {{ submit: function(): Promise<void>, isInFlight: function(): boolean }|null}
+   */
+  function bindSubmit(options) {
+    const opts = options || {};
+    const form = opts.form;
+    const input = opts.input;
+    if (!form || typeof form.addEventListener !== "function" || !input) return null;
+    const result = opts.result || null;
+    const sendButton = opts.sendButton || null;
+    const fetchJson = opts.fetchJson;
+    const getControlToken = opts.getControlToken || function () {
+      return "";
+    };
+    const url = opts.url || "/api/chat";
+
+    let inFlight = false;
+
+    function render(view) {
+      if (!result) return;
+      result.className = view.className;
+      result.textContent = view.text;
+    }
+
+    function setBusy(busy) {
+      if (sendButton) sendButton.disabled = busy;
+    }
+
+    async function submit() {
+      if (typeof fetchJson !== "function") return;
+      const message = String(input.value == null ? "" : input.value).trim();
+      if (!message) {
+        render(emptyInputView());
+        return;
+      }
+      if (inFlight) return; // 전송 중 재제출은 무시한다(중복 실행 방지)
+      inFlight = true;
+      setBusy(true);
+      render(pendingView());
+      try {
+        const response = (await fetchJson(url, getControlToken(), {
+          method: "POST",
+          body: JSON.stringify({ message: message }),
+        })) || {};
+        if (!response.ok) {
+          render(failureView(response.status, response.data));
+          return;
+        }
+        render(resultView(response.data));
+        // 접수된 메시지는 입력창에서 비운다. 실패/미확인이면 재전송할 수 있게 남긴다.
+        input.value = "";
+      } catch (err) {
+        render(errorView(err));
+      } finally {
+        inFlight = false;
+        setBusy(false);
+      }
+    }
+
+    form.addEventListener("submit", function (event) {
+      if (event && typeof event.preventDefault === "function") event.preventDefault();
+      submit();
+    });
+
+    return {
+      submit: submit,
+      isInFlight: function () {
+        return inFlight;
+      },
+    };
+  }
+
+  const api = {
+    resultView,
+    pendingView,
+    emptyInputView,
+    failureView,
+    errorView,
+    isUnconfirmed,
+    bindSubmit,
+  };
   global.RcChatView = api;
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

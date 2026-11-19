@@ -3,7 +3,12 @@ import pathlib
 """대시보드 순수 규칙 — 웹 리소스 경로 해석 테스트."""
 
 import pytest
-from robo_claw_dashboard.domain.paths import mime_type, safe_join_web_path
+from robo_claw_dashboard.domain.paths import (
+    mime_type,
+    missing_web_assets,
+    referenced_web_assets,
+    safe_join_web_path,
+)
 
 
 @pytest.fixture
@@ -67,3 +72,55 @@ def test_index_html_links_vendored_bootstrap_and_app_assets():
     assert "/assets/app.js" in html
     assert "cdn.jsdelivr.net" not in html
     assert (WEB_ROOT / "assets" / "vendor" / "bootstrap.min.css").is_file()
+
+
+class TestReferencedWebAssets:
+    def _root(self, tmp_path, index_html):
+        root = tmp_path / "web"
+        (root / "assets").mkdir(parents=True)
+        (root / "index.html").write_text(index_html, encoding="utf-8")
+        return str(root)
+
+    def test_local_references_are_listed_sorted_and_deduplicated(self, tmp_path):
+        root = self._root(
+            tmp_path,
+            '<link href="/assets/style.css"><script src="/assets/app.js"></script>'
+            '<script src="/assets/app.js"></script>',
+        )
+        assert referenced_web_assets(root) == ["/assets/app.js", "/assets/style.css"]
+
+    def test_remote_and_relative_references_are_ignored(self, tmp_path):
+        root = self._root(
+            tmp_path,
+            '<link href="https://cdn.example.com/x.css"><script src="local.js"></script>',
+        )
+        assert referenced_web_assets(root) == []
+
+    def test_missing_index_returns_empty(self, tmp_path):
+        assert referenced_web_assets(str(tmp_path / "nope")) == []
+
+
+class TestMissingWebAssets:
+    def test_asset_missing_from_install_copy_is_reported(self, tmp_path):
+        """설치본에 새 JS 가 빠지면 브라우저는 404 를 받는다 — 시작 시 잡아야 한다."""
+        root = tmp_path / "web"
+        (root / "assets").mkdir(parents=True)
+        (root / "index.html").write_text(
+            '<script src="/assets/app.js"></script><script src="/assets/chat_view.js"></script>',
+            encoding="utf-8",
+        )
+        (root / "assets" / "app.js").write_text("console.log(1);", encoding="utf-8")
+
+        assert missing_web_assets(str(root)) == ["/assets/chat_view.js"]
+
+    def test_complete_install_reports_nothing(self, tmp_path):
+        root = tmp_path / "web"
+        (root / "assets").mkdir(parents=True)
+        (root / "index.html").write_text('<script src="/assets/app.js"></script>', encoding="utf-8")
+        (root / "assets" / "app.js").write_text("console.log(1);", encoding="utf-8")
+
+        assert missing_web_assets(str(root)) == []
+
+    def test_source_web_dir_has_every_referenced_asset(self):
+        """index.html 이 참조하는 /assets 파일이 소스 트리에 실제로 있어야 한다."""
+        assert missing_web_assets(str(WEB_ROOT)) == []

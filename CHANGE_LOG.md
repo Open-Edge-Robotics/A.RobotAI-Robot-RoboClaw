@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-19 — 대시보드 메시지 전송이 동작하지 않던 문제(웹 리소스 404) 수정
+
+- **Fixed**: 대시보드 웹 UI 에서 에이전트 메시지 전송이 전혀 동작하지 않던 문제를 수정했습니다. 원인은 코드가 아니라 **설치본이 오래된 것**이었습니다. `install/robo_claw_dashboard/share/robo_claw_dashboard/web/assets/` 가 2026-11-18 빌드 시점의 symlink 트리로 남아 이후 추가된 `chat_view.js` · `localization.js` 가 설치되지 않았고, 브라우저는 `/assets/chat_view.js` 404 를 받아 `window.RcChatView` 가 `undefined` 가 되었습니다. 그 상태에서 `app.js` 의 submit 핸들러가 `view.pendingView()` 를 호출해 `TypeError: Cannot read properties of undefined (reading 'pendingView')` 로 죽어 HTTP 요청 자체가 나가지 않았습니다(`fetchJson` 호출 전 예외).
+- **Changed**: 채팅 전송 배선을 `web/assets/chat_view.js` 의 `bindSubmit` 으로 옮겨 폼·입력·결과 노드와 fetch 구현을 주입받게 했습니다. 전송 중에는 결과 영역에 `전송 중…` 을 표시하고 **전송 버튼을 비활성**해 중복 전송을 막고, 빈 입력은 HTTP 요청 없이 경고만 표시하며, 접수(성공·미확인) 시 입력창을 비우고 실패 시에는 재전송할 수 있도록 입력을 보존합니다.
+- **Fixed**: `RcChatView` 를 사용할 수 없으면 전송 영역에 사유와 조치(`chat_view.js` 로드 실패 → 패키지 재빌드 후 새로고침)를 남깁니다. 조용한 `TypeError` 대신 화면에서 원인을 알 수 있습니다.
+- **Added**: `domain/paths.py` 에 `referenced_web_assets` · `missing_web_assets` 를 두고, `index.html` 이 참조하는 `/assets/*` 중 설치본에 없는 항목을 대시보드 노드가 기동 시 `WARN` 으로 남깁니다. 같은 유형(설치 누락 → 404 → 패널만 조용히 고장)을 브라우저 콘솔 없이도 알 수 있습니다.
+- **검증**: 설치본에 `chat_view.js`·`localization.js` 가 포함되도록 `colcon build --symlink-install --packages-up-to robo_claw_dashboard` 를 실행했고, 설치된 정적 루트로 실제 `ThreadingHTTPServer` 를 띄워 `GET /assets/chat_view.js` → 200(`application/javascript`), `GET /assets/localization.js` → 200, `POST /api/chat`(control 토큰) → 200 `{"success": true, ...}`, 토큰 없음 → 401 을 확인했습니다. 테스트는 대시보드 `test_paths.py`/`test_chat_send_js.py`/`test_chat_view_js.py`/`test_cooperation_dom.py` 68건 통과, 신규 `test_chat_send_js.py` 9건과 웹 리소스 누락 점검 5건을 추가했습니다. `ruff check`·`ruff format --check` 통과. 실기(cloid2 등) 브라우저에서 새 이미지로 전송이 되는 것은 **미검증**입니다.
+
 ## 2026-11-19 — CLOiD 대시보드 초기 위치 설정이 적용되지 않던 문제 수정
 
 - **Fixed**: CLOiD 에서 대시보드 `초기 위치 설정`(지도 클릭)이 적용되지 않던 문제를 수정했습니다. 실기(cloid2, 2026-11-19)에서 `/initialpose` 를 발행하면 `lio_node` 가 `/lio_node/status` 를 `relocalizing_pose` 로 바꾸기만 하고 재위치추정을 완료하지 않아 **`ready` 로 돌아오지 않고 위치도 바뀌지 않았습니다**(같은 시드를 다시 보내도 동일, 3분 이상 유지). 반면 `/switch_mode`(`mode=localization`, `set_initial_pose=true`, `initial_pose`)는 즉시 `relocalizeFromGuess success` 로 끝나는 것을 확인했습니다.

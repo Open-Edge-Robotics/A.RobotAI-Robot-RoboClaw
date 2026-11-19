@@ -32,6 +32,7 @@ from .application.service import DashboardService
 from .domain.exposure import ERROR, exposure_findings, is_loopback_host, parse_allowed_cidrs
 from .domain.localization import INITIAL_POSE_COVARIANCE
 from .domain.localization_mode import parse_map_names
+from .domain.paths import missing_web_assets
 
 DEFAULT_BLOCKED_SKILLS = [
     "delete_file",
@@ -172,6 +173,15 @@ class DashboardNode(Node):
             self._resolve_contract_file()
         )
         static_root = _resolve_static_root(str(self.get_parameter("static_root").value), self)
+        # 설치가 오래되어 web/assets 의 새 JS 가 빠지면 브라우저는 404 를 받고 해당
+        # 패널이 조용히 동작하지 않는다(예: 채팅 전송). 시작 시 원인을 드러낸다.
+        missing_assets = missing_web_assets(static_root)
+        if missing_assets:
+            self.get_logger().warn(
+                "[Dashboard] 웹 리소스 누락(설치가 오래되었을 수 있음): "
+                + ", ".join(missing_assets)
+                + " — robo_claw_dashboard 패키지를 다시 빌드한 뒤 새로고침하세요."
+            )
 
         # 시나리오 테스트 설정 구성
         robot_name = str(self.get_parameter("robot_config").value or "") or os.environ.get(
