@@ -97,7 +97,7 @@ _NON_LOCATION_TYPES = frozenset(
         "observation",
         "navigated_coordinate",
         "blocked_coordinate",
-        # 마지막 위치 스냅샷은 장소 지식이 아니다(좌표→이름 역조회에서 제외).
+        # 예전 마지막 위치 스냅샷 레코드(현재는 last_pose.yaml). 기존 DB 잔여분 제외용.
         "last_pose",
     }
 )

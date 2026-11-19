@@ -5,6 +5,14 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-20 — 마지막 위치를 RAG 대신 파일로 저장하고 former nav2 초기 위치로 자동 반영
+
+- **Changed**: 에이전트의 마지막 위치(x, y, yaw)를 RAG 레코드(`type=last_pose`) 대신 메모리 디렉터리의 `last_pose.yaml` 로 저장합니다(컨테이너 `/ros2_ws/memory`, rclaw CLI 가 이미 rw 로 마운트하는 경로라 새 마운트 없음). 임베딩 호출·전체 스캔이 없어지고, `enable_rag=false` 여도 재기동 후 남습니다. 임시 파일 → fsync → rename 으로 원자적으로 씁니다.
+- **Added**: former nav2 기동 스크립트(`former/former0045`, `former/former0047` 의 `run_former_env.sh nav2`)가 `last_pose.yaml` 을 AMCL 초기 위치로 씁니다. 저장 당시 맵이 기동 맵과 다르거나 값이 깨졌으면 기존 `initpose.md` 로 폴백합니다. `RC_INITPOSE_SOURCE`(`auto`/`last_pose`/`initpose`/`none`), `RC_LAST_POSE_FILE`, `RC_LAST_POSE_MAX_AGE_H` 로 제어하며, systemd nav unit 에 `RC_LAST_POSE_FILE` 을 넣습니다(`install_autostart.sh`).
+- **Changed**: `/amcl_pose` 공분산이 수렴(위치 σ ≤ 0.5 m, 방향 σ ≤ 0.5 rad)했을 때만 저장하고, 미수렴 pose 는 메모리 최신값으로도 쓰지 않습니다. 맵 이름은 `/map_server` `yaml_filename` 으로 기록합니다. 정지 중에는 시간이 흘러도 다시 쓰지 않습니다(이동·회전 임계 + 최소 15초 간격).
+- **Removed**: `remember_last_pose`/`read_last_pose`(RAG) 경로. 기존 DB 에 남은 `last_pose` 레코드는 장소 검색 제외 목록에 그대로 두어 영향이 없습니다.
+- **검증**: ROS 2 jazzy 컨테이너에서 `test_last_pose_memory.py`·`test_navigation_lifecycle_and_safety.py`·`test_planner_location_routing.py`·신규 `test_former_nav_initpose.py`(가짜 docker 로 0045/0047 스크립트의 params 주입 확인) 통과. **former 실기에서 nav 재기동 후 `/amcl_pose` 가 저장값과 일치하는지는 미검증**입니다(로봇 외부 반출 중).
+
 ## 2026-11-19 — 대시보드 메시지 전송이 동작하지 않던 문제(웹 리소스 404) 수정
 
 - **Fixed**: 대시보드 웹 UI 에서 에이전트 메시지 전송이 전혀 동작하지 않던 문제를 수정했습니다. 원인은 코드가 아니라 **설치본이 오래된 것**이었습니다. `install/robo_claw_dashboard/share/robo_claw_dashboard/web/assets/` 가 2026-11-18 빌드 시점의 symlink 트리로 남아 이후 추가된 `chat_view.js` · `localization.js` 가 설치되지 않았고, 브라우저는 `/assets/chat_view.js` 404 를 받아 `window.RcChatView` 가 `undefined` 가 되었습니다. 그 상태에서 `app.js` 의 submit 핸들러가 `view.pendingView()` 를 호출해 `TypeError: Cannot read properties of undefined (reading 'pendingView')` 로 죽어 HTTP 요청 자체가 나가지 않았습니다(`fetchJson` 호출 전 예외).

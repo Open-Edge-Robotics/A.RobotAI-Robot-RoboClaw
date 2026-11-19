@@ -58,8 +58,8 @@ class SetInitialPoseSkill(BaseSkill):
     해석 경로는 `navigate_to`의 `target_name`과 같습니다. 좌표를 추측하지 않으므로
     기억되지 않은 이름은 실패로 보고합니다.
 
-    `target_name`에 "마지막 위치"류 표현을 주면 RAG에 유지되는 마지막 pose
-    (x, y, yaw)를 복원합니다. 네비게이션 재기동으로 AMCL 초기 위치를 잃었을 때
+    `target_name`에 "마지막 위치"류 표현을 주면 트래커 최신값 또는 메모리 디렉터리의
+    `last_pose.yaml` 에 저장된 마지막 pose(x, y, yaw)를 복원합니다. 네비게이션 재기동으로 AMCL 초기 위치를 잃었을 때
     쓰는 경로입니다.
     """
 
@@ -232,7 +232,7 @@ class SetInitialPoseSkill(BaseSkill):
         return self._resolve_place(target_name)
 
     def _resolve_last_pose(self) -> dict[str, Any] | None:
-        """RAG 에 유지되는 마지막 pose 를 복원한다(없으면 None)."""
+        """트래커 최신값 또는 `last_pose.yaml` 의 마지막 pose 를 복원한다(없으면 None)."""
         pose = read_tracked_or_stored_pose(self.node)
         if pose is None:
             return None

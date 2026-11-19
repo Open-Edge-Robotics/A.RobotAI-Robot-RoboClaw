@@ -18,6 +18,10 @@
 # RC_MAP_FILE 로 nav 기동 맵을, RC_NAV_DIR 로 nav 스크립트 디렉토리를,
 # RC_WS 로 RoboClaw 워크스페이스를 바꿀 수 있다. 기존 cyclonedds.xml 은
 # 타임스탬프 백업을 남기고 교체한다.
+#
+# nav 는 RoboClaw 에이전트가 메모리 디렉터리에 남긴 last_pose.yaml 을 AMCL 초기
+# 위치로 쓴다(기본 <RC_WS>/agent_workspace/memory/last_pose.yaml). AI config 서버의
+# memory_dir 로 메모리 경로를 바꿨다면 RC_LAST_POSE_FILE 로 그 호스트 경로를 넘긴다.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +30,7 @@ ROBOT_USER="${RC_ROBOT_USER:-former}"
 FORMER_ROOT="${RC_FORMER_ROOT:-$ROBOT_HOME/konjiam/former}"
 WORKSPACE="${RC_WS:-$ROBOT_HOME/workspace/A.RobotAI-Robot-RoboClaw}"
 MAP_FILE="${RC_MAP_FILE:-map_konjiam_L_107-1.yaml}"
+LAST_POSE_FILE="${RC_LAST_POSE_FILE:-$WORKSPACE/agent_workspace/memory/last_pose.yaml}"
 
 BASE_UNIT="former_bringup.service"
 WATCHDOG_UNIT="former_bringup_watchdog.service"
@@ -79,6 +84,7 @@ render_unit() {
         -e "s|__MAP_FILE__|$MAP_FILE|g" \
         -e "s|__AUTOSTART_DIR__|$DIR|g" \
         -e "s|__WS__|$WORKSPACE|g" \
+        -e "s|__LAST_POSE_FILE__|$LAST_POSE_FILE|g" \
         -e "s|__BASE_LAUNCH_ARGS__|$base_args|g" \
         "$template" > "$output"
     chmod 644 "$output"

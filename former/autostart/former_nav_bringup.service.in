@@ -15,6 +15,8 @@ Environment=HOME=__ROBOT_HOME__
 Environment=RC_FOREGROUND=1
 Environment=ROS_DOMAIN_ID=4
 Environment=RC_MAP_FILE=__MAP_FILE__
+# RoboClaw 에이전트가 저장한 마지막 위치(AMCL 초기 위치로 사용, 없으면 initpose.md)
+Environment=RC_LAST_POSE_FILE=__LAST_POSE_FILE__
 WorkingDirectory=__NAV_DIR__
 # 이전 실행(수동 기동 포함)이 남긴 동명 컨테이너를 정리한다. 없으면 무시한다.
 ExecStartPre=-/usr/bin/docker rm -f __ROBOT_ID___nav

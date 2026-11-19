@@ -390,38 +390,25 @@ def test_set_initial_pose_explicit_coordinates_win_over_place():
     assert published[0].pose.pose.position.x == pytest.approx(1.0)
 
 
-class _LastPoseMemory(_PlaceMemory):
-    """마지막 위치(last_pose) 레코드를 가진 메모리 대역."""
+def _last_pose_node(published: list, tmp_path, pose=None, places=None):
+    """`last_pose.yaml` 파일을 가진 노드 대역."""
+    from robo_claw_agent.memory_manager.last_pose import write_last_pose_file
 
-    def __init__(self, entries=None, places=None):
-        super().__init__(places or {})
-        self._vector_store = SimpleNamespace(
-            list_entries=lambda with_vectors=False: list(entries or [])
-        )
+    path = str(tmp_path / "last_pose.yaml")
+    if pose is not None:
+        write_last_pose_file(path, **pose)
+    node = _initial_pose_node(published, _PlaceMemory(places or {}))
+    node._last_pose_file = path
+    node._last_pose_tracker = None
+    return node
 
 
 @pytest.mark.unit
-def test_set_initial_pose_restores_remembered_last_pose():
-    """'마지막 위치를 초기 위치로' → RAG 마지막 pose(x, y, yaw) 복원."""
+def test_set_initial_pose_restores_remembered_last_pose(tmp_path):
+    """'마지막 위치를 초기 위치로' → last_pose.yaml 의 pose(x, y, yaw) 복원."""
     published: list = []
-    memory = _LastPoseMemory(
-        entries=[
-            {
-                "id": "lp-1",
-                "text": "마지막 위치: x=4.20, y=-3.10, yaw=1.57rad (90.0°)",
-                "metadata": {
-                    "type": "last_pose",
-                    "x": 4.2,
-                    "y": -3.1,
-                    "yaw": 1.5708,
-                    "frame": "map",
-                    "near_place": "",
-                },
-            }
-        ]
-    )
     skill = SetInitialPoseSkill()
-    skill.set_node(_initial_pose_node(published, memory))
+    skill.set_node(_last_pose_node(published, tmp_path, {"x": 4.2, "y": -3.1, "yaw": 1.5708}))
 
     res = skill.execute({"target_name": "마지막 위치"})
 
@@ -442,19 +429,10 @@ def test_set_initial_pose_restores_remembered_last_pose():
 
 
 @pytest.mark.unit
-def test_set_initial_pose_last_pose_uses_tracker_latest_value():
-    """네비 재기동 중에는 트래커가 가진 메모리 최신값이 RAG 기록보다 우선한다."""
+def test_set_initial_pose_last_pose_uses_tracker_latest_value(tmp_path):
+    """네비 재기동 중에는 트래커가 가진 메모리 최신값이 파일 기록보다 우선한다."""
     published: list = []
-    memory = _LastPoseMemory(
-        entries=[
-            {
-                "id": "lp-old",
-                "text": "마지막 위치: x=9.00, y=9.00, yaw=0.00rad (0.0°)",
-                "metadata": {"type": "last_pose", "x": 9.0, "y": 9.0, "yaw": 0.0},
-            }
-        ]
-    )
-    node = _initial_pose_node(published, memory)
+    node = _last_pose_node(published, tmp_path, {"x": 9.0, "y": 9.0, "yaw": 0.0})
     node._last_pose_tracker = SimpleNamespace(
         latest={"x": 2.5, "y": 1.5, "yaw": -0.5, "frame": "map"}
     )
@@ -472,19 +450,10 @@ def test_set_initial_pose_last_pose_uses_tracker_latest_value():
 
 
 @pytest.mark.unit
-def test_set_initial_pose_last_pose_explicit_yaw_wins():
+def test_set_initial_pose_last_pose_explicit_yaw_wins(tmp_path):
     published: list = []
-    memory = _LastPoseMemory(
-        entries=[
-            {
-                "id": "lp-1",
-                "text": "마지막 위치: x=4.20, y=-3.10, yaw=1.57rad (90.0°)",
-                "metadata": {"type": "last_pose", "x": 4.2, "y": -3.1, "yaw": 1.5708},
-            }
-        ]
-    )
     skill = SetInitialPoseSkill()
-    skill.set_node(_initial_pose_node(published, memory))
+    skill.set_node(_last_pose_node(published, tmp_path, {"x": 4.2, "y": -3.1, "yaw": 1.5708}))
 
     res = skill.execute({"target_name": "마지막 위치", "yaw": 0.0})
 
@@ -494,10 +463,10 @@ def test_set_initial_pose_last_pose_explicit_yaw_wins():
 
 
 @pytest.mark.unit
-def test_set_initial_pose_last_pose_missing_fails_clearly():
+def test_set_initial_pose_last_pose_missing_fails_clearly(tmp_path):
     published: list = []
     skill = SetInitialPoseSkill()
-    skill.set_node(_initial_pose_node(published, _LastPoseMemory(entries=[])))
+    skill.set_node(_last_pose_node(published, tmp_path))
 
     res = skill.execute({"target_name": "마지막 위치"})
 

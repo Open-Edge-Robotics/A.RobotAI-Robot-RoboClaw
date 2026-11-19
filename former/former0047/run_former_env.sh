@@ -33,6 +33,12 @@ usage() {
     printf "  --tag <tag>           Docker image tag (default: 1.0)\n"
     printf "  --home-dir <dir>      Override host former home directory (default: /home/former or \$HOME)\n"
     printf "  -h, --help            Show this help message\n"
+    printf "\nEnvironment (nav2 initial pose):\n"
+    printf "  RC_INITPOSE_SOURCE     auto (default: last_pose.yaml, then initpose.md) | last_pose | initpose | none\n"
+    printf "  RC_LAST_POSE_FILE      Host path of last_pose.yaml saved by the RoboClaw agent\n"
+    printf "                         (default: \$RC_MEMORY_DIR, \$RC_WS or ~/workspace/A.RobotAI-Robot-RoboClaw/agent_workspace/memory)\n"
+    printf "  RC_LAST_POSE_MAX_AGE_H Ignore last_pose.yaml older than N hours (default: 0 = no limit)\n"
+    printf "  RC_INITPOSE_FILE       initpose.md file name or path (default: initpose.md)\n"
 }
 
 # Handle help option before shift
@@ -229,6 +235,89 @@ parse_initpose() {
     return 1
 }
 
+# Resolve last_pose.yaml written by the RoboClaw agent into its memory dir
+# (container /ros2_ws/memory, host default <RoboClaw repo>/agent_workspace/memory).
+# Priority: RC_LAST_POSE_FILE -> RC_MEMORY_DIR -> RC_WS -> default workspace path.
+resolve_last_pose_file() {
+    local candidates=()
+    if [ -n "${RC_LAST_POSE_FILE:-}" ]; then
+        candidates=("$RC_LAST_POSE_FILE")
+    else
+        if [ -n "${RC_MEMORY_DIR:-}" ]; then
+            candidates+=("$RC_MEMORY_DIR/last_pose.yaml")
+        fi
+        if [ -n "${RC_WS:-}" ]; then
+            candidates+=("$RC_WS/agent_workspace/memory/last_pose.yaml")
+        fi
+        candidates+=("$FORMER_HOME/workspace/A.RobotAI-Robot-RoboClaw/agent_workspace/memory/last_pose.yaml")
+    fi
+
+    local f
+    for f in "${candidates[@]}"; do
+        if [ -f "$f" ] && [ -r "$f" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Print the value of a flat "key: value" line (surrounding double quotes stripped).
+last_pose_value() {
+    local file="$1"
+    local key="$2"
+    sed -nE "s/^${key}:[[:space:]]*(.*)\$/\\1/p" "$file" | head -n1 \
+        | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/'
+}
+
+# Validate last_pose.yaml against the map being launched and print "x y yaw".
+# Rejects: non-numeric values, non-map frame, a different map, and (when
+# RC_LAST_POSE_MAX_AGE_H > 0) a pose older than that many hours.
+select_last_pose() {
+    local file="$1"
+    local current_map="$2"
+    local num_re='^[-+]?[0-9]*\.?[0-9]+$'
+    local x y yaw frame map updated
+
+    x=$(last_pose_value "$file" x)
+    y=$(last_pose_value "$file" y)
+    yaw=$(last_pose_value "$file" yaw)
+    frame=$(last_pose_value "$file" frame)
+    map=$(last_pose_value "$file" map)
+    updated=$(last_pose_value "$file" updated_at)
+
+    if ! [[ "$x" =~ $num_re && "$y" =~ $num_re && "$yaw" =~ $num_re ]]; then
+        echo "Warning: Invalid pose in $file. Ignoring last pose." >&2
+        return 1
+    fi
+    if [ -n "$frame" ] && [ "$frame" != "map" ]; then
+        echo "Warning: Last pose frame is '$frame' (not map). Ignoring last pose." >&2
+        return 1
+    fi
+    if [ -z "$map" ]; then
+        echo "Warning: Last pose has no map name; assuming it matches $current_map." >&2
+    elif [ "$map" != "$current_map" ]; then
+        echo "Notice: Last pose was saved on map '$map', launching '$current_map'. Ignoring last pose." >&2
+        return 1
+    fi
+
+    local max_age_h="${RC_LAST_POSE_MAX_AGE_H:-0}"
+    if [[ "$max_age_h" =~ ^[0-9]+$ ]] && [ "$max_age_h" -gt 0 ]; then
+        local saved_ts now_ts
+        if saved_ts=$(date -d "$updated" +%s 2>/dev/null); then
+            now_ts=$(date +%s)
+            if [ $((now_ts - saved_ts)) -gt $((max_age_h * 3600)) ]; then
+                echo "Notice: Last pose is older than ${max_age_h}h ($updated). Ignoring last pose." >&2
+                return 1
+            fi
+        else
+            echo "Warning: Cannot parse last pose timestamp '$updated'; skipping age check." >&2
+        fi
+    fi
+
+    printf '%s %s %s\n' "$x" "$y" "$yaw"
+}
+
 # Copy a Nav2 params file, replacing the AMCL initial_pose with the given values.
 # Supports both dict form (initial_pose: {x,y,z,yaw}) and list form (initial_pose: [x,y,z]).
 apply_initpose_to_params() {
@@ -342,30 +431,63 @@ case "$COMMAND" in
             echo "Warning: Params directory not found. Using package default." >&2
         fi
 
-        # Override the AMCL initial pose by reading initpose.md.
+        # Override the AMCL initial pose (amcl.initial_pose in the params file).
+        # RC_INITPOSE_SOURCE:
+        #   auto (default) - last_pose.yaml saved by the RoboClaw agent when it is valid
+        #                    and was recorded on the same map, otherwise initpose.md
+        #   last_pose      - only last_pose.yaml
+        #   initpose       - only initpose.md (previous behavior)
+        #   none           - keep the params file values
         # The params file is generated in a temp dir (bind-mounted at /ws/params)
         # so the original yaml stays untouched.
-        if [ -n "$HOST_PARAMS_DIR" ] && [ -f "$HOST_PARAMS_DIR/$PARAMS_FILE" ]; then
-            INITPOSE_FILE=$(resolve_initpose_file "${RC_INITPOSE_FILE:-initpose.md}" || true)
-            if [ -n "$INITPOSE_FILE" ]; then
-                if read -r IP_X IP_Y IP_YAW < <(parse_initpose "$INITPOSE_FILE"); then
-                    # 고정 이름 디렉터리를 쓴다. 이전 실행(예: sudo 실행, docker
-                    # bind-mount 자동 생성)이 이 경로를 root 소유로 남기면 sticky /tmp
-                    # 에서는 삭제할 수 없고, set -e 때문에 기동 전체가 중단된다.
-                    # 삭제에 실패하면 매 실행 고유한 임시 디렉터리로 대체한다.
-                    INITPOSE_OVERRIDE_DIR="${TMPDIR:-/tmp}/former_initpose_${ROBOT_ID}"
-                    if ! rm -rf "$INITPOSE_OVERRIDE_DIR" 2>/dev/null; then
-                        INITPOSE_OVERRIDE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/former_initpose_${ROBOT_ID}.XXXXXX")"
+        INITPOSE_SOURCE="${RC_INITPOSE_SOURCE:-auto}"
+        case "$INITPOSE_SOURCE" in
+            auto|last_pose|initpose|none) ;;
+            *)
+                echo "Warning: Unknown RC_INITPOSE_SOURCE='$INITPOSE_SOURCE'. Using auto." >&2
+                INITPOSE_SOURCE="auto"
+                ;;
+        esac
+        IP_X=""
+        IP_Y=""
+        IP_YAW=""
+        IP_FROM=""
+        if [ "$INITPOSE_SOURCE" != "none" ] && [ -n "$HOST_PARAMS_DIR" ] && [ -f "$HOST_PARAMS_DIR/$PARAMS_FILE" ]; then
+            if [ "$INITPOSE_SOURCE" = "auto" ] || [ "$INITPOSE_SOURCE" = "last_pose" ]; then
+                LAST_POSE_FILE=$(resolve_last_pose_file || true)
+                if [ -n "$LAST_POSE_FILE" ]; then
+                    if read -r IP_X IP_Y IP_YAW < <(select_last_pose "$LAST_POSE_FILE" "$MAP_HOST_BASENAME"); then
+                        IP_FROM="$LAST_POSE_FILE"
                     fi
-                    mkdir -p "$INITPOSE_OVERRIDE_DIR"
-                    apply_initpose_to_params "$HOST_PARAMS_DIR/$PARAMS_FILE" \
-                        "$INITPOSE_OVERRIDE_DIR/$PARAMS_FILE" "$IP_X" "$IP_Y" "$IP_YAW"
-                    PARAMS_MOUNT_DIR="$INITPOSE_OVERRIDE_DIR"
-                    PARAMS_PARAM="/ws/params/$PARAMS_FILE"
-                    echo "Applied initial pose from $INITPOSE_FILE: x=$IP_X, y=$IP_Y, yaw=$IP_YAW"
                 else
-                    echo "Warning: Failed to parse initial pose from $INITPOSE_FILE. Keeping params file values." >&2
+                    echo "Notice: last_pose.yaml not found (set RC_LAST_POSE_FILE to its host path)." >&2
                 fi
+            fi
+            if [ -z "$IP_FROM" ] && [ "$INITPOSE_SOURCE" != "last_pose" ]; then
+                INITPOSE_FILE=$(resolve_initpose_file "${RC_INITPOSE_FILE:-initpose.md}" || true)
+                if [ -n "$INITPOSE_FILE" ]; then
+                    if read -r IP_X IP_Y IP_YAW < <(parse_initpose "$INITPOSE_FILE"); then
+                        IP_FROM="$INITPOSE_FILE"
+                    else
+                        echo "Warning: Failed to parse initial pose from $INITPOSE_FILE. Keeping params file values." >&2
+                    fi
+                fi
+            fi
+            if [ -n "$IP_FROM" ]; then
+                # 고정 이름 디렉터리를 쓴다. 이전 실행(예: sudo 실행, docker
+                # bind-mount 자동 생성)이 이 경로를 root 소유로 남기면 sticky /tmp
+                # 에서는 삭제할 수 없고, set -e 때문에 기동 전체가 중단된다.
+                # 삭제에 실패하면 매 실행 고유한 임시 디렉터리로 대체한다.
+                INITPOSE_OVERRIDE_DIR="${TMPDIR:-/tmp}/former_initpose_${ROBOT_ID}"
+                if ! rm -rf "$INITPOSE_OVERRIDE_DIR" 2>/dev/null; then
+                    INITPOSE_OVERRIDE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/former_initpose_${ROBOT_ID}.XXXXXX")"
+                fi
+                mkdir -p "$INITPOSE_OVERRIDE_DIR"
+                apply_initpose_to_params "$HOST_PARAMS_DIR/$PARAMS_FILE" \
+                    "$INITPOSE_OVERRIDE_DIR/$PARAMS_FILE" "$IP_X" "$IP_Y" "$IP_YAW"
+                PARAMS_MOUNT_DIR="$INITPOSE_OVERRIDE_DIR"
+                PARAMS_PARAM="/ws/params/$PARAMS_FILE"
+                echo "Applied initial pose from $IP_FROM: x=$IP_X, y=$IP_Y, yaw=$IP_YAW"
             fi
         fi
 

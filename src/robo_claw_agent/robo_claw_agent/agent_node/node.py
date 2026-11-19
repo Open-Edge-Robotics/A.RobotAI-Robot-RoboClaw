@@ -175,7 +175,7 @@ class AgentNode(Node, ExecutionMixin):
         self._llm: BaseLLMBridge | None = None
         self._mcp_manager = None
         setup_tf(self, p)
-        setup_last_pose_tracking(self)
+        setup_last_pose_tracking(self, p)
         setup_llm(self, p, qdrant_primary)
         self._planner = LLMPlanner(self)
         self._task_decomposer = TaskDecomposer(self)

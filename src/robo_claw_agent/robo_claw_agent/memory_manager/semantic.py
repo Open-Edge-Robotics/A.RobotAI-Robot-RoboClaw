@@ -177,8 +177,8 @@ _FWD_SKIP_TYPES = frozenset(
         "scan_room",
         "explore_result",
         "patrol_result",
-        # 마지막 위치 스냅샷. 텍스트가 "마지막 위치: x=…" 형태라 장소명 추출기에
-        # "마지막"이 장소로 잡히고, 위치 라우팅이 초기 위치 설정을 장소 이동으로 오인한다.
+        # 예전 마지막 위치 스냅샷 레코드(현재는 last_pose.yaml 파일에 저장). 기존 DB 에
+        # 남은 레코드의 "마지막"이 장소명으로 잡혀 위치 라우팅이 오인하지 않도록 계속 제외한다.
         "last_pose",
         # VLM/스캔이 기록한 객체 관측은 이동 목적지가 아니다(조작 조회 전용).
         "object_location",

@@ -396,32 +396,72 @@ def setup_ros_interfaces(node) -> None:
         )
 
 
-def setup_last_pose_tracking(node) -> None:
-    """마지막 위치를 주기적으로 기억한다(AMCL 초기 위치 복구용).
+def setup_last_pose_tracking(node, p: AgentParams) -> None:
+    """마지막 위치를 주기적으로 기억하고 `last_pose.yaml` 에 저장한다.
 
-    TF `map → base_link` 가 유효한 동안에만 갱신되므로, 네비게이션이 재기동되어
-    TF 가 끊기면 마지막으로 성공한 스냅샷이 그대로 남는다. RAG 저장은 트래커가
-    이동 임계값·최소 간격으로 throttle 한다(정지 중에는 쓰지 않음).
+    파일은 메모리 디렉터리(`memory_path` 상위)에 둔다. former nav2 기동 스크립트가 이
+    파일을 AMCL 초기 위치로 쓰고, "마지막 위치를 초기 위치로" 요청도 이 값을 쓴다.
+    TF `map → base_link` 가 유효하고 `/amcl_pose` 로 수렴이 확인된 동안에만 저장한다.
     """
-    from .last_pose_tracker import SNAPSHOT_INTERVAL_SEC, LastPoseTracker
+    from robo_claw_agent.memory_manager.last_pose import resolve_last_pose_path
+
+    from .last_pose_tracker import (
+        AMCL_POSE_TOPIC,
+        SNAPSHOT_INTERVAL_SEC,
+        LastPoseTracker,
+        MapNameQuery,
+        amcl_std_from_covariance,
+        snapshot_tick,
+    )
 
     node._last_pose_tracker = None
+    node._last_pose_file = resolve_last_pose_path(p.memory_path)
     if getattr(node, "_tf_buffer", None) is None:
         node.get_logger().warning("Last pose memory disabled (TF2 unavailable)")
         return
 
-    # RAG 가 꺼져 있어도 메모리 최신 pose 는 유지한다(에이전트가 살아 있는 동안 복원 가능).
-    persist_enabled = bool(getattr(node, "_enable_rag", False)) and (
-        getattr(node, "_memory", None) is not None
+    pose_file = node._last_pose_file
+    tracker = LastPoseTracker(
+        pose_file=pose_file,
+        require_localization=True,
+        background_persist=True,
     )
-    tracker = LastPoseTracker(persist_enabled=persist_enabled, background_persist=True)
     node._last_pose_tracker = tracker
+    callback_group = ReentrantCallbackGroup()
+
+    map_query = None
+    if pose_file:
+        tracker.invalidate_map()
+        map_query = MapNameQuery(node, tracker)
+        try:
+            from geometry_msgs.msg import PoseWithCovarianceStamped
+            from rclpy.qos import DurabilityPolicy
+
+            def _on_amcl_pose(msg) -> None:
+                std = amcl_std_from_covariance(msg.pose.covariance)
+                if std is not None:
+                    tracker.set_localization_std(*std)
+
+            # amcl_pose 퍼블리셔 QoS 가 버전마다 달라 최대 호환(BEST_EFFORT/VOLATILE)으로 받는다.
+            amcl_qos = QoSProfile(depth=5)
+            amcl_qos.reliability = ReliabilityPolicy.BEST_EFFORT
+            amcl_qos.durability = DurabilityPolicy.VOLATILE
+            node._last_pose_amcl_sub = node.create_subscription(
+                PoseWithCovarianceStamped,
+                AMCL_POSE_TOPIC,
+                _on_amcl_pose,
+                amcl_qos,
+                callback_group=callback_group,
+            )
+        except Exception as exc:  # noqa: BLE001
+            node.get_logger().warning(f"Last pose AMCL subscription failed: {exc}")
+
     node.create_timer(
         SNAPSHOT_INTERVAL_SEC,
-        lambda: tracker.update_from_node(node),
-        callback_group=ReentrantCallbackGroup(),
+        lambda: snapshot_tick(node, tracker, map_query),
+        callback_group=callback_group,
     )
     node.get_logger().info(
         f"Enabled last pose memory (snapshot every {SNAPSHOT_INTERVAL_SEC:.0f}s, "
-        f"rag_persist={persist_enabled})"
+        f"file={pose_file or 'disabled'})"
     )

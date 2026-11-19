@@ -85,7 +85,7 @@ sudo ./install_autostart.sh former0047 disable
 ```
 
 - 기본 맵은 `map_konjiam_L_107-1.yaml` 이며, 설치 전에 `RC_MAP_FILE=<맵 파일>` 로 바꿀 수 있습니다.
-- 초기 위치는 `../initpose.md` 를 읽어 매 기동마다 반영합니다(수동 실행과 동일).
+- 초기 위치는 RoboClaw 에이전트가 저장한 `last_pose.yaml`(맵이 같을 때) → `../initpose.md` 순으로 매 기동마다 반영합니다(수동 실행과 동일, `RC_INITPOSE_SOURCE` 로 변경).
 - 설치(install) 시점에는 이미 떠 있는 nav·에이전트 컨테이너가 정리되고 다시 기동됩니다.
 - 에이전트 컨테이너는 `docker run -it` 으로 뜨기 때문에 systemd 에서는 TTY 가 없어
   그대로는 기동하지 않습니다. `run_roboclaw.sh` 가 `script(1)` 로 pty 를 붙여 실행합니다.

@@ -162,7 +162,21 @@ former/
 
 `map_konjiam_L_107-1` 은 RTAB-Map 결과(`grid_map.pgm`)를 그대로 사용하며, 이전 SLAM 맵과 **원점·해상도가 다릅니다**.
 
-초기 자세는 각 로봇의 `initpose.md`(예: `~/konjiam/former/initpose.md`)로 주입합니다. 맵 프레임이 바뀌었거나 다른 지점에서 출발하면 RViz의 `2D Pose Estimate`로 새 위치를 지정하고, 그 값을 `initpose.md`에 갱신하세요. `set_initial_pose: true`(자동 주입) + `always_reset_initial_pose: false`(수동 지정값 유지) 조합을 사용합니다.
+초기 자세는 nav2 기동 스크립트(`run_former_env.sh nav2`)가 매 기동마다 `nav2_params.yaml` 의 `amcl.initial_pose` 에 주입합니다. 소스 우선순위는 다음과 같습니다(`RC_INITPOSE_SOURCE=auto`, 기본).
+
+1. **`last_pose.yaml`** — RoboClaw 에이전트가 메모리 디렉터리에 남긴 마지막 위치. 에이전트 컨테이너의 `/ros2_ws/memory`(rclaw CLI 가 이미 rw 로 마운트하는 경로)이고, 호스트 기본값은 `~/workspace/A.RobotAI-Robot-RoboClaw/agent_workspace/memory/last_pose.yaml` 입니다. 저장 당시 맵(`map:`)이 기동하는 맵과 다르거나 값이 깨졌으면 쓰지 않습니다.
+2. **`initpose.md`**(예: `~/konjiam/former/initpose.md`) — 위 파일이 없거나 쓸 수 없을 때. 맵을 새로 만들었거나 처음 출발 위치를 정할 때 RViz `2D Pose Estimate` 값을 여기에 적습니다.
+3. 둘 다 없으면 params 파일 값을 그대로 씁니다.
+
+| 환경 변수 | 설명 |
+|---|---|
+| `RC_INITPOSE_SOURCE` | `auto`(기본) / `last_pose` / `initpose`(예전 동작) / `none` |
+| `RC_LAST_POSE_FILE` | `last_pose.yaml` 호스트 경로. AI config 서버의 `memory_dir` 로 메모리 경로를 바꿨다면 지정합니다(기본: `$RC_MEMORY_DIR` → `$RC_WS/agent_workspace/memory` → 위 기본 경로). |
+| `RC_LAST_POSE_MAX_AGE_H` | N 시간보다 오래된 `last_pose.yaml` 은 무시(기본 0 = 제한 없음) |
+
+`set_initial_pose: true`(자동 주입) + `always_reset_initial_pose: false`(수동 지정값 유지) 조합을 사용합니다. 기동 로그의 `Applied initial pose from <파일>` 줄로 어느 소스가 적용됐는지 확인할 수 있습니다.
+
+에이전트는 TF `map → base_link` 가 유효하고 `/amcl_pose` 공분산이 수렴(위치 σ ≤ 0.5 m, 방향 σ ≤ 0.5 rad)했을 때만, 0.3 m 이상 이동하거나 0.5 rad 이상 회전한 경우 최소 15초 간격으로 파일을 갱신합니다(정지 중에는 쓰지 않음). 맵 이름은 `/map_server` 의 `yaml_filename` 파라미터에서 읽습니다. 전원이 꺼진 동안 로봇을 손으로 옮겼다면 저장값이 실제 위치와 다르므로, RViz·대시보드·`set_initial_pose` 로 다시 지정하거나 `RC_INITPOSE_SOURCE=initpose` 로 기동하세요.
 
 기동 후 위치를 바꾸려면 RViz 대신 에이전트에 요청해도 됩니다. RoboClaw의 `set_initial_pose` 스킬은 `/initialpose`로 AMCL 초기 위치를 발행하며, 좌표 대신 기억된 장소명을 받습니다.
 
@@ -172,11 +186,11 @@ former/
 ```
 
 - 장소명은 시맨틱 맵 또는 RAG에 좌표로 등록되어 있어야 합니다(`get_location`으로 조회 가능한 이름). 등록되지 않은 이름은 좌표를 추측하지 않고 실패로 보고합니다.
-- 네비게이션을 재기동해 AMCL 초기 위치를 잃었을 때는 "마지막 위치를 초기 위치로 해줘"로 복구합니다. 에이전트는 TF `map → base_link`가 유효한 동안 마지막 pose(x, y, yaw)를 기억하고(`last_pose` RAG 레코드 1건, 이동 시에만 갱신), 요청 시 그 값을 `/initialpose`로 발행합니다. 복원값은 스냅숏 지연을 감안해 공분산을 넓게(0.25) 넣어 AMCL이 라이다로 보정하게 합니다.
-  - 마지막 위치 기억은 RAG 활성(`enable_rag=true`)일 때만 재기동 후에도 남습니다. RAG가 꺼져 있으면 에이전트 프로세스가 살아 있는 동안에만 유효합니다.
+- 네비게이션을 재기동해 AMCL 초기 위치를 잃었을 때는 "마지막 위치를 초기 위치로 해줘"로 복구할 수도 있습니다. 에이전트가 기억한 마지막 pose(x, y, yaw, 메모리 최신값 → `last_pose.yaml` 순)를 `/initialpose`로 발행하며, 스냅숏 지연을 감안해 공분산을 넓게(0.25) 넣어 AMCL이 라이다로 보정하게 합니다. 보통은 nav 기동 시 `last_pose.yaml` 이 자동 반영되므로 이 요청이 필요 없습니다.
+  - 마지막 위치는 RAG 설정과 무관하게 `last_pose.yaml` 로 남습니다(예전 `last_pose` RAG 레코드는 더 이상 쓰지 않으며, 남아 있어도 장소 검색에서 제외됩니다).
   - `/odom` 폴백 좌표는 프레임이 달라 마지막 위치로 기록하지 않습니다.
 - 방향은 장소에 저장되지 않으므로 `yaw`를 생략하면 마지막 위치의 yaw(복원 시) 또는 0rad(장소명)로 설정됩니다. 특정 방향이 필요하면 `yaw`(라디안)를 함께 지정합니다.
-- 이 요청은 실행 중인 AMCL 상태만 바꾸며 `initpose.md`를 갱신하지 않습니다. 다음 재기동에도 유지하려면 `initpose.md`를 직접 갱신하세요.
+- 이 요청은 실행 중인 AMCL 상태만 바꿉니다. AMCL 이 수렴한 뒤 로봇이 움직이면 그 위치가 `last_pose.yaml` 에 저장되어 다음 nav 기동에 반영됩니다.
 
 ## 8. 알려진 문제: nav2 스택 간헐 종료 (`Magick: abort due to signal 11`)
 
@@ -569,7 +583,7 @@ sudo RC_MAP_FILE=map_konjiam_L_107-1_clean.yaml ./install_autostart.sh former004
   백업합니다. 새 unit 이 문제를 일으키면 백업을 되돌리고 `systemctl daemon-reload` 하면
   됩니다.
 - 자동 시작 상태에서는 부팅 직후부터 주행 명령(`/base_controller/cmd_vel_unstamped`)을 받을 수 있습니다. 이동 명령을 스스로 내리지는 않지만, 실기 시험 중에는 nav unit 을 `stop` 으로 내려 두는 편이 안전합니다.
-- 초기 위치는 각 로봇의 `initpose.md` 를 매 기동마다 반영하며, 파라미터는 임시 디렉터리(`/tmp/former_initpose_<robot>`)에 생성해 컨테이너 `/ws/params` 로 마운트합니다. 이 경로는 재부팅 시 사라지지만 기동 시 다시 생성됩니다.
+- 초기 위치는 매 기동마다 `last_pose.yaml`(에이전트 저장, 맵 일치 시) → `initpose.md` 순으로 반영하며(§ 초기 자세 참고), nav unit 에는 `RC_LAST_POSE_FILE`(기본 `<RC_WS>/agent_workspace/memory/last_pose.yaml`, 설치 시 `RC_LAST_POSE_FILE` 로 변경)이 들어갑니다. 파라미터는 임시 디렉터리(`/tmp/former_initpose_<robot>`)에 생성해 컨테이너 `/ws/params` 로 마운트합니다. 이 경로는 재부팅 시 사라지지만 기동 시 다시 생성됩니다.
 - 에이전트는 기동 직후 원격 설정 서버에서 활성 설정을 가져오고, 실패하면
   `~/.robo_claw/config_cache/former_kon4X/` 캐시로 폴백합니다. 캐시가 없는 상태에서
   네트워크도 끊기면 기동에 실패하므로, 새 로봇에서는 먼저 한 번 수동 실행해 캐시를 만듭니다.
