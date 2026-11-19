@@ -193,3 +193,88 @@ def test_shutdown_rejects_new_requests():
     result = service.submit(_request())
     assert result["success"] is False
     assert result["status_code"] == 503
+
+
+class TestInitialPoseSeed:
+    """CLOiD 초기 위치 시드는 /switch_mode 로만 반영되므로 현재 지도를 요구한다."""
+
+    def test_seed_without_loaded_map_is_rejected(self):
+        backend = FakeBackend()
+        service = _service(backend)
+        result = service.submit_initial_pose({"x": 1.0, "y": -2.0, "yaw": 0.0})
+        assert result["success"] is False
+        assert result["status_code"] == 409
+        assert "지도" in result["error"]
+        assert backend.plans == []
+
+    def test_seed_reuses_loaded_map_and_normalizes_yaw(self):
+        backend = FakeBackend()
+        service = _service(backend)
+        assert service.submit(_request()).get("status_code") == 202
+        assert service.wait_idle(5.0) is True
+
+        result = service.submit_initial_pose({"x": 2.25, "y": -1.5, "yaw": 4.0})
+        assert result["success"] is True
+        assert result["status_code"] == 202
+        assert result["map"] == "konjiam_L_107"
+        assert service.wait_idle(5.0) is True
+        plan = backend.plans[-1]
+        assert plan["mode"] == "localization"
+        assert plan["map_path"] == "/ws/maps/konjiam_L_107"
+        assert plan["set_initial_pose"] is True
+        assert plan["pose"]["x"] == 2.25
+        assert -3.1416 <= plan["pose"]["yaw"] <= 3.1416
+        job = service.snapshot()["last_switch"]
+        assert job["source"] == "initial_pose"
+        assert job["status"] == "succeeded"
+
+    def test_seed_rejects_invalid_pose_without_calling_backend(self):
+        backend = FakeBackend()
+        service = _service(backend)
+        service.submit(_request())
+        assert service.wait_idle(5.0) is True
+        for payload in ({"x": "1.0", "y": 0.0}, {"x": 1.0}, {"x": 1.0, "y": 0.0, "yaw": "a"}):
+            result = service.submit_initial_pose(payload)
+            assert result["success"] is False
+            assert result["status_code"] == 400
+        assert len(backend.plans) == 1  # 지도 전환 1건만 호출됐다
+
+    def test_mapping_switch_forgets_loaded_map(self):
+        backend = FakeBackend()
+        service = _service(backend)
+        service.submit(_request())
+        assert service.wait_idle(5.0) is True
+        service.submit({"mode": "mapping", "confirm": True})
+        assert service.wait_idle(5.0) is True
+        result = service.submit_initial_pose({"x": 1.0, "y": 0.0})
+        assert result["success"] is False
+        assert result["status_code"] == 409
+        assert service.snapshot()["current_map"] is None
+
+    def test_seed_is_blocked_while_switch_runs(self):
+        backend = FakeBackend(block=True)
+        service = _service(backend)
+        service.submit(_request())
+        assert backend.entered.wait(5.0) is True
+        service._loaded_map = ("konjiam_L_107", "/ws/maps/konjiam_L_107")
+        result = service.submit_initial_pose({"x": 1.0, "y": 0.0})
+        assert result["success"] is False
+        assert result["status_code"] == 409
+        backend.release()
+        assert service.wait_idle(5.0) is True
+
+    def test_seed_reports_missing_control(self):
+        backend = FakeBackend(control={"available": False, "reason": "lio_fr_system_msgs 미설치"})
+        service = _service(backend)
+        result = service.submit_initial_pose({"x": 1.0, "y": 0.0})
+        assert result["success"] is False
+        assert result["status_code"] == 503
+        assert "lio_fr_system_msgs" in result["error"]
+
+    def test_seed_is_blocked_by_map_goal_lease(self):
+        backend = FakeBackend()
+        service = _service(backend, holds_lease=lambda: True)
+        result = service.submit_initial_pose({"x": 1.0, "y": 0.0})
+        assert result["success"] is False
+        assert result["status_code"] == 409
+        assert backend.plans == []

@@ -484,6 +484,19 @@
         }
         return;
       }
+      if (status === 202 || data.pending) {
+        // CLOiD LIO 는 지도를 다시 적용하면서 /switch_mode 로 시드를 넘긴다(202).
+        // 접수는 적용 완료가 아니므로 지도 패널의 위치추정 상태로 확인하게 한다.
+        if (result) {
+          result.className = "small mt-2 text-success";
+          result.textContent =
+            "접수됨(202): " + (data.map ? "지도 '" + data.map + "' 기준, " : "") +
+            "(x=" + Number(data.x).toFixed(2) + ", y=" + Number(data.y).toFixed(2) +
+            "), " + data.yaw_deg + "° 시드로 위치추정을 다시 시작합니다. " +
+            "완료는 지도 패널의 위치추정 상태로 확인하세요.";
+        }
+        return;
+      }
       if (result) {
         result.className = "small mt-2 text-success";
         result.textContent =

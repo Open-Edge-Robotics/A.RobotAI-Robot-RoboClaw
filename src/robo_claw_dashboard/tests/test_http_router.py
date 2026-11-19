@@ -216,6 +216,47 @@ def test_post_initial_pose_forwards_payload(web_root):
     assert b"success" in resp.body
 
 
+def test_post_initial_pose_returns_202_when_lio_seed_is_queued(web_root):
+    """CLOiD 는 /switch_mode 접수(202)를 그대로 전달한다(접수 != 적용 완료)."""
+    service = FakeService()
+    service._initial_pose_result = {
+        "success": True,
+        "pending": True,
+        "status_code": 202,
+        "map": "konjiam_L_107",
+        "request": {"request_id": "loc-1", "status": "queued"},
+    }
+    resp = route_http(
+        "POST",
+        "/api/initial_pose",
+        static_root=web_root,
+        service=service,
+        body=b'{"x": 1.5, "y": -2.0, "yaw": 0.3}',
+    )
+    body = json.loads(resp.body.decode("utf-8"))
+    assert resp.status == 202
+    assert body["pending"] is True
+    assert "status_code" not in body
+
+
+def test_post_initial_pose_returns_409_when_seed_has_no_map(web_root):
+    service = FakeService()
+    service._initial_pose_result = {
+        "success": False,
+        "status_code": 409,
+        "error": "현재 적용된 지도를 알 수 없어 초기 위치 시드를 보낼 수 없습니다",
+    }
+    resp = route_http(
+        "POST",
+        "/api/initial_pose",
+        static_root=web_root,
+        service=service,
+        body=b'{"x": 1.5, "y": -2.0}',
+    )
+    assert resp.status == 409
+    assert "지도" in json.loads(resp.body.decode("utf-8"))["error"]
+
+
 def test_post_initial_pose_rejects_invalid_json(web_root):
     service = FakeService()
     resp = route_http(

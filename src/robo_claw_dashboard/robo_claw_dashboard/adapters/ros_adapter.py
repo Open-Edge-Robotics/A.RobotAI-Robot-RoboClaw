@@ -621,6 +621,18 @@ class RosBackend:
         self._initialpose_pub.publish(msg)
         return {"success": True, "message": "초기 위치를 발행했습니다"}
 
+    def initial_pose_semantics(self) -> str:
+        """초기 위치 적용 경로를 돌려준다(`lio` = /switch_mode 시드, `topic` = 발행).
+
+        CLOiD 의 `lio_node` 는 `/initialpose` 를 받으면 `relocalizing_pose` 상태만 남기고
+        재위치추정을 완료하지 않는다(실기 확인). `/switch_mode` 에 지도와 함께
+        `set_initial_pose=true` 로 넘길 때만 시드가 반영되므로, LIO 상태 토픽과
+        지도 전환 서비스가 모두 구성된 경우에 LIO 경로를 쓴다.
+        """
+        if self._lio_status_topic and self._switch_mode_type is not None:
+            return "lio"
+        return "topic"
+
     # ---- CLOiD 위치추정 상태/모드 전환 --------------------------------------
     @staticmethod
     def _import_switch_mode_type() -> Any:

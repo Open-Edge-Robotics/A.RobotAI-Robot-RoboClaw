@@ -120,6 +120,8 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | 지도 목록이 비어 있음 | `localization_map_names_json`·`localization_map_dir` 미설정 또는 마운트 없음 | `/api/localization`의 `maps`/`map_root`와 기동 로그의 `localization ... maps=0(none)` 줄을 확인합니다 |
 | `지도 적용` 버튼이 비활성 | `lio_fr_system_msgs` 미설치, `/switch_mode` 서비스 없음, 이미 진행 중 | `/api/localization`의 `control.available`/`control.reason`을 확인합니다 |
 | 초기 위치 설정이 거부됨 | 로봇이 매핑(SLAM) 모드이거나 지도 목표 이동 중 | `/lio_node/status`가 `mapping`이면 먼저 지도를 적용해 위치추정 모드로 전환합니다 |
+| CLOiD 에서 초기 위치가 409로 거부됨 | 대시보드가 현재 적용된 지도를 모름(재시작 후 등) | 지도 카드에서 `지도 적용 / 위치추정 시작`을 먼저 실행한 뒤 초기 위치를 설정합니다 |
+| 초기 위치 접수 후 위치추정이 `ready`로 안 돌아옴 | 적용된 지도가 실제 LIO 지도와 다르거나 재위치추정이 실패 | 지도 카드의 상태와 `/rosout` 로그(예: `relocalizeFromGuess`)를 확인하고 지도를 다시 적용합니다 |
 
 `http_allowed_cidrs_json`에 작은따옴표(`['192.168.0.0/24']`)를 쓰면 JSON이 아니므로 해석에
 실패합니다. 이때 대시보드는 전체 허용으로 열리지 않고 기본 루프백 제한을 적용하고 오류 로그를
@@ -140,7 +142,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `/api/cooperation` | `GET` | auth 활성 시 readonly 이상 | 마지막 상태 응답에 캐시한 협동 이벤트·작업 조회 |
 | `/api/cooperation/export` | `GET` | auth 활성 시 readonly 이상 | 캐시된 최근 협동 이벤트를 JSONL로 내보내기 |
 | `/api/chat`   | `POST` | control                 | 자연어 메시지 전달, 지도 이동 메시지는 비동기 접수 |
-| `/api/initial_pose` | `POST` | control           | AMCL/LIO 초기 위치 설정 (`/initialpose` 발행)     |
+| `/api/initial_pose` | `POST` | control           | 초기 위치 설정: AMCL 은 `/initialpose` 발행(200), CLOiD LIO 는 `/switch_mode` 시드(202) |
 | `/api/localization` | `GET` | auth 활성 시 readonly 이상 | LIO 위치추정 상태·지도 목록·제어 가능 여부 |
 | `/api/localization/switch` | `POST` | control | 저장된 지도 적용/위치추정 시작(`/switch_mode`), 202 접수 |
 | `/api/scenarios` | `GET` | auth 활성 시 readonly 이상 | 활성 테스트 시나리오 조회 (`?refresh=1` 동기화) |
@@ -188,7 +190,7 @@ sudo ufw status | grep 9090   # ufw 사용 시
 | `localization_map_dir` | `/ws/maps` | 저장된 지도 디렉터리(LIO 컨테이너 기준 경로). 읽을 수 있으면 하위 디렉터리를 지도 목록으로 사용 |
 | `localization_map_names_json` | `[]` | 지도 목록 allowlist(JSON 배열). 지정하면 이 목록만 허용하고 디렉터리를 읽지 않습니다 |
 | `switch_mode_timeout_sec` | `200.0` | `/switch_mode` 응답 대기 상한(초) |
-| `initialpose_covariance` | `0.05` | `/initialpose` 공분산(대각 x/y/yaw). 잘못된 값은 기본값 유지 |
+| `initialpose_covariance` | `0.05` | AMCL `/initialpose` 공분산(대각 x/y/yaw). CLOiD 는 이 값을 쓰지 않습니다 |
 | `config_query_timeout_sec` | `2.0`  | 실행 설정 조회 타임아웃(초)                        |
 | `param_default_files`      | `agent.yaml` | 기본값 판정에 쓸 파라미터 YAML(쉼표 구분)     |
 | `contract_file`            | `""`   | 계약 기본값 JSON 경로(비우면 자동 탐색)             |
@@ -438,8 +440,11 @@ ros2 topic info -v /lio/grid_map   # Durability: TRANSIENT_LOCAL 확인
 
 ## 초기 위치 설정
 
-`/api/initial_pose`는 AMCL 초기 위치(`/initialpose`, `PoseWithCovarianceStamped`)를 발행합니다.
+`/api/initial_pose`는 초기 위치를 설정합니다. 로봇 종류에 따라 적용 경로와 응답이 다릅니다.
 `control` 권한이 필요합니다.
+
+- AMCL 로봇: `/initialpose`(`PoseWithCovarianceStamped`)를 발행하고 200을 돌려줍니다.
+- CLOiD(LIO): `/switch_mode`(현재 지도 + 시드)를 호출하고 **202 접수**를 돌려줍니다.
 
 ```bash
 curl -X POST http://127.0.0.1:9090/api/initial_pose \
@@ -455,21 +460,37 @@ curl -X POST http://127.0.0.1:9090/api/initial_pose \
 
 - `x`, `y`는 유한한 수여야 하고 절대값 1000 m를 넘을 수 없습니다(`yaw` 생략 시 0).
 - 지도를 수신한 상태여야 하며, 좌표는 지도 경계 + 여유 1 m 안에 있어야 합니다.
-- 공분산은 `robo_claw_agent`의 `set_initial_pose` 스킬과 같은 값(0.05)을 사용합니다.
-- `/initialpose` 구독자가 없으면 최대 1초 기다린 뒤 그대로 발행합니다(AMCL 미기동 시 위치가
-  반영되지 않을 수 있음).
+- AMCL 로봇은 공분산 `initialpose_covariance`(기본 0.05)를 실어 `/initialpose`를 발행하고,
+  구독자가 없으면 최대 1초 기다린 뒤 그대로 발행합니다(AMCL 미기동 시 위치가 반영되지
+  않을 수 있음). LIO 로봇은 `/switch_mode` 시드 경로를 쓰므로 공분산을 쓰지 않습니다.
 
 초기 위치는 로봇을 직접 움직이지 않지만, AMCL 파티클을 재배치하므로 잘못된 값은 이후 주행을
 잘못된 곳으로 유도합니다. 원격 노출 시 `http_control_token`을 반드시 설정하고, 주행 중에는
 초기 위치를 함부로 바꾸지 않습니다.
 
-CLOiD(LIO)에서는 AMCL 대신 `lio_node`가 `/initialpose`를 재위치추정 시드로 소비합니다.
-이때 두 가지가 다릅니다.
+CLOiD(LIO)에서는 AMCL 대신 `lio_node`가 초기 위치를 재위치추정 시드로 씁니다. 다만 실기
+(2026-11-19, cloid2)에서 확인한 **`/initialpose` 토픽 경로는 동작하지 않습니다**. 토픽을 받은
+`lio_node`가 `/lio_node/status`를 `relocalizing_pose`로 바꾸기만 하고 재위치추정을 완료하지
+않아, 이후 `ready`로 돌아오지 않고 위치도 바뀌지 않습니다(같은 시드를 다시 보내도 같음).
 
-- `/initialpose`는 **localization 모드에서만** 유효합니다. `/lio_node/status`가 `mapping`이면
-  대시보드가 발행 전에 거부합니다(조용히 무시되는 것을 막기 위해).
-- 공분산은 `initialpose_covariance`(기본 0.05)를 씁니다. CLOiD 자체 UI 값(0.25)에 맞추려면
-  파라미터로 올립니다. 값이 작을수록 시드를 더 확신하므로 잘못된 좌표에 취약합니다.
+그래서 대시보드는 LIO 로봇(`lio_status_topic`과 `/switch_mode`가 모두 구성된 경우)에서
+`/api/initial_pose`를 다음처럼 처리합니다.
+
+- `/initialpose`를 발행하지 않고, **현재 적용된 지도 + 시드 좌표**로 `/switch_mode`
+  (`set_initial_pose: true`)를 호출합니다. 실기에서 이 경로는 즉시 재위치추정을 수행합니다.
+- 응답은 **202 접수**이며, 완료는 `GET /api/localization`의 `status`
+  (`loading_map`→`relocalizing_pose`→`ready`)로 확인합니다. 시드는 힌트이므로 LIO가
+  스캔 정합으로 좌표를 보정할 수 있습니다(요청 좌표가 그대로 확정되지 않을 수 있음).
+- 적용된 지도를 알 수 없으면(대시보드 재시작 후 등) 발행하지 않고 409로 거부합니다.
+  지도 카드에서 `지도 적용 / 위치추정 시작`을 먼저 실행하면 지도가 확정됩니다.
+- `/lio_node/status`가 `mapping`이면 두 경로 모두 발행 전에 거부합니다(조용히 무시되는 것을
+  막기 위해).
+- AMCL 로봇(예: former0047)은 지금처럼 `/initialpose`를 발행하고 200을 돌려줍니다. 이때
+  공분산은 `initialpose_covariance`(기본 0.05)를 쓰고, 구독자가 없으면 최대 1초 기다린 뒤
+  그대로 발행합니다.
+
+`robo_claw_agent`의 `set_initial_pose` 스킬은 아직 `/initialpose`만 발행하므로, CLOiD에서는
+같은 이유로 시드가 반영되지 않습니다(지도 카드의 지도 적용 경로를 사용).
 
 ## CLOiD 지도 선택과 위치추정 시작
 

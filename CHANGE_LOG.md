@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-19 — CLOiD 대시보드 초기 위치 설정이 적용되지 않던 문제 수정
+
+- **Fixed**: CLOiD 에서 대시보드 `초기 위치 설정`(지도 클릭)이 적용되지 않던 문제를 수정했습니다. 실기(cloid2, 2026-11-19)에서 `/initialpose` 를 발행하면 `lio_node` 가 `/lio_node/status` 를 `relocalizing_pose` 로 바꾸기만 하고 재위치추정을 완료하지 않아 **`ready` 로 돌아오지 않고 위치도 바뀌지 않았습니다**(같은 시드를 다시 보내도 동일, 3분 이상 유지). 반면 `/switch_mode`(`mode=localization`, `set_initial_pose=true`, `initial_pose`)는 즉시 `relocalizeFromGuess success` 로 끝나는 것을 확인했습니다.
+- **Changed**: 대시보드는 LIO 로봇(`lio_status_topic` + `lio_fr_system_msgs` `/switch_mode` 가 모두 구성된 경우, `RosBackend.initial_pose_semantics() == "lio"`)에서 `POST /api/initial_pose` 를 **현재 적용된 지도 + 시드 좌표의 `/switch_mode`** 로 처리하고 **202 접수**를 돌려줍니다. `LocalizationSwitchService.submit_initial_pose` 가 기존 단일 워커 큐(지도 전환과 동시 1건)를 그대로 쓰므로 지도 전환과 초기 위치 시드가 겹치지 않습니다. AMCL 로봇은 기존처럼 `/initialpose` 발행 + 200 응답입니다.
+- **Changed**: 적용된 지도를 알 수 없으면(대시보드 재시작 후 등) `/initialpose` 를 발행하지 않고 409로 거부합니다. 지도 없이 토픽만 보내면 상태만 `relocalizing_pose` 로 남아 이후 주행이 막히기 때문입니다. 성공한 localization 전환의 지도는 서비스가 기억해(`current_map` 도 그 값을 우선) 재사용하고, 매핑 모드로 전환하면 지웁니다.
+- **Changed**: 웹 UI 는 202 접수를 `접수됨(202)` 으로 표시하고 "완료는 지도 패널의 위치추정 상태로 확인"하도록 안내합니다(접수 ≠ 적용 완료, 시드는 LIO 스캔 정합으로 보정될 수 있음).
+- **검증**: cloid2 실기에서 `/initialpose` 발행 → `[InitialPoseCallback]` 로그 + `status -> relocalizing_pose` 후 완료 없음(3분 이상), `/switch_mode` 시드 주입 → `relocalizeFromGuess success` + `ready` 복귀를 확인했습니다. 대시보드 테스트 968건 통과(신규 10건: 시드 검증·지도 요구·lease/busy 차단·202 라우팅·LIO 경로 라우팅), `ruff check`/`ruff format --check` 통과. **신규 코드가 탑재된 대시보드 이미지로 실기에서 버튼을 눌러 적용되는 것은 미검증**입니다(로봇은 기존 이미지로 기동 중).
+
+
 ## 2026-11-19 — 대시보드 메시지 실행 예산과 응답 상한 분리
 
 - **Fixed**: 대시보드 메시지창의 `ExecuteTask` goal 에 RPC 상한인 `request_timeout_sec`(기본 30초)이 **작업 예산으로 전달**되던 문제를 수정했습니다. 에이전트는 `goal.timeout_sec` 을 작업 예산으로 쓰므로(`agent_node/execution.py`), LLM 계획 기본 120초·지도 이동 180초보다 짧은 30초에서 에이전트가 "시간 초과"로 abort 될 수 있었습니다. 이제 일반 채팅은 `chat_task_timeout_sec`(기본 600.0, 에이전트 기본값과 동일)을 예산으로 보내고, HTTP 응답 대기 상한은 `chat_result_wait_sec`(기본 60.0)으로 따로 둡니다. `request_timeout_sec` 은 action 서버 연결·goal 응답 대기 같은 조회/RPC 상한으로만 남습니다.

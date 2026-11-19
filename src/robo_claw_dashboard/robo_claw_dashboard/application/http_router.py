@@ -78,11 +78,16 @@ def _handle_chat(body: Any, service: Any) -> HttpResponse:
 
 
 def _handle_initial_pose(body: Any, service: Any) -> HttpResponse:
-    """POST /api/initial_pose - 좌표를 검증하고 초기 위치(AMCL/LIO 시드)를 설정한다."""
+    """POST /api/initial_pose - 좌표를 검증하고 초기 위치(AMCL/LIO 시드)를 설정한다.
+
+    AMCL 로봇은 동기 발행 결과(200), CLOiD LIO 는 `/switch_mode` 접수(202)를 돌려준다.
+    """
     ok, payload = _parse_body(body)
     if not ok:
         return _json({"error": "잘못된 JSON"}, 400)
-    return _json(service.set_initial_pose(payload))
+    res = service.set_initial_pose(payload)
+    status_code = int(res.pop("status_code", 200)) if isinstance(res, dict) else 200
+    return _json(res, status=status_code)
 
 
 def _handle_localization_switch(body: Any, service: Any) -> HttpResponse:

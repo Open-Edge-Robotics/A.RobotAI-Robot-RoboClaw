@@ -19,6 +19,7 @@ class FakeBackend:
         self._map = kw.get("map", {"available": False})
         self._pose = kw.get("pose", {"available": False})
         self._initial_pose_result = kw.get("initial_pose_result", {"success": True})
+        self._initial_pose_semantics = kw.get("initial_pose_semantics", "topic")
         self._config = kw.get("config", None)
         self._logs = kw.get("logs", None)
         self._logs_raise = kw.get("logs_raise", None)
@@ -68,11 +69,36 @@ class FakeBackend:
         result.pop("_raise", None)
         return result
 
+    def initial_pose_semantics(self) -> str:
+        return str(self._initial_pose_semantics)
+
     def logs(self, *, min_level=None, query=None, limit=None) -> dict:
         self.log_calls.append({"level": min_level, "query": query, "limit": limit})
         if self._logs_raise is not None:
             raise self._logs_raise
         return dict(self._logs or {"available": True, "entries": []})
+
+
+class FakeLocalizationSwitch:
+    """LocalizationSwitchService 대역 — 초기 위치 시드 접수만 흉내낸다."""
+
+    def __init__(self, result=None):
+        self.seeds: list[dict] = []
+        self._result = result or {
+            "success": True,
+            "status_code": 202,
+            "message": "위치추정을 다시 시작했습니다",
+            "request": {
+                "request_id": "loc-1",
+                "source": "initial_pose",
+                "map": "konjiam_L_107",
+                "status": "queued",
+            },
+        }
+
+    def submit_initial_pose(self, pose):
+        self.seeds.append(dict(pose))
+        return dict(self._result)
 
 
 class TestStatus:
@@ -249,6 +275,47 @@ class TestSetInitialPose:
         result = DashboardService(backend).set_initial_pose({"x": 1.0, "y": 2.0})
         assert result["success"] is False
         assert "구독자" in result["error"]
+
+    def test_lio_robot_seeds_via_switch_mode_instead_of_publishing(self):
+        """CLOiD 는 /initialpose 대신 /switch_mode 시드로 넘긴다(202 접수)."""
+        backend = FakeBackend(map=MAP_META, initial_pose_semantics="lio")
+        localization = FakeLocalizationSwitch()
+        service = DashboardService(backend, localization=localization)
+        result = service.set_initial_pose({"x": 1.0, "y": 2.0, "yaw": 0.5})
+        assert result["success"] is True
+        assert result["status_code"] == 202
+        assert result["pending"] is True
+        assert result["x"] == 1.0 and result["yaw_deg"] == 28.6
+        assert localization.seeds == [{"x": 1.0, "y": 2.0, "yaw": 0.5}]
+        # 토픽 발행과 지도 검증은 같은 경로에서 끝나고, 발행만 생략된다.
+        assert backend.initial_pose_calls == []
+
+    def test_lio_robot_surfaces_seed_rejection(self):
+        backend = FakeBackend(map=MAP_META, initial_pose_semantics="lio")
+        localization = FakeLocalizationSwitch(
+            result={
+                "success": False,
+                "status_code": 409,
+                "error": "현재 적용된 지도를 알 수 없어 초기 위치 시드를 보낼 수 없습니다",
+            }
+        )
+        result = DashboardService(backend, localization=localization).set_initial_pose(
+            {"x": 1.0, "y": 2.0}
+        )
+        assert result["success"] is False
+        assert result["status_code"] == 409
+        assert backend.initial_pose_calls == []
+
+    def test_lio_robot_still_rejects_mapping_mode_before_seeding(self):
+        backend = FakeBackend(map=MAP_META, initial_pose_semantics="lio")
+        backend.latest_lio_status = lambda: {"available": True, "mode": "mapping"}
+        localization = FakeLocalizationSwitch()
+        result = DashboardService(backend, localization=localization).set_initial_pose(
+            {"x": 1.0, "y": 2.0}
+        )
+        assert result["success"] is False
+        assert "매핑" in result["error"]
+        assert localization.seeds == []
 
 
 class TestConfigPanel:

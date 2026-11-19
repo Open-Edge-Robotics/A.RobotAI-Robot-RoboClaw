@@ -73,6 +73,8 @@ class DashboardBackend(Protocol):
 
     def set_initial_pose(self, pose: dict[str, Any]) -> dict[str, Any]: ...
 
+    def initial_pose_semantics(self) -> str: ...
+
     def latest_lio_status(self) -> dict[str, Any] | None: ...
 
     def localization_control_available(self) -> dict[str, Any]: ...
@@ -284,7 +286,15 @@ class DashboardService:
         return "text/plain; charset=utf-8", format_log_text(entries, header=header)
 
     def set_initial_pose(self, payload: Any) -> dict[str, Any]:
-        """AMCL 초기 위치를 설정한다. 검증 실패는 발행 전에 거부한다."""
+        """초기 위치를 설정한다. 검증 실패는 발행 전에 거부한다.
+
+        로봇 종류에 따라 적용 경로가 다르다(backend 의 ``initial_pose_semantics``).
+
+        * ``lio`` — CLOiD LIO. `/initialpose` 토픽은 `relocalizing_pose` 상태만 남기고
+          재위치추정을 끝내지 않으므로(실기 확인) 현재 지도를 다시 적용하면서
+          `/switch_mode` 로 시드를 넘긴다(202 접수).
+        * 그 외(AMCL) — 지금까지처럼 `/initialpose` 를 발행한다.
+        """
         # 대시보드 재시작 후에도 에이전트 측 진행/미확인 기록을 lease 로 채택하고,
         # matching terminal 이 관측될 때만 해제한다(사라진 캐시로 자동 해제 금지).
         identity = self._agent_identity()
@@ -317,6 +327,8 @@ class DashboardService:
             }
 
         assert pose is not None  # validate_initial_pose 성공 시 항상 dict
+        if self._initial_pose_semantics() == "lio":
+            return self._seed_initial_pose_via_lio(pose)
         message = build_initial_pose(
             x=pose["x"],
             y=pose["y"],
@@ -357,6 +369,37 @@ class DashboardService:
             )
             return INITIAL_POSE_COVARIANCE
         return covariance
+
+    def _seed_initial_pose_via_lio(self, pose: dict[str, Any]) -> dict[str, Any]:
+        """CLOiD LIO 에 초기 위치 시드를 `/switch_mode` 로 넘기고 202 접수를 돌려준다."""
+        result = self._localization.submit_initial_pose(
+            {"x": pose["x"], "y": pose["y"], "yaw": pose["yaw"]}
+        )
+        if not result.get("success"):
+            return result
+        request = result.get("request") if isinstance(result.get("request"), dict) else {}
+        return {
+            **result,
+            "pending": True,
+            "frame_id": pose["frame_id"],
+            "x": pose["x"],
+            "y": pose["y"],
+            "yaw": pose["yaw"],
+            "yaw_deg": round(pose["yaw"] * 180.0 / 3.141592653589793, 1),
+            "map": request.get("map") or result.get("map"),
+        }
+
+    def _initial_pose_semantics(self) -> str:
+        """초기 위치 적용 경로를 판단한다(`lio` = /switch_mode 시드, `topic` = /initialpose)."""
+        fetch = getattr(self._backend, "initial_pose_semantics", None)
+        if fetch is None:
+            return "topic"
+        try:
+            semantics = str(fetch() or "")
+        except Exception:  # noqa: BLE001 - 판단 실패는 기존 경로(토픽)로 처리한다
+            logger.debug("initial_pose_semantics failed", exc_info=True)
+            return "topic"
+        return "lio" if semantics == "lio" else "topic"
 
     def _initial_pose_mode_error(self) -> str | None:
         """매핑 모드에서 초기 위치를 설정하려 할 때의 거부 사유를 만든다."""

@@ -155,8 +155,12 @@ CLOiD의 위치추정은 LIO(`lio-fr-system`)가 담당합니다. 매핑 모드�
   빌드해야 `/switch_mode`를 호출할 수 있습니다. 없으면 대시보드가 제어 불가 사유를
   표시하고 요청을 503으로 거부합니다.
 
-`/initialpose`는 **localization 모드에서만** 효력이 있습니다. 대시보드는
-`/lio_node/status`가 `mapping`이면 초기 위치 발행을 거부합니다.
+`/initialpose`는 **localization 모드에서만** 효력이 있고, 실기(2026-11-19)에서는 **효력이
+없었습니다**. `lio_node`가 토픽을 받고 `/lio_node/status`를 `relocalizing_pose`로 바꾸지만
+재위치추정을 끝내지 않아 `ready`로 돌아오지 않습니다. 그래서 대시보드의 초기 위치 설정은
+CLOiD에서 `/initialpose` 대신 **현재 지도 + 시드 좌표로 `/switch_mode`를 호출**하며(202 접수),
+완료는 `/api/localization` 상태로 확인합니다. `/lio_node/status`가 `mapping`이면 두 경우
+모두 요청을 거부합니다.
 
 ### 개체별 스킬·소울 가이드 선택
 
@@ -193,9 +197,9 @@ CLOiD 실기 제약은 다음과 같습니다(휴머노이드 스킬 개발 시 
   도달하지 않으므로 베이스 이동·회전은 Nav2 action(`navigate_to_pose`, `spin`)을
   사용합니다.
 - AMCL이 없어 `/amcl_pose` 와 `/reinitialize_global_localization` 이 없습니다
-  (`self_localize` 사용 불가). 다만 `/initialpose` 는 `lio_node` 가 재위치추정 시드로
-  구독하므로, 초기 위치 발행(대시보드·`set_initial_pose`)은 localization 모드에서
-  유효합니다.
+  (`self_localize` 사용 불가). `/initialpose` 는 `lio_node` 가 구독하지만, 토픽 경로로는
+  재위치추정이 완료되지 않습니다(2026-11-19 실기 확인). 초기 위치는 대시보드가
+  `/switch_mode`(`set_initial_pose: true`)로 지도와 함께 넘기는 경로를 씁니다.
 - RGB 카메라는 `sensor_msgs/CompressedImage` 만 발행합니다.
 - 팔/hand 제어 백엔드가 아직 없어 `manipulation_enabled=false` 로 기동하며,
   일반 조작 계열 스킬은 실행 단에서 차단됩니다.
