@@ -5,7 +5,8 @@
 `MotionCmd STOP` 을 1회 발행해 vendor 가 hold 컨트롤러로 복귀하도록 한다.
 
 STOP 발행 실패는 시연 결과를 바꾸지 않는다(best-effort). 호출부는 결과를 관측/결과에
-남기고 cue 전송 같은 후속 동작을 계속한다.
+남기고 cue 전송 같은 후속 동작을 계속한다. 모션 요청이 실패한 경로에서도 ``START`` 가
+이미 나갔을 수 있으므로 호출부는 ``wait_sec=0`` 으로 STOP 을 먼저 발행한다.
 """
 
 from __future__ import annotations
@@ -65,7 +66,8 @@ def stop_after_demo(
     """시연 모션 종료를 기다린 뒤 STOP 을 1회 발행한다(실패해도 예외 없음).
 
     반환값은 결과/관측에 싣는 dict 다: ``status``(``sent``/``failed``),
-    ``reason``(실패 사유), ``wait_sec``(대기한 시간).
+    ``reason``(실패 사유), ``wait_sec``(대기한 시간). 구독자를 확인하지 못한 채
+    발행만 된 경우는 ``note`` 에 사유 코드를 함께 남긴다(발행은 성공).
     """
     log = logger_obj if logger_obj is not None else logger
     resolved_wait = stop_after_sec_for(node) if wait_sec is None else float(wait_sec)
@@ -99,7 +101,15 @@ def stop_after_demo(
             "wait_sec": resolved_wait,
         }
     log.info("[DemoStop] 시연 후 모션 정지 명령을 발행했습니다(대기 %.1f초)", resolved_wait)
-    return {"status": STATUS_SENT, "reason": "", "wait_sec": resolved_wait}
+    outcome: dict[str, Any] = {
+        "status": STATUS_SENT,
+        "reason": "",
+        "wait_sec": resolved_wait,
+    }
+    note = str(message or "")
+    if note:
+        outcome["note"] = note
+    return outcome
 
 
 __all__ = [

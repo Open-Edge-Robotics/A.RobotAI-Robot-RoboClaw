@@ -230,3 +230,102 @@ def test_cleanup_demo_reports_stop_failure_without_failing(monkeypatch):
     assert result["success"] is True
     assert result["demo_stop"]["status"] == "failed"
     assert cues == [True], "STOP 실패에도 cue 는 전송한다"
+
+
+def test_stop_records_unconfirmed_delivery_as_note():
+    outcome = demo_stop.stop_after_demo(
+        _node(cloid_demo_stop_after_sec=0),
+        sleep=lambda _wait: None,
+        publish=lambda _node: (True, "motion_player_unconfirmed"),
+    )
+
+    assert outcome["status"] == "sent"
+    assert outcome["reason"] == ""
+    assert outcome["note"] == "motion_player_unconfirmed"
+
+
+# ── 실패 경로에서도 joint 를 돌려준다(STOP 보장) ──────────────────
+
+
+class _FailingDemoSkills(_DemoSkills):
+    """모션 요청이 거부되거나 예외로 끝나는 시연 스킬 대역."""
+
+    def __init__(self, *, raises: bool = False) -> None:
+        super().__init__()
+        self.raises = raises
+
+    def execute(self, name, params, **kwargs):
+        if name == "execute_cloid_motion":
+            self.executed.append(params)
+            if self.raises:
+                raise RuntimeError("motion boom")
+            return SimpleNamespace(success=False, message="시연 모션이 거부되었습니다.")
+        return super().execute(name, params, **kwargs)
+
+
+def _cleanup_demo_with(monkeypatch, skills):
+    from robo_claw_agent.skills.cleanup import demo_skill as demo_module
+    from robo_claw_agent.skills.cleanup.demo_skill import CleanupDemoSkill
+    from robo_claw_agent.skills.tidy_home_skill import TidyHomeSkill
+
+    monkeypatch.setattr(
+        TidyHomeSkill, "_collect_places", lambda _s, _scope, name: ([{"name": name}], None)
+    )
+    monkeypatch.setattr(TidyHomeSkill, "_visit_place", lambda _s, _name: (True, "arrived"))
+    monkeypatch.setattr(demo_module, "claim_autonomous", lambda _event: True)
+    monkeypatch.setattr(demo_module, "release_autonomous", lambda: None)
+    monkeypatch.setattr(demo_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
+    skill = CleanupDemoSkill()
+    skill.set_node(_node_with(skills))
+    skill.send_user_message = lambda _msg: None
+    return demo_module, skill
+
+
+def _demo_request(request_id: str) -> dict[str, str]:
+    return {
+        "target_location": "신발장",
+        "target_object": "신발",
+        "scene_summary": "신발장 앞 바닥에 신발이 있습니다.",
+        "request_id": request_id,
+    }
+
+
+def test_cleanup_demo_stops_motion_when_request_fails(monkeypatch):
+    demo_module, skill = _cleanup_demo_with(monkeypatch, _FailingDemoSkills())
+    stops: list[float | None] = []
+    cues: list[bool] = []
+    monkeypatch.setattr(
+        demo_module,
+        "stop_after_demo",
+        lambda _node, **kwargs: (
+            stops.append(kwargs.get("wait_sec")) or {"status": "sent", "reason": ""}
+        ),
+    )
+    monkeypatch.setattr(
+        demo_module, "emit_demo_signal", lambda *_a, **_kw: cues.append(True) or {"status": "sent"}
+    )
+
+    result = skill.execute(_demo_request("req-fail-stop"))
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "motion_request_failed"
+    assert stops == [0.0], "START 가 발행됐을 수 있으므로 실패해도 STOP 을 보낸다"
+    assert cues == [], "모션 요청이 실패하면 cue 는 보내지 않는다"
+
+
+def test_cleanup_demo_stops_motion_when_request_raises(monkeypatch):
+    demo_module, skill = _cleanup_demo_with(monkeypatch, _FailingDemoSkills(raises=True))
+    stops: list[float | None] = []
+    monkeypatch.setattr(
+        demo_module,
+        "stop_after_demo",
+        lambda _node, **kwargs: (
+            stops.append(kwargs.get("wait_sec")) or {"status": "sent", "reason": ""}
+        ),
+    )
+
+    result = skill.execute(_demo_request("req-raise-stop"))
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "cleanup_demo_failed"
+    assert stops == [0.0], "예외로 끝나도 STOP 으로 joint 를 돌려준다"

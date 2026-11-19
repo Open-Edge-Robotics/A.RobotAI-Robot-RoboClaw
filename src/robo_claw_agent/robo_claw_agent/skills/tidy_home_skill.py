@@ -873,6 +873,33 @@ class TidyHomeSkill(BaseSkill):
         except Exception:  # noqa: BLE001 - 스킬 조회 실패는 기존 동작 유지
             return False
 
+    def _stop_demo_motion(
+        self, place_name: str, observer: Any, *, wait_sec: float | None = None
+    ) -> dict[str, Any]:
+        """시연 모션 뒤 STOP 을 1회 보내 joint 제어를 vendor 로 돌려준다.
+
+        성공 경로는 모션 길이만큼 기다린 뒤(``wait_sec=None``), 실패 경로는 기다릴 이유가
+        없으므로 ``wait_sec=0.0`` 으로 즉시 발행한다. 결과는 ``demo_stop`` 관측 단계로 남기고
+        호출부가 그대로 쓰도록 돌려준다.
+        """
+        stop = stop_after_demo(self.node, wait_sec=wait_sec, logger_obj=logger)
+        status = str(stop.get("status") or "")
+        note = str(stop.get("note") or "")
+        if status == "sent":
+            content = "시연 모션 정지 명령을 발행했습니다."
+            if note:
+                content = f"시연 모션 정지 명령을 발행했지만 구독자를 확인하지 못했습니다({note})."
+        else:
+            content = f"시연 모션 정지 명령을 보내지 못했습니다({stop.get('reason', '')})."
+        _observe_phase(
+            observer,
+            "demo_stop",
+            content,
+            place=place_name,
+            observed=status,
+        )
+        return stop
+
     def _run_local_demo_motion(self, place_name: str, observer: Any) -> str:
         """사방 관찰·대상 확인 없이 검토된 시연 모션을 바로 요청한다.
 
@@ -966,6 +993,8 @@ class TidyHomeSkill(BaseSkill):
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("[TidyHome] local demo motion failed for %s", place_name)
+            # START 가 이미 발행됐을 수 있으므로, 예외로 끝나도 joint 를 돌려준다.
+            self._stop_demo_motion(place_name, observer, wait_sec=0.0)
             _observe_phase(
                 observer,
                 "demo_motion",
@@ -977,6 +1006,8 @@ class TidyHomeSkill(BaseSkill):
             return "execution_failed"
 
         if not getattr(result, "success", False):
+            # START 가 발행된 뒤 실패한 경우(부분 발행·타임아웃)를 대비해 STOP 을 보낸다.
+            self._stop_demo_motion(place_name, observer, wait_sec=0.0)
             _observe_phase(
                 observer,
                 "demo_motion",
@@ -990,18 +1021,7 @@ class TidyHomeSkill(BaseSkill):
         self._previous_demo_motion_id = motion["motion_id"]
         # 모션 길이만큼 기다린 뒤 STOP 으로 vendor 모션 세션을 닫고(다른 프로그램이 joint
         # 를 제어할 수 있도록) 그 다음에 cue 를 보낸다.
-        stop = stop_after_demo(self.node, logger_obj=logger)
-        _observe_phase(
-            observer,
-            "demo_stop",
-            (
-                "시연 모션 정지 명령을 발행했습니다."
-                if stop.get("status") == "sent"
-                else f"시연 모션 정지 명령을 보내지 못했습니다({stop.get('reason', '')})."
-            ),
-            place=place_name,
-            observed=str(stop.get("status") or ""),
-        )
+        self._stop_demo_motion(place_name, observer)
         emit_demo_signal(self.node, observer, place=place_name, logger_obj=logger)
         self.send_user_message(
             f"'{place_name}'에서 시연 모션 '{motion['motion_name']}' 실행을 요청했습니다. "
@@ -1220,23 +1240,19 @@ class TidyHomeSkill(BaseSkill):
             )
             if not turned:
                 return "demo_turn_failed"
-            exec_status = execute.tick()
+            try:
+                exec_status = execute.tick()
+            except Exception:
+                # START 가 이미 발행됐을 수 있으므로 STOP 으로 joint 를 돌려준 뒤 다시 올린다.
+                self._stop_demo_motion(place_name, observer, wait_sec=0.0)
+                raise
             if exec_status != NodeStatus.SUCCESS:
+                # 실행 노드가 실패해도 START 는 이미 나갔을 수 있어 joint 를 돌려준다.
+                self._stop_demo_motion(place_name, observer, wait_sec=0.0)
                 return "execution_failed"
             # 모션 종료를 기다린 뒤 STOP 으로 vendor 모션 세션을 닫고(다른 프로그램이
             # joint 를 제어할 수 있도록) 그 다음에 cue 를 보낸다.
-            stop = stop_after_demo(self.node, logger_obj=logger)
-            _observe_phase(
-                observer,
-                "demo_stop",
-                (
-                    "시연 모션 정지 명령을 발행했습니다."
-                    if stop.get("status") == "sent"
-                    else f"시연 모션 정지 명령을 보내지 못했습니다({stop.get('reason', '')})."
-                ),
-                place=place_name,
-                observed=str(stop.get("status") or ""),
-            )
+            self._stop_demo_motion(place_name, observer)
             # 모션 명령이 실제로 실행된 시점(`demo_motion_executed`)에 시연 cue 를 1회
             # 전송한다. 전송 실패는 시연 결과를 바꾸지 않고 관측에만 남긴다.
             emit_demo_signal(

@@ -118,6 +118,16 @@ class _Observer:
         }
 
 
+class _RaisingSkills(_Skills):
+    """execute_cloid_motion 이 예외로 끝나는 시연 스킬 대역."""
+
+    def execute(self, name, params, **kwargs):
+        if name == "execute_cloid_motion":
+            self.executed.append(params)
+            raise RuntimeError("motion boom")
+        return super().execute(name, params, **kwargs)
+
+
 def _node(*, allowlist="[22]", skills=None):
     return SimpleNamespace(
         _memory=None,
@@ -168,6 +178,76 @@ def test_local_demo_is_blocked_without_executable_allowlisted_motion(monkeypatch
 
     assert status == "no_approved_cleanup_demo_motion"
     assert skills.executed == []
+    assert emitted == []
+
+
+def test_local_demo_stops_motion_when_motion_execution_fails(monkeypatch):
+    stops: list[float | None] = []
+    emitted: list[bool] = []
+    monkeypatch.setattr(tidy_module, "emit_demo_signal", lambda *_a, **_kw: emitted.append(True))
+    monkeypatch.setattr(tidy_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
+    monkeypatch.setattr(
+        tidy_module,
+        "stop_after_demo",
+        lambda _node, **kwargs: (
+            stops.append(kwargs.get("wait_sec")) or {"status": "sent", "reason": ""}
+        ),
+    )
+    skill = TidyHomeSkill()
+    skill.set_node(_node(skills=_Skills(motion_success=False)))
+    skill.send_user_message = lambda _msg: None
+
+    status = skill._run_local_demo_motion("신발장", _Observer())
+
+    assert status == "execution_failed"
+    assert stops == [0.0], "START 가 발행됐을 수 있으므로 실패해도 STOP 을 보낸다"
+    assert emitted == [], "모션 실행이 실패하면 cue 는 보내지 않는다"
+
+
+def test_local_demo_stops_motion_when_motion_execution_raises(monkeypatch):
+    stops: list[float | None] = []
+    monkeypatch.setattr(tidy_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
+    monkeypatch.setattr(
+        tidy_module,
+        "stop_after_demo",
+        lambda _node, **kwargs: (
+            stops.append(kwargs.get("wait_sec")) or {"status": "sent", "reason": ""}
+        ),
+    )
+    skill = TidyHomeSkill()
+    skill.set_node(_node(skills=_RaisingSkills()))
+    skill.send_user_message = lambda _msg: None
+
+    status = skill._run_local_demo_motion("신발장", _Observer())
+
+    assert status == "execution_failed"
+    assert stops == [0.0], "예외로 끝나도 STOP 으로 joint 를 돌려준다"
+
+
+def test_demo_decision_branch_stops_motion_when_execution_fails(monkeypatch):
+    from robo_claw_agent.skills.autonomous_skill import actions as actions_module
+    from robo_claw_agent.skills.autonomous_skill.core import NodeStatus
+
+    skill, _skills, emitted = _configure(monkeypatch)
+    monkeypatch.setattr(tidy_module, "apply_before_demo", lambda *_a, **_kw: (True, "", None))
+    monkeypatch.setattr(
+        actions_module.ExecuteDecidedAction, "tick", lambda _self: NodeStatus.FAILURE
+    )
+    stops: list[float | None] = []
+    monkeypatch.setattr(
+        tidy_module,
+        "stop_after_demo",
+        lambda _node, **kwargs: (
+            stops.append(kwargs.get("wait_sec")) or {"status": "sent", "reason": ""}
+        ),
+    )
+
+    status = skill._handle_cleanup_target(
+        place_name="신발장", scene=SCENE, objects=OBJECTS, cycle=0
+    )
+
+    assert status == "execution_failed"
+    assert stops == [0.0], "LLM 결정 분기가 실패해도 STOP 으로 joint 를 돌려준다"
     assert emitted == []
 
 

@@ -100,6 +100,7 @@ class CleanupDemoSkill(BaseSkill):
             phase: str = "",
             observed: str = "",
             recoverable: bool = False,
+            **extra: Any,
         ) -> dict[str, Any]:
             """실패를 관측에 남기고 기존 실패 결과를 그대로 돌려준다."""
             if phase:
@@ -121,7 +122,9 @@ class CleanupDemoSkill(BaseSkill):
                 result=message,
                 failure_reason=failure_reason,
             )
-            return self.fail_result(message, failure_reason=failure_reason, recoverable=recoverable)
+            return self.fail_result(
+                message, failure_reason=failure_reason, recoverable=recoverable, **extra
+            )
 
         if (
             not location
@@ -274,22 +277,30 @@ class CleanupDemoSkill(BaseSkill):
                     recoverable=True,
                 )
 
-            result = skills.execute(
-                "execute_cloid_motion",
-                {
-                    "motion_name": motion["motion_name"],
-                    "motion_id": motion["motion_id"],
-                    "confirm": True,
-                },
-                timeout_sec=60.0,
-            )
+            try:
+                result = skills.execute(
+                    "execute_cloid_motion",
+                    {
+                        "motion_name": motion["motion_name"],
+                        "motion_id": motion["motion_id"],
+                        "confirm": True,
+                    },
+                    timeout_sec=60.0,
+                )
+            except Exception:
+                # START 가 이미 발행됐을 수 있으므로, 예외로 끝나도 STOP 으로 joint 제어를
+                # vendor 에 돌려준 뒤 기존 오류 보고를 유지한다.
+                self._stop_motion(place_name, observer, wait_sec=0.0)
+                raise
             if not result.success:
+                stop = self._stop_motion(place_name, observer, wait_sec=0.0)
                 return _fail(
                     f"정리 시연 모션 실행이 거부되거나 실패했습니다: {result.message}",
                     "motion_request_failed",
                     phase="demo_motion",
                     observed="failed",
                     recoverable=True,
+                    demo_stop=stop,
                 )
             self._previous_motion_id = motion["motion_id"]
             actual_target = target
@@ -353,15 +364,26 @@ class CleanupDemoSkill(BaseSkill):
         finally:
             release_autonomous()
 
-    def _stop_motion(self, place_name: str, observer: Any) -> dict[str, Any]:
-        """시연 모션 종료 후 STOP 을 1회 보내 joint 제어를 vendor 로 돌려준다."""
-        outcome = stop_after_demo(self.node, logger_obj=logger)
+    def _stop_motion(
+        self, place_name: str, observer: Any, *, wait_sec: float | None = None
+    ) -> dict[str, Any]:
+        """시연 모션 뒤 STOP 을 1회 보내 joint 제어를 vendor 로 돌려준다.
+
+        성공 경로는 모션 길이만큼 기다린 뒤(``wait_sec=None``), 실패 경로는 모션 종료를
+        기다릴 이유가 없으므로 ``wait_sec=0.0`` 으로 즉시 발행한다.
+        """
+        outcome = stop_after_demo(self.node, wait_sec=wait_sec, logger_obj=logger)
         status = str(outcome.get("status") or "")
-        content = (
-            "시연 모션 정지 명령을 발행했습니다. 정지 완료 여부는 확인되지 않습니다."
-            if status == "sent"
-            else f"시연 모션 정지 명령을 보내지 못했습니다({outcome.get('reason', '')})."
-        )
+        note = str(outcome.get("note") or "")
+        if status == "sent":
+            content = "시연 모션 정지 명령을 발행했습니다. 정지 완료 여부는 확인되지 않습니다."
+            if note:
+                content = (
+                    "시연 모션 정지 명령을 발행했지만 구독자를 확인하지 못했습니다"
+                    f"({note}). 정지 완료 여부는 확인되지 않습니다."
+                )
+        else:
+            content = f"시연 모션 정지 명령을 보내지 못했습니다({outcome.get('reason', '')})."
         safe_observe(observer, "phase", phase="demo_stop", content=content, place=place_name)
         return outcome
 

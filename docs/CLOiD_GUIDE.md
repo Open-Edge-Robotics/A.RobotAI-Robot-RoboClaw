@@ -248,6 +248,13 @@ robo_claw_agent_node:
   제어하지 못하므로, 모션 길이만큼 기다린 뒤 STOP 을 1회 보내 vendor 가 hold 컨트롤러로
   복귀하도록 합니다. STOP 실패는 시연 결과를 바꾸지 않고(`demo_stop.status=failed`) cue 는
   그대로 전송합니다.
+- STOP 은 **best-effort 로 반드시 발행**합니다. Motion Player 구독자를 확인하지 못해도
+  (DDS 디스커버리 지연·QoS 불일치·vendor 재시작) 명령은 발행하며, 전달이 확인되지 않은
+  경우만 `demo_stop.note=motion_player_unconfirmed` 로 남깁니다. joint 제어 복귀가
+  우선이므로 이 경우에도 cue 는 전송합니다.
+- 모션 요청이 거부되거나 예외·타임아웃으로 끝난 경우에도 `MotionCmd START` 가 이미
+  발행됐을 수 있으므로 **대기 없이 STOP 을 1회 발행**합니다(`wait_sec=0`). 이때는 cue 를
+  보내지 않습니다. 실패 결과에는 `demo_stop` 이 함께 실립니다.
 - 전송 시점은 시연 모션 명령이 실제로 발행되고 STOP 까지 마친 직후입니다. 두 시연 경로가 같은 cue 를 씁니다.
   - `cleanup_demo`(동료·Maestro 시연 요청): `execute_cloid_motion` 성공 직후
   - `tidy_home` 로컬 시연: `demo_motion_executed` 로 끝나는 실행 직후

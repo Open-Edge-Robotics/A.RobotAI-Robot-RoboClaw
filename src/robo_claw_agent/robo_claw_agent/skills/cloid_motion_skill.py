@@ -18,6 +18,8 @@ MOTION_MAP_TOPIC = "/task_manager/motion_map"
 MOTION_COMMAND_TOPIC = "/task_manager/motion_cmd"
 MOTION_COMMAND_START = 0
 MOTION_COMMAND_STOP = 1
+#: 구독자를 확인하지 못한 상태에서 STOP 을 발행했을 때의 안내 코드(발행은 성공).
+STOP_REASON_SUBSCRIBER_UNCONFIRMED = "motion_player_unconfirmed"
 _MAX_CATALOG_BYTES = 262_144
 _MAX_CATALOG_ENTRIES = 512
 _DEFAULT_CATALOG_TIMEOUT_SEC = 3.0
@@ -243,15 +245,23 @@ def publish_motion_stop(
 ) -> tuple[bool, str]:
     """MotionCmd STOP(command_type=1, motion_id=0)을 1회 발행한다.
 
-    시연/모션 종료 후 vendor 모션 세션을 닫아 joint 제어를 돌려줄 때 쓴다. 발행
-    실패는 ``(False, 사유)``로 돌려주고 예외를 밖으로 던지지 않는다.
+    시연/모션 종료 후 vendor 모션 세션을 닫아 joint 제어를 돌려줄 때 쓴다. joint 제어
+    복귀가 우선이므로 **구독자를 확인하지 못해도 발행을 시도**한다(디스커버리 지연·QoS
+    불일치로 STOP 이 누락되면 다음 프로그램이 joint 를 잡지 못한다). 전달이 확인되지
+    않은 경우는 ``(True, STOP_REASON_SUBSCRIBER_UNCONFIRMED)`` 로 알리고, 발행 자체가
+    실패한 경우만 ``(False, 사유)`` 로 돌려주며 예외를 밖으로 던지지 않는다.
     """
     try:
         publisher, message_type = _create_motion_publisher(node)
     except (ImportError, AttributeError):
         return False, "motion_interface_unavailable"
-    if not _wait_for_subscription(publisher, connection_timeout_sec):
-        return False, "motion_player_unavailable"
+
+    subscriber_confirmed = _wait_for_subscription(publisher, connection_timeout_sec)
+    if not subscriber_confirmed:
+        logger.warning(
+            "CLOi Motion Player 구독자를 확인하지 못했지만 STOP 을 발행합니다: %s",
+            MOTION_COMMAND_TOPIC,
+        )
 
     command = message_type()
     command.motion_id = 0
@@ -262,6 +272,8 @@ def publish_motion_stop(
     except Exception as exc:  # noqa: BLE001
         logger.warning("CLOi MotionCmd stop publish failed: %s", exc)
         return False, "motion_publish_failed"
+    if not subscriber_confirmed:
+        return True, STOP_REASON_SUBSCRIBER_UNCONFIRMED
     return True, ""
 
 

@@ -129,6 +129,42 @@ def _patch_ros(monkeypatch, publisher: _FakePublisher) -> None:
     )
 
 
+def _advancing_clock(step: float = 1.0):
+    state = {"now": 0.0}
+
+    def _monotonic() -> float:
+        state["now"] += step
+        return state["now"]
+
+    return _monotonic
+
+
+def test_publish_stop_publishes_without_confirmed_subscriber(monkeypatch):
+    """구독자 디스커버리가 늦어도 STOP 은 발행한다(joint 제어 복귀가 우선)."""
+    publisher = _FakePublisher(subscription_count=0)
+    _patch_ros(monkeypatch, publisher)
+    monkeypatch.setattr(_MOD.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(_MOD.time, "monotonic", _advancing_clock())
+
+    sent, reason = _MOD.publish_motion_stop(_FakeNode())
+
+    assert sent is True, "구독자를 확인하지 못해도 STOP 은 발행해야 한다"
+    assert reason == _MOD.STOP_REASON_SUBSCRIBER_UNCONFIRMED
+    assert [message.command_type for message in publisher.messages] == [1]
+    assert publisher.messages[0].motion_id == 0
+
+
+def test_publish_stop_reports_confirmed_delivery(monkeypatch):
+    publisher = _FakePublisher(subscription_count=1)
+    _patch_ros(monkeypatch, publisher)
+
+    sent, reason = _MOD.publish_motion_stop(_FakeNode())
+
+    assert sent is True
+    assert reason == ""
+    assert [message.command_type for message in publisher.messages] == [1]
+
+
 def test_list_returns_registered_motion_names_and_metadata(monkeypatch):
     monkeypatch.setattr(_MOD, "_load_string_type", lambda: _FakeString)
     skill = ListCloidMotionsSkill()

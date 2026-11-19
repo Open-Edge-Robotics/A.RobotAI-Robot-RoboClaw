@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-19 — 정리 시연 STOP 누락 경로 보강(joint 제어 복귀 보장)
+
+- **Fixed**: 시연 모션 뒤 `MotionCmd STOP` 이 발행되지 않아 tofu `joint_motion_controller` 가 active 로 남던 잔여 경로를 막았습니다. `publish_motion_stop` 은 Motion Player 구독자를 확인하지 못해도(디스커버리 지연·QoS 불일치·vendor 재시작) STOP 을 **best-effort 로 발행**하고, 전달 미확인은 발행 실패와 구분해 `demo_stop.note=motion_player_unconfirmed` 로 남깁니다(종전에는 `motion_player_unavailable` 로 보고하고 발행하지 않았습니다).
+- **Fixed**: `execute_cloid_motion` 이 거부·예외·타임아웃으로 끝난 경우에도 `MotionCmd START` 가 이미 발행됐을 수 있으므로 시연 세 경로(`cleanup_demo`, `tidy_home` 로컬 시연, `tidy_home` LLM 결정 분기)가 **대기 없이(`wait_sec=0`) STOP 을 1회 발행**합니다. 이 경로에서는 cue 를 보내지 않고, 실패 결과에 `demo_stop` 을 함께 싣습니다. `tidy_home` 은 `_stop_demo_motion` 헬퍼로 관측 문구까지 통일했습니다.
+- **Changed**: `stop_after_demo` 반환 dict 에 전달 미확인 안내용 `note`(선택)를 추가하고 `docs/CLOiD_GUIDE.md` 에 STOP 보장 계약(성공·실패 경로, cue 미전송 조건)을 반영했습니다.
+- **검증**: `test_cloid_motion_skill.py`(구독자 미확인 시 STOP 발행 2건), `test_cleanup_demo_stop.py`(note 전달, `cleanup_demo` 실패·예외 시 STOP 2건), `test_tidy_home_demo_signal.py`(로컬 시연 실패·예외, LLM 결정 분기 실패 시 STOP 3건) 신규 7건을 포함해 시연·정리·자율 관련 505건 통과, `ruff check`·`ruff format --check` 통과. 실기에서 STOP 이 vendor hold 컨트롤러로 복귀하는지와 구독자 미확인 상황의 실제 발행 도달은 **미검증**입니다.
+
 ## 2026-11-19 — Langfuse 병행 트레이싱 지원, 계약 2.14.0 동기화
 
 - **Added**: LLM 트레이싱 계층을 facade + 백엔드 구조로 분리하고 **Langfuse(2.x)** 백엔드를 추가했습니다. `tracing.py` 는 공개 API(`traceable`, `wrap_openai_client`, `record_generation_usage`, `current_trace_ids`, `init_tracing`, `flush_tracing`, `redact_trace_data`)와 공통 redaction 만 담당하고, 백엔드는 `tracing_backends/{base,langsmith_backend,langfuse_backend}.py` 에 격리했습니다. 두 백엔드는 독립 컨텍스트 스택을 쓰므로 `LANGSMITH_TRACING` 과 `LANGFUSE_TRACING` 을 동시에 켜면 한 번의 LLM 호출이 양쪽에 각각 기록됩니다.
