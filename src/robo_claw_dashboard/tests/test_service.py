@@ -141,6 +141,25 @@ class TestSendMessage:
         assert result["success"] is False
         assert "timeout" in result["error"]
 
+    def test_unconfirmed_result_keeps_unknown_flag(self):
+        # 결과 대기 시간이 지나 돌아온 응답은 실패가 아니라 미확인이다(계속 실행 중일 수 있음).
+        backend = FakeBackend(
+            send_result={
+                "success": False,
+                "error": "태스크 결과 대기 타임아웃",
+                "unknown": True,
+            }
+        )
+        result = DashboardService(backend).send_message("지금 위치에서 스캔해봐")
+        assert result["success"] is False
+        assert result["unknown"] is True
+        assert result["message"] == "태스크 결과 대기 타임아웃"
+
+    def test_confirmed_result_does_not_claim_unknown(self):
+        backend = FakeBackend(send_result={"success": False, "error": "거부됨"})
+        result = DashboardService(backend).send_message("이동")
+        assert "unknown" not in result
+
 
 MAP_META = {
     "available": True,

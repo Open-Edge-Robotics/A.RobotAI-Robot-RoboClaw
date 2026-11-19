@@ -674,15 +674,16 @@
 
   function setupChat() {
     const form = el("chat-form");
+    const view = window.RcChatView;
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const message = el("chat-input").value.trim();
       const result = el("chat-result");
       if (!message) return;
       const token = loadTokens().control;
-      result.className = "small mt-2";
-      result.className = "small mt-2";
-      result.textContent = "전송 중…";
+      const pending = view.pendingView();
+      result.className = pending.className;
+      result.textContent = pending.text;
       try {
         const { ok, status, data } = await fetchJson("/api/chat", token, {
           method: "POST",
@@ -693,9 +694,11 @@
           result.textContent = "실패(" + status + "): " + (data.error || "요청 실패");
           return;
         }
-        result.className = "small mt-2 text-success";
-        result.textContent =
-          (data.success ? "성공: " : "실패: ") + (data.message || data.error || "완료");
+        // 결과 대기 상한을 넘긴 응답(unknown)은 실패가 아니다. 에이전트가 계속
+        // 실행 중일 수 있으므로 상태·스킬·로그로 확인하라는 문구로 표시한다.
+        const rendered = view.resultView(data);
+        result.className = rendered.className;
+        result.textContent = rendered.text;
       } catch (err) {
         result.className = "small mt-2 text-danger";
         result.textContent = "실패: " + err.message;

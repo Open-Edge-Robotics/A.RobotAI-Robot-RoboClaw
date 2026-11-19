@@ -444,6 +444,10 @@ class DashboardService:
             "message": str(result.get("message") or result.get("error") or "완료"),
             "skill_results": list(result.get("skill_results") or []),
         }
+        if result.get("unknown") and not success:
+            # 결과 대기 상한을 넘겨 돌아온 응답이다. goal 은 취소되지 않았으므로
+            # 에이전트가 계속 실행 중일 수 있다 — 화면이 "실패"로 단정하지 않게 표시한다.
+            payload["unknown"] = True
         if not success:
             payload["error"] = str(result.get("error") or result.get("message") or "명령 처리 실패")
         return payload

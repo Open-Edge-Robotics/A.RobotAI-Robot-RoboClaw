@@ -5,6 +5,20 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-19 — 대시보드 메시지 실행 예산과 응답 상한 분리
+
+- **Fixed**: 대시보드 메시지창의 `ExecuteTask` goal 에 RPC 상한인 `request_timeout_sec`(기본 30초)이 **작업 예산으로 전달**되던 문제를 수정했습니다. 에이전트는 `goal.timeout_sec` 을 작업 예산으로 쓰므로(`agent_node/execution.py`), LLM 계획 기본 120초·지도 이동 180초보다 짧은 30초에서 에이전트가 "시간 초과"로 abort 될 수 있었습니다. 이제 일반 채팅은 `chat_task_timeout_sec`(기본 600.0, 에이전트 기본값과 동일)을 예산으로 보내고, HTTP 응답 대기 상한은 `chat_result_wait_sec`(기본 60.0)으로 따로 둡니다. `request_timeout_sec` 은 action 서버 연결·goal 응답 대기 같은 조회/RPC 상한으로만 남습니다.
+- **Changed**: `RosBackend.send_chat` 은 `timeout_sec` 을 주지 않은 일반 채팅에만 분리된 두 값을 쓰고, 지도 이동은 호출자가 준 180초를 예산·대기 상한에 그대로 사용합니다(기존 계약 유지). 대기 상한을 넘기면 goal 을 취소하지 않고 `unknown: true` 로 돌려주는 동작은 그대로입니다.
+- **Changed**: `cloid_config.yaml` 의 `robo_claw_dashboard_node` 섹션에 두 값을 명시하고, `docs/DASHBOARD.md` 메시지 전송 절에 용도별 표(`request_timeout_sec`/`chat_task_timeout_sec`/`chat_result_wait_sec`)를 추가했습니다.
+- **검증**: `task verify` 통과(3579 passed), `task lint`·`task contract-check` 통과. 어댑터 테스트에 `test_legacy_chat_sends_task_budget_not_rpc_timeout`(예산 600초 전달, 대기 상한 초과 시 미확인·goal 미취소) 추가, 지도 이동 테스트에 예산 전달 단언을 보강했습니다. 기존 레거시 테스트가 30초를 실제로 기다리던 시간도 0.1초로 줄었습니다(테스트 31.4s → 1.4s). 실기에서 30초를 넘는 작업이 600초 예산으로 끝까지 수행되는지는 **미검증**입니다.
+
+## 2026-11-19 — 대시보드 메시지 전송 결과 미확인 표기
+
+- **Fixed**: 대시보드 메시지창(`POST /api/chat`)이 결과 대기 상한(기본 30초)을 넘기면 웹 UI 에 `실패: 태스크 결과 대기 타임아웃` 만 남아, 에이전트가 계속 동작하는 동안에도 실패로 보이던 문제를 수정했습니다. 이 경로는 goal 을 취소하지 않으므로(`ros_adapter.send_chat` 의 `on_event is None` 분기) 반환 dict 에 `unknown: true` 를 함께 싣고, `DashboardService.send_message` 가 같은 키를 그대로 전달합니다. 웹은 이를 "결과 미확인" 경고로 표시하고 에이전트 상태·현재 스킬·로그에서 확인하도록 안내합니다(신규 `web/assets/chat_view.js`).
+- **Changed**: 채팅 결과 문구를 `chat_view.js` 의 순수 함수(`resultView`, `pendingView`)로 분리해 node 테스트로 고정했습니다. 성공/실패 접두어와 클래스는 유지하고, 미확인 응답만 `text-warning` 으로 구분합니다. `index.html` 에 해당 스크립트를 추가했습니다.
+- **Changed**: `docs/DASHBOARD.md` 메시지 전송 절에 `unknown` 계약(미확인 ≠ 실패, 자동 재전송 금지, 최종 판단은 이후 관측)을 추가했습니다.
+- **검증**: `task verify` 통과(3579 passed), `task lint`·`task contract-check` 통과. 신규 JS 테스트 `test_chat_view_js.py` 7건, 서비스 테스트 2건 추가, 어댑터 기존 계약 테스트 1건 갱신. 에이전트가 30초를 넘겨 실제로 계속 실행되는 상황의 실기 확인은 **미검증**입니다.
+
 ## 2026-11-19 — 정리 시연 STOP 누락 경로 보강(joint 제어 복귀 보장)
 
 - **Fixed**: 시연 모션 뒤 `MotionCmd STOP` 이 발행되지 않아 tofu `joint_motion_controller` 가 active 로 남던 잔여 경로를 막았습니다. `publish_motion_stop` 은 Motion Player 구독자를 확인하지 못해도(디스커버리 지연·QoS 불일치·vendor 재시작) STOP 을 **best-effort 로 발행**하고, 전달 미확인은 발행 실패와 구분해 `demo_stop.note=motion_player_unconfirmed` 로 남깁니다(종전에는 `motion_player_unavailable` 로 보고하고 발행하지 않았습니다).

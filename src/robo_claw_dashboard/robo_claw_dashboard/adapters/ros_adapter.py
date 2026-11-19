@@ -117,6 +117,13 @@ def _cancel_own_goal(goal_handle: Any, *, timeout_sec: float) -> bool:
 from ..coercion import coerce_float as _coerce_float
 from ..coercion import coerce_int as _coerce_int
 
+#: 일반 채팅 ExecuteTask 의 작업 예산 기본값(초).
+#: 에이전트는 goal 의 timeout_sec 이 0 이면 600초를 쓰므로 같은 값으로 맞춘다.
+DEFAULT_CHAT_TASK_TIMEOUT_SEC = 600.0
+#: 일반 채팅 HTTP 응답 대기 상한 기본값(초). 넘으면 미확인(unknown)으로 돌려준다.
+#: RPC 상한(request_timeout_sec, 기본 30초)과 분리해, 짧은 RPC 상한이 작업 예산을 깎지 않게 한다.
+DEFAULT_CHAT_RESULT_WAIT_SEC = 60.0
+
 
 class RosBackend:
     """DashboardBackend(application.service) 의 ROS2 구현체.
@@ -133,6 +140,8 @@ class RosBackend:
         battery_topic: str = "/battery_state",
         status_topic: str | None = None,
         request_timeout_sec: float = 30.0,
+        chat_task_timeout_sec: float = DEFAULT_CHAT_TASK_TIMEOUT_SEC,
+        chat_result_wait_sec: float = DEFAULT_CHAT_RESULT_WAIT_SEC,
         map_topic: str | list[str] = "",
         map_frame: str = "map",
         base_frame: str = "base_link",
@@ -153,6 +162,9 @@ class RosBackend:
     ) -> None:
         self._node = node
         self._timeout = request_timeout_sec
+        # 일반 채팅: 에이전트에 넘길 작업 예산과 HTTP 응답 대기 상한을 따로 둔다.
+        self._chat_task_timeout = max(1.0, float(chat_task_timeout_sec))
+        self._chat_result_wait = max(1.0, float(chat_result_wait_sec))
         self._cb = ReentrantCallbackGroup()
         self._map_frame = map_frame
         self._base_frame = base_frame
@@ -709,18 +721,24 @@ class RosBackend:
     ) -> dict[str, Any]:
         """ExecuteTask 액션으로 메시지를 전달한다.
 
-        기본 호출(``send_chat(message)``)은 기존 동기 동작을 유지한다. 지도 목표
-        모드만 context_json/timeout/이벤트 콜백을 사용하며, 결과 대기 타임아웃 시
-        자기 goal 하나만 취소 요청한다.
+        ``timeout_sec`` 을 주지 않은 일반 채팅은 작업 예산(``chat_task_timeout_sec``)과
+        HTTP 응답 대기 상한(``chat_result_wait_sec``)을 따로 쓴다. 짧은 RPC 상한
+        (``request_timeout_sec``)이 에이전트 작업 예산을 깎지 않게 하기 위함이다.
+        지도 목표 모드는 호출자가 준 ``timeout_sec`` 을 예산·대기 양쪽에 쓰고,
+        지연 시 자기 goal 하나만 취소 요청한다.
         """
-        timeout = float(self._timeout if timeout_sec is None else timeout_sec)
-        if not self._task_client.wait_for_server(timeout_sec=min(timeout, self._timeout)):
+        if timeout_sec is None:
+            task_timeout = self._chat_task_timeout
+            wait = self._chat_result_wait
+        else:
+            task_timeout = wait = float(timeout_sec)
+        if not self._task_client.wait_for_server(timeout_sec=min(wait, self._timeout)):
             return {"success": False, "error": "에이전트 액션 서버 연결 실패"}
 
         goal = ExecuteTask.Goal()
         goal.instruction = message
         goal.context_json = "" if context_json is None else str(context_json)
-        goal.timeout_sec = timeout
+        goal.timeout_sec = task_timeout
 
         feedback_callback = None
         if on_event is not None:
@@ -739,7 +757,7 @@ class RosBackend:
                     return
 
         future = self._task_client.send_goal_async(goal, feedback_callback=feedback_callback)
-        if not _wait_future(future, min(timeout, self._timeout)):
+        if not _wait_future(future, min(wait, self._timeout)):
             return {"success": False, "error": "태스크 goal 응답 타임아웃"}
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
@@ -748,11 +766,17 @@ class RosBackend:
             on_event({"type": "accepted"})
 
         result_future = goal_handle.get_result_async()
-        if not _wait_result_cancellable(result_future, timeout, goal_handle, cancel_event):
+        if not _wait_result_cancellable(result_future, wait, goal_handle, cancel_event):
             if on_event is None:
-                return {"success": False, "error": "태스크 결과 대기 타임아웃"}
+                # 이 경로는 goal 을 취소하지 않는다. 에이전트는 계속 실행 중일 수 있으므로
+                # 결과를 "실패"로 단정하지 않고 미확인(unknown)으로 함께 알린다.
+                return {
+                    "success": False,
+                    "error": "태스크 결과 대기 타임아웃",
+                    "unknown": True,
+                }
             # goals_canceling 은 취소 요청 ACK 일 뿐 실제 정지 확인이 아니다.
-            _cancel_own_goal(goal_handle, timeout_sec=min(2.0, max(0.2, timeout)))
+            _cancel_own_goal(goal_handle, timeout_sec=min(2.0, max(0.2, wait)))
             return {
                 "success": False,
                 "error": "태스크 결과 대기 타임아웃",

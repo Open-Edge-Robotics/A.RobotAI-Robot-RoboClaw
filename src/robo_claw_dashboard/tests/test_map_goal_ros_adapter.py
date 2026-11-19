@@ -64,10 +64,13 @@ class FakeTaskClient:
         return FakeFuture(self._handle)
 
 
-def make_backend(client, *, timeout=0.3):
+def make_backend(client, *, timeout=0.3, chat_task_timeout=600.0, chat_wait=None):
     backend = object.__new__(ros_adapter.RosBackend)
     backend._task_client = client
     backend._timeout = timeout
+    # 일반 채팅 경로의 작업 예산/대기 상한(생성자 기본값과 같은 값을 fake 로 둔다).
+    backend._chat_task_timeout = float(chat_task_timeout)
+    backend._chat_result_wait = float(timeout if chat_wait is None else chat_wait)
     return backend
 
 
@@ -119,7 +122,8 @@ class TestMapGoalActionBoundary:
     def test_timeout_cancels_only_own_goal_and_reports_unknown(self):
         pending = FakeFuture(None, done=False)
         handle = FakeGoalHandle(pending)
-        backend = make_backend(FakeTaskClient(handle), timeout=5.0)
+        client = FakeTaskClient(handle)
+        backend = make_backend(client, timeout=5.0)
 
         result = backend.send_chat(
             "목표",
@@ -128,6 +132,8 @@ class TestMapGoalActionBoundary:
             on_event=lambda _event: None,
         )
 
+        # 호출자가 준 timeout_sec 은 작업 예산으로 그대로 전달된다.
+        assert client.goals[0].timeout_sec == 0.15
         assert handle.cancelled is True
         assert result["success"] is False
         assert result["unknown"] is True
@@ -151,5 +157,20 @@ class TestMapGoalActionBoundary:
         result = backend.send_chat("상태 알려줘")
 
         assert client.goals[0].context_json == ""
-        assert result == {"success": False, "error": "태스크 결과 대기 타임아웃"}
+        # 대기 시간이 지나도 goal 은 취소하지 않으므로 결과는 "실패"가 아니라 "미확인"이다.
+        assert result == {"success": False, "error": "태스크 결과 대기 타임아웃", "unknown": True}
+        assert handle.cancelled is False
+
+    def test_legacy_chat_sends_task_budget_not_rpc_timeout(self):
+        # 일반 채팅은 RPC 상한(30초)을 작업 예산으로 쓰지 않는다.
+        pending = FakeFuture(None, done=False)
+        handle = FakeGoalHandle(pending)
+        client = FakeTaskClient(handle)
+        backend = make_backend(client, timeout=30.0, chat_task_timeout=600.0, chat_wait=0.1)
+
+        result = backend.send_chat("지금 위치에서 스캔해봐")
+
+        assert client.goals[0].timeout_sec == 600.0
+        # HTTP 대기 상한이 지나면 미확인으로 돌려주고 goal 은 살려 둔다(에이전트는 계속 실행).
+        assert result == {"success": False, "error": "태스크 결과 대기 타임아웃", "unknown": True}
         assert handle.cancelled is False

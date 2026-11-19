@@ -17,7 +17,11 @@ from rclpy.node import Node
 
 from .adapters.http_handlers import make_handler
 from .adapters.param_defaults import discover_map_names
-from .adapters.ros_adapter import RosBackend
+from .adapters.ros_adapter import (
+    DEFAULT_CHAT_RESULT_WAIT_SEC,
+    DEFAULT_CHAT_TASK_TIMEOUT_SEC,
+    RosBackend,
+)
 from .adapters.security import DashboardHttpSecurityPolicy
 from .application.scenario_runner import (
     ScenarioConfig,
@@ -88,6 +92,10 @@ class DashboardNode(Node):
         self._declare("peers_service", "/robo_claw_messenger_client_node/list_peers")
         self._declare("status_topic", "")
         self._declare("request_timeout_sec", 30.0)
+        # 일반 채팅: 에이전트에 넘길 작업 예산과 HTTP 응답 대기 상한을 분리한다.
+        # request_timeout_sec(30초)은 조회/RPC 상한이므로 작업 예산으로 쓰지 않는다.
+        self._declare("chat_task_timeout_sec", DEFAULT_CHAT_TASK_TIMEOUT_SEC)
+        self._declare("chat_result_wait_sec", DEFAULT_CHAT_RESULT_WAIT_SEC)
         # 로봇마다 지도 토픽이 다르다(former0047 `/map`, CLOiD `/lio/grid_map`).
         # 쉼표로 여러 개를 지정하면 데이터가 들어오는 토픽을 사용한다.
         self._declare("map_topic", "/map,/lio/grid_map")
@@ -131,6 +139,12 @@ class DashboardNode(Node):
         battery_topic = str(self.get_parameter("battery_topic").value)
         status_topic = str(self.get_parameter("status_topic").value)
         timeout = _as_float(self.get_parameter("request_timeout_sec").value, 30.0)
+        chat_task_timeout = _as_float(
+            self.get_parameter("chat_task_timeout_sec").value, DEFAULT_CHAT_TASK_TIMEOUT_SEC
+        )
+        chat_result_wait = _as_float(
+            self.get_parameter("chat_result_wait_sec").value, DEFAULT_CHAT_RESULT_WAIT_SEC
+        )
         map_topic = str(self.get_parameter("map_topic").value or "")
         map_frame = str(self.get_parameter("map_frame").value or "map")
         base_frame = str(self.get_parameter("base_frame").value or "base_link")
@@ -234,6 +248,8 @@ class DashboardNode(Node):
             battery_topic=battery_topic,
             status_topic=status_topic or None,
             request_timeout_sec=timeout,
+            chat_task_timeout_sec=chat_task_timeout,
+            chat_result_wait_sec=chat_result_wait,
             map_topic=map_topic,
             map_frame=map_frame,
             base_frame=base_frame,

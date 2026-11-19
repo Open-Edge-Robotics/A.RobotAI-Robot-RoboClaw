@@ -94,6 +94,12 @@ robo_claw_agent_node:
 
 robo_claw_dashboard_node:
   ros__parameters:
+    # 일반 채팅(/api/chat) 실행 예산과 HTTP 응답 대기 상한(초).
+    # request_timeout_sec 은 조회/RPC 상한이므로 작업 예산으로 쓰지 않는다. 작업 예산은
+    # ExecuteTask goal 의 timeout_sec 으로 전달되며, 대기 상한을 넘기면 대시보드는
+    # 결과를 "미확인"으로 돌려주고 에이전트는 계속 실행한다.
+    chat_task_timeout_sec: 600.0
+    chat_result_wait_sec: 60.0
     # CLOiD LIO(lio-fr-system) 연동 — 지도 표시는 map_topic(/lio/grid_map)을 그대로 쓰고,
     # 아래 값은 대시보드에서 저장된 지도를 적용해 위치추정을 시작하는 데 쓴다.
     lio_status_topic: "/lio_node/status"
