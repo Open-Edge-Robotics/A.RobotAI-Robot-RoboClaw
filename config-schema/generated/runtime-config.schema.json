@@ -469,6 +469,40 @@
           "x-scope": "runtime",
           "x-secret": false
         },
+        "langfuse_tracing": {
+          "type": "boolean",
+          "description": "Enable Langfuse LLM tracing uploads.",
+          "default": false,
+          "x-canonical-name": "langfuse.tracing",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "langfuse_public_key": {
+          "type": "string",
+          "description": "Langfuse project public key.",
+          "default": null,
+          "x-canonical-name": "langfuse.public_key",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "langfuse_secret_key": {
+          "type": "string",
+          "description": "Langfuse project secret key.",
+          "default": null,
+          "x-canonical-name": "langfuse.secret_key",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "langfuse_host": {
+          "type": "string",
+          "description": "Langfuse server base URL (for example a self-hosted instance URL).",
+          "default": "",
+          "x-canonical-name": "langfuse.host",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
         "system1_router": {
           "type": "string",
           "description": "Select the pre-routing implementation used before the LLM planner.",

@@ -158,3 +158,130 @@ func TestBuildMergedEnvResolvesSkillsGuideForFleetConnector(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildMergedEnvKeepsLangfuseArtifactSecretKey 은 배포된 .env 의 secret key 가
+// config JSON 값으로 덮이지 않는지 검증한다. config JSON 은 마스킹 값을 돌려줄 수 있으므로
+// artifact 값이 항상 우선이어야 한다.
+func TestBuildMergedEnvKeepsLangfuseArtifactSecretKey(t *testing.T) {
+	t.Setenv("LANGFUSE_SECRET_KEY", "")
+
+	const artifactKey = "sk-lf_artifact_key"
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot: t.TempDir(),
+		EnvSlice:    []string{"LANGFUSE_SECRET_KEY=" + artifactKey},
+		EnvMap:      map[string]string{"LANGFUSE_SECRET_KEY": artifactKey},
+		ActiveConfig: RoboClawConfig{
+			LangfuseSecretKey: "sk-lf_json_key",
+		},
+	})
+
+	if got := lastEnvValue(t, env, "LANGFUSE_SECRET_KEY"); got != artifactKey {
+		t.Fatalf("expected artifact secret key to remain effective, got %q", got)
+	}
+}
+
+// TestBuildMergedEnvDoesNotInjectMaskedLangfuseKeys 는 서버가 마스킹 값을 돌려줄 때
+// 그 값이 실제 key 로 주입되지 않는지 검증한다.
+func TestBuildMergedEnvDoesNotInjectMaskedLangfuseKeys(t *testing.T) {
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "")
+	t.Setenv("LANGFUSE_SECRET_KEY", "")
+
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot: t.TempDir(),
+		EnvMap:      map[string]string{},
+		ActiveConfig: RoboClawConfig{
+			LangfusePublicKey: "********",
+			LangfuseSecretKey: "********",
+		},
+	})
+
+	joined := strings.Join(env, "\n")
+	for _, key := range []string{"LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"} {
+		if strings.Contains(joined, key+"=********") {
+			t.Fatalf("masked %s must not be injected", key)
+		}
+	}
+}
+
+// TestBuildMergedEnvUsesActiveConfigLangfuseKeysAsFallback 은 artifact 에 key 가 없을 때
+// config JSON 값으로 보완하는지 검증한다.
+func TestBuildMergedEnvUsesActiveConfigLangfuseKeysAsFallback(t *testing.T) {
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "")
+	t.Setenv("LANGFUSE_SECRET_KEY", "")
+
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot: t.TempDir(),
+		EnvMap:      map[string]string{},
+		ActiveConfig: RoboClawConfig{
+			LangfusePublicKey: "pk-lf_config_key",
+			LangfuseSecretKey: "sk-lf_config_key",
+		},
+	})
+
+	if got := lastEnvValue(t, env, "LANGFUSE_PUBLIC_KEY"); got != "pk-lf_config_key" {
+		t.Fatalf("expected active config public key fallback, got %q", got)
+	}
+	if got := lastEnvValue(t, env, "LANGFUSE_SECRET_KEY"); got != "sk-lf_config_key" {
+		t.Fatalf("expected active config secret key fallback, got %q", got)
+	}
+}
+
+// TestBuildMergedEnvAddsLangfuseHostFromActiveConfig 은 자체 호스팅 서버 주소가
+// ros2 launch 프로세스 환경으로 전달되는지 검증한다. LANGFUSE_HOST 는 launch 인자가
+// 아니라 환경변수이므로 이 경로가 끊기면 자체 서버 대신 Langfuse Cloud 로 전송된다.
+func TestBuildMergedEnvAddsLangfuseHostFromActiveConfig(t *testing.T) {
+	t.Setenv("LANGFUSE_HOST", "")
+
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot: t.TempDir(),
+		EnvMap:      map[string]string{},
+		ActiveConfig: RoboClawConfig{
+			LangfuseHost: "http://192.168.50.47:3000",
+		},
+	})
+
+	if got := lastEnvValue(t, env, "LANGFUSE_HOST"); got != "http://192.168.50.47:3000" {
+		t.Fatalf("expected Langfuse host from active config, got %q", got)
+	}
+}
+
+// TestBuildMergedEnvAddsLangfuseTracingFromActiveConfig 은 config 의 tracing 값이
+// artifact 에 값이 없을 때만 주입되는지 검증한다.
+func TestBuildMergedEnvAddsLangfuseTracingFromActiveConfig(t *testing.T) {
+	t.Setenv("LANGFUSE_TRACING", "")
+
+	enabled := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot:  t.TempDir(),
+		EnvMap:       map[string]string{},
+		ActiveConfig: RoboClawConfig{LangfuseTracing: true},
+	})
+	if got := lastEnvValue(t, enabled, "LANGFUSE_TRACING"); got != "true" {
+		t.Fatalf("expected LANGFUSE_TRACING=true from active config, got %q", got)
+	}
+
+	disabled := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot:  t.TempDir(),
+		EnvMap:       map[string]string{},
+		ActiveConfig: RoboClawConfig{LangfuseTracing: false},
+	})
+	if strings.Contains(strings.Join(disabled, "\n"), "LANGFUSE_TRACING=true") {
+		t.Fatal("LANGFUSE_TRACING must not be enabled when active config is false")
+	}
+}
+
+// TestBuildMergedEnvKeepsLangfuseTracingFromEnvArtifact 은 배포된 .env 의 off 값이
+// 캐시된 config 의 true 로 덮이지 않는지 검증한다.
+func TestBuildMergedEnvKeepsLangfuseTracingFromEnvArtifact(t *testing.T) {
+	t.Setenv("LANGFUSE_TRACING", "")
+
+	env := buildMergedEnv(nil, &LaunchContext{
+		ProjectRoot:  t.TempDir(),
+		EnvSlice:     []string{"LANGFUSE_TRACING=false"},
+		EnvMap:       map[string]string{"LANGFUSE_TRACING": "false"},
+		ActiveConfig: RoboClawConfig{LangfuseTracing: true},
+	})
+
+	if got := lastEnvValue(t, env, "LANGFUSE_TRACING"); got != "false" {
+		t.Fatalf("expected artifact tracing value to remain effective, got %q", got)
+	}
+}

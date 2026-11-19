@@ -13,3 +13,11 @@ func TestDisplaySecretKeepsNonSecretValue(t *testing.T) {
 		t.Fatalf("non-secret value was changed: %s", got)
 	}
 }
+
+func TestDisplaySecretMasksLangfuseKeys(t *testing.T) {
+	for _, key := range []string{"LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"} {
+		if got := displaySecret(key, "pk-lf-secret"); got != "********" {
+			t.Fatalf("%s was not masked: %s", key, got)
+		}
+	}
+}

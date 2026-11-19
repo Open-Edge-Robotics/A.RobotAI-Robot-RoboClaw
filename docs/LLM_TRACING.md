@@ -1,0 +1,661 @@
+# LLM 트레이싱/모니터링
+
+robo_claw의 모든 LLM 동작(계획 수립, RAG 쿼리 재작성, 임베딩, 이미지 분석)을 외부
+트레이싱 서비스로 추적·모니터링하는 **선택적(optional) 트레이싱 계층**을 설명합니다.
+LangSmith와 Langfuse 두 백엔드를 지원하며 동시에 켤 수 있습니다.
+
+시작 시 RAG 임베딩 차원을 검증하는 `robo_claw_rag_healthcheck` 호출은 트레이싱과
+`chat_history/` JSON 호출 로그에서 제외합니다. 점검 결과와 오류를 알리는 운영 로그는
+유지합니다.
+
+## 개요
+
+- **완전 선택적**: SDK 패키지가 없거나 트레이싱 환경변수가 꺼져 있으면 모든 트레이싱
+  코드는 no-op으로 동작합니다. 기존 실행 경로/성능/의존성에 영향이 없습니다.
+- **단일 진입점**: 모든 LLM 호출이 `llm_bridge` 계층을 통과하므로, 이 계층의 메서드를
+  감싸 토큰 사용량·모델·지연시간을 캡처합니다.
+- **백엔드 격리**: 백엔드는 `src/robo_claw_agent/robo_claw_agent/tracing_backends/`에
+  분리되어 있고, facade(`tracing.py`)가 공개 API와 공통 redaction을 담당합니다.
+  계측 실패(import/설정/래핑)는 경고로 남기고 원본 동작을 유지합니다.
+- **환경변수 구동**: SDK 표준 환경변수만으로 켜고 끕니다. 별도의 ROS 파라미터/launch
+  인자 배선이 없으므로, 실행 방식에 따라 값을 넣는 위치가 다릅니다
+  ("실행 방식별 설정 위치" 참고).
+
+## 지원 백엔드
+
+| 백엔드 | SDK | 활성화 게이트 | 필수 키 | 기본 엔드포인트 |
+| --- | --- | --- | --- | --- |
+| LangSmith | `langsmith>=0.1.100` | `LANGSMITH_TRACING`(legacy `LANGCHAIN_TRACING_V2`) | `LANGSMITH_API_KEY` | `https://api.smith.langchain.com` |
+| Langfuse | `langfuse>=2.60,<3` | `LANGFUSE_TRACING` | `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` | Langfuse Cloud (`LANGFUSE_HOST` 미설정 시) |
+
+두 백엔드는 독립된 컨텍스트 스택을 사용하므로 **동시에 켤 수 있습니다**. 한 번의 LLM
+호출이 양쪽에 각각 run tree/trace로 기록됩니다.
+
+## 활성화 방법
+
+### 1. 의존성 설치
+
+```bash
+task setup-deps   # 또는: uv sync
+```
+
+`pyproject.toml`에 `langsmith`, `langfuse`가 추가되어 있으므로 위 명령으로 함께
+설치됩니다. Docker 이미지는 `Dockerfile`에서 `langfuse==2.60.10`으로 고정해
+설치합니다.
+
+### 2. 백엔드별 환경변수
+
+| 백엔드 | 환경변수 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| LangSmith | `LANGSMITH_TRACING` | O | `true`일 때 업로드합니다. legacy `LANGCHAIN_TRACING_V2`도 인식합니다. |
+| LangSmith | `LANGSMITH_API_KEY` | O | LangSmith에서 발급한 API 키입니다. |
+| LangSmith | `LANGSMITH_PROJECT` | X | 프로젝트 이름이며, 미설정 시 `default`입니다. |
+| LangSmith | `LANGSMITH_ENDPOINT` | X | 자체 호스팅/프록시 엔드포인트입니다. |
+| LangSmith | `LANGSMITH_WORKSPACE_ID` | X | 여러 workspace에 접근하는 API 키일 때 지정합니다. |
+| Langfuse | `LANGFUSE_TRACING` | O | `true`이고 키가 모두 설정되어야 업로드됩니다. |
+| Langfuse | `LANGFUSE_PUBLIC_KEY` | O | Langfuse 프로젝트 public key(`pk-lf-...`)입니다. |
+| Langfuse | `LANGFUSE_SECRET_KEY` | O | Langfuse 프로젝트 secret key(`sk-lf-...`)입니다. |
+| Langfuse | `LANGFUSE_HOST` | X | 자체 호스팅 서버 주소입니다. 미설정 시 Langfuse Cloud를 사용합니다. |
+
+`LANGSMITH_TRACING_SAMPLING_RATE`, `LANGSMITH_HIDE_INPUTS`, `LANGFUSE_SAMPLE_RATE`,
+`LANGFUSE_TIMEOUT`, `LANGFUSE_MAX_RETRIES`, `LANGFUSE_TRACING_ENVIRONMENT` 같은 그 밖의
+SDK 변수는 `.env`(Docker 스크립트) 또는 셸 `export`로 지정합니다.
+
+### 3. 실행 방식별 설정 위치
+
+| 실행 방식 | 설정 위치 |
+| --- | --- |
+| `./rclaw launch <robot> <env>` (로컬, `--docker` 모두) | AI Config Server 프로필의 트레이싱 설정 섹션. 서버가 캐시 `.env`(`~/.robo_claw/config_cache/<robot>_<env>/.env`)로 내려주며, 이 파일은 동기화 때마다 다시 생성되므로 직접 수정하지 않습니다. |
+| `scripts/run_robo_claw_docker.sh` | 저장소 루트 `.env`(또는 `RC_ENV_FILE`로 지정한 파일). `--env-file`로 컨테이너에 전달됩니다. |
+| `./rclaw run` / `./rclaw sim` | **셸에서 `export`합니다.** 이 명령은 저장소 `.env`를 launch 인자를 만드는 데만 쓰고 프로세스 환경변수로 넘기지 않으므로, `.env`에 넣은 트레이싱 값은 에이전트에 전달되지 않습니다. |
+| `ros2 launch` 직접 실행 | 셸에서 `export`합니다. |
+
+서버 프로필이 제공하는 LangSmith 항목은 `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`,
+`LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT`, `LANGSMITH_WORKSPACE_ID`이고, Langfuse 항목은
+`LANGFUSE_TRACING`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`입니다.
+`./rclaw launch`는 이 값들을 캐시 `.env`와 `ros2 launch` 프로세스 환경변수로 전달합니다.
+`config.json`이 마스킹 값(`********`)을 돌려주는 경우 그 값은 실제 키로 주입하지
+않습니다.
+
+`.env`(Docker 스크립트) 또는 셸 `export`로 지정하는 값의 예시입니다.
+
+```dotenv
+# LangSmith 트레이싱
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...          # LangSmith에서 발급받은 API 키
+LANGSMITH_PROJECT=robo-claw         # (선택) 프로젝트 이름, 기본값 "default"
+# LANGSMITH_ENDPOINT=https://api.smith.langchain.com  # (선택) 자체 호스팅 시
+
+# Langfuse 트레이싱 (자체 호스팅 서버 사용 예)
+LANGFUSE_TRACING=true
+LANGFUSE_PUBLIC_KEY=pk-lf-...       # Langfuse 프로젝트 public key
+LANGFUSE_SECRET_KEY=sk-lf-...       # Langfuse 프로젝트 secret key
+LANGFUSE_HOST=http://192.168.50.47:3000
+```
+
+### 4. 실행 및 확인
+
+```bash
+task build         # 소스 변경 반영
+
+# ./rclaw run 은 .env 의 트레이싱 값을 전달하지 않으므로 export 한 뒤 실행
+set -a; source <(grep -E '^(LANGSMITH|LANGFUSE)_' .env); set +a
+./rclaw run
+```
+
+에이전트 노드 시작 로그에 백엔드별 상태가 한 줄씩 출력됩니다.
+
+| 백엔드 | 로그 | 의미 |
+| --- | --- | --- |
+| LangSmith | `LangSmith tracing ENABLED (project=..., endpoint=...)` | 활성화됨 |
+| LangSmith | `LangSmith tracing disabled (...)` | 환경변수 off |
+| LangSmith | `LANGSMITH_TRACING is enabled but the 'langsmith' package is not installed...` | `uv sync` 필요 |
+| LangSmith | `LANGSMITH_TRACING is enabled but LANGSMITH_API_KEY is not set...` | 키 누락(업로드 안 됨) |
+| Langfuse | `Langfuse tracing ENABLED (host=...)` | 활성화됨 |
+| Langfuse | `Langfuse tracing disabled (...)` | 환경변수 off |
+| Langfuse | `LANGFUSE_TRACING is enabled but the 'langfuse' package is not installed...` | `uv sync` 필요 |
+| Langfuse | `LANGFUSE_TRACING is enabled but LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY are not set; traces will NOT be uploaded.` | 키 누락(업로드 안 됨) |
+
+이후 채널(HTTP `/task`, 메신저 등)로 명령을 내리면 각 서비스의 해당 프로젝트에 실행
+트리(run tree)가 나타납니다.
+
+## 트레이싱 계층 구조
+
+```text
+execute_task                       (chain)
+├─ collect_task_context            (chain, 메시지 개수와 로봇 상태 요약)
+│  ├─ *Bridge.chat                 (llm, 검색 쿼리 재작성)
+│  ├─ rag_search                   (chain)
+│  └─ render_relevant_skill_lessons (chain)
+└─ run_llm_planning_loop           (chain)
+   ├─ *Bridge.chat_with_tools      (llm)
+   ├─ navigation_safety_gate       (chain)
+   └─ SkillManager.execute         (tool)
+      └─ skill_attempt_*           (tool, 실제 실행·재시도)
+```
+
+- OpenAI/Azure/Anthropic: **SDK 클라이언트 래핑**으로 토큰 사용량·모델명이 정확히
+  기록됩니다(LangSmith).
+- Ollama: SDK 래퍼가 없어 `@traceable(run_type="llm")`로 입력 메시지/출력 텍스트를
+  캡처합니다(토큰 메타데이터는 Ollama가 일관되게 제공하지 않음).
+- Langfuse는 브리지 메서드 계측을 `observe(as_type="generation")`으로 매핑하고, 응답
+  객체의 토큰 사용량을 `usage_details`로 기록합니다.
+
+`tracing.py`의 공개 API:
+
+- `is_tracing_env_enabled()` — 백엔드 중 하나라도 트레이싱 환경변수가 켜져 있는지 판단합니다.
+- `is_active()` — 환경변수 on **이면서** SDK import와 최소 조건(키 등)을 만족하는 백엔드가
+  있는지 판단합니다.
+- `wrap_openai_client(client)` / `wrap_anthropic_client(client)` — 활성 시 벤더 SDK
+  클라이언트를 래퍼로 감싸 반환하고, 비활성/실패 시 원본을 그대로 반환합니다.
+- `traceable(*args, **kwargs)` — LangSmith `traceable`과 호환되는 안전 래퍼입니다.
+  비활성/미설치 시 원본 함수를 그대로 실행하는 no-op 데코레이터이며 동기·비동기를 모두
+  지원합니다.
+- `record_generation_usage(response)` — 응답 객체의 토큰 사용량을 기록합니다(Langfuse).
+- `set_current_trace_metadata(metadata, tags)` / `current_trace_id()` /
+  `current_trace_ids()` — 검색용 metadata·태그와 trace ID를 다룹니다. 두 백엔드가 켜져
+  있으면 `current_trace_id()`는 `BACKENDS` 순서상 첫 번째(LangSmith) ID를 반환합니다.
+- `init_tracing(emit=...)` — 시작 시 백엔드별 활성화 상태를 진단해 로깅합니다.
+- `flush_tracing()` — 정상 종료 시 남은 이벤트를 전송합니다.
+
+모든 함수는 SDK 미설치 또는 래핑 실패 시 예외를 삼키고 원본 동작을 유지하도록 설계되어,
+트레이싱 문제로 로봇 제어 경로가 중단되지 않습니다.
+
+## LangSmith 상세
+
+### 현재 화면이 단순하게 보이는 이유
+
+현재 instrumentation은 다음 경계에 적용되어 있습니다.
+
+- `execute_task`
+- `run_llm_planning_loop`
+- `collect_task_context`
+- `rag_search`, `query_reformulate` 등 실제 작업 이름의 span: 호출 대상이 이미
+  계측된 LLM·스킬이면 중복 wrapper를 생략합니다.
+- `parse_llm_plan`
+- `navigation_safety_gate`
+- `SkillManager.execute`
+- `skill_attempt_direct`, `skill_attempt_with_timeout`
+- 각 provider의 `chat`, `embed`, `analyze_image`
+- OpenAI/Azure/Anthropic SDK client wrapper
+
+정책·사전조건·스키마 검사는 별도 child span을 만들지 않습니다. 검사는 그대로 수행하며,
+차단·실패 이유는 `SkillManager.execute`의 결과에 보존합니다. 안전 게이트와 실제
+실행·재시도 span은 유지합니다. 컨텍스트 출력과 planning 입력에는 전체 대화 대신 메시지
+개수를 기록하며, LLM span에서 실제 prompt와 응답을 확인합니다. 임베딩 계측은 기존 동작을
+유지합니다.
+
+따라서 Task → context → LLM → plan parse → safety → skill 실행과 retry까지 child run
+tree로 확인할 수 있습니다. 다음 동작은 아직 독립된 child run이 아니라 상위 결과나 일반
+Robot log로 표시됩니다.
+
+- TaskQueue 대기 시간
+- ROS action feedback의 세부 sample
+- ROS action cancel 확인 과정
+- skill recovery 내부 단계
+- peer/FleetControl 통신
+
+LangSmith 실행 그래프는 자동으로 Python call graph나 ROS graph를 만드는 기능이 아닙니다.
+`traceable`로 계측된 함수와 SDK wrapper 호출만 parent-child run tree에 나타납니다.
+
+### 1. 모든 trace를 수집하도록 환경변수 설정
+
+`./rclaw launch --docker`는 서버 프로필의 다섯 항목
+(`TRACING`/`API_KEY`/`PROJECT`/`ENDPOINT`/`WORKSPACE_ID`)을 포함한 캐시 `.env`를
+전달합니다. 서버 프로필에 없는 sampling·hide 값까지 쓰려면
+`scripts/run_robo_claw_docker.sh`와 `.env`를 사용합니다.
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=robo-claw-detailed
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+
+# 1.0은 trace 100% 수집입니다. 운영 부하가 크면 0.1 등으로 낮춥니다.
+LANGSMITH_TRACING_SAMPLING_RATE=1.0
+
+# 상세 입력/출력을 확인하려면 false로 둡니다.
+LANGSMITH_HIDE_INPUTS=false
+LANGSMITH_HIDE_OUTPUTS=false
+```
+
+여러 LangSmith workspace에 접근 가능한 API key라면 필요에 따라 workspace ID도
+지정합니다. AI Config Server의 LangSmith 설정 섹션에서도 workspace ID를 입력할 수
+있으며, 해당 값은 배포 `.env`와 런타임 설정에 포함됩니다.
+
+```dotenv
+LANGSMITH_WORKSPACE_ID=<workspace-id>
+```
+
+`LANGSMITH_HIDE_INPUTS=false`, `LANGSMITH_HIDE_OUTPUTS=false`는 사용자 명령, prompt,
+Robot 상태와 LLM 응답이 외부 LangSmith에 업로드될 수 있다는 의미입니다. 운영 Robot에서는
+개인 정보, credential, camera base64, 전체 map 또는 민감한 위치 정보가 포함되지 않도록
+먼저 redaction을 적용해야 합니다.
+
+### 2. Docker/launch process에 환경변수가 전달됐는지 확인
+
+설정을 변경한 뒤 기존 container/process를 완전히 재시작합니다. `./rclaw launch`는 서버
+프로필을 다시 동기화해 반영합니다.
+
+```bash
+./rclaw kill
+./rclaw launch <robot-profile> <environment> --docker --use-grpc
+```
+
+실행 중인 container에서 실제 환경변수를 확인합니다.
+
+```bash
+docker ps --format '{{.ID}} {{.Names}}'
+docker exec <container-name-or-id> sh -c \
+  "env | grep -E '^(LANGSMITH|LANGCHAIN|LANGFUSE)_' | sed -E 's/^((LANGSMITH|LANGCHAIN|LANGFUSE)_(API|PUBLIC|SECRET)_KEY=).*/\\1<redacted>/'"
+```
+
+최소한 다음 값이 보여야 합니다.
+
+```text
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=robo-claw-detailed
+LANGSMITH_TRACING_SAMPLING_RATE=1.0   # scripts/run_robo_claw_docker.sh 의 .env 로 지정한 경우에만
+```
+
+API key 원문을 운영 로그나 화면 캡처에 노출하지 않습니다.
+
+### 3. 실제 planning 경로를 호출해 trace 생성
+
+`get_status` 같은 direct/read-only skill만 호출하면 LLM planning loop를 우회할 수 있어
+상세한 LLM run tree가 생성되지 않습니다. 자연어 Task endpoint를 사용해 실제 planning
+경로를 호출합니다.
+
+```bash
+curl -X POST http://127.0.0.1:8080/task \
+  -H "Authorization: Bearer ${RC_HTTP_CONTROL_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"instruction":"현재 상태를 확인하고 주변 상황을 한 문장으로 설명해줘"}'
+```
+
+LangSmith의 `robo-claw-detailed` project에서 `run_llm_planning_loop` trace를 열고
+`Children` 또는 tree view를 펼칩니다. Project가 다르면 trace가 없는 것처럼 보이므로
+`.env`의 project 이름과 LangSmith 화면의 project filter가 같은지 확인합니다.
+
+### 4. Skill 실행을 그래프의 child node로 표시
+
+Skill 실행은 중앙 실행 경계인
+`src/robo_claw_agent/robo_claw_agent/skills/manager.py`의 `SkillManager.execute`에
+`traceable(run_type="tool")`가 적용되어 있습니다. 각 개별 skill 파일을 모두 감싸는 대신
+중앙 경계를 계측해 누락과 중복 trace를 줄입니다.
+
+현재 적용 형태:
+
+```python
+from robo_claw_agent.tracing import traceable
+
+
+@traceable(
+    run_type="tool",
+    name="SkillManager.execute",
+    tags=["robot-skill"],
+)
+def execute(self, skill_name, params=None, timeout_sec=30.0):
+    ...
+```
+
+이렇게 하면 planning trace 아래에 다음 구조가 나타납니다.
+
+```text
+run_llm_planning_loop
+├─ OpenAIBridge.chat 또는 OllamaBridge.chat
+├─ SkillManager.execute
+│  └─ skill 결과
+└─ OpenAIBridge.chat 또는 OllamaBridge.chat
+```
+
+Skill parameter에 token, 파일 내용, image base64가 포함될 수 있으면 `process_inputs`와
+`process_outputs`를 사용해 전송 전에 제거합니다.
+
+```python
+def redact_skill_inputs(inputs):
+    safe = dict(inputs)
+    params = dict(safe.get("params") or {})
+    for key in ("token", "api_key", "image_base64", "file_content"):
+        if key in params:
+            params[key] = "<redacted>"
+    safe["params"] = params
+    safe.pop("self", None)
+    return safe
+
+
+@traceable(
+    run_type="tool",
+    name="SkillManager.execute",
+    process_inputs=redact_skill_inputs,
+)
+def execute(self, skill_name, params=None, timeout_sec=30.0):
+    ...
+```
+
+### 5. Safety, retry, ROS action을 별도 node로 표시
+
+Policy·precondition·schema validation은 `SkillManager.execute` 내부에서 검사하며 독립
+child run을 만들지 않습니다. skill attempt는 별도로 계측합니다. ROS action 세부 단계는
+필요할 경우 아래 권장 경계를 추가 계측합니다.
+
+| 계측 위치 | 권장 run name | run type | 표시할 정보 |
+| --- | --- | --- | --- |
+| `_check_skill_policy` | `skill_policy_check` | `chain` | `SkillManager.execute` 결과에 기록 |
+| `check_preconditions` | `skill_preconditions` | `chain` | `SkillManager.execute` 결과에 기록 |
+| `validate_input_schema` | `skill_schema_validation` | `chain` | `SkillManager.execute` 결과에 기록 |
+| `_execute_direct`, `_execute_with_timeout` | `skill_attempt_*` | `tool` | 적용됨: attempt, timeout, duration, result |
+| navigation goal 전송 | `ros_navigation_goal` | `tool` | goal ID, map/frame, target |
+| action feedback 처리 | `ros_action_feedback` | `chain` | progress, current pose |
+| action cancel | `ros_action_cancel` | `tool` | requested/confirmed/timeout |
+| recovery 실행 | `skill_recovery` | `tool` | 실패 원인과 recovery 결과 |
+
+고주파 feedback을 매번 run으로 만들면 trace 수와 비용이 급증합니다. feedback은 다음 중
+하나로 제한합니다.
+
+- 진행률이 10% 이상 변할 때만 기록
+- 1~5초 주기로 sampling
+- child run 대신 상위 run의 metadata/event로 요약
+
+### 6. TaskQueue 대기와 전체 Task lifecycle 표시
+
+전체 Task의 queue → planning → skill → result 흐름을 보려면
+`agent_node/execution.py`의 Task 진입점을 root trace로 두고 Task ID를 metadata에
+넣습니다.
+
+권장 tree:
+
+```text
+execute_task                         metadata: task_id, robot_id, channel
+├─ task_queue_wait                   queue_position, wait_ms
+├─ collect_task_context
+│  ├─ query_reformulate
+│  ├─ rag_search
+│  └─ get_robot_summary
+├─ run_llm_planning_loop
+│  ├─ llm_chat
+│  ├─ parse_llm_plan
+│  └─ SkillManager.execute
+│     ├─ skill_policy_check
+│     ├─ skill_attempt
+│     └─ skill_recovery
+└─ task_result                       success, status, duration
+```
+
+고정 decorator metadata가 아니라 Task별 metadata를 전달하려면 traceable 함수 호출 시
+`langsmith_extra`를 사용합니다.
+
+```python
+result = traced_execute_task(
+    instruction,
+    langsmith_extra={
+        "metadata": {
+            "task_id": task_id,
+            "robot_id": robot_id,
+            "channel": channel,
+        },
+        "tags": [robot_id, channel],
+    },
+)
+```
+
+metadata에는 검색과 filter에 필요한 작은 값만 넣고 prompt 전체나 sensor raw data를
+inputs에 중복 저장하지 않습니다.
+
+### 7. RAG 검색 내용을 자세히 표시
+
+현재 `collect_task_context` 아래에서 RAG가 실행되지만 memory backend 내부 단계는 별도
+run이 아닐 수 있습니다. 다음 단위를 계측합니다.
+
+```text
+query_reformulate        llm
+embed_query              embedding
+vector_search            retriever
+result_filter            chain
+render_skill_lessons     retriever
+```
+
+Retriever run의 output에는 전체 vector를 넣지 않고 다음만 기록합니다.
+
+```json
+{
+  "query": "회의실 위치",
+  "top_k": 5,
+  "result_count": 3,
+  "document_ids": ["..."],
+  "scores": [0.91, 0.82, 0.73]
+}
+```
+
+embedding vector 전체, camera image, 대용량 map을 output에 넣으면 trace 크기와 업로드
+지연이 커지므로 기록하지 않습니다.
+
+### 8. Robot/Task별 검색이 가능하도록 metadata와 tag 구성
+
+모든 root trace에 다음 metadata를 통일해 넣습니다.
+
+```json
+{
+  "robot_id": "former-01",
+  "session_id": "boot-session-id",
+  "task_id": "task-id",
+  "mission_id": "mission-id",
+  "channel": "http",
+  "map_id": "floor-1",
+  "software_version": "git-sha"
+}
+```
+
+권장 tag:
+
+```text
+robot:former-01
+channel:http
+provider:ollama
+mode:production
+```
+
+LangSmith Traces 화면에서 `robot_id`, `task_id`, error 여부, latency, token usage로
+filter하고 saved view를 만들면 Robot별 실시간 모니터링이 쉬워집니다.
+
+### 9. Trace ID를 Robo-Claw 로그와 연결
+
+LangSmith run 안에서 ROS log와 같은 trace ID를 출력하려면 현재 run tree ID를 가져옵니다.
+
+```python
+from langsmith.run_helpers import get_current_run_tree
+
+run = get_current_run_tree()
+trace_id = str(run.trace_id if run else "")
+node.get_logger().info(f"task started trace_id={trace_id}")
+```
+
+백엔드에 무관하게 같은 값이 필요하면 facade의 `current_trace_ids()`를 사용합니다.
+
+```python
+from robo_claw_agent.tracing import current_trace_id
+
+node.get_logger().info(f"task started trace_id={current_trace_id()}")
+```
+
+Task ID, command ID, trace ID를 함께 로그에 넣으면 trace에서 실제 Robot 로그로 이동할
+수 있습니다. API key, prompt 원문, image base64는 correlation log에 넣지 않습니다.
+
+### 10. 실시간 업로드 지연을 줄이고 종료 시 flush
+
+SDK는 비동기 buffer를 사용할 수 있어 dashboard 반영에 짧은 지연이 생길 수 있습니다.
+장시간 실행되는 Robot process에서는 정상이며 매 호출마다 강제 flush하지 않습니다.
+
+테스트 process나 정상 shutdown 시 남은 trace를 전송하려면 다음을 사용합니다.
+
+```python
+from langsmith import Client
+
+client = Client()
+client.flush()
+client.close()
+```
+
+에이전트 노드는 종료 시 `flush_tracing()`을 한 번 호출합니다. 강제 종료, `kill -9`,
+전원 차단에서는 buffer가 전송되지 않을 수 있습니다. 종료 hook에서만 flush하고 emergency
+stop 경로가 트레이싱 network 응답을 기다리게 하지 않습니다.
+
+### 11. Dashboard에서 상세 그래프 확인
+
+LangSmith에서 다음 순서로 확인합니다.
+
+1. `.env`의 `LANGSMITH_PROJECT`와 같은 project를 선택합니다.
+2. `Traces`에서 `run_llm_planning_loop` 또는 `execute_task` root run을 선택합니다.
+3. child run tree를 펼칩니다.
+4. `Inputs`, `Outputs`, `Metadata`, `Feedback`, `Errors` 탭을 확인합니다.
+5. `robot_id`, `task_id`, provider tag로 saved filter를 만듭니다.
+6. latency와 error를 기준으로 dashboard/monitor를 구성합니다.
+7. 대표 Task dataset을 만들고 성공 여부, tool selection, latency 평가를 연결합니다.
+
+그래프가 한 줄로만 보이면 환경변수 문제가 아니라 child 함수가 아직 `traceable`로
+계측되지 않은 경우가 대부분입니다.
+
+## Langfuse 상세
+
+### 서버와 SDK 버전
+
+사내 Langfuse 서버는 `192.168.50.47:3000`에서 운영하는 **Langfuse 2.95.11(v2)** 입니다.
+v2 서버에는 OTEL 수집 엔드포인트가 없으므로 SDK도 2.x 계열
+(`langfuse>=2.60,<3`)을 사용합니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 서버 | Langfuse 2.95.11 (v2) |
+| SDK | `langfuse>=2.60,<3` (`Dockerfile`은 `==2.60.10` 고정) |
+| 서버 주소 | `LANGFUSE_HOST=http://192.168.50.47:3000` |
+| 전송 방식 | v2 SDK의 batch ingestion API (OTEL 미사용) |
+
+v3 이상 서버로 이전할 때는 `src/robo_claw_agent/robo_claw_agent/tracing_backends/langfuse_backend.py`
+한 파일만 교체하면 됩니다(`from langfuse import observe`). v3 SDK는 OTEL 수집
+엔드포인트가 필요하므로 v2 서버와 함께 쓸 수 없습니다.
+
+### 프로젝트와 키 발급
+
+1. Langfuse 웹(`http://192.168.50.47:3000`)에 로그인합니다.
+2. 추적을 모을 프로젝트를 선택하거나 새로 만듭니다.
+3. 프로젝트 설정의 API Keys에서 public key(`pk-lf-...`)와 secret key(`sk-lf-...`)를
+   발급합니다.
+4. 발급한 두 키를 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`에 넣고
+   `LANGFUSE_TRACING=true`로 설정합니다.
+
+Langfuse에는 LangSmith의 `LANGSMITH_PROJECT`에 해당하는 **프로젝트 이름 환경변수가
+없습니다**. **API 키가 곧 프로젝트를 결정**하므로, 다른 프로젝트로 보내려면 해당
+프로젝트의 키로 교체합니다. `./rclaw config-effective`의 summary는 이 차이를 반영해
+"Langfuse 프로젝트(host)" 행에 서버 주소를 표시합니다.
+
+### 활성화 조건
+
+`LANGFUSE_TRACING=true`이면서 `LANGFUSE_PUBLIC_KEY`와 `LANGFUSE_SECRET_KEY`가 모두
+설정되어야 업로드가 시작됩니다. 키가 없으면 SDK 클라이언트가 비활성 상태로 남아 매 호출마다
+ERROR 로그를 남기므로, 계층은 이 조건을 `ready()`로 확인해 계측 자체를 걸지 않습니다.
+`LANGFUSE_HOST`를 비우면 Langfuse Cloud로 전송되므로, 자체 서버를 쓸 때는 반드시
+지정합니다.
+
+### 계측 방식
+
+- `langfuse.openai`를 import해 `openai` 모듈을 **전역 monkeypatch하지 않습니다**.
+  브리지 메서드에 이미 적용된 `traceable` 계측을 `observe(as_type="generation")`으로
+  매핑하고, 응답 객체의 토큰 사용량은 `record_generation_usage`로 `usage_details`에
+  기록합니다.
+- 모델명은 브리지 인스턴스의 `model`/`_model`/`_deployment` 속성 또는 호출 인자에서
+  읽습니다.
+- redaction은 `langfuse_context.configure(mask=...)`에 facade의 `redact_trace_data`를
+  연결해 모든 이벤트 input/output 전송 직전에 적용합니다.
+- Langfuse 2.x의 `observe`는 클라이언트가 비활성 상태면 호출마다 ERROR 로그를 남기므로,
+  facade가 활성 백엔드만 데코레이션합니다.
+
+### Langfuse 화면에서 확인
+
+1. `LANGFUSE_HOST` 서버에 로그인하고 해당 API 키의 프로젝트를 엽니다.
+2. `Tracing`에서 `execute_task` 또는 `run_llm_planning_loop` trace를 선택합니다.
+3. generation observation에서 입력/출력, 모델명, 토큰 사용량을 확인합니다.
+4. metadata/tag(`robot_id`, `task_id`, `channel`)로 filter해 Robot별 view를 만듭니다.
+
+### LangSmith와 동시 사용 시 주의
+
+- 두 백엔드는 동시에 켤 수 있고, LLM 호출은 **양쪽에 각각 기록**됩니다.
+- 업로드가 두 배가 되므로 latency와 네트워크 사용량이 늘어납니다. 문제를 비교할 때만
+  잠시 함께 켜고, 평상시에는 필요한 한쪽만 사용합니다.
+- `current_trace_id()`는 `BACKENDS` 순서(LangSmith 우선)상 첫 번째 ID를 반환합니다.
+  두 백엔드의 ID를 모두 로그로 남기려면 `current_trace_ids()`를 사용합니다.
+- 한쪽 SDK에서 예외가 나도 다른 쪽 계측과 로봇 제어 경로는 계속 동작합니다.
+
+## 점검 순서
+
+```bash
+# 1. package 확인
+uv run python -c 'import langsmith; print(langsmith.__version__)'
+uv run python -c 'import langfuse; print(langfuse.__version__)'
+
+# 2. 환경변수 확인
+uv run python - <<'PY'
+import os
+for key in (
+    "LANGSMITH_TRACING",
+    "LANGSMITH_PROJECT",
+    "LANGSMITH_ENDPOINT",
+    "LANGSMITH_TRACING_SAMPLING_RATE",
+    "LANGSMITH_HIDE_INPUTS",
+    "LANGSMITH_HIDE_OUTPUTS",
+    "LANGFUSE_TRACING",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_HOST",
+):
+    value = os.getenv(key)
+    if key.endswith(("PUBLIC_KEY", "SECRET_KEY")):
+        value = "<set>" if value else None
+    print(f"{key}={value}")
+PY
+
+# 3. Robo-Claw 시작 로그 확인
+./rclaw run 2>&1 | grep -iE 'langsmith|langfuse'
+```
+
+| 증상 | 확인 방법 |
+| --- | --- |
+| trace가 전혀 없음 | 게이트 값, API 키(둘 다), outbound HTTPS, project/키 선택 확인 |
+| LLM run만 보임 | SkillManager/TaskQueue/ROS action에 child instrumentation 추가 |
+| token usage가 없음 | Ollama가 아닌 OpenAI/Anthropic wrapper 사용 여부 확인 |
+| 입력/출력이 비어 있음 | LangSmith `HIDE_INPUTS/OUTPUTS`, Langfuse mask hook 확인 |
+| 일부 trace만 보임 | `LANGSMITH_TRACING_SAMPLING_RATE`/`LANGFUSE_SAMPLE_RATE` 확인 |
+| Langfuse에 아무것도 없음 | `LANGFUSE_HOST`가 자체 서버인지, 키가 그 프로젝트 것인지 확인 |
+| Langfuse 로그에 ERROR 반복 | `LANGFUSE_TRACING`만 켜고 키가 비어 있는지 확인 |
+| trace가 서로 분리됨 | thread/context 경계와 root trace nesting 확인 |
+| dashboard 반영이 늦음 | process 정상 종료 flush, network/proxy 확인 |
+| trace가 너무 큼 | image, vector, map, file content redaction 적용 |
+
+## 안전성 / 롤백
+
+- 트레이싱을 끄려면 해당 게이트를 `false`로 설정하거나 값을 제거합니다. LangSmith는
+  `LANGSMITH_TRACING=false`, Langfuse는 `LANGFUSE_TRACING=false`이며, 값을 넣는 위치는
+  실행 방식에 따릅니다(`./rclaw launch`는 서버 프로필, Docker 스크립트는 `.env`,
+  `./rclaw run`은 셸 환경).
+- 비활성 상태에서 `traceable` wrapper는 run/client를 만들지 않고 원래 함수를 직접
+  호출합니다.
+- 원래 반환 객체, 예외, sync/async 실행 방식은 그대로 유지됩니다.
+- OpenAI/Anthropic client wrapper도 비활성 상태에서는 원본 SDK client를 그대로
+  반환합니다.
+- tracing 비활성 경로는 sync 반환값, async 반환값과 원래 예외 보존 테스트로 검증합니다.
+- redaction은 전송할 복사본에만 적용하며 실제 Skill parameter/result를 변경하지 않습니다.
+- 트레이싱 계층은 설정 파일(`agent.yaml`, launch 인자)이 아닌 환경변수만 읽습니다. 값을
+  바꾼 뒤 container/node를 재시작하면 반영됩니다.
+
+```dotenv
+LANGSMITH_TRACING=false
+LANGFUSE_TRACING=false
+```
+
+```bash
+./rclaw kill
+./rclaw launch <robot-profile> <environment> --docker --use-grpc
+```
+
+이 설정에서는 트레이싱 코드가 Robo-Claw의 planning, Skill 실행, retry, safety, ROS 제어
+결과에 영향을 주지 않습니다.

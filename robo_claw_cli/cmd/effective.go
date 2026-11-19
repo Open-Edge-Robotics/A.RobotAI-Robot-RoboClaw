@@ -30,6 +30,8 @@ var secretKeys = map[string]bool{
 	"ANTHROPIC_API_KEY":    true,
 	"QDRANT_API_KEY":       true,
 	"LANGSMITH_API_KEY":    true,
+	"LANGFUSE_PUBLIC_KEY":  true,
+	"LANGFUSE_SECRET_KEY":  true,
 	"GRPC_PEER_TOKEN":      true,
 	"SYSTEM1_API_KEY":      true,
 }

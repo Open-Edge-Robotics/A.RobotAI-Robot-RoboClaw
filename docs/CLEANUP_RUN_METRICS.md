@@ -17,7 +17,7 @@
 
 태스크 분해 구간은 이 계측 범위가 아닙니다. System1 라우터의 `latency_ms`
 (`system1_router.py`)와 LLM 계획 구간은 LangSmith 트레이스에서 확인합니다
-([docs/LANGSMITH_INTEGRATION.md](LANGSMITH_INTEGRATION.md)).
+([docs/LLM_TRACING.md](LLM_TRACING.md)).
 
 ## 2. 활성화
 

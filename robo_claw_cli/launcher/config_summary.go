@@ -321,6 +321,15 @@ func (b *summaryBuilder) appendLLMSection(lctx *LaunchContext) {
 		b.rowValue("LangSmith 엔드포인트", cfg.LangsmithEndpoint, SourceConfig)
 		b.secretRow("LangSmith API 키", cfg.LangsmithApiKey, SourceConfig)
 	}
+
+	if lctx.ActiveConfig.LangfuseTracing {
+		b.row("Langfuse 트레이싱", "true", SourceConfig)
+		// Langfuse 는 프로젝트 이름 환경변수가 없고 API 키가 프로젝트를 결정한다.
+		// host 가 비어 있으면 백엔드가 Langfuse Cloud 로 전송하므로 그 값을 그대로 보여 준다.
+		b.rowValue("Langfuse 프로젝트(host)", firstNonEmpty(cfg.LangfuseHost, "https://cloud.langfuse.com"), SourceConfig)
+		b.secretRow("Langfuse public 키", firstNonEmpty(b.env["LANGFUSE_PUBLIC_KEY"], cfg.LangfusePublicKey), sourceForEnvKey(b.env, "LANGFUSE_PUBLIC_KEY"))
+		b.secretRow("Langfuse secret 키", firstNonEmpty(b.env["LANGFUSE_SECRET_KEY"], cfg.LangfuseSecretKey), sourceForEnvKey(b.env, "LANGFUSE_SECRET_KEY"))
+	}
 }
 
 func (b *summaryBuilder) appendRAGSection(lctx *LaunchContext) {
@@ -351,6 +360,14 @@ func embeddingKeySource(env map[string]string, cfg RoboClawConfig) ConfigSummary
 
 func qdrantKeySource(env map[string]string, cfg RoboClawConfig) ConfigSummarySource {
 	if strings.TrimSpace(env["QDRANT_API_KEY"]) != "" {
+		return SourceEnv
+	}
+	return SourceConfig
+}
+
+// sourceForEnvKey 는 해당 환경변수가 설정됐는지로 값의 출처를 판별합니다.
+func sourceForEnvKey(env map[string]string, envKey string) ConfigSummarySource {
+	if strings.TrimSpace(env[envKey]) != "" {
 		return SourceEnv
 	}
 	return SourceConfig

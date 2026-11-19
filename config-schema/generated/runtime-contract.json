@@ -777,6 +777,66 @@
           "config_server"
         ]
     },
+    "langfuse.tracing": {
+      "type": "boolean",
+      "scope": "runtime",
+      "secret": false,
+      "env": "LANGFUSE_TRACING",
+      "api_json": "langfuse_tracing",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "langfuse.public_key": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "LANGFUSE_PUBLIC_KEY",
+      "api_json": "langfuse_public_key",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "langfuse.secret_key": {
+      "type": "string",
+      "scope": "secret",
+      "secret": true,
+      "env": "LANGFUSE_SECRET_KEY",
+      "api_json": "langfuse_secret_key",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
+    "langfuse.host": {
+      "type": "string",
+      "scope": "runtime",
+      "secret": false,
+      "env": "LANGFUSE_HOST",
+      "api_json": "langfuse_host",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "modes": [
+          "local",
+          "docker",
+          "simulation",
+          "config_server"
+        ]
+    },
     "system1.router": {
       "type": "string",
       "scope": "runtime",

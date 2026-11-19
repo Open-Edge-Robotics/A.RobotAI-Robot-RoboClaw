@@ -130,6 +130,10 @@ type RoboClawConfig struct {
 	LangsmithProject                  string  `json:"langsmith_project"`
 	LangsmithEndpoint                 string  `json:"langsmith_endpoint"`
 	LangsmithWorkspaceId              string  `json:"langsmith_workspace_id"`
+	LangfuseTracing                   bool    `json:"langfuse_tracing"`
+	LangfusePublicKey                 string  `json:"langfuse_public_key"`
+	LangfuseSecretKey                 string  `json:"langfuse_secret_key"`
+	LangfuseHost                      string  `json:"langfuse_host"`
 }
 
 // NetworkError 원격 서버와의 통신 에러를 나타냅니다.

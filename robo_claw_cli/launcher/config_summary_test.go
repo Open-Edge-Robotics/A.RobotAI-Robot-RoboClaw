@@ -313,3 +313,39 @@ func TestMaskCommandSecrets(t *testing.T) {
 		}
 	}
 }
+
+// Langfuse 트레이싱을 켜면 서버 주소와 키 설정 여부가 요약에 표시되어야 한다.
+func TestConfigSummaryShowsLangfuseTracing(t *testing.T) {
+	lctx := summaryTestContext(t)
+	lctx.ActiveConfig.LangfuseTracing = true
+	lctx.ActiveConfig.LangfuseHost = "http://192.168.50.47:3000"
+	lctx.ActiveConfig.LangfusePublicKey = "pk-lf-public-value"
+	lctx.ActiveConfig.LangfuseSecretKey = "sk-lf-secret-value"
+
+	sections := BuildConfigSummary(lctx)
+	if entry := findEntry(t, sections, "Langfuse 트레이싱"); entry.Value != "true" {
+		t.Errorf("Langfuse 트레이싱 표시가 잘못되었습니다: %+v", entry)
+	}
+	hostEntry := findEntry(t, sections, "Langfuse 프로젝트(host)")
+	if hostEntry.Value != "http://192.168.50.47:3000" {
+		t.Errorf("Langfuse host 표시가 잘못되었습니다: %+v", hostEntry)
+	}
+
+	out := renderSummary(t, lctx)
+	for _, secret := range []string{"pk-lf-public-value", "sk-lf-secret-value"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("Langfuse 키 원문이 요약에 노출되었습니다: %s", secret)
+		}
+	}
+}
+
+// Langfuse 트레이싱이 꺼져 있으면 항목을 만들지 않는다(LangSmith와 같은 규칙).
+func TestConfigSummaryOmitsLangfuseRowsWhenDisabled(t *testing.T) {
+	for _, section := range BuildConfigSummary(summaryTestContext(t)) {
+		for _, entry := range section.Entries {
+			if strings.HasPrefix(entry.Label, "Langfuse") {
+				t.Errorf("비활성 Langfuse 항목이 표시되었습니다: %+v", entry)
+			}
+		}
+	}
+}

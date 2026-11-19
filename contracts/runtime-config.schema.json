@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RoboClaw Runtime Configuration",
   "type": "object",
-  "x-contract-version": "2.13.0",
+  "x-contract-version": "2.14.0",
   "required": [
     "schema_version",
     "config_revision",
@@ -473,6 +473,40 @@
           "description": "LangSmith workspace identifier for API keys with access to multiple workspaces.",
           "default": "",
           "x-canonical-name": "langsmith.workspace_id",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "langfuse_tracing": {
+          "type": "boolean",
+          "description": "Enable Langfuse LLM tracing uploads.",
+          "default": false,
+          "x-canonical-name": "langfuse.tracing",
+          "x-scope": "runtime",
+          "x-secret": false
+        },
+        "langfuse_public_key": {
+          "type": "string",
+          "description": "Langfuse project public key.",
+          "default": null,
+          "x-canonical-name": "langfuse.public_key",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "langfuse_secret_key": {
+          "type": "string",
+          "description": "Langfuse project secret key.",
+          "default": null,
+          "x-canonical-name": "langfuse.secret_key",
+          "x-scope": "secret",
+          "x-secret": true,
+          "writeOnly": true
+        },
+        "langfuse_host": {
+          "type": "string",
+          "description": "Langfuse server base URL (for example a self-hosted instance URL).",
+          "default": "",
+          "x-canonical-name": "langfuse.host",
           "x-scope": "runtime",
           "x-secret": false
         },

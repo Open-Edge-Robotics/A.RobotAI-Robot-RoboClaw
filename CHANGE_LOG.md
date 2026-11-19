@@ -5,6 +5,16 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-19 — Langfuse 병행 트레이싱 지원, 계약 2.14.0 동기화
+
+- **Added**: LLM 트레이싱 계층을 facade + 백엔드 구조로 분리하고 **Langfuse(2.x)** 백엔드를 추가했습니다. `tracing.py` 는 공개 API(`traceable`, `wrap_openai_client`, `record_generation_usage`, `current_trace_ids`, `init_tracing`, `flush_tracing`, `redact_trace_data`)와 공통 redaction 만 담당하고, 백엔드는 `tracing_backends/{base,langsmith_backend,langfuse_backend}.py` 에 격리했습니다. 두 백엔드는 독립 컨텍스트 스택을 쓰므로 `LANGSMITH_TRACING` 과 `LANGFUSE_TRACING` 을 동시에 켜면 한 번의 LLM 호출이 양쪽에 각각 기록됩니다.
+- **Changed**: Langfuse 는 `langfuse.openai` 로 `openai` 모듈을 전역 monkeypatch 하지 않고, 브리지 메서드에 이미 적용된 `traceable` 계측을 `observe(as_type="generation")` 으로 매핑하며 토큰 사용량은 `record_generation_usage` 로 `usage_details` 에 기록합니다. 사내 서버가 **Langfuse 2.95.11(v2)** 이고 v2 에는 OTEL 수집 엔드포인트가 없으므로 SDK 를 `langfuse>=2.60,<3`(`Dockerfile` 은 `==2.60.10`)으로 고정했습니다. v3 서버로 이전할 때는 `langfuse_backend.py` 한 파일만 교체합니다.
+- **Changed**: `LANGFUSE_TRACING=true` 이고 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` 가 모두 있을 때만 계측을 겁니다. 키가 없으면 2.x 클라이언트가 비활성 상태로 매 호출 ERROR 로그를 남기기 때문입니다. Langfuse 에는 프로젝트 이름 환경변수가 없고 **API 키가 프로젝트를 결정**하며, 자체 서버는 `LANGFUSE_HOST` 로 지정합니다.
+- **Changed**: 공유 contract 를 **2.14.0** 으로 동기화했습니다. registry 에 `langfuse.tracing`(boolean, `LANGFUSE_TRACING`), `langfuse.public_key`(secret, `LANGFUSE_PUBLIC_KEY`), `langfuse.secret_key`(secret, `LANGFUSE_SECRET_KEY`), `langfuse.host`(`LANGFUSE_HOST`)가 추가되어 `contracts/*`·`config-schema/generated/*`·`robo_claw_cli/contract/runtime_config_generated.go`·`src/robo_claw_bringup/launch/_generated_runtime_config.py` 를 CLI 로 재생성했습니다. 네 필드 모두 launch 인자·ROS 파라미터 없이 환경변수로만 전달됩니다.
+- **Changed**: `.env.example` 에 Langfuse 섹션(게이트·키·`LANGFUSE_HOST`, SDK 자체 변수 주석)을 추가하고, `docs/LANGSMITH_INTEGRATION.md` 를 `docs/LLM_TRACING.md` 로 이름을 바꿔 LangSmith·Langfuse 통합 문서로 재작성했습니다. `README.md`·`docs/TECHNICAL_DOCUMENT.md`·`docs/CLEANUP_RUN_METRICS.md`·`docs/SYSTEM1_FAST_ROUTER_DESIGN.md` 의 참조를 갱신했습니다.
+- **Changed**: `robo_claw_cli` 가 Langfuse 값을 소비합니다. `RoboClawConfig` 에 `langfuse_tracing`/`langfuse_public_key`/`langfuse_secret_key`/`langfuse_host` 를 추가하고, `buildMergedEnv` 는 LangSmith 와 같은 규칙(artifact `.env` 우선, config JSON 은 fallback, 마스킹된 `********` 값은 주입 금지)으로 `LANGFUSE_*` 를 `ros2 launch` 프로세스 환경으로 넘깁니다. `./rclaw config-effective` 는 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` 를 시크릿으로 마스킹하고, 설정 요약에 “Langfuse 트레이싱 / 프로젝트(host)” 행을 표시합니다.
+- **검증**: `./rclaw contract check`(lock 2.14.0·`.env.example` 문서화·생성물 drift) 통과, `go vet ./...`/`go test ./...` 통과, 변경한 Go 파일의 `gofmt -l` 클린, `ruff check src/` 통과. Langfuse 2.95.11 서버로의 실제 업로드와 실기 로봇 검증은 미실시입니다.
+
 ## 2026-11-18 — 대시보드에서 CLOiD 저장 지도 적용과 위치추정 시작
 
 - **Added**: 대시보드 지도 패널에 지도 목록·`지도 적용 / 위치추정 시작`·`현재 위치로 초기 위치 설정`을 추가하고, `GET /api/localization`·`POST /api/localization/switch` API 를 추가했습니다. 전환은 202 로 접수하고 단일 워커 스레드가 `/switch_mode`(`lio_fr_system_msgs/srv/SwitchMode`)를 호출하며, 3D 맵 로드까지의 진행은 `/lio_node/status`(`loading_map`→`relocalizing_pose`→`loading_grid_map`→`ready`)로 표시합니다.

@@ -186,6 +186,34 @@ func buildMergedEnv(ctx *wcli.Context, lctx *LaunchContext) []string {
 	}
 	logging.Debug("LangSmith 트레이싱 환경변수 주입 완료 (tracing=%t, project=%s)", lctx.ActiveConfig.LangsmithTracing, lctx.ActiveConfig.LangsmithProject)
 
+	// Langfuse 도 LangSmith 와 같은 규칙을 따른다. 캐시된 config.json/DTO 차이로 값이 사라질
+	// 수 있으므로 artifact .env 를 우선하고, JSON 값은 보조로만 사용한다. 서버가 마스킹
+	// sentinel("********")을 돌려줘도 이를 효과적인 key 로 주입하지 않는다.
+	if _, configured := lctx.EnvMap["LANGFUSE_TRACING"]; !configured {
+		if lctx.ActiveConfig.LangfuseTracing {
+			env = append(env, "LANGFUSE_TRACING=true")
+		}
+	}
+	for _, langfuseKey := range []struct {
+		envKey   string
+		artifact string
+		config   string
+	}{
+		{"LANGFUSE_PUBLIC_KEY", lctx.EnvMap["LANGFUSE_PUBLIC_KEY"], lctx.ActiveConfig.LangfusePublicKey},
+		{"LANGFUSE_SECRET_KEY", lctx.EnvMap["LANGFUSE_SECRET_KEY"], lctx.ActiveConfig.LangfuseSecretKey},
+	} {
+		artifactValue := strings.TrimSpace(langfuseKey.artifact)
+		configValue := strings.TrimSpace(langfuseKey.config)
+		if (artifactValue == "" || isRedactedSecret(artifactValue)) &&
+			configValue != "" && !isRedactedSecret(configValue) {
+			env = append(env, fmt.Sprintf("%s=%s", langfuseKey.envKey, configValue))
+		}
+	}
+	if lctx.ActiveConfig.LangfuseHost != "" {
+		env = append(env, fmt.Sprintf("LANGFUSE_HOST=%s", lctx.ActiveConfig.LangfuseHost))
+	}
+	logging.Debug("Langfuse 트레이싱 환경변수 주입 완료 (tracing=%t, host=%s)", lctx.ActiveConfig.LangfuseTracing, lctx.ActiveConfig.LangfuseHost)
+
 	// robo_claw_grpc FleetControl connector는 launch 인자가 아닌 RC_SKILLS_GUIDE_FILE 환경변수로
 	// capability manifest를 만든다. 서버 기본값(config/SKILLS.md)은 docker 모드의 /ros2_ws 기준
 	// 상대 경로라 local 모드에서는 깨지므로, 에이전트의 skills_guide_file과 같은 파일을 가리키게 한다.

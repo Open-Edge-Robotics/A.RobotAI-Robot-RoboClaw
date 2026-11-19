@@ -825,7 +825,7 @@ ACK는 실행 완료를 의미하지 않습니다. 같은 key의 완료 명령�
 - [설정](CONFIGURATION_GUIDE.md), [운영](OPERATIONS.md), [Docker](DOCKER_GUIDE.md), [빌드 장애](BUILD_TROUBLESHOOTING.md)를 참고합니다.
 - [HTTP](HTTP_API.md), [대시보드](DASHBOARD.md), [메신저](MESSENGER_GUIDE.md), [peer 협업](PEER_COLLABORATION.md)을 참고합니다.
 - [RAG·학습](RAG_AND_LEARNING.md), [로봇 설정·limits](ROBOT_CONFIG.md), [조작](MANIPULATION.md), [BT](behavior-tree/README.md)를 참고합니다.
-- [System 1](SYSTEM1_FAST_ROUTER.md), [LangSmith](LANGSMITH_INTEGRATION.md), [QA](../validation/README.md), [CLI](../robo_claw_cli/README.md)를 참고합니다.
+- [System 1](SYSTEM1_FAST_ROUTER.md), [LLM 트레이싱](LLM_TRACING.md), [QA](../validation/README.md), [CLI](../robo_claw_cli/README.md)를 참고합니다.
 
 도식은 같은 디렉터리의 Graphviz DOT 원본으로 관리합니다. 다음 명령으로 SVG를 재생성합니다.
 

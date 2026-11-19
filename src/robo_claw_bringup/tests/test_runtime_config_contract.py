@@ -84,3 +84,29 @@ def test_llm_tool_calling_setting_mapping() -> None:
     assert field["scope"] == "runtime"
     assert field["secret"] is False
     assert module.ENV_TO_LAUNCH_ARGUMENT["RC_LLM_TOOL_CALLING"] == "llm_tool_calling"
+
+
+def test_langfuse_mapping() -> None:
+    """Langfuse 백엔드는 launch 인자 없이 환경변수로만 전달된다."""
+    module = _load_generated_runtime_config()
+
+    tracing = module.RUNTIME_CONFIG_FIELDS["langfuse.tracing"]
+    assert tracing["env"] == "LANGFUSE_TRACING"
+    assert tracing["launch_argument"] == ""
+    assert tracing["parameter"] == ""
+    assert tracing["scope"] == "runtime"
+    assert tracing["secret"] is False
+
+    host = module.RUNTIME_CONFIG_FIELDS["langfuse.host"]
+    assert host["env"] == "LANGFUSE_HOST"
+    assert host["scope"] == "runtime"
+    assert host["secret"] is False
+
+    for canonical, env in (
+        ("langfuse.public_key", "LANGFUSE_PUBLIC_KEY"),
+        ("langfuse.secret_key", "LANGFUSE_SECRET_KEY"),
+    ):
+        field = module.RUNTIME_CONFIG_FIELDS[canonical]
+        assert field["env"] == env
+        assert field["scope"] == "secret"
+        assert field["secret"] is True

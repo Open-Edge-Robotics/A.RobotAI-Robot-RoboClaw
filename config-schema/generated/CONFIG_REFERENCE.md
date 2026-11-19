@@ -58,6 +58,10 @@ Schema version: `2.0`
 | `diagnostics.imu_topic` | `RC_IMU_TOPIC` | `imu_topic` | `string` | `` | `robot_profile` | `false` | local, docker, simulation, config_server |
 | `debug.enabled` | `RC_DEBUG` | `debug` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `langsmith.workspace_id` | `LANGSMITH_WORKSPACE_ID` | `langsmith_workspace_id` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
+| `langfuse.tracing` | `LANGFUSE_TRACING` | `langfuse_tracing` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
+| `langfuse.public_key` | `LANGFUSE_PUBLIC_KEY` | `langfuse_public_key` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
+| `langfuse.secret_key` | `LANGFUSE_SECRET_KEY` | `langfuse_secret_key` | `string` | `masked` | `secret` | `true` | local, docker, simulation, config_server |
+| `langfuse.host` | `LANGFUSE_HOST` | `langfuse_host` | `string` | `` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.router` | `SYSTEM1_ROUTER` | `system1_router` | `string` | `rule` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.shadow` | `SYSTEM1_SHADOW` | `system1_shadow` | `boolean` | `False` | `runtime` | `false` | local, docker, simulation, config_server |
 | `system1.shadow_log` | `SYSTEM1_SHADOW_LOG` | `system1_shadow_log` | `path` | `` | `runtime` | `false` | local, docker, simulation, config_server |
@@ -296,6 +300,22 @@ Enable verbose ROS logging.
 ### `langsmith.workspace_id`
 
 LangSmith workspace identifier for API keys with access to multiple workspaces.
+
+### `langfuse.tracing`
+
+Enable Langfuse LLM tracing uploads.
+
+### `langfuse.public_key`
+
+Langfuse project public key.
+
+### `langfuse.secret_key`
+
+Langfuse project secret key.
+
+### `langfuse.host`
+
+Langfuse server base URL (for example a self-hosted instance URL).
 
 ### `system1.router`
 

@@ -108,6 +108,12 @@ type RoboClawConfig struct {
 	LangsmithEndpoint    string `json:"langsmith_endpoint"`                     // LANGSMITH_ENDPOINT (자체 호스팅/프록시 엔드포인트, 선택)
 	LangsmithWorkspaceId string `json:"langsmith_workspace_id"`                 // LANGSMITH_WORKSPACE_ID (workspace ID, 선택)
 
+	// ── Langfuse 트레이싱 / 모니터링 설정 ──
+	LangfuseTracing   bool   `gorm:"default:false" json:"langfuse_tracing"` // LANGFUSE_TRACING (트레이싱 활성화)
+	LangfusePublicKey string `json:"langfuse_public_key"`                   // LANGFUSE_PUBLIC_KEY (프로젝트 public key)
+	LangfuseSecretKey string `json:"langfuse_secret_key"`                   // LANGFUSE_SECRET_KEY (프로젝트 secret key)
+	LangfuseHost      string `json:"langfuse_host"`                         // LANGFUSE_HOST (자체 호스팅 서버 주소, 미설정 시 Cloud)
+
 	RagLocalMirror                    bool    `json:"rag_local_mirror"`
 	MemoryDir                         string  `json:"memory_dir"`
 	ButlerScriptsDir                  string  `json:"butler_scripts_dir"`

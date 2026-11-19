@@ -59,4 +59,4 @@ fine-tune·confidence calibration은 이 저장소가 자동 수행하는 런타
 `RouteDecision.trace_metadata()`는 `route.kind`, `route.source`, `route.fallback`,
 `route.latency_ms`와 값이 있는 `route.intent`, `route.confidence`, `route.skill`,
 `route.hint`를 기록합니다. `source=laya`만으로 실제 서버 질의 여부를 판정하지 않습니다.
-기록과 평가 방법은 [LangSmith 가이드](LANGSMITH_INTEGRATION.md)를 참고합니다.
+기록과 평가 방법은 [LLM 트레이싱 가이드](LLM_TRACING.md)를 참고합니다.

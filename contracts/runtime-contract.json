@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.13.0",
+  "contract_version": "2.14.0",
   "schema_version": "2.0",
   "fields": [
     {
@@ -1140,6 +1140,94 @@
       "maximum": null,
       "env": "LANGSMITH_WORKSPACE_ID",
       "api_json": "langsmith_workspace_id",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "langfuse.tracing",
+      "type": "boolean",
+      "scope": "runtime",
+      "default": false,
+      "secret": false,
+      "description": "Enable Langfuse LLM tracing uploads.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "LANGFUSE_TRACING",
+      "api_json": "langfuse_tracing",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "langfuse.public_key",
+      "type": "string",
+      "scope": "secret",
+      "default": null,
+      "secret": true,
+      "description": "Langfuse project public key.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "LANGFUSE_PUBLIC_KEY",
+      "api_json": "langfuse_public_key",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "langfuse.secret_key",
+      "type": "string",
+      "scope": "secret",
+      "default": null,
+      "secret": true,
+      "description": "Langfuse project secret key.",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "LANGFUSE_SECRET_KEY",
+      "api_json": "langfuse_secret_key",
+      "launch_argument": "",
+      "ros_parameter": "",
+      "value_type": "env",
+      "modes": [
+        "local",
+        "docker",
+        "simulation",
+        "config_server"
+      ]
+    },
+    {
+      "canonical": "langfuse.host",
+      "type": "string",
+      "scope": "runtime",
+      "default": "",
+      "secret": false,
+      "description": "Langfuse server base URL (for example a self-hosted instance URL).",
+      "enum": [],
+      "minimum": null,
+      "maximum": null,
+      "env": "LANGFUSE_HOST",
+      "api_json": "langfuse_host",
       "launch_argument": "",
       "ros_parameter": "",
       "value_type": "env",
