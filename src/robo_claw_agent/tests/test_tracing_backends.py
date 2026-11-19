@@ -242,7 +242,9 @@ def test_langfuse_usage_details_are_recorded(monkeypatch, response, expected):
     record_generation_usage(response)
 
     if expected:
-        assert context.observation_updates == [{"usage_details": expected}]
+        assert context.observation_updates == [
+            {"usage": {"unit": "TOKENS", **expected}, "usage_details": expected}
+        ]
     else:
         assert context.observation_updates == []
 

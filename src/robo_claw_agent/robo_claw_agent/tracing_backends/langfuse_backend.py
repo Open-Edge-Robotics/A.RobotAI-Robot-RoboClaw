@@ -118,7 +118,12 @@ class LangfuseBackend(NoopBackend):
 
         if langfuse_context.get_current_observation_id() is None:
             return
-        langfuse_context.update_current_observation(usage_details=usage)
+        # Langfuse 2.x 서버(2.95)는 배치 ingestion에서 usageDetails를 저장하지 않고
+        # 토큰 수를 추정치로 채운다. legacy usage 필드도 함께 보내 실제 값을 보존한다.
+        langfuse_context.update_current_observation(
+            usage={"unit": "TOKENS", **usage},
+            usage_details=usage,
+        )
 
     def describe(self) -> str:
         if not self.is_enabled():

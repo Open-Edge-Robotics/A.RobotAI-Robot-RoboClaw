@@ -567,6 +567,9 @@ ERROR 로그를 남기므로, 계층은 이 조건을 `ready()`로 확인해 계
   읽습니다.
 - redaction은 `langfuse_context.configure(mask=...)`에 facade의 `redact_trace_data`를
   연결해 모든 이벤트 input/output 전송 직전에 적용합니다.
+- 토큰 사용량은 `usage_details`와 legacy `usage`(unit `TOKENS`)를 **함께** 보냅니다.
+  Langfuse 2.x 서버(2.95)는 배치 ingestion에서 `usageDetails`를 저장하지 않고 모델
+  tokenizer 추정치로 채우므로, 실제 값은 legacy `usage` 필드로 보존됩니다(실측 확인).
 - Langfuse 2.x의 `observe`는 클라이언트가 비활성 상태면 호출마다 ERROR 로그를 남기므로,
   facade가 활성 백엔드만 데코레이션합니다.
 
