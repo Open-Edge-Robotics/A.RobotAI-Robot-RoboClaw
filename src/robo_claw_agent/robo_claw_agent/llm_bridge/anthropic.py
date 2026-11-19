@@ -2,7 +2,7 @@ import logging
 import os
 from typing import Any
 
-from ..tracing import traceable, wrap_anthropic_client
+from ..tracing import record_generation_usage, traceable, wrap_anthropic_client
 from .base import DEFAULT_TIMEOUT_SEC, BaseLLMBridge, ToolCall, ToolTurn, parse_tool_arguments
 
 logger = logging.getLogger(__name__)
@@ -120,6 +120,7 @@ class AnthropicBridge(BaseLLMBridge):
             messages=messages,
             **create_kwargs,
         )
+        record_generation_usage(response)
         content = _extract_anthropic_text(response)
         logger.debug("Anthropic response: %s", content)
         return content
@@ -154,6 +155,7 @@ class AnthropicBridge(BaseLLMBridge):
             **create_kwargs,
         )
 
+        record_generation_usage(response)
         content_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         for block in getattr(response, "content", None) or []:
@@ -208,6 +210,7 @@ class AnthropicBridge(BaseLLMBridge):
                 }
             ],
         )
+        record_generation_usage(resp)
         content = resp.content[0].text
         logger.debug("Anthropic image analysis response: %s", content)
         return content

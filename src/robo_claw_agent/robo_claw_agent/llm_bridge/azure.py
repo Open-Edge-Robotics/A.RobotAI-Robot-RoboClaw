@@ -1,7 +1,7 @@
 import logging
 import os
 
-from ..tracing import traceable, wrap_openai_client
+from ..tracing import record_generation_usage, traceable, wrap_openai_client
 from .base import (
     DEFAULT_TIMEOUT_SEC,
     BaseLLMBridge,
@@ -89,6 +89,7 @@ class AzureOpenAIBridge(BaseLLMBridge):
             messages=payload,
             **kwargs,
         )
+        record_generation_usage(resp)
         content = openai_message_to_text(resp.choices[0].message)
         logger.debug("Azure OpenAI response: %s", content)
         return content
@@ -113,6 +114,7 @@ class AzureOpenAIBridge(BaseLLMBridge):
             tools=list(tools or []),
             **kwargs,
         )
+        record_generation_usage(resp)
         message = resp.choices[0].message
         content = message.content or ""
         tool_calls = [
@@ -133,11 +135,9 @@ class AzureOpenAIBridge(BaseLLMBridge):
     @traceable(name="AzureOpenAIBridge.embed")
     def embed(self, text: str) -> list[float]:
         client = self._get_client()
-        return (
-            client.embeddings.create(input=[text], model=self._embedding_deployment)
-            .data[0]
-            .embedding
-        )
+        resp = client.embeddings.create(input=[text], model=self._embedding_deployment)
+        record_generation_usage(resp)
+        return resp.data[0].embedding
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -167,6 +167,7 @@ class AzureOpenAIBridge(BaseLLMBridge):
             ],
             max_completion_tokens=1500,
         )
+        record_generation_usage(resp)
         content = resp.choices[0].message.content or ""
         logger.debug("Azure OpenAI image analysis response: %s", content)
         return content

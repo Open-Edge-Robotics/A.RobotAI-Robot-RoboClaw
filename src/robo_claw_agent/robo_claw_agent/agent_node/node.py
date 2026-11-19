@@ -28,6 +28,7 @@ from ..skills.cooperation_skill.envelope import (
 )
 from ..skills.fleet_handoff import PEER_COLLAB_SKILLS, maestro_control_active
 from ..skills.limits import load_limits_dict
+from ..tracing import flush_tracing
 from ..types import AgentState
 from .eligibility_gate import step_routing_mode
 from .execution import ExecutionMixin
@@ -756,6 +757,8 @@ def main() -> None:
         if node._task_queue is not None:
             node._task_queue.stop()
         node._memory.flush()
+        # 종료 시 남은 trace 를 전송한다(실패해도 종료를 막지 않는다).
+        flush_tracing()
         if node._mcp_manager:
             node._mcp_manager.shutdown()
         node.destroy_node()

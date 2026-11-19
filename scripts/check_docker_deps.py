@@ -38,6 +38,9 @@ except ModuleNotFoundError:  # Python 3.10
 LOCK_PINNED: dict[str, str] = {
     "qdrant-client": "Qdrant 1.19.x 서버 호환성과 개발·배포 환경의 query API 일치를 유지합니다",
     "mcp": "1.x/2.x에서 list_tools 시그니처와 응답 필드명이 달라짐",
+    "langfuse": (
+        "v2 서버(2.x)와 v3 이상 SDK는 API·전송 방식(OTEL)이 달라 2.x로 고정해야 한다"
+    ),
     "sqlmodel": (
         "0.0.48부터 SQLAlchemy<2.2를 허용해 2.1이 설치되면 greenlet이 함께 설치되지 않고 "
         "sqlalchemy.ext.asyncio import가 실패한다"

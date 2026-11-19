@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..tracing import call_logging_suppressed, traceable
+from ..tracing import call_logging_suppressed, record_generation_usage, traceable
 from .base import BaseLLMBridge, ToolCall, ToolTurn, parse_tool_arguments
 
 logger = logging.getLogger(__name__)
@@ -269,6 +269,7 @@ class OllamaBridge(BaseLLMBridge):
                     chat_kwargs["format"] = "json"
 
         resp = self._invoke("chat", chat_kwargs, lambda: client.chat(**chat_kwargs))
+        record_generation_usage(resp)
         msg = resp.get("message", {})
         content = msg.get("content", "")
 
@@ -348,6 +349,7 @@ class OllamaBridge(BaseLLMBridge):
             chat_kwargs["tools"] = list(tools)
 
         resp = self._invoke("chat_with_tools", chat_kwargs, lambda: client.chat(**chat_kwargs))
+        record_generation_usage(resp)
         msg = resp.get("message", {}) or {}
         content = _strip_think(msg.get("content", "") or "")
 
@@ -385,6 +387,7 @@ class OllamaBridge(BaseLLMBridge):
             request,
             lambda: client.embeddings(model=self._embedding_model, prompt=text),
         )
+        record_generation_usage(raw)
         return raw["embedding"]
 
     # Qwen3-Embedding 등 instruction-tuned 임베더는 쿼리에 지시문을 붙여야
@@ -433,6 +436,7 @@ class OllamaBridge(BaseLLMBridge):
             request,
             lambda: client.generate(**generate_kwargs),
         )
+        record_generation_usage(resp)
         content = resp["response"]
         logger.debug("Ollama image analysis response: %s", content)
         return content

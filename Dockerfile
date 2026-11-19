@@ -105,6 +105,7 @@ RUN pip3 install \
     "openai>=1.0.0" \
     "anthropic>=0.39.0" \
     "langsmith>=0.1.100" \
+    "langfuse==2.60.10" \
     "ollama>=0.1.0" \
     "pyTelegramBotAPI>=4.12.0" \
     "slack-sdk>=3.21.0" \

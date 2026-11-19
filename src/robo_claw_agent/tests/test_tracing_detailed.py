@@ -102,6 +102,8 @@ def recorded_spans(monkeypatch):
 
         return decorate
 
+    # 백엔드별 게이트(LANGSMITH_TRACING)와 aggregate 게이트를 모두 켠다.
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setattr(tracing, "is_active", lambda: True)
     monkeypatch.setitem(sys.modules, "langsmith", types.SimpleNamespace(traceable=fake_traceable))
     return spans
