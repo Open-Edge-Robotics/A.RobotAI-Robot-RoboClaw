@@ -108,5 +108,5 @@
 
 ```bash
 # 커스텀 시나리오 구동 예제 (프로젝트 루트에서 실행)
-./rclaw test -r butler -e office --scenario-file ./my_custom_scenario.json
+./rclaw test -r former -e office --scenario-file ./my_custom_scenario.json
 ```

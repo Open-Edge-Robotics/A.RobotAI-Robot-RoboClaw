@@ -5,6 +5,15 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-20 — Butler 로봇 프로필과 전용 스크립트 스킬 제거
+
+- **Removed**: Butler 로봇을 더 이상 운용하지 않으므로 로봇 프로필(`butler_config.yaml`, `ROBOT_LIMITS.butler.json`, `SKILLS.butler.md`)을 삭제했습니다. `robot_config` 선택지에서도 빠지므로 launch 와 `rclaw` 는 `stretch3`·`former`·`former_arm`·`cloid`·`sim` 만 받습니다.
+- **Removed**: Butler 전용 스킬 모듈(`butler_skill.py`)과 `list_butler_scripts`·`run_butler_script` 를 삭제했습니다. 스킬 카탈로그, 읽기 전용/종결 스킬 목록, 프롬프트 스킬 안내, 태스크 큐 분류에서도 함께 빠집니다. `tidy_home` 은 Butler 정리 스크립트 대신 기억된 장소 기반 순회만 사용합니다.
+- **Removed**: `butler_script_dir` 파라미터와 launch 인자, 스크립트 폴더 `SKILLS.md` 자동 주입(`load_script_skills_guide`), 파일 경로 허용 목록의 Butler 스크립트 폴더 조건을 제거했습니다. 파일 스킬의 허용 경로는 `/tmp` 와 `agent_workspace_dir` 뿐입니다.
+- **Removed**: Docker 실행 경로의 Butler 마운트(`RC_BUTLER_SCRIPTS_DIR`, `RC_BUTLER_SOURCE_DIR`, `--butler-scripts`, `--butler-source`)와 `rclaw` 의 Butler 스크립트/소스 경로 해석·설정 요약 행을 제거했습니다.
+- **Changed**: 문서와 예시에서 `butler` 프로필 예시를 기존 프로필(`former`, `former_arm`)로 바꿨습니다. 동료 로봇 예시 이름도 같은 규칙을 따릅니다.
+- **검증**: `task lint`(ruff check/format, 스킬 카탈로그, 프롬프트 톤, Dockerfile 의존성, `go vet`) 통과, `task unit-test` 3613건 통과(5 skip·177 deselected), `task test-cli` Go 테스트 통과, `task contract-check` 통과. 빌드는 `task build` 로 13개 패키지를 재생성했습니다. `colcon test`(bringup/agent) 는 이 개발 호스트의 빌드 설정에서 install PYTHONPATH 가 테스트 환경에 포함되지 않아 ROS 마커 테스트가 collection skip 되었으므로 **실기·ROS 2 통합 검증은 미실시**입니다.
+
 ## 2026-11-20 — 마지막 위치를 RAG 대신 파일로 저장하고 former nav2 초기 위치로 자동 반영
 
 - **Changed**: 에이전트의 마지막 위치(x, y, yaw)를 RAG 레코드(`type=last_pose`) 대신 메모리 디렉터리의 `last_pose.yaml` 로 저장합니다(컨테이너 `/ros2_ws/memory`, rclaw CLI 가 이미 rw 로 마운트하는 경로라 새 마운트 없음). 임베딩 호출·전체 스캔이 없어지고, `enable_rag=false` 여도 재기동 후 남습니다. 임시 파일 → fsync → rename 으로 원자적으로 씁니다.

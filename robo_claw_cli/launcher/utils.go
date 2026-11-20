@@ -238,42 +238,6 @@ func NormalizeSimBackend(requested string) (string, error) {
 		requested, strings.Join(SupportedSimBackends, ", "))
 }
 
-// DefaultButlerScriptsDir butler 실행 스크립트의 고정 경로.
-// butler 로봇은 이 경로가 존재해야 정상 동작한다.
-const DefaultButlerScriptsDir = "/home/seoyc/Workspace/ros/butler/products/prd_butler_v01_magok_w02/script"
-
-// DefaultButlerSourceDir butler ROS 2 워크스페이스(소싱용) 고정 경로.
-const DefaultButlerSourceDir = "/home/udr/workspace/butler_v01_config/cloi2_ws"
-
-// ResolveButlerScriptsDir butler 스크립트 경로를 결정한다.
-// 우선순위: envMap/환경변수(RC_BUTLER_SCRIPTS_DIR) -> 프로젝트 루트/butler_scripts -> 고정 경로.
-// 고정 경로마저 없으면 빈 문자열을 반환한다.
-func ResolveButlerScriptsDir(envMap map[string]string, projectRoot string) string {
-	if dir := ResolveEnvWithFallback(envMap, "RC_BUTLER_SCRIPTS_DIR"); dir != "" {
-		return dir
-	}
-	localDir := filepath.Join(projectRoot, "butler_scripts")
-	if PathExists(localDir) {
-		return localDir
-	}
-	if PathExists(DefaultButlerScriptsDir) {
-		return DefaultButlerScriptsDir
-	}
-	return ""
-}
-
-// ResolveButlerSourceDir butler 소스(소싱용) 경로를 결정한다.
-// 우선순위: envMap/환경변수(RC_BUTLER_SOURCE_DIR) -> 고정 경로.
-func ResolveButlerSourceDir(envMap map[string]string) string {
-	if dir := ResolveEnvWithFallback(envMap, "RC_BUTLER_SOURCE_DIR"); dir != "" {
-		return dir
-	}
-	if PathExists(DefaultButlerSourceDir) {
-		return DefaultButlerSourceDir
-	}
-	return ""
-}
-
 // EnvFlagEnabled 환경변수 문자열이 참 값을 갖는지 확인합니다(대소문자 무관).
 func EnvFlagEnabled(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {

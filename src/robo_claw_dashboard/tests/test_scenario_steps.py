@@ -45,7 +45,7 @@ class FakeBackend:
     def __init__(
         self,
         *,
-        state: str | None = '{"robot_name": "butler"}',
+        state: str | None = '{"robot_name": "former"}',
         chat_response: dict[str, Any] | None = None,
     ) -> None:
         self.state = state
@@ -95,7 +95,7 @@ def _isolated_home(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("step_type", SUPPORTED_STEP_TYPES)
 def test_supported_step_type_reports_duration(step_type):
-    runner = ScenarioRunnerService(FakeBackend(), ScenarioConfig(robot_name="butler"))
+    runner = ScenarioRunnerService(FakeBackend(), ScenarioConfig(robot_name="former"))
     tc = ScenarioTestCase(
         id="tc_" + step_type,
         name=step_type,

@@ -269,15 +269,6 @@ class TidyHomeSkill(BaseSkill):
         wait = params.get("wait_for_completion")
         wait_for_completion = reports_to_maestro() if wait is None else bool(wait)
 
-        skills = getattr(self.node, "_skills", None)
-        if skills is not None and skills.has_skill("run_butler_script"):
-            if scope != "home":
-                return _reject(
-                    "room_scope_not_supported",
-                    "Butler 정리 스크립트에는 방 선택 입력이 없어 특정 방을 보장할 수 없습니다.",
-                )
-            return self._start_butler_cleanup(run_id, observer)
-
         self._places_truncated = False
         self._place_limit = max_places
         places, error = self._collect_places(scope, target_location, max_places=max_places)
@@ -399,82 +390,6 @@ class TidyHomeSkill(BaseSkill):
             )
             places = places[:limit]
         return places, error
-
-    def _start_butler_cleanup(self, run_id: str = "", observer: Any = None) -> dict[str, Any]:
-        if not claim_autonomous(_AUTONOMOUS_ACTIVE):
-            safe_observe(
-                observer,
-                "finished",
-                status="failed",
-                failure_reason="autonomous_busy",
-                result="다른 자율 행동이 실행 중입니다.",
-            )
-            return self.fail_result(
-                "다른 자율 행동이 실행 중입니다. stop_autonomous로 중단한 뒤 다시 요청하세요.",
-                failure_reason="autonomous_busy",
-                recoverable=True,
-            )
-        worker = threading.Thread(
-            target=self._run_butler_script,
-            args=(run_id, observer),
-            daemon=True,
-            name="tidy-home-butler-worker",
-        )
-        try:
-            worker.start()
-        except Exception as exc:
-            release_autonomous()
-            safe_observe(
-                observer,
-                "finished",
-                status="failed",
-                failure_reason="start_failed",
-                result=str(exc),
-            )
-            return self.fail_result(
-                f"Butler 정리 스크립트를 시작하지 못했습니다: {exc}",
-                failure_reason="start_failed",
-            )
-        _observe_phase(observer, "local_motion", "Butler의 등록된 정리 스크립트를 실행합니다.")
-        return self.success_result(
-            "Butler의 등록된 정리 스크립트를 실행합니다.",
-            status="started",
-            scope="home",
-        )
-
-    def _run_butler_script(self, run_id: str = "", observer: Any = None) -> None:
-        run_error = ""
-        message = ""
-        try:
-            self.send_user_message("Butler 정리 스크립트를 실행합니다.")
-            _observe_phase(
-                observer, "local_motion", "Butler 정리 스크립트 56_organizer_req.sh를 실행합니다."
-            )
-            result = self.node._skills.execute(
-                "run_butler_script", {"script_name": "56_organizer_req.sh"}, timeout_sec=120.0
-            )
-            success = bool(getattr(result, "success", False))
-            message = str(getattr(result, "message", "") or "")
-            if success:
-                self.send_user_message(
-                    f"Butler 정리 스크립트가 성공 응답을 반환했습니다. {message}".strip()
-                )
-            else:
-                run_error = "butler_script_failed"
-                self.send_user_message(f"Butler 정리 스크립트가 실패했습니다. {message}".strip())
-        except Exception as exc:  # noqa: BLE001
-            run_error = f"{type(exc).__name__}: {exc}"
-            logger.exception("[TidyHome] Butler organizer script failed")
-            self.send_user_message(f"Butler 정리 스크립트 실행에 실패했습니다: {exc}")
-        finally:
-            safe_observe(
-                observer,
-                "finished",
-                status="failed" if run_error else "finished",
-                result=message or run_error,
-                failure_reason=run_error,
-            )
-            release_autonomous()
 
     @staticmethod
     def _add_phase_ms(phase_ms: dict[str, float], name: str, elapsed_sec: float) -> None:

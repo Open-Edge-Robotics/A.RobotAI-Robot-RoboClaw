@@ -30,7 +30,7 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 - **X11 GUI 포워딩**: 시뮬레이션 뷰어(RViz 등)를 호스트 화면에 투사할 수 있도록 디스플레이 소켓 마운트와 접속 권한 부여를 처리합니다.
 - **장치 접근 권한**: `--privileged` 모드와 `/dev` 볼륨 매핑으로 카메라, 라이다 등 물리 하드웨어 접근을 지원합니다.
 - **환경 변수 자동 연동**: 호스트 작업공간 루트의 `.env` 파일을 파싱해 컨테이너 환경과 ROS launch 인자로 자동 전달합니다.
-- **볼륨 공유**: 모델 데이터, 로봇 개성 파일(`ROBOT.md`), Butler 로봇 스크립트, 커스텀 설정 폴더를 동적으로 마운트해 컨테이너 재빌드 없이 변경 사항을 즉시 반영합니다.
+- **볼륨 공유**: 모델 데이터, 로봇 개성 파일(`ROBOT.md`), 에이전트 작업 공간, 커스텀 설정 폴더를 동적으로 마운트해 컨테이너 재빌드 없이 변경 사항을 즉시 반영합니다.
 
 ---
 
@@ -38,13 +38,12 @@ Docker 환경에서 RoboClaw를 구동하고 이미지를 빌드하는 두 가�
 
 | 옵션명                            | 값 타입   | 설명                                                                                                     | 기본값                                    |
 | :-------------------------------- | :-------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------- |
-| `--robot-config`                  | `string`  | 로봇 설정 프로필을 지정합니다. (`stretch3` \| `former` \| `butler` \| `cloid` \| `sim`)                | `.env`의 `RC_ROBOT_CONFIG`; 미설정 시 launch 기본 `sim` |
+| `--robot-config`                  | `string`  | 로봇 설정 프로필을 지정합니다. (`stretch3` \| `former` \| `cloid` \| `sim`)                | `.env`의 `RC_ROBOT_CONFIG`; 미설정 시 launch 기본 `sim` |
 | `--camera-topic`                  | `string`  | 카메라 이미지 토픽을 수동으로 재정의(override)합니다.                                                    | 로봇 프로필 기본값                        |
 | `--soul` / `--soul-file`          | `path`    | 로봇 에이전트의 개성·핵심 지침이 담긴 마크다운 파일 경로를 지정합니다.                                   | `.env` 설정 또는 기본 파일                |
 | `--skills-guide` / `--guide-file` | `path`    | 로봇 에이전트의 스킬 동작 가이드 마크다운 파일 경로를 지정합니다.                                        | `.env` 설정 또는 기본 파일                |
 | `--robot-limits`                  | `path`    | 로봇의 물리 구동 제약 규격(`ROBOT_LIMITS.json`) 호스트 파일 경로를 지정합니다.                           | `.env` 설정 또는 기본 파일                |
 | `--troubleshooting`               | `path`    | 로봇 예외 상황 조치 가이드(`TROUBLESHOOTING.md`) 호스트 파일 경로를 지정합니다.                          | `.env` 설정 또는 기본 파일                |
-| `--butler-scripts`                | `path`    | Butler 로봇 쉘 스크립트 폴더의 호스트 경로를 지정합니다.                                                 | `.env` 설정 또는 기본 경로                |
 | `--agent-workspace`               | `path`    | 에이전트 전용 작업 공간 폴더의 호스트 경로를 지정합니다. (컨테이너 내 `/ros2_ws/agent_workspace`로 연동) | `.env` 설정 또는 `$(pwd)/agent_workspace` |
 | `--config-dir`                    | `path`    | `robo_claw_bringup` 설정 폴더의 호스트 경로를 지정합니다.                                                | `src/robo_claw_bringup/config`            |
 | `--grpc` / `--use-grpc`           | 없음      | gRPC 제어 노드(`robo_claw_grpc_node`)를 함께 실행합니다.                                                 | `false`                                   |
@@ -89,7 +88,6 @@ graph TD
 - `QDRANT_URL` ➡️ `qdrant_url`
 - `RC_QDRANT_COLLECTION` ➡️ `qdrant_collection`
 - `RC_QDRANT_TIMEOUT_SEC` ➡️ `qdrant_timeout_sec`
-- `RC_BUTLER_SCRIPTS_DIR` ➡️ 호스트의 Butler 스크립트 경로 마운트
 - `RC_AGENT_WORKSPACE_DIR` ➡️ 에이전트 작업 공간 경로 마운트 (컨테이너 내 `/ros2_ws/agent_workspace` + `agent_workspace_dir` 파라미터)
 - `RC_SKILLS_GUIDE_FILE` ➡️ 스킬 가이드 파일 마운트 (컨테이너 내 `/ros2_ws/config/SKILLS.md`)
 - `RC_ROBOT_LIMITS_FILE` ➡️ 물리 제약 규격 파일 마운트 (컨테이너 내 `/ros2_ws/config/ROBOT_LIMITS.json`)

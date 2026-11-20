@@ -19,7 +19,7 @@ def test_connected_peer_selection_ignores_offline_manipulator(monkeypatch):
         json.dumps(
             [
                 {
-                    "agent_name": "butler",
+                    "agent_name": "stretch3",
                     "role": "manipulator",
                     "capabilities": ["manipulation"],
                 }
@@ -40,18 +40,18 @@ def test_connected_peer_selection_uses_live_grpc_peer(monkeypatch):
         json.dumps(
             [
                 {
-                    "agent_name": "butler",
+                    "agent_name": "stretch3",
                     "role": "manipulator",
                     "capabilities": ["manipulation"],
                 }
             ]
         ),
     )
-    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: {"butler"})
+    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: {"stretch3"})
     node = _node_with_skills(["navigate_to"])
 
     assert _find_connected_peer_with_capability(node, "manipulation") == {
-        "peer_name": "butler",
+        "peer_name": "stretch3",
         "transport": "grpc",
     }
 
@@ -61,16 +61,16 @@ def test_connected_peer_selection_queries_capabilities_when_configured_unknown(m
 
     monkeypatch.setenv(
         "GRPC_TARGET_PEERS_JSON",
-        json.dumps([{"agent_name": "butler", "description": "연결된 동료"}]),
+        json.dumps([{"agent_name": "stretch3", "description": "연결된 동료"}]),
     )
-    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: {"butler"})
+    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: {"stretch3"})
     monkeypatch.setattr(
         helpers, "_query_grpc_peer_capability", lambda _node, _peer, cap: cap == "manipulation"
     )
     node = _node_with_skills(["navigate_to"])
 
     assert _find_connected_peer_with_capability(node, "manipulation") == {
-        "peer_name": "butler",
+        "peer_name": "stretch3",
         "transport": "grpc",
     }
 
@@ -83,7 +83,7 @@ def test_connected_peer_selection_detects_ros_peer(monkeypatch):
         json.dumps(
             [
                 {
-                    "agent_name": "butler",
+                    "agent_name": "stretch3",
                     "role": "manipulator",
                     "capabilities": ["manipulation"],
                 }
@@ -91,10 +91,10 @@ def test_connected_peer_selection_detects_ros_peer(monkeypatch):
         ),
     )
     monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: set())
-    node = _node_with_skills(["navigate_to"], node_names=["/butler/robo_claw_agent_node"])
+    node = _node_with_skills(["navigate_to"], node_names=["/stretch3/robo_claw_agent_node"])
 
     assert _find_connected_peer_with_capability(node, "manipulation") == {
-        "peer_name": "butler",
+        "peer_name": "stretch3",
         "transport": "ros2",
     }
 
@@ -107,14 +107,14 @@ def test_cleanup_handoff_routes_for_manipulation_peer_and_includes_observation(m
         json.dumps(
             [
                 {
-                    "agent_name": "butler",
+                    "agent_name": "stretch3",
                     "role": "manipulator",
                     "capabilities": ["manipulation"],
                 }
             ]
         ),
     )
-    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: {"butler"})
+    monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: {"stretch3"})
     node = _node_with_skills(["navigate_to", "call_peer_robot"])
     skill = MagicMock()
     skill.node = node
@@ -132,7 +132,7 @@ def test_cleanup_handoff_routes_for_manipulation_peer_and_includes_observation(m
     assert handoff.tick() == NodeStatus.SUCCESS
     assert blackboard["cleanup_handoff_prepared"] is True
     assert blackboard["decided_skill"] == "call_peer_robot"
-    assert blackboard["decided_params"]["peer_name"] == "butler"
+    assert blackboard["decided_params"]["peer_name"] == "stretch3"
     instruction = blackboard["decided_params"]["instruction"]
     assert "포장지" in instruction
     assert "주방" in instruction
@@ -153,7 +153,7 @@ def test_cleanup_handoff_uses_ros_action_for_same_network_peer(monkeypatch):
         json.dumps(
             [
                 {
-                    "agent_name": "butler",
+                    "agent_name": "stretch3",
                     "role": "manipulator",
                     "capabilities": ["manipulation"],
                 }
@@ -162,7 +162,7 @@ def test_cleanup_handoff_uses_ros_action_for_same_network_peer(monkeypatch):
     )
     monkeypatch.setattr(helpers, "_connected_grpc_peer_names", lambda _node: set())
     node = _node_with_skills(
-        ["navigate_to", "delegate_task"], node_names=["/butler/robo_claw_agent_node"]
+        ["navigate_to", "delegate_task"], node_names=["/stretch3/robo_claw_agent_node"]
     )
     skill = MagicMock()
     skill.node = node
@@ -177,7 +177,7 @@ def test_cleanup_handoff_uses_ros_action_for_same_network_peer(monkeypatch):
 
     assert handoff.tick() == NodeStatus.SUCCESS
     assert handoff._blackboard["decided_skill"] == "delegate_task"
-    assert handoff._blackboard["decided_params"]["agent_id"] == "butler"
+    assert handoff._blackboard["decided_params"]["agent_id"] == "stretch3"
 
 
 def test_cleanup_handoff_does_not_delegate_when_self_can_manipulate(monkeypatch):
@@ -186,7 +186,7 @@ def test_cleanup_handoff_does_not_delegate_when_self_can_manipulate(monkeypatch)
     monkeypatch.setattr(
         helpers,
         "_find_connected_peer_with_capability",
-        lambda *_args, **_kwargs: {"peer_name": "butler", "transport": "grpc"},
+        lambda *_args, **_kwargs: {"peer_name": "stretch3", "transport": "grpc"},
     )
     node = _node_with_skills(["navigate_to", "grasp", "place"])
     skill = MagicMock()
@@ -206,7 +206,7 @@ def test_cleanup_handoff_does_not_delegate_when_self_can_manipulate(monkeypatch)
 def test_cleanup_handoff_does_not_delegate_ambiguous_household_item(monkeypatch):
     from robo_claw_agent.skills.autonomous_skill import execution_nodes
 
-    find_peer = MagicMock(return_value={"peer_name": "butler", "transport": "grpc"})
+    find_peer = MagicMock(return_value={"peer_name": "stretch3", "transport": "grpc"})
     monkeypatch.setattr(execution_nodes, "_find_connected_peer_with_capability", find_peer)
     node = _node_with_skills(["navigate_to", "call_peer_robot"])
     skill = MagicMock()
@@ -229,7 +229,7 @@ def test_cleanup_mode_delegates_when_local_disposal_pose_is_not_curated(monkeypa
     monkeypatch.setattr(
         execution_nodes,
         "_find_connected_peer_with_capability",
-        lambda *_args, **_kwargs: {"peer_name": "butler", "transport": "grpc"},
+        lambda *_args, **_kwargs: {"peer_name": "stretch3", "transport": "grpc"},
     )
     node = _node_with_skills(["adaptive_pick_object", "call_peer_robot"])
     skill = MagicMock()
@@ -246,7 +246,7 @@ def test_cleanup_mode_delegates_when_local_disposal_pose_is_not_curated(monkeypa
 
     assert handoff.tick() == NodeStatus.SUCCESS
     assert handoff._blackboard["cleanup_handoff_prepared"] is True
-    assert handoff._blackboard["decided_params"]["peer_name"] == "butler"
+    assert handoff._blackboard["decided_params"]["peer_name"] == "stretch3"
     assert "안전한 지정 폐기 장소" in handoff._blackboard["decided_params"]["instruction"]
 
 

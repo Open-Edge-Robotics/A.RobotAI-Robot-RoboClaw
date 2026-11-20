@@ -15,39 +15,23 @@ from robo_claw_agent.skills.file_skill import (
 
 
 class MockNode:
-    def __init__(self, workspace_dir: str, butler_dir: str = "/tmp/butler_scripts"):
+    def __init__(self, workspace_dir: str):
         self._agent_workspace_dir = workspace_dir
-        self._butler_script_dir = butler_dir
 
     def has_parameter(self, name: str) -> bool:
-        return name == "butler_script_dir"
+        return False
 
     def get_parameter(self, name: str) -> Any:
-        class Parameter:
-            def __init__(self, val):
-                self.val = val
-
-            def get_parameter_value(self):
-                class Value:
-                    def __init__(self, v):
-                        self.string_value = v
-
-                return Value(self.val)
-
-        if name == "butler_script_dir":
-            return Parameter(self._butler_script_dir)
         return None
 
 
 def test_path_safety_check():
     workspace = "/allowed/workspace"
-    butler_dir = "/allowed/butler"
 
-    node = MockNode(workspace_dir=workspace, butler_dir=butler_dir)
+    node = MockNode(workspace_dir=workspace)
 
     # 1. 안전한 경로 검증
     assert _is_safe_path(os.path.join(workspace, "test.txt"), node) is True
-    assert _is_safe_path(os.path.join(butler_dir, "run.sh"), node) is True
     assert _is_safe_path("/tmp/anyfile.log", node) is True
 
     # 2. 위험한 경로 검증 (상위 디렉토리 순회)

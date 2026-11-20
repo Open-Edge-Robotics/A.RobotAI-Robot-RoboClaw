@@ -22,7 +22,7 @@ func ConfigSummaryCmd() *wcli.Command {
 		Run: func(ctx *wcli.Context) error {
 			args := ctx.Args
 			if len(args) < 2 {
-				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli config-summary butler office")
+				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli config-summary former office")
 			}
 			lctx, err := launcher.NewLaunchContextFromCache(
 				args[0], args[1],

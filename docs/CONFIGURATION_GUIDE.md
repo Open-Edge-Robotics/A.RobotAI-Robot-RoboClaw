@@ -126,18 +126,18 @@ HTTP 토큰 등 매핑 테이블의 값은 `.env`에서 읽으며, 셸의 `expor
 ### 2. 중앙 설정: RoboClaw CLI (`rclaw`)
 
 ```bash
-./rclaw fetch butler office
-./rclaw config-doctor butler office
-./rclaw config-effective butler office
-./rclaw launch butler office --dry-run
-./rclaw launch butler office
+./rclaw fetch former office
+./rclaw config-doctor former office
+./rclaw config-effective former office
+./rclaw launch former office --dry-run
+./rclaw launch former office
 ```
 
 Docker 실행:
 
 ```bash
-./rclaw launch butler office --docker --dry-run
-./rclaw launch butler office --docker --pull --image-tag 20260910
+./rclaw launch former office --docker --dry-run
+./rclaw launch former office --docker --pull --image-tag 20260910
 ```
 
 `fetch`는 v2 manifest를 먼저 확인하고 manifest의 `config`를 `config.json`의
@@ -183,10 +183,10 @@ Docker 실행:
 
 ```bash
 # 기동 없이 캐시된 설정의 요약만 다시 확인
-./rclaw config-summary butler office
+./rclaw config-summary former office
 
 # 요약 출력을 생략하고 기동
-./rclaw launch butler office --no-config-summary
+./rclaw launch former office --no-config-summary
 ```
 
 #### 로봇 없이 gRPC와 LLM을 실행합니다
@@ -344,7 +344,7 @@ token이 없으면 RoboMessenger는 loopback에만 bind됩니다. 원격 peer를
 ### 서버 설정을 가져오지 못함
 
 ```bash
-./rclaw config-doctor butler office
+./rclaw config-doctor former office
 ```
 
 - HTTPS 인증서와 server host/port 확인
@@ -355,8 +355,8 @@ token이 없으면 RoboMessenger는 loopback에만 bind됩니다. 원격 peer를
 ### 설정값이 기대와 다름
 
 ```bash
-./rclaw config-effective butler office
-./rclaw launch butler office --dry-run
+./rclaw config-effective former office
+./rclaw launch former office --dry-run
 ```
 
 `.env`가 `config.json`보다 우선된 값인지, robot YAML이 launch override로

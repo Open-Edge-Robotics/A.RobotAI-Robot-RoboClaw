@@ -209,7 +209,6 @@ class _FakeNode:
             },
         )()
         self._skills_guide = ""
-        self._script_skills_guide = ""
         self._robot_limits = ""
         self._troubleshooting_guide = ""
         self._agent_workspace_dir = ""

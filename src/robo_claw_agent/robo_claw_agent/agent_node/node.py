@@ -50,7 +50,6 @@ from .prompts import (
     assemble_system_prompt,
     load_robot_limits,
     load_robot_soul,
-    load_script_skills_guide,
     load_skills_guide,
     load_system_prompt,
     load_troubleshooting_guide,
@@ -114,7 +113,6 @@ class AgentNode(Node, ExecutionMixin):
         self._compact_skill_prompt = p.compact_skill_prompt
         self._robot_soul = load_robot_soul(p.soul_file)
         self._skills_guide = load_skills_guide(p.skills_guide_file)
-        self._script_skills_guide = load_script_skills_guide(p.butler_script_dir)
         self._agent_workspace_dir = p.agent_workspace_dir
         self._robot_limits = load_robot_limits(p.robot_limits_file)
         self._robot_limits_dict = load_limits_dict(p.robot_limits_file)

@@ -156,7 +156,7 @@ class MessengerClientNode(Node):
         self.declare_parameter("target_host", "127.0.0.1")
         self.declare_parameter("target_port", 50052)
         # 1:N 연결용 JSON 파라미터
-        # 예: '[{"host": "192.168.1.10", "port": 50051, "agent_name": "butler"}, {"host": "192.168.1.11", "port": 50051, "agent_name": "former"}]'
+        # 예: '[{"host": "192.168.1.10", "port": 50051, "agent_name": "former"}, {"host": "192.168.1.11", "port": 50051, "agent_name": "former"}]'
         # 기본값을 빈 문자열("")로 두어 하위 호환성 1:1 폴백과 명시적 0대 피어 설정("[]")을 구분합니다.
         self.declare_parameter("target_peers_json", "")
 

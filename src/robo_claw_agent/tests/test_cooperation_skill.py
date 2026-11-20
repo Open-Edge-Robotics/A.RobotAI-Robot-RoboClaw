@@ -94,9 +94,9 @@ from robo_claw_agent.skills.cooperation_skill.inbox import (
 
 def test_conversation_add_and_context():
     cm = PeerConversationManager()
-    cm.add_message("butler", "peer", "도와줘")
-    cm.add_message("butler", "self", "무엇을 도와줄까?")
-    ctx = cm.get_context("butler")
+    cm.add_message("former", "peer", "도와줘")
+    cm.add_message("former", "self", "무엇을 도와줄까?")
+    ctx = cm.get_context("former")
     assert "도와줘" in ctx
     assert "무엇을 도와줄까?" in ctx
     assert "동료" in ctx and "나" in ctx
@@ -105,24 +105,24 @@ def test_conversation_add_and_context():
 def test_conversation_history_limit():
     cm = PeerConversationManager(max_history_per_peer=3)
     for i in range(5):
-        cm.add_message("butler", "peer", f"msg{i}")
-    history = cm.get_history("butler")
+        cm.add_message("former", "peer", f"msg{i}")
+    history = cm.get_history("former")
     assert len(history) == 3
     assert history[-1]["content"] == "msg4"
 
 
 def test_conversation_tasks():
     cm = PeerConversationManager()
-    tid = cm.start_task("butler", "컵 옮기기")
-    assert cm.get_active_tasks("butler")[0]["description"] == "컵 옮기기"
+    tid = cm.start_task("former", "컵 옮기기")
+    assert cm.get_active_tasks("former")[0]["description"] == "컵 옮기기"
     cm.complete_task(tid, "완료")
-    assert cm.get_active_tasks("butler") == []
-    assert cm.get_tasks_context("butler") == "  • 진행 중인 협업 태스크 없음"
+    assert cm.get_active_tasks("former") == []
+    assert cm.get_tasks_context("former") == "  • 진행 중인 협업 태스크 없음"
 
 
 def test_conversation_expire_tasks_marks_stale_work():
     cm = PeerConversationManager()
-    tid = cm.start_task("butler", "오래된 작업")
+    tid = cm.start_task("former", "오래된 작업")
     cm._tasks[tid]["updated_ts"] = 0
 
     assert cm.expire_tasks(max_age_sec=10) == 1
@@ -131,10 +131,10 @@ def test_conversation_expire_tasks_marks_stale_work():
 
 def test_conversation_clear():
     cm = PeerConversationManager()
-    cm.add_message("butler", "peer", "hi")
-    cm.start_task("butler", "task")
+    cm.add_message("former", "peer", "hi")
+    cm.start_task("former", "task")
     cm.clear()
-    assert cm.get_history("butler") == []
+    assert cm.get_history("former") == []
     assert cm.get_active_tasks() == []
 
 
@@ -145,11 +145,11 @@ def test_conversation_clear():
 
 def test_inbox_push_drain():
     ib = PeerMessageInbox()
-    assert ib.push("butler", "hello") is True
+    assert ib.push("former", "hello") is True
     assert ib.push("", "") is False
     assert ib.size() == 1
     items = ib.drain()
-    assert items == [("butler", "hello")]
+    assert items == [("former", "hello")]
     assert ib.size() == 0
 
 
@@ -157,9 +157,9 @@ def test_inbox_has_single_consumer_owner():
     ib = PeerMessageInbox()
     assert ib.claim_consumer("bt") is True
     assert ib.claim_consumer("cooperate") is False
-    ib.push("butler", "hello")
+    ib.push("former", "hello")
     assert ib.drain(consumer="cooperate") == []
-    assert ib.drain(consumer="bt") == [("butler", "hello")]
+    assert ib.drain(consumer="bt") == [("former", "hello")]
     ib.release_consumer("bt")
     assert ib.claim_consumer("cooperate") is True
 
@@ -422,7 +422,7 @@ def test_decide_incoming_response_respond():
     node = _make_node(llm_resp=json.dumps({"action": "respond", "response": "도와드릴게요"}))
     skill = AutonomousCooperateSkill()
     skill.set_node(node)
-    decision = skill._decide_incoming_response("butler", "도와줘")
+    decision = skill._decide_incoming_response("former", "도와줘")
     assert decision["action"] == "respond"
     assert decision["response"] == "도와드릴게요"
 
@@ -430,7 +430,7 @@ def test_decide_incoming_response_respond():
 def test_decide_incoming_response_no_llm():
     skill = AutonomousCooperateSkill()
     skill.set_node(MagicMock(_llm=None))
-    decision = skill._decide_incoming_response("butler", "hi")
+    decision = skill._decide_incoming_response("former", "hi")
     assert decision["action"] == "respond"
 
 
@@ -493,11 +493,11 @@ def test_process_incoming_respond_sends_to_peer():
     node = _make_node(llm_resp=json.dumps({"action": "respond", "response": "알겠어"}))
     skill = AutonomousCooperateSkill()
     skill.set_node(node)
-    result = skill._process_incoming("butler", "컵 좀 옮겨줘")
+    result = skill._process_incoming("former", "컵 좀 옮겨줘")
     assert result["action"] == "respond"
     assert result["reply"] == "알겠어"
     # 대화 이력에 기록됐는지 확인
-    assert len(skill._conversation.get_history("butler")) == 2
+    assert len(skill._conversation.get_history("former")) == 2
 
 
 def test_process_incoming_execute_task():
@@ -516,7 +516,7 @@ def test_process_incoming_execute_task():
     skill.set_node(node)
     skill._allow_remote_task_execution = True
     skill._remote_allowed_skills = {"navigate"}
-    result = skill._process_incoming("butler", "거실로 이동해줘")
+    result = skill._process_incoming("former", "거실로 이동해줘")
     assert result["action"] == "execute_task"
     assert "완료" in result["reply"]
     node._skills.execute.assert_called_once_with(
@@ -567,7 +567,7 @@ def test_process_peer_messages_drains_inbox():
     reset_peer_message_inbox()
     reset_peer_conversation()
     inbox = get_peer_message_inbox()
-    inbox.push("butler", "도와줘")
+    inbox.push("former", "도와줘")
 
     skill = MagicMock()
     node = ProcessPeerMessages(skill)
@@ -578,9 +578,9 @@ def test_process_peer_messages_drains_inbox():
 
     status = node.tick()
     assert status == NodeStatus.SUCCESS
-    assert blackboard.get("pending_peer_messages") == [("butler", "도와줘")]
+    assert blackboard.get("pending_peer_messages") == [("former", "도와줘")]
     # 대화 이력에도 기록됨
-    assert len(get_peer_conversation().get_history("butler")) == 1
+    assert len(get_peer_conversation().get_history("former")) == 1
     reset_peer_message_inbox()
     reset_peer_conversation()
 
@@ -605,10 +605,10 @@ def test_process_peer_messages_supports_halt():
 def test_build_peer_conversation_context():
     reset_peer_conversation()
     cm = get_peer_conversation()
-    cm.add_message("butler", "peer", "도와줘")
-    ctx = build_peer_conversation_context({"pending_peer_messages": [("butler", "도와줘")]})
+    cm.add_message("former", "peer", "도와줘")
+    ctx = build_peer_conversation_context({"pending_peer_messages": [("former", "도와줘")]})
     assert "도와줘" in ctx
-    assert "butler" in ctx
+    assert "former" in ctx
     reset_peer_conversation()
 
 

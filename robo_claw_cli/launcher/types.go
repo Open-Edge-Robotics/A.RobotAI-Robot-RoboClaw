@@ -116,8 +116,6 @@ type RoboClawConfig struct {
 
 	RagLocalMirror                    bool    `json:"rag_local_mirror"`
 	MemoryDir                         string  `json:"memory_dir"`
-	ButlerScriptsDir                  string  `json:"butler_scripts_dir"`
-	ButlerSourceDir                   string  `json:"butler_source_dir"`
 	CameraTopic                       string  `json:"camera_topic"`
 	UseVision                         bool    `json:"use_vision"`
 	VisionModelPath                   string  `json:"vision_model_path"`

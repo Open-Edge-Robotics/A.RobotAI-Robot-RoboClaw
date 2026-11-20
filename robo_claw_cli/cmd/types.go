@@ -101,8 +101,6 @@ type RoboClawConfig struct {
 	// 신규 서버 필드도 캐시 JSON에서 보존한다.
 	RagLocalMirror                    bool    `json:"rag_local_mirror"`
 	MemoryDir                         string  `json:"memory_dir"`
-	ButlerScriptsDir                  string  `json:"butler_scripts_dir"`
-	ButlerSourceDir                   string  `json:"butler_source_dir"`
 	CameraTopic                       string  `json:"camera_topic"`
 	UseVision                         bool    `json:"use_vision"`
 	VisionModelPath                   string  `json:"vision_model_path"`

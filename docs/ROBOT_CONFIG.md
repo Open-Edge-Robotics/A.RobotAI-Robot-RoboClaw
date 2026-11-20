@@ -108,7 +108,6 @@ ros2 launch robo_claw_bringup robo_claw.launch.py \
 | `former_arm` | `former_arm_config.yaml` | Former0045 + AgileX Nero 7-DOF 팔 (`manipulation_enabled: true`) |
 | `cloid` | `cloid_config.yaml` | CLOiD 개체 |
 | `stretch3` | `stretch3_config.yaml` | Stretch3 (`stretch` 백엔드) |
-| `butler` | `butler_config.yaml` | Butler |
 
 팔이 장착된 개체는 `former_arm` 을 사용합니다. 팔 PC 의 CAN·ROS 그래프·MoveIt 연결 조건과
 프레임 정리는 [MANIPULATION.md](MANIPULATION.md) 의 "AgileX Nero 팔(agx_arm_ros) 연동" 절을

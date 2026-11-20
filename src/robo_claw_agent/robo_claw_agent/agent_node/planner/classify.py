@@ -70,7 +70,6 @@ _ACTION_TERMINAL_SKILLS: frozenset[str] = frozenset(
         "rag_delete",
         "rag_reindex",
         "reflect_skills",
-        "run_butler_script",
     }
 )
 

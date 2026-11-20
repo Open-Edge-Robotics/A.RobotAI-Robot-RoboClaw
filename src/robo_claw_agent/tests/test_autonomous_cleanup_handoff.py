@@ -115,7 +115,7 @@ def test_household_item_handoff_to_manipulator_preserves_category_safety(monkeyp
         execution_nodes,
         "_find_connected_peer_with_capability",
         lambda _node, capability: (
-            {"peer_name": "butler", "transport": "grpc"} if capability == "manipulation" else None
+            {"peer_name": "stretch3", "transport": "grpc"} if capability == "manipulation" else None
         ),
     )
     node = _node_with_skills(["navigate_to", "call_peer_robot"])
@@ -170,7 +170,7 @@ def test_find_connected_peer_skips_grpc_lookup_when_ros_peer_capable(monkeypatch
 
     monkeypatch.setenv(
         "GRPC_TARGET_PEERS_JSON",
-        json.dumps([{"name": "butler", "capabilities": ["manipulation"]}]),
+        json.dumps([{"name": "stretch3", "capabilities": ["manipulation"]}]),
     )
     called = []
 
@@ -180,11 +180,11 @@ def test_find_connected_peer_skips_grpc_lookup_when_ros_peer_capable(monkeypatch
 
     monkeypatch.setattr(helpers, "_connected_grpc_peer_names", _spy)
 
-    node = _node_with_skills(["navigate_to"], node_names=["/butler/robo_claw_agent_node"])
+    node = _node_with_skills(["navigate_to"], node_names=["/stretch3/robo_claw_agent_node"])
 
     peer = helpers._find_connected_peer_with_capability(node, "manipulation")
 
-    assert peer == {"peer_name": "butler", "transport": "ros2"}
+    assert peer == {"peer_name": "stretch3", "transport": "ros2"}
     assert called == []
 
 
@@ -244,7 +244,7 @@ def test_stationary_observation_allows_only_prepared_cleanup_handoff():
     blackboard = {
         "stationary_observation_only": True,
         "decided_skill": "call_peer_robot",
-        "decided_params": {"peer_name": "butler", "instruction": "컵을 정리해 주세요."},
+        "decided_params": {"peer_name": "stretch3", "instruction": "컵을 정리해 주세요."},
         "cleanup_handoff_prepared": True,
     }
     validator._blackboard = blackboard

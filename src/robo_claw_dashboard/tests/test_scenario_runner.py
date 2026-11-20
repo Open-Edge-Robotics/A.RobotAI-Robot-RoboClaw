@@ -28,7 +28,7 @@ class FakeDashboardBackend:
     def __init__(
         self,
         *,
-        state: str | None = '{"robot_name": "butler"}',
+        state: str | None = '{"robot_name": "former"}',
         agent_status: dict[str, Any] | None = None,
         telemetry: dict[str, Any] | None = None,
         sensor_health: dict[str, Any] | None = None,
@@ -73,12 +73,12 @@ class FakeDashboardBackend:
 
 class TestScenarioConfig:
     def test_cache_dir_auto_computation(self):
-        cfg = ScenarioConfig(robot_name="butler", environment="office")
-        assert "config_cache/butler_office" in cfg.cache_dir
+        cfg = ScenarioConfig(robot_name="former", environment="office")
+        assert "config_cache/former_office" in cfg.cache_dir
 
     def test_custom_cache_dir_preserved(self):
         cfg = ScenarioConfig(
-            robot_name="butler",
+            robot_name="former",
             environment="office",
             cache_dir="/tmp/custom_cache",
         )
@@ -323,20 +323,20 @@ class TestReport:
     def test_get_report_md_and_json(self):
         backend = FakeDashboardBackend()
         runner = ScenarioRunnerService(
-            backend, ScenarioConfig(robot_name="butler", environment="lab")
+            backend, ScenarioConfig(robot_name="former", environment="lab")
         )
         runner.start_run({"run_navigation": False, "run_manipulation": False}, async_mode=False)
 
         md_rep = runner.get_report(fmt="md")
         assert md_rep["found"] is True
         assert md_rep["content_type"] == "text/markdown; charset=utf-8"
-        assert "test_report_butler_lab" in md_rep["filename"]
+        assert "test_report_former_lab" in md_rep["filename"]
         assert b"# RoboClaw" in md_rep["body"]
 
         json_rep = runner.get_report(fmt="json")
         assert json_rep["found"] is True
         assert json_rep["content_type"] == "application/json; charset=utf-8"
-        assert "test_report_butler_lab" in json_rep["filename"]
+        assert "test_report_former_lab" in json_rep["filename"]
         parsed = json.loads(json_rep["body"].decode("utf-8"))
         assert parsed["total_steps"] > 0
 
@@ -358,12 +358,12 @@ class TestStepHandlers:
         assert res.status == "PASS"
 
     def test_robot_info_step(self):
-        backend = FakeDashboardBackend(state='{"robot_name": "butler"}')
-        runner = ScenarioRunnerService(backend, ScenarioConfig(robot_name="butler"))
+        backend = FakeDashboardBackend(state='{"robot_name": "former"}')
+        runner = ScenarioRunnerService(backend, ScenarioConfig(robot_name="former"))
         tc = ScenarioTestCase(id="tc_info", name="Info", step="S1", type="robot_info")
         res = runner._execute_step(tc)
         assert res.status == "PASS"
-        assert "butler" in res.detail
+        assert "former" in res.detail
 
     def test_battery_step_healthy(self):
         backend = FakeDashboardBackend(

@@ -169,8 +169,6 @@ latched 지도 수용과 volatile 10초 freshness 상한은
 | File | `read_text_file` | Public | action | 공통 | 텍스트 파일 읽기 |
 | File | `run_script` | Public | action | 공통 | 작업 공간 스크립트 실행 |
 | File | `write_text_file` | Public | action | 공통 | 텍스트 파일 생성·쓰기 |
-| Butler | `list_butler_scripts` | Public | action | 공통 | Butler 스크립트 목록 조회 |
-| Butler | `run_butler_script` | Public | dangerous | 공통 | 허용된 Butler 스크립트 실행 |
 | HRI | `send_message` | Public | action | 공통 | 텍스트·파일 메시지 전송 |
 
 읽기 전용 스킬은 [태스크 큐](OPERATIONS.md#태스크-큐-순차-실행)를 우회해 즉시 실행될 수 있습니다. 기본 차단 목록은 launch 인자 `http_allowed_skills_json`·`http_blocked_skills_json`으로 조정합니다. 표준 launch는 이를 HTTP 채널과 에이전트 공통 정책(`skill_allowed_json`·`skill_blocked_json`)에 함께 적용합니다. 상세 파라미터와 안전 조건은 시스템 프롬프트의 schema 요약, 각 기능 문서, 그리고 실제 `input_schema`를 기준으로 합니다.

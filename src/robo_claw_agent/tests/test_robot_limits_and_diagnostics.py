@@ -60,7 +60,6 @@ def test_build_system_prompt_integration_limits_and_troubleshooting():
             self._robot_limits = '{\n  "max_linear_velocity": 1.5\n}'
             self._troubleshooting_guide = "Troubleshoot navigation issues here."
             self._skills_guide = ""
-            self._script_skills_guide = ""
             self._robot_soul = ""
             self._skills = MagicMock()
             self._skills.list_skills.return_value = [{"name": "move", "description": "move robot"}]
@@ -76,8 +75,6 @@ def test_build_system_prompt_integration_limits_and_troubleshooting():
 
             if self._skills_guide:
                 base = base + f"\n\n[기본 스킬 가이드]\n{self._skills_guide}"
-            if self._script_skills_guide:
-                base = base + f"\n\n[스크립트 세부 가이드]\n{self._script_skills_guide}"
 
             # 로봇 제약 규격 주입
             if self._robot_limits:

@@ -163,7 +163,7 @@ def test_discover_peer_agents_reads_capabilities(monkeypatch):
     peers_json = json.dumps(
         [
             {
-                "name": "butler",
+                "name": "stretch3",
                 "description": "팔 로봇",
                 "role": "매니퓰레이션",
                 "capabilities": ["manipulation", "navigation"],
@@ -184,9 +184,9 @@ def test_discover_peer_agents_reads_capabilities(monkeypatch):
     node.get_namespace.return_value = "/myrobot"
 
     agents = _discover_peer_agents(node)
-    assert "butler" in agents
+    assert "stretch3" in agents
     assert "former" in agents
-    assert "manipulation" in agents["butler"]["capabilities"]
+    assert "manipulation" in agents["stretch3"]["capabilities"]
     assert "navigation" in agents["former"]["capabilities"]
 
 
@@ -201,7 +201,7 @@ def test_find_peer_with_capability_finds_manipulation(monkeypatch):
                 "capabilities": ["navigation"],
             },
             {
-                "name": "butler",
+                "name": "stretch3",
                 "description": "팔 로봇",
                 "role": "매니퓰레이션",
                 "capabilities": ["manipulation"],
@@ -216,7 +216,7 @@ def test_find_peer_with_capability_finds_manipulation(monkeypatch):
     node.get_namespace.return_value = "/myrobot"
 
     peer = _find_peer_with_capability(node, "manipulation")
-    assert peer == "butler"
+    assert peer == "stretch3"
 
 
 def test_find_peer_with_capability_returns_none_when_no_match(monkeypatch):
@@ -247,7 +247,7 @@ def test_find_peer_with_capability_role_keyword_fallback(monkeypatch):
     peers_json = json.dumps(
         [
             {
-                "name": "butler",
+                "name": "stretch3",
                 "description": "팔 로봇",
                 "role": "매니퓰레이션 가능",
                 "capabilities": [],
@@ -262,7 +262,7 @@ def test_find_peer_with_capability_role_keyword_fallback(monkeypatch):
     node.get_namespace.return_value = "/myrobot"
 
     peer = _find_peer_with_capability(node, "manipulation")
-    assert peer == "butler"
+    assert peer == "stretch3"
 
 
 # ---------------------------------------------------------------------------

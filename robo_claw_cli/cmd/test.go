@@ -42,7 +42,7 @@ func TestCmd() *wcli.Command {
 		Short: "원격 설정을 기반으로 로봇 연동 상태 및 AI 에이전트 수행 능력을 검증합니다.",
 		Run: func(ctx *wcli.Context) error {
 			if robot == "" || env == "" {
-				return fmt.Errorf("대상 로봇 이름과 환경명을 지정해야 합니다. 예: robo_claw_cli test -r butler -e office")
+				return fmt.Errorf("대상 로봇 이름과 환경명을 지정해야 합니다. 예: robo_claw_cli test -r former -e office")
 			}
 
 			homeDir, err := os.UserHomeDir()
@@ -255,7 +255,7 @@ func TestCmd() *wcli.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&robot, "robot", "r", "", "대상 로봇명 (예: butler)")
+	cmd.Flags().StringVar(&robot, "robot", "r", "", "대상 로봇명 (예: former)")
 	cmd.Flags().StringVar(&env, "env", "e", "", "구동 환경명 (예: office)")
 	cmd.Flags().BoolVar(&runNavigation, "run-navigation", "n", false, "네비게이션 주행 및 가드레일 테스트(Step 3) 포함 여부")
 	cmd.Flags().BoolVar(&runManipulation, "run-manipulation", "m", false, "매니퓰레이터 구동 테스트(Step 3) 포함 여부")

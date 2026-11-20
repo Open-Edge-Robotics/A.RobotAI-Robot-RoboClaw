@@ -217,23 +217,7 @@ func buildDockerVolumes(lctx *LaunchContext) []string {
 		}
 	}
 
-	// 3. Butler Scripts 디렉토리 — butler 로봇은 이 경로가 마운트되어야 동작한다.
-	if dir := ResolveButlerScriptsDir(lctx.EnvMap, pr); dir != "" {
-		if PathExists(dir) {
-			addVolume(dir, dir, "rw")
-		} else {
-			fmt.Fprintf(os.Stderr, "경고: Butler 스크립트 경로가 존재하지 않아 butler 동작이 불가능합니다: %s\n", dir)
-		}
-	} else {
-		fmt.Fprintln(os.Stderr, "경고: Butler 스크립트 경로를 결정하지 못했습니다. butler 로봇은 동작하지 않습니다.")
-	}
-
-	// 4. Butler Source 디렉토리
-	if dir := ResolveButlerSourceDir(lctx.EnvMap); dir != "" && PathExists(dir) {
-		addVolume(dir, dir, "rw")
-	}
-
-	// 5. 에이전트 작업 공간 디렉토리
+	// 3. 에이전트 작업 공간 디렉토리
 	agentWorkspaceDir := ResolveEnvWithFallback(lctx.EnvMap, "RC_AGENT_WORKSPACE_DIR")
 	if agentWorkspaceDir == "" {
 		agentWorkspaceDir = filepath.Join(pr, "agent_workspace")
@@ -285,11 +269,6 @@ func buildContainerCmd(lctx *LaunchContext) []string {
 	if f := ResolveEnvWithFallback(lctx.EnvMap, "RC_SYSTEM_PROMPT_FILE"); f != "" && PathExists(f) {
 		baseCmd = append(baseCmd, "system_prompt_file:=/ros2_ws/config/system_prompt.md")
 	}
-	// butler_script_dir launch 인자 — butler 로봇은 이 인자가 반드시 필요하다.
-	if dir := ResolveButlerScriptsDir(lctx.EnvMap, lctx.ProjectRoot); dir != "" {
-		baseCmd = append(baseCmd, fmt.Sprintf("butler_script_dir:=%s", dir))
-	}
-
 	if lctx.Sim {
 		baseCmd = append(baseCmd, BuildSimArgs(lctx)...)
 	}
@@ -297,19 +276,7 @@ func buildContainerCmd(lctx *LaunchContext) []string {
 		baseCmd = append(baseCmd, fmt.Sprintf("robot_config:=%s", lctx.RobotName))
 	}
 
-	// butlerSourceDir가 마운트된 경우 소싱 래핑 적용
-	butlerSourceDir := ResolveEnvWithFallback(lctx.EnvMap, "RC_BUTLER_SOURCE_DIR")
-	if butlerSourceDir == "" {
-		return baseCmd
-	}
-	wrapCmd := []string{
-		"bash", "-c",
-		fmt.Sprintf(
-			"if [ -f /opt/ros/humble/setup.bash ]; then source /opt/ros/humble/setup.bash; fi && if [ -f /ros2_ws/install/setup.bash ]; then source /ros2_ws/install/setup.bash; fi && if [ -f %s/install/setup.bash ]; then source %s/install/setup.bash; fi && exec \"$0\" \"$@\"",
-			butlerSourceDir, butlerSourceDir,
-		),
-	}
-	return append(wrapCmd, baseCmd...)
+	return baseCmd
 }
 
 // BuildDockerLaunchCommand returns the launch command executed inside Docker.

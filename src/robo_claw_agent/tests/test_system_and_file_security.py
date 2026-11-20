@@ -3,7 +3,6 @@ import tempfile
 from types import SimpleNamespace
 
 import pytest
-from robo_claw_agent.skills.butler_skill import RunButlerScriptSkill
 from robo_claw_agent.skills.file_skill import (
     AnalyzeStoredFileSkill,
     DeleteFileSkill,
@@ -89,24 +88,6 @@ def test_hri_send_message_does_not_silently_fallback():
         or "오류" in res["message"]
         or "허용되지" in res["message"]
     )
-
-
-@pytest.mark.unit
-def test_butler_script_uses_node_parameter_not_param_override():
-    skill = RunButlerScriptSkill()
-    node = SimpleNamespace(
-        has_parameter=lambda name: True,
-        get_parameter=lambda name: SimpleNamespace(
-            get_parameter_value=lambda: SimpleNamespace(string_value="/ros2_ws/butler_scripts")
-        ),
-    )
-    skill.set_node(node)
-
-    # Attempt to override script_dir to /bin
-    res = skill.execute({"script_name": "test.sh", "butler_script_dir": "/bin"})
-    assert res["success"] is False
-    # Should look in /ros2_ws/butler_scripts, NOT /bin
-    assert "/bin/test.sh" not in res["message"]
 
 
 @pytest.mark.unit

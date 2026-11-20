@@ -116,11 +116,6 @@ func buildLocalLaunchArgs(lctx *LaunchContext) []string {
 		args = append(args, fmt.Sprintf("memory_path:=%s", filepath.Join(memoryDir, "memory.json")))
 	}
 
-	// Butler Scripts 디렉토리 — butler 로봇은 이 인자가 반드시 필요하다.
-	if dir := ResolveButlerScriptsDir(lctx.EnvMap, lctx.ProjectRoot); dir != "" && PathExists(dir) {
-		args = append(args, fmt.Sprintf("butler_script_dir:=%s", dir))
-	}
-
 	if lctx.RobotName != "" {
 		args = append(args, fmt.Sprintf("robot_config:=%s", lctx.RobotName))
 	}

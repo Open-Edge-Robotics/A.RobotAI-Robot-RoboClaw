@@ -36,7 +36,6 @@ EXPECTED_INFORMATIONAL = frozenset(
         "list_files",
         "read_text_file",
         "analyze_stored_file",
-        "list_butler_scripts",
         # 협업 조회
         "list_peer_robots",
         "query_peer_status",
@@ -101,7 +100,6 @@ MUST_STAY_ACTION = frozenset(
         "send_message",
         "say",
         "run_script",
-        "run_butler_script",
         "delete_file",
         "write_text_file",
         "edit_text_file",

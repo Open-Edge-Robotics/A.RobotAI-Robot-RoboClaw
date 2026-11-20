@@ -115,13 +115,11 @@ task unit-test
 
 ```bash
 # 1. 특정 로봇 설정으로 실행
-./scripts/run_robo_claw_docker.sh --robot-config butler
+./scripts/run_robo_claw_docker.sh --robot-config former
 
 # 2. 호스트의 설정(config) 폴더 마운트 (도커 재빌드 없이 설정 수정 가능)
 ./scripts/run_robo_claw_docker.sh --config-dir ./src/robo_claw_bringup/config
 
-# 3. Butler 전용 스크립트 폴더 마운트
-./scripts/run_robo_claw_docker.sh --butler-scripts /path/to/butler/scripts
 ```
 
 옵션 전체 목록과 상세 설명은 [docs/DOCKER_GUIDE.md](docs/DOCKER_GUIDE.md)를 참고하세요.
@@ -129,7 +127,6 @@ task unit-test
 환경 변수(`.env`)를 통해서도 경로를 고정할 수 있습니다:
 
 - `RC_CONFIG_DIR`: RoboClaw 설정 폴더 경로
-- `RC_BUTLER_SCRIPTS_DIR`: Butler 로봇 쉘 스크립트 폴더 경로
 - `RC_SKILLS_GUIDE_FILE`: 범용 스킬 가이드 파일 경로
 - `RC_ROBOT_LIMITS_FILE`: 로봇 구동 한계 스펙 파일 경로
 - `RC_TROUBLESHOOTING_GUIDE_FILE`: 장애 조치 가이드 파일 경로
@@ -152,8 +149,8 @@ task build
 ./rclaw config set server.host 10.0.0.1
 
 # 설정 서버 동기화 및 시나리오 테스트:
-./rclaw fetch butler office
-./rclaw test -r butler -e office
+./rclaw fetch former office
+./rclaw test -r former -e office
 
 # 설정 컨트랙트 검증:
 ./rclaw contract check

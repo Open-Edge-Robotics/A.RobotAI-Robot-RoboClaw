@@ -37,13 +37,11 @@ CATEGORIES: dict[str, str] = {
     "autonomous": "스스로 판단하는 자율 행동, 조건 반응형 이동·작업과 그 중단",
     "motion": "CLOi 로봇에 등록된 제스처·모션 목록 조회와 실행·정지",
     "safety": "비상 정지와 비상 정지 해제",
-    "butler": "Butler 로봇 전용 스크립트 목록 조회와 실행",
 }
 
 _MODULE_CATEGORY = {
     "autonomous_skill": "autonomous",
     "tidy_home_skill": "autonomous",
-    "butler_skill": "butler",
     "cloid_motion_skill": "motion",
     "cooperate_skill": "cooperation",
     "cooperation_skill": "cooperation",

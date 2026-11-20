@@ -86,7 +86,6 @@ class AgentParams:
     skills_guide_file: str | None = None
     robot_limits_file: str | None = None
     troubleshooting_guide_file: str | None = None
-    butler_script_dir: str | None = None
     agent_workspace_dir: str | None = None
     skill_modules: list[str] = field(default_factory=list)
 
@@ -202,7 +201,6 @@ def declare_agent_parameters(node) -> None:
     node.declare_parameter("cloid_demo_shoe_heading_deg", 64.2)
     # 시연 모션 요청 후 STOP 까지 기다리는 시간(초). 시연 모션 길이보다 길게 둔다.
     node.declare_parameter("cloid_demo_stop_after_sec", 8.0)
-    node.declare_parameter("butler_script_dir", "/ros2_ws/butler_scripts")
     node.declare_parameter("agent_workspace_dir", "/ros2_ws/agent_workspace")
 
     # 좌표 프레임 / MCP
@@ -374,7 +372,6 @@ def read_agent_parameters(node) -> AgentParams:
         skills_guide_file=_s(node, "skills_guide_file") or None,
         robot_limits_file=_s(node, "robot_limits_file") or None,
         troubleshooting_guide_file=_s(node, "troubleshooting_guide_file") or None,
-        butler_script_dir=_s(node, "butler_script_dir") or None,
         agent_workspace_dir=_s(node, "agent_workspace_dir") or None,
         skill_modules=list(
             node.get_parameter("skill_modules").get_parameter_value().string_array_value

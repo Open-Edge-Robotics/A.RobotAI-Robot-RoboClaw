@@ -69,7 +69,7 @@ def test_accepted_peer_makes_the_request_successful():
     summary = summarize_outcomes(
         [
             PeerYieldOutcome("Former0047", ACCEPTED, "yield_prepared", yield_spot=(0.0, 3.0)),
-            PeerYieldOutcome("Butler", NOT_NEEDED, "not_blocking"),
+            PeerYieldOutcome("Former0045", NOT_NEEDED, "not_blocking"),
         ]
     )
 
@@ -83,7 +83,7 @@ def test_all_peers_not_blocking_means_nav_failure_had_another_cause():
     summary = summarize_outcomes(
         [
             PeerYieldOutcome("Former0047", NOT_NEEDED, "not_blocking"),
-            PeerYieldOutcome("Butler", NOT_NEEDED, "not_blocking"),
+            PeerYieldOutcome("Former0045", NOT_NEEDED, "not_blocking"),
         ]
     )
 
@@ -96,14 +96,14 @@ def test_busy_peer_provides_the_shortest_retry_hint():
     summary = summarize_outcomes(
         [
             PeerYieldOutcome("Former0047", BUSY, "manipulation_in_progress", retry_after_sec=5.0),
-            PeerYieldOutcome("Butler", BUSY, "agent_busy", retry_after_sec=3.0),
+            PeerYieldOutcome("Former0045", BUSY, "agent_busy", retry_after_sec=3.0),
         ]
     )
 
     assert summary["success"] is False
     assert summary["reason"] == "peers_busy"
     assert summary["retry_after_sec"] == 3.0
-    assert set(summary["blocking_peers"]) == {"Former0047", "Butler"}
+    assert set(summary["blocking_peers"]) == {"Former0047", "Former0045"}
 
 
 def test_refused_peer_has_no_retry_hint():

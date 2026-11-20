@@ -9,7 +9,7 @@
 {"id": "cmp-scan-log-01", "instruction": "방을 한 바퀴 스캔한 뒤에 결과를 관찰 기록으로 남겨", "steps": [{"skill": "scan_room"}, {"skill": "log_observation"}]}
 {"id": "cmp-map-send-01", "instruction": "지도 캡처해서 나한테 메신저로 보내줘", "steps": [{"skill": "capture_map"}, {"skill": "send_message"}]}
 {"id": "cmp-find-approach-01", "instruction": "사람을 찾아서 그 앞까지 다가가", "steps": [{"skill": "find_object", "params": {"target_object": "person"}}, {"skill": "approach_object", "params": {"target_object": "person"}}]}
-{"id": "cmp-peer-01", "instruction": "butler 로봇 상태 확인하고 한가하면 주방 청소 시켜", "steps": [{"skill": "query_peer_status", "params": {"peer_name": "butler"}}, {"skill": "call_peer_robot", "params": {"peer_name": "butler"}}]}
+{"id": "cmp-peer-01", "instruction": "former 로봇 상태 확인하고 한가하면 주방 청소 시켜", "steps": [{"skill": "query_peer_status", "params": {"peer_name": "former"}}, {"skill": "call_peer_robot", "params": {"peer_name": "former"}}]}
 {"id": "cmp-patrol-alert-01", "instruction": "거실이랑 주방 순찰하면서 고양이 보이면 알려줘", "steps": [{"skill": "monitor_detection", "params": {"target_object": "cat"}}, {"skill": "patrol", "params": {"waypoints": ["거실", "주방"]}}]}
 {"id": "cmp-file-rag-01", "instruction": "manual.txt 읽어보고 중요한 내용은 지식으로 저장해", "steps": [{"skill": "read_text_file", "params": {"file_path": "manual.txt"}}, {"skill": "rag_add"}]}
 {"id": "cmp-explore-map-01", "instruction": "탐험 끝나면 지도 분석해서 갈 수 있는 장소 등록해", "steps": [{"skill": "explore"}, {"skill": "find_reachable_places"}]}

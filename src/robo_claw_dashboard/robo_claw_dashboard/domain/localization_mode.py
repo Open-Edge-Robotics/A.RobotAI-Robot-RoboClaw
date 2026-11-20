@@ -57,7 +57,7 @@ def parse_initial_pose_mode(raw: Any, robot_profile: Any = "") -> str:
     LIO 로봇은 `/switch_mode` 시드가 필요하고 AMCL 로봇은 `/initialpose` 발행이
     필요하므로 토픽/서비스 이름 같은 간접 신호로 판단하지 않고 설정으로 정한다.
     대시보드 노드 기본값은 `auto` 이며, `robot_config` 프로필이 `cloid` 이면 LIO,
-    그 외(former·butler·stretch 등)는 AMCL 이다.
+    그 외(former·stretch 등)는 AMCL 이다.
     """
     text = str(raw or "").strip().lower()
     if text in ("amcl", "lio"):

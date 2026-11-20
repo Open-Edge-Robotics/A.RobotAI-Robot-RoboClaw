@@ -50,7 +50,7 @@ func LaunchCmd() *wcli.Command {
 			}
 			args := ctx.Args
 			if len(args) < 2 {
-				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli launch butler office")
+				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli launch former office")
 			}
 
 			logging.Info("robo_claw launch 커맨드를 기동합니다. (로봇: %s, 환경: %s)", args[0], args[1])

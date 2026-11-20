@@ -169,7 +169,7 @@ def test_runtime_skills_become_capabilities_with_schema_and_risk():
         {"name": "navigate_to", "risk_level": "action"},
         {"name": "tidy_home", "risk_level": "action"},
         {"name": "write_text_file", "risk_level": "write"},
-        {"name": "run_butler_script", "risk_level": "dangerous"},
+        {"name": "reset_emergency_stop", "risk_level": "dangerous"},
         {"name": "internal_helper", "risk_level": "action", "is_internal": True},
         {"name": "Bad Name", "risk_level": "action"},
     ]
@@ -179,7 +179,7 @@ def test_runtime_skills_become_capabilities_with_schema_and_risk():
     assert [(item.name, item.risk_level) for item in manifest] == [
         ("get_status", "read"),
         ("navigate_to", "motion"),
-        ("run_butler_script", "dangerous"),
+        ("reset_emergency_stop", "dangerous"),
         ("tidy_home", "normal"),
         ("write_text_file", "normal"),
     ]

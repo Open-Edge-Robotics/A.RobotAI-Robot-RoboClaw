@@ -19,7 +19,7 @@ func DoctorCmd() *wcli.Command {
 		Short: "원격 runtime 설정의 schema와 핵심 값을 점검합니다.",
 		Run: func(ctx *wcli.Context) error {
 			if len(ctx.Args) < 2 {
-				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli config-doctor butler office")
+				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli config-doctor former office")
 			}
 			baseURL, err := serverBaseURL()
 			if err != nil {

@@ -1,7 +1,7 @@
 """파일 경로 안전성 검증 유틸.
 
-스킬의 파일 접근을 허용된 디렉토리(``/tmp``, agent_workspace,
-butler_script_dir) 내부로 제한한다. 여러 파일 관련 스킬에서 공유한다.
+스킬의 파일 접근을 허용된 디렉토리(``/tmp``, agent_workspace) 내부로 제한한다.
+여러 파일 관련 스킬에서 공유한다.
 """
 
 import os
@@ -21,17 +21,6 @@ def _is_safe_path(file_path: str, node: Any) -> bool:
 
     if node and hasattr(node, "_agent_workspace_dir") and node._agent_workspace_dir:
         allowed_dirs.append(os.path.realpath(node._agent_workspace_dir))
-
-    if node:
-        try:
-            if node.has_parameter("butler_script_dir"):
-                butler_dir = (
-                    node.get_parameter("butler_script_dir").get_parameter_value().string_value
-                )
-                if butler_dir:
-                    allowed_dirs.append(os.path.realpath(butler_dir))
-        except Exception:
-            pass
 
     for allowed_dir in allowed_dirs:
         try:

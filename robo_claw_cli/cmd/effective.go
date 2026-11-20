@@ -43,7 +43,7 @@ func EffectiveCmd() *wcli.Command {
 		Short: "캐시된 설정의 최종값과 출처를 표시합니다.",
 		Run: func(ctx *wcli.Context) error {
 			if len(ctx.Args) < 2 {
-				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli config-effective butler office")
+				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli config-effective former office")
 			}
 			config, env, err := loadCachedConfig(ctx.Args[0], ctx.Args[1])
 			if err != nil {

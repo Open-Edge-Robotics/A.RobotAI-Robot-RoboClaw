@@ -223,18 +223,18 @@ def test_receive_peer_message_rejects_empty_payload():
 
 def test_inbox_structured_and_legacy_apis_share_one_queue():
     inbox = PeerMessageInbox()
-    assert inbox.push("butler", "legacy") is True
+    assert inbox.push("former", "legacy") is True
     assert inbox.push_message(
-        InboxMessage(peer_name="butler", message="structured", message_id="m", task_id="t")
+        InboxMessage(peer_name="former", message="structured", message_id="m", task_id="t")
     )
 
-    assert inbox.drain() == [("butler", "legacy"), ("butler", "structured")]
+    assert inbox.drain() == [("former", "legacy"), ("former", "structured")]
     assert inbox.size() == 0
 
 
 def test_inbox_drain_messages_keeps_structured_fields():
     inbox = PeerMessageInbox()
-    inbox.push_message(InboxMessage(peer_name="butler", message="hi", task_id="t-1"))
+    inbox.push_message(InboxMessage(peer_name="former", message="hi", task_id="t-1"))
 
     items = inbox.drain_messages()
 
@@ -629,7 +629,7 @@ def test_bt_process_peer_messages_records_received_events():
     inbox = get_peer_message_inbox()
     assert inbox.push_message(
         InboxMessage(
-            peer_name="butler",
+            peer_name="former",
             message="도와줘",
             message_id="msg-1",
             task_id="task-1",
@@ -641,7 +641,7 @@ def test_bt_process_peer_messages_records_received_events():
 
     node.tick()
 
-    assert node._blackboard["pending_peer_messages"] == [("butler", "도와줘")]
+    assert node._blackboard["pending_peer_messages"] == [("former", "도와줘")]
     journal = get_cooperation_journal()
     event = journal.snapshot()["events"][0]
     assert event["event_type"] == "message_received"

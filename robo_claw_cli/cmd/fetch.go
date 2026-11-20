@@ -24,7 +24,7 @@ func FetchCmd() *wcli.Command {
 		Run: func(ctx *wcli.Context) error {
 			args := ctx.Args
 			if len(args) < 2 {
-				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli fetch butler office")
+				return fmt.Errorf("로봇 이름과 환경명을 입력해야 합니다. 예: robo_claw_cli fetch former office")
 			}
 			robotName := args[0]
 			envName := args[1]

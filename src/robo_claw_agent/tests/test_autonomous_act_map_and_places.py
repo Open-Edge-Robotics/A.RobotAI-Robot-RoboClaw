@@ -205,13 +205,13 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
 
     # 타 에이전트 Mocking
     mock_node.get_node_names.return_value = [
-        "/butler/robo_claw_agent_node",
+        "/stretch3/robo_claw_agent_node",
         "/former/robo_claw_agent_node",
         "/other_ns/robo_claw_agent_node",
         "/some_other_ros_node",
     ]
     mock_node.get_name.return_value = "robo_claw_agent_node"
-    mock_node.get_namespace.return_value = "/butler"  # 자기 자신은 butler
+    mock_node.get_namespace.return_value = "/stretch3"  # 자기 자신은 stretch3
 
     node = LLMDecideAction(skill)
     blackboard = {
@@ -258,7 +258,7 @@ def test_llm_decide_action_injects_history_and_places(mock_node):
     assert "former" in system_prompt
     assert "other_ns" in system_prompt
     assert (
-        "butler" not in system_prompt
+        "stretch3" not in system_prompt
     )  # 자기 자신은 프롬프트의 타 에이전트 목록에서 제외되어야 함
 
 

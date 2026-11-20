@@ -32,7 +32,6 @@ READONLY_SKILLS: frozenset[str] = frozenset(
         "rag_search",
         "rag_list",
         "list_files",
-        "list_butler_scripts",
         "get_detections",
         "get_distance",
         "ros_command",

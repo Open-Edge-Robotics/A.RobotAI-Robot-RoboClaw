@@ -65,7 +65,6 @@ class _PromptNode:
         self._system_prompt_base_cache = None
         self._system_prompt = "Base Prompt {skill_list}"
         self._skills_guide = ""
-        self._script_skills_guide = ""
         self._robot_limits = ""
         self._troubleshooting_guide = ""
         self._agent_workspace_dir = ""

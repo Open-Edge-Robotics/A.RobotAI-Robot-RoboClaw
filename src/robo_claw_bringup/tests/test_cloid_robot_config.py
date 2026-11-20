@@ -1,6 +1,6 @@
 """CLOiD 로봇 기본 프로필(cloid_config.yaml / ROBOT_LIMITS.cloid.json / SKILLS.cloid.<개체>.md) 검증.
 
-CLOiD 는 ROS 2 토픽 이름과 제어 경로가 기존 stretch3/former/butler 프로필과 다르다.
+CLOiD 는 ROS 2 토픽 이름과 제어 경로가 기존 stretch3/former 프로필과 다르다.
 프로필 파일은 로봇마다 손으로 관리되므로, 오탈자나 launch 배선 누락이 실제 로봇에서
 조용히 "센서 없음/스킬 없음"으로 나타난다. 이 테스트는 다음을 고정한다.
 
@@ -9,7 +9,7 @@ CLOiD 는 ROS 2 토픽 이름과 제어 경로가 기존 stretch3/former/butler 
 - ``ROBOT_LIMITS.cloid.json`` 의 조작 하드 한계가 유효하다(조작은 기본 비활성).
 - ``robot_config:=cloid`` 로 launch 를 평가하면 agent 노드가 cloid 전용
   skills guide / limits 파일을 받고, launch 가 cloid 의 카메라/IMU 토픽을 덮어쓰지
-  않으며, butler 전용 스킬 모듈이 주입되지 않는다.
+  않으며, 로봇 전용 모션 스킬이 주입되지 않는다.
   (조작 비활성은 `cloid_config.yaml` 값으로 검증한다.)
 """
 
@@ -231,12 +231,11 @@ def test_launch_binds_cloid_profiles_to_agent_node() -> None:
     assert "camera_topic" not in agent
     assert "imu_topic" not in agent
 
-    # 로봇 전용 모션 스킬은 CLOi 프로필에만 주입하며 Butler 스크립트 스킬은 제외한다.
+    # 로봇 전용 모션 스킬은 CLOi 프로필에만 주입한다.
     assert "robo_claw_agent.skills.cloid_motion_skill" in agent["skill_modules"]
     # 포장용 최소 부피(boxing) 자세는 전체 CLOi 개체 전용이므로 cloid 프로필이면 항상 등록한다.
     assert "robo_claw_agent.skills.cloid_packing_pose_skill" in agent["skill_modules"]
     assert "robo_claw_agent.skills.cleanup_demo_skill" not in agent["skill_modules"]
-    assert "robo_claw_agent.skills.butler_skill" not in agent["skill_modules"]
 
 
 def test_packing_pose_skill_is_registered_for_every_cloid_unit() -> None:
@@ -258,7 +257,7 @@ def test_packing_pose_skill_is_not_registered_for_non_cloid_profiles() -> None:
     module = _load_launch_module()
     launch_description = module.generate_launch_description()
 
-    for robot_config in ("sim", "former", "butler"):
+    for robot_config in ("sim", "former"):
         context = _build_context(launch_description, {"robot_config": robot_config})
         entities = module._launch_setup(context)  # noqa: SLF001
         agent = _evaluated_params(context, _find_node(entities, "agent_node"))

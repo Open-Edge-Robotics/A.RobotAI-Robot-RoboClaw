@@ -267,7 +267,6 @@ def _launch_setup(context, *args, **kwargs):
         if os.path.exists(config_limits):
             robot_limits_file = config_limits
     troubleshooting_guide_file = LaunchConfiguration("troubleshooting_guide_file").perform(context)
-    resolved_butler_script_dir = LaunchConfiguration("butler_script_dir").perform(context)
     agent_workspace_dir = LaunchConfiguration("agent_workspace_dir").perform(context)
     ollama_options_json = LaunchConfiguration("ollama_options_json").perform(context)
     enable_rag = LaunchConfiguration("enable_rag").perform(context)
@@ -413,7 +412,6 @@ def _launch_setup(context, *args, **kwargs):
                     troubleshooting_guide_file,
                     troubleshooting_guide_file,
                 ),
-                "butler_script_dir": (resolved_butler_script_dir, resolved_butler_script_dir),
                 "agent_workspace_dir": (agent_workspace_dir, agent_workspace_dir),
                 "ollama_options_json": (ollama_options_json, ollama_options_json),
                 "enable_rag": (enable_rag, enable_rag.lower() in ("1", "true", "yes", "on")),
@@ -533,9 +531,7 @@ def _launch_setup(context, *args, **kwargs):
         "robo_claw_agent.skills.autonomous_skill",
         "robo_claw_agent.skills.tidy_home_skill",
     ]
-    if robot_config == "butler":
-        skill_modules.append("robo_claw_agent.skills.butler_skill")
-    elif robot_config == "cloid":
+    if robot_config == "cloid":
         skill_modules.append("robo_claw_agent.skills.cloid_motion_skill")
         # CLOiD 포장용 최소 부피(boxing) 자세는 개체 상태와 무관하게 사용하는 CLOi 전용
         # 스킬이므로 cloid 프로필이면 항상 등록한다.
@@ -795,7 +791,7 @@ def _launch_setup(context, *args, **kwargs):
     )
 
     # 실제 깊이 카메라 pointcloud를 Nav2 costmap이 참조하는 고정 토픽(/depth_camera/points)으로
-    # 릴레이한다. 로봇마다 실제 카메라 드라이버 토픽 이름이 다르므로(예: stretch3/former/butler가
+    # 릴레이한다. 로봇마다 실제 카메라 드라이버 토픽 이름이 다르므로(예: stretch3/former가
     # 각기 다른 네임스페이스 사용), 정적인 nav2_params.yaml이 로봇별 토픽 이름 차이에 영향받지
     # 않도록 이 relay로 흡수한다.
     depth_relay_node = Node(

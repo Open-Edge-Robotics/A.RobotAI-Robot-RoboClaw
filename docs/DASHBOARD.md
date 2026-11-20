@@ -480,7 +480,7 @@ CLOiD(LIO)에서는 AMCL 대신 `lio_node`가 초기 위치를 재위치추정 �
 
 | `initial_pose_mode` | 동작 | 사용 예 |
 | --- | --- | --- |
-| `auto`(기본) | `robot_config` 프로필로 결정. `cloid` → `lio`, 그 외(former·butler·stretch 등) → `amcl` | 대부분의 배포 |
+| `auto`(기본) | `robot_config` 프로필로 결정. `cloid` → `lio`, 그 외(former·stretch 등) → `amcl` | 대부분의 배포 |
 | `amcl` | `/initialpose` 발행(200) | AMCL 로봇, LIO 가 아닌 2D 위치추정 |
 | `lio` | `/switch_mode` 시드(202) | CLOiD |
 

@@ -272,7 +272,7 @@ class TestInitialPoseMode:
         assert parse_initial_pose_mode("auto", "cloid") == "lio"
         assert parse_initial_pose_mode("auto", "CLOiD") == "lio"
         assert parse_initial_pose_mode("auto", "former") == "amcl"
-        assert parse_initial_pose_mode("auto", "butler") == "amcl"
+        assert parse_initial_pose_mode("auto", "stretch3") == "amcl"
 
     def test_auto_without_profile_falls_back_to_amcl(self):
         assert parse_initial_pose_mode("auto", "") == "amcl"

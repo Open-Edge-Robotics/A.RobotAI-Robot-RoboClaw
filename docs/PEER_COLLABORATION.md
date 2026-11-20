@@ -50,7 +50,7 @@ GRPC_TARGET_HOST=127.0.0.1
 GRPC_TARGET_PORT=50052
 
 # 1:N (여러 동료 로봇) 연결 — 설정되어 있으면 위 1:1 설정보다 우선 적용
-GRPC_TARGET_PEERS_JSON=[{"host":"192.168.1.10","port":50052,"agent_name":"butler","auth_token":"butler-to-this-robot-token","description":"집게 팔 장착 매니퓰레이터 로봇","role":"manipulator"},{"host":"192.168.1.11","port":50052,"agent_name":"former","auth_token":"former-to-this-robot-token","description":"이동형 카트 로봇","role":"agv"}]
+GRPC_TARGET_PEERS_JSON=[{"host":"192.168.1.10","port":50052,"agent_name":"former_arm","auth_token":"former-arm-to-this-robot-token","description":"집게 팔 장착 매니퓰레이터 로봇","role":"manipulator"},{"host":"192.168.1.11","port":50052,"agent_name":"former","auth_token":"former-to-this-robot-token","description":"이동형 카트 로봇","role":"agv"}]
 # 모든 로봇에서 동일한 값을 사용해야 하는 gRPC peer 인증 토큰.
 # 로봇 내부 경로(채널→에이전트 PeerMessage)의 출처 검증에도 함께 쓰인다.
 GRPC_PEER_TOKEN=교체할_랜덤_토큰
@@ -222,7 +222,7 @@ gRPC 파일 전송은 기본 최대 `64 MiB`이며 `grpc_max_file_bytes`로 조�
 `sender_id`가 피어 식별자가 아닌 메시지는 호출 metadata의 `x-robo-claw-peer-id`로 바인딩 대상 피어를 찾습니다.
 
 ```bash
-GRPC_PEER_TOKENS_JSON={"butler":"butler-token","former":"former-token"}
+GRPC_PEER_TOKENS_JSON={"former":"former-token","former_arm":"former-arm-token"}
 ```
 
 원격 작업 실행은 `allow_remote_task_execution=true`와 `remote_allowed_skills`의 명시적 allowlist가 모두 필요합니다. allowlist가 비어 있으면 원격 작업은 거부됩니다.

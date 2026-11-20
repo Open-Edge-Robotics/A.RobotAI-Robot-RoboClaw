@@ -38,8 +38,6 @@ SOUL_FILE="${RC_ROBOT_SOUL_FILE:-}"
 SKILLS_GUIDE="${RC_SKILLS_GUIDE_FILE:-}"
 ROBOT_LIMITS="${RC_ROBOT_LIMITS_FILE:-}"
 TROUBLESHOOTING="${RC_TROUBLESHOOTING_GUIDE_FILE:-}"
-BUTLER_SCRIPTS_DIR_ARG="${RC_BUTLER_SCRIPTS_DIR:-}"
-BUTLER_SOURCE_DIR_ARG="${RC_BUTLER_SOURCE_DIR:-}"
 AGENT_WORKSPACE_DIR_ARG="${RC_AGENT_WORKSPACE_DIR:-}"
 CONFIG_DIR_ARG="${RC_CONFIG_DIR:-}"
 LAUNCH_DIR_ARG="${RC_LAUNCH_DIR:-}"
@@ -62,8 +60,6 @@ usage() {
   printf '  --skills-guide, --guide-file <path> Host path to skills guide (e.g., SKILLS.md).\n'
   printf '  --robot-limits <path>      Host path to robot limits specification (e.g., ROBOT_LIMITS.json).\n'
   printf '  --troubleshooting <path>   Host path to troubleshooting guide (e.g., TROUBLESHOOTING.md).\n'
-  printf '  --butler-scripts <path>    Host path to Butler scripts for LLM.\n'
-  printf '  --butler-source <path>     Host path to Butler ROS 2 workspace (for sourcing).\n'
   printf '  --agent-workspace <path>   Host path to agent workspace.\n'
   printf '  --config-dir <path>        Host path to robo_claw_bringup config dir.\n'
   printf '  --launch-dir <path>        Host path to robo_claw_bringup launch dir.\n'
@@ -98,16 +94,7 @@ while [[ $# -gt 0 ]]; do
   --troubleshooting)
     TROUBLESHOOTING="${2:-}"
     shift 2
-    ;;
-  --butler-scripts)
-    BUTLER_SCRIPTS_DIR_ARG="${2:-}"
-    shift 2
-    ;;
-  --butler-source)
-    BUTLER_SOURCE_DIR_ARG="${2:-}"
-    shift 2
-    ;;
-  --agent-workspace)
+    ;;  --agent-workspace)
     AGENT_WORKSPACE_DIR_ARG="${2:-}"
     shift 2
     ;;
@@ -221,28 +208,7 @@ if [[ -n "$TROUBLESHOOTING" ]]; then
   fi
 fi
 
-# 2. BUTLER_SCRIPTS_DIR (LLM 참조용)
-DEFAULT_SCRIPTS_DIR="$(pwd)/butler_scripts"
-FALLBACK_SCRIPTS_DIR="/home/seoyc/Workspace/ros/butler/products/prd_butler_v01_magok_w02/script"
-BUTLER_SCRIPTS_DIR="${BUTLER_SCRIPTS_DIR_ARG:-${BUTLER_SCRIPTS_DIR:-}}"
-if [[ -z "$BUTLER_SCRIPTS_DIR" ]]; then
-  if [[ -d "$DEFAULT_SCRIPTS_DIR" ]]; then
-    BUTLER_SCRIPTS_DIR="$DEFAULT_SCRIPTS_DIR"
-  else
-    BUTLER_SCRIPTS_DIR="$FALLBACK_SCRIPTS_DIR"
-  fi
-fi
-
-if [[ -n "$BUTLER_SCRIPTS_DIR" ]]; then
-  if [[ -d "$BUTLER_SCRIPTS_DIR" ]]; then
-    BUTLER_SCRIPTS_DIR=$(realpath "$BUTLER_SCRIPTS_DIR")
-  else
-    echo "Warning: Butler scripts directory not found at $BUTLER_SCRIPTS_DIR" >&2
-    BUTLER_SCRIPTS_DIR=""
-  fi
-fi
-
-# 2.5 AGENT_WORKSPACE_DIR (LLM 전용 작업 공간)
+# 2. AGENT_WORKSPACE_DIR (LLM 전용 작업 공간)
 AGENT_WORKSPACE_DIR="${AGENT_WORKSPACE_DIR_ARG:-${RC_AGENT_WORKSPACE_DIR:-}}"
 if [[ -z "$AGENT_WORKSPACE_DIR" ]]; then
   AGENT_WORKSPACE_DIR="$(pwd)/agent_workspace"
@@ -253,18 +219,7 @@ if [[ -n "$AGENT_WORKSPACE_DIR" ]]; then
   AGENT_WORKSPACE_DIR=$(realpath "$AGENT_WORKSPACE_DIR")
 fi
 
-# 3. BUTLER_SOURCE_DIR (빌드/소싱용 워크스페이스)
-BUTLER_SOURCE_DIR="${BUTLER_SOURCE_DIR_ARG:-${RC_BUTLER_SOURCE_DIR:-}}"
-if [[ -n "$BUTLER_SOURCE_DIR" ]]; then
-  if [[ -d "$BUTLER_SOURCE_DIR" ]]; then
-    BUTLER_SOURCE_DIR=$(realpath "$BUTLER_SOURCE_DIR")
-  else
-    echo "Warning: Butler source directory not found at $BUTLER_SOURCE_DIR" >&2
-    BUTLER_SOURCE_DIR=""
-  fi
-fi
-
-# 4. CONFIG_DIR
+# 3. CONFIG_DIR
 DEFAULT_CONFIG_DIR="${REPO_ROOT}/src/robo_claw_bringup/config"
 CONFIG_DIR="${CONFIG_DIR_ARG:-${RC_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}}"
 
@@ -277,7 +232,7 @@ if [[ -n "$CONFIG_DIR" ]]; then
   fi
 fi
 
-# 5. LAUNCH_DIR — 런치 파일 수정을 이미지 재빌드 없이 컨테이너에 반영
+# 4. LAUNCH_DIR — 런치 파일 수정을 이미지 재빌드 없이 컨테이너에 반영
 DEFAULT_LAUNCH_DIR="${REPO_ROOT}/src/robo_claw_bringup/launch"
 LAUNCH_DIR="${LAUNCH_DIR_ARG:-${RC_LAUNCH_DIR:-$DEFAULT_LAUNCH_DIR}}"
 
@@ -299,16 +254,9 @@ fi
 if [[ -n "$LAUNCH_DIR" ]]; then
   DOCKER_VOLUMES+=("-v" "$LAUNCH_DIR:/ros2_ws/install/robo_claw_bringup/share/robo_claw_bringup/launch:ro")
 fi
-if [[ -n "$BUTLER_SCRIPTS_DIR" ]]; then
-  DOCKER_VOLUMES+=("-v" "$BUTLER_SCRIPTS_DIR:$BUTLER_SCRIPTS_DIR:rw")
-fi
 if [[ -n "$AGENT_WORKSPACE_DIR" ]]; then
   DOCKER_VOLUMES+=("-v" "$AGENT_WORKSPACE_DIR:/ros2_ws/agent_workspace:rw")
 fi
-if [[ -n "$BUTLER_SOURCE_DIR" ]]; then
-  DOCKER_VOLUMES+=("-v" "$BUTLER_SOURCE_DIR:$BUTLER_SOURCE_DIR:rw")
-fi
-
 if [[ -n "$SOUL_FILE" ]]; then
   DOCKER_VOLUMES+=("-v" "$SOUL_FILE:/ros2_ws/config/ROBOT.md:ro")
 fi
@@ -448,26 +396,12 @@ else
   if [[ -n "${RC_SYSTEM_PROMPT_FILE:-}" && -f "${RC_SYSTEM_PROMPT_FILE}" ]]; then
     BASE_CMD+=("system_prompt_file:=/ros2_ws/config/system_prompt.md")
   fi
-  if [[ -n "$BUTLER_SCRIPTS_DIR" ]]; then
-    BASE_CMD+=("butler_script_dir:=$BUTLER_SCRIPTS_DIR")
-  fi
   if [[ -n "$AGENT_WORKSPACE_DIR" ]]; then
     BASE_CMD+=("agent_workspace_dir:=/ros2_ws/agent_workspace")
   fi
 fi
 
-# 소싱 래핑
-CONTAINER_CMD=()
-if [[ -n "$BUTLER_SOURCE_DIR" ]]; then
-  # Butler 워크스페이스의 setup.bash를 소싱하기 전 기본 ROS 및 ros2_ws 환경을 소싱하여 라이브러리 경로 보존
-  CONTAINER_CMD=(
-    "bash" "-c"
-    "if [ -f /opt/ros/humble/setup.bash ]; then source /opt/ros/humble/setup.bash; fi && if [ -f /ros2_ws/install/setup.bash ]; then source /ros2_ws/install/setup.bash; fi && if [ -f $BUTLER_SOURCE_DIR/install/setup.bash ]; then source $BUTLER_SOURCE_DIR/install/setup.bash; fi && exec \"\$0\" \"\$@\""
-    "${BASE_CMD[@]}"
-  )
-else
-  CONTAINER_CMD=("${BASE_CMD[@]}")
-fi
+CONTAINER_CMD=("${BASE_CMD[@]}")
 
 # 도커 이미지 빌드
 if [[ -z "$(docker images -q "$IMAGE_NAME:$TAG" 2>/dev/null)" ]]; then

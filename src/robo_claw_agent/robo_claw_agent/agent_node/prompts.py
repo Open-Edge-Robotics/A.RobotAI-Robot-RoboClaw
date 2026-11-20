@@ -140,8 +140,6 @@ _DEFAULT_SYSTEM_PROMPT = """
     - `ros_command`는 허용된 읽기 전용 조회만 실행합니다(`topic|node|service|action|param` 의 `list/info/type/find/get`). 셸 명령, 제어/발행(`topic pub`, `service call`), `node kill` 은 허용되지 않습니다.
     - 토픽 목록과 메시지 타입 조회는 `list_topics`를 사용하세요.
 12. **스크립트 관리 및 실행**
-    - 로봇 내부나 디스크에 저장된 Butler 전용 쉘 스크립트(.sh) 목록 확인 -> `list_butler_scripts`
-    - 특정 Butler 전용 쉘 스크립트 실행 -> `run_butler_script`
     - 에이전트 작업 공간 내 스크립트(.py, .sh) 자율 실행 -> `run_script`
 13. **지식/RAG 관리**
     - RAG 인덱스 상태 확인 -> `rag_status`
@@ -208,19 +206,18 @@ _DEFAULT_SYSTEM_PROMPT = """
 37. `rag_search`는 `query`(str, 필수), 선택적으로 `top_k`(int, 기본 3), `score_threshold`(float)가 필요합니다.
 38. `rag_add`는 `text`(str, 필수), 선택적으로 `metadata`(dict)가 필요합니다. 장소 기억은 `metadata={"type":"location","location_name":"<장소>","x":<num>,"y":<num>}` 형식으로 전달하고, 좌표는 `get_status` 로 확인한 현재 pose 를 사용하세요. `metadata.type` 이 `location` 이 아닌 항목은 장소 조회(`get_location`, `navigate_to`)에서 보이지 않습니다.
 39. `rag_delete`는 `record_id`, `source_path`, `text_exact` 중 하나가 필요합니다.
-40. `run_butler_script`는 `script_name`(실행할 Butler 쉘 스크립트 파일명, 필수)이 필요합니다.
-41. `get_datetime`은 파라미터 없이 사용 가능하며, 선택적으로 `timezone`과 `locale`을 사용합니다.
-42. `identify_location`은 선택적으로 현재 좌표 `x`, `y`와 `radius_m`(기본 2.0)을 사용합니다.
-43. `reset_emergency_stop`은 주변 안전을 확인한 뒤 `confirm=true`를 필수로 전달합니다.
-44. `search_object`는 `target_object`가 필수이며 선택적으로 `search_angles_deg`, `max_body_rotations`를 사용합니다.
-45. `head_pan_tilt`는 `pose_name` 또는 `pan_deg`/`tilt_deg` 또는 `pan_rad`/`tilt_rad`를 사용합니다.
-46. `observe_head_target`는 `target_object`가 필수입니다.
-47. `clear_virtual_obstacles`는 파라미터 없이 사용합니다.
-48. `set_initial_pose`는 기억된 장소명 `target_name` 또는 좌표 `x`, `y` 중 하나가 필요하며, `yaw`(라디안)는 선택입니다(생략 시 0). `target_name="마지막 위치"`는 로봇이 마지막으로 파악한 pose(x, y, yaw)를 복원합니다. 좌표를 모르면 임의의 숫자를 지어내지 말고 `target_name`을 그대로 전달하세요. 좌표와 장소명을 함께 주면 좌표가 우선합니다.
-49. `autonomous_cooperate`는 선택적으로 `goal`, `cycle_interval_sec`, `proactive_interval_sec`, `max_cycles`, `allow_remote_task_execution`, `remote_allowed_skills`, `peer_worker_count`를 사용합니다.
-50. `stop_autonomous_cooperate`는 파라미터 없이 사용합니다.
-51. `reflect_skills`는 선택적으로 `limit`을 사용합니다.
-52. `list_topics`는 선택적으로 `category="all"` 또는 카메라 관련 토픽만 조회하는 `category="camera"`를 사용합니다. 토픽 목록을 물었으면 결과 데이터에서 요청한 범주만 필터링해 타입과 함께 답하고, 무관한 전체 목록을 출력하지 마세요.
+40. `get_datetime`은 파라미터 없이 사용 가능하며, 선택적으로 `timezone`과 `locale`을 사용합니다.
+41. `identify_location`은 선택적으로 현재 좌표 `x`, `y`와 `radius_m`(기본 2.0)을 사용합니다.
+42. `reset_emergency_stop`은 주변 안전을 확인한 뒤 `confirm=true`를 필수로 전달합니다.
+43. `search_object`는 `target_object`가 필수이며 선택적으로 `search_angles_deg`, `max_body_rotations`를 사용합니다.
+44. `head_pan_tilt`는 `pose_name` 또는 `pan_deg`/`tilt_deg` 또는 `pan_rad`/`tilt_rad`를 사용합니다.
+45. `observe_head_target`는 `target_object`가 필수입니다.
+46. `clear_virtual_obstacles`는 파라미터 없이 사용합니다.
+47. `set_initial_pose`는 기억된 장소명 `target_name` 또는 좌표 `x`, `y` 중 하나가 필요하며, `yaw`(라디안)는 선택입니다(생략 시 0). `target_name="마지막 위치"`는 로봇이 마지막으로 파악한 pose(x, y, yaw)를 복원합니다. 좌표를 모르면 임의의 숫자를 지어내지 말고 `target_name`을 그대로 전달하세요. 좌표와 장소명을 함께 주면 좌표가 우선합니다.
+48. `autonomous_cooperate`는 선택적으로 `goal`, `cycle_interval_sec`, `proactive_interval_sec`, `max_cycles`, `allow_remote_task_execution`, `remote_allowed_skills`, `peer_worker_count`를 사용합니다.
+49. `stop_autonomous_cooperate`는 파라미터 없이 사용합니다.
+50. `reflect_skills`는 선택적으로 `limit`을 사용합니다.
+51. `list_topics`는 선택적으로 `category="all"` 또는 카메라 관련 토픽만 조회하는 `category="camera"`를 사용합니다. 토픽 목록을 물었으면 결과 데이터에서 요청한 범주만 필터링해 타입과 함께 답하고, 무관한 전체 목록을 출력하지 마세요.
 
 [자동 전송 규칙]
 1. `analyze_scene`, `get_map_visual`, `annotate_image`, `annotate_map`, `capture_camera_image`, `capture_map`처럼 `file_path`를 반환하는 시각 도구 결과는 시스템이 자동 전송할 수 있습니다.
@@ -488,25 +485,6 @@ def load_skills_guide(guide_file: str | None) -> str:
         return ""
 
 
-def load_script_skills_guide(script_dir: str | None) -> str:
-    """스크립트 폴더 내 SKILLS.md 가이드 파일 자동 로드. 미설정 또는 실패 시 빈 문자열 반환."""
-    if not script_dir:
-        return ""
-    import os
-
-    target_path = os.path.join(script_dir, "SKILLS.md")
-    if not os.path.exists(target_path):
-        return ""
-    try:
-        with open(target_path, encoding="utf-8") as f:
-            content = f.read().strip()
-        logger.info("Auto-loaded script skills guide: %s", target_path)
-        return content
-    except OSError as e:
-        logger.warning("Failed to read script skills guide file (%s): %s", target_path, e)
-        return ""
-
-
 def load_robot_limits(limits_file: str | None) -> str:
     """로봇 한계 설정 파일(ROBOT_LIMITS.json) 로드 및 텍스트 포맷팅. 미설정 또는 실패 시 빈 문자열 반환."""
     if not limits_file:
@@ -647,8 +625,6 @@ def _append_shared_sections(node, base: str) -> str:
     # 스킬 가이드(SKILLS.md) 주입
     if node._skills_guide:
         base = base + f"\n\n[기본 스킬 가이드]\n{node._skills_guide}"
-    if node._script_skills_guide:
-        base = base + f"\n\n[스크립트 세부 가이드]\n{node._script_skills_guide}"
 
     # Stretch3 안전/그리퍼카메라 정책은 manipulation_backend=="stretch" 인 로봇에만 주입한다.
     # 팔이 없는 로봇(Former 등)이나 비-stretch 백엔드에는 stretch 전용 서비스

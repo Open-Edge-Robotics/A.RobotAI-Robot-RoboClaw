@@ -473,8 +473,6 @@ func (b *summaryBuilder) appendAgentSection(lctx *LaunchContext) {
 
 	b.rowValue("메모리 디렉토리", firstNonEmpty(b.env["RC_MEMORY_DIR"], cfg.MemoryDir), memoryDirSource(b.env, cfg))
 	b.rowValue("에이전트 작업 공간", firstNonEmpty(b.env["RC_AGENT_WORKSPACE_DIR"], cfg.AgentWorkspaceDir), workspaceDirSource(b.env, cfg))
-	b.rowValue("Butler 스크립트 경로", ResolveButlerScriptsDir(b.env, lctx.ProjectRoot), SourceRuntime)
-	b.rowValue("Butler 소스 경로", ResolveButlerSourceDir(b.env), SourceRuntime)
 }
 
 func memoryDirSource(env map[string]string, cfg RoboClawConfig) ConfigSummarySource {

@@ -52,7 +52,6 @@ def launch_setup(context, *args, **kwargs):
     robot_limits_file = LaunchConfiguration("robot_limits_file").perform(context)
     troubleshooting_guide_file = LaunchConfiguration("troubleshooting_guide_file").perform(context)
     robot_config = LaunchConfiguration("robot_config").perform(context)
-    butler_script_dir = LaunchConfiguration("butler_script_dir").perform(context)
     use_grpc = LaunchConfiguration("use_grpc")
 
     # 추가 설정 (RAG, Ollama 옵션 등)
@@ -169,7 +168,6 @@ def launch_setup(context, *args, **kwargs):
                 "robot_limits_file": robot_limits_file,
                 "troubleshooting_guide_file": troubleshooting_guide_file,
                 "system_prompt_file": system_prompt_file,
-                "butler_script_dir": butler_script_dir,
                 "use_channel": use_channel,
                 "http_host": LaunchConfiguration("http_host"),
                 "http_port": LaunchConfiguration("http_port"),

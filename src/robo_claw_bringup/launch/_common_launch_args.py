@@ -108,11 +108,6 @@ def common_launch_arguments():
             default_value="true",
             description="스킬 schema를 프롬프트에 compact 형식으로 주입할지 여부",
         ),
-        DeclareLaunchArgument(
-            "butler_script_dir",
-            default_value="/ros2_ws/butler_scripts",
-            description="Butler 로봇 전용 스크립트 디렉토리 경로",
-        ),
         # --- RAG / Qdrant / 스킬 자가학습 ---
         DeclareLaunchArgument(
             "enable_rag",
@@ -296,7 +291,7 @@ def common_launch_arguments():
         DeclareLaunchArgument(
             "robot_config",
             default_value="sim",
-            description="로봇 설정 이름 (stretch3 | former | butler | cloid | sim)",
+            description="로봇 설정 이름 (stretch3 | former | cloid | sim)",
         ),
         DeclareLaunchArgument(
             "camera_topic",

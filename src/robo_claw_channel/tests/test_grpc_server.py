@@ -46,17 +46,17 @@ class TestMessengerServicerChatStream:
     def test_peer_token_is_bound_to_sender_id(self):
         servicer = MessengerServicer(
             lambda text: text,
-            peer_auth_tokens={"butler": "butler-token"},
+            peer_auth_tokens={"former": "former-token"},
         )
-        valid = pb2.ChatMessage(sender_id="butler", metadata={"auth_token": "butler-token"})
-        forged = pb2.ChatMessage(sender_id="former", metadata={"auth_token": "butler-token"})
+        valid = pb2.ChatMessage(sender_id="former", metadata={"auth_token": "former-token"})
+        forged = pb2.ChatMessage(sender_id="stretch3", metadata={"auth_token": "former-token"})
         assert servicer._is_authorized(valid, None) is True
         assert servicer._is_authorized(forged, None) is False
 
     def test_peer_dedup_survives_servicer_restart(self, tmp_path: Path):
         db_path = str(tmp_path / "dedup.sqlite3")
         request = pb2.ChatMessage(
-            sender_id="butler",
+            sender_id="former",
             metadata={
                 "message_id": "persistent-message",
                 "task_id": "persistent-task",
@@ -86,7 +86,7 @@ class TestMessengerServicerChatStream:
 
         def request_iter():
             yield pb2.ChatMessage(
-                sender_id="butler",
+                sender_id="former",
                 content="도와줘",
                 timestamp=0,
                 metadata={
@@ -97,7 +97,7 @@ class TestMessengerServicerChatStream:
 
         responses = list(servicer.ChatStream(request_iter(), _make_context(5)))
 
-        assert received == [("butler", "도와줘")]
+        assert received == [("former", "도와줘")]
         assert len(responses) == 1
         assert responses[0].sender_id == "robot"
 
@@ -228,7 +228,7 @@ class TestMessengerServicerChatStream:
 
         def request_iter():
             yield pb2.ChatMessage(
-                sender_id="Butler2",
+                sender_id="Former2",
                 content="도와줘",
                 timestamp=0,
                 metadata={"auth_token": "stretch-token"},
@@ -240,7 +240,7 @@ class TestMessengerServicerChatStream:
         warning = " ".join(
             r.getMessage() for r in caplog.records if "Unauthorized" in r.getMessage()
         )
-        assert "sender=Butler2" in warning
+        assert "sender=Former2" in warning
         assert "token_supplied=yes" in warning
         assert "token_expected=no" in warning
         assert "reason=unknown_peer_no_token" in warning
@@ -252,9 +252,9 @@ class TestMessengerServicerChatStream:
             peer_auth_token="common-fallback-token",
             peer_auth_tokens={"Stretch3": "stretch-token"},
         )
-        # 맵에 없는 Butler2 로봇이 공통 토큰으로 인증 요청
+        # 맵에 없는 Former2 로봇이 공통 토큰으로 인증 요청
         req = pb2.ChatMessage(
-            sender_id="Butler2",
+            sender_id="Former2",
             content="협동하자",
             metadata={"auth_token": "common-fallback-token"},
         )
@@ -308,12 +308,12 @@ class TestMessengerServicerChatStream:
         """채팅앱(sender_id='user')이 peer_auth_tokens에 등록된 유효 토큰을 보내면 승인된다."""
         servicer = MessengerServicer(
             lambda text: text,
-            peer_auth_tokens={"butler": "butler-secret-token"},
+            peer_auth_tokens={"former": "former-secret-token"},
         )
         req = pb2.ChatMessage(
             sender_id="user",
             content="안녕하세요",
-            metadata={"auth_token": "butler-secret-token"},
+            metadata={"auth_token": "former-secret-token"},
         )
         assert servicer._is_authorized(req, None) is True
 

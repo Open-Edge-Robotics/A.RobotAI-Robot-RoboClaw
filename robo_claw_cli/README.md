@@ -106,7 +106,7 @@ ROS를 실행하지 않고 v2 runtime manifest의 schema, revision, LLM, ROS dom
 자동 fallback합니다.
 
 ```bash
-./rclaw config-doctor butler office
+./rclaw config-doctor former office
 ```
 
 운영 서버 연결은 HTTPS가 기본입니다. 로컬 개발 서버에서만
@@ -120,10 +120,10 @@ ROS를 실행하지 않고 v2 runtime manifest의 schema, revision, LLM, ROS dom
 
 ```bash
 # 캐시된 설정 기준으로 요약만 다시 확인 (원격 동기화 없음)
-./rclaw config-summary butler office
+./rclaw config-summary former office
 
 # 요약을 로그 파일로도 저장
-./rclaw config-summary butler office --write-log
+./rclaw config-summary former office --write-log
 ```
 
 요약에 포함되는 정보:
@@ -154,7 +154,7 @@ ROS를 실행하지 않고 v2 runtime manifest의 schema, revision, LLM, ROS dom
 
 ```bash
 # 사용법: ./rclaw fetch [robot_name] [environment]
-./rclaw fetch butler office
+./rclaw fetch former office
 ```
 
 ### 3. 원격 설정으로 로봇 시스템 기동 (`launch`)
@@ -167,16 +167,16 @@ AI config의 `agent_id`는 `agent_id:=...` launch 인자로 전달되고, `grpc_
 # 사용법: ./rclaw launch [robot_name] [environment] [flags]
 
 # 로컬 네이티브로 기동
-./rclaw launch butler office
+./rclaw launch former office
 
 # Docker 컨테이너로 기동 (lgecloudroboticstask/robo-claw:latest 이미지 사용)
-./rclaw launch butler office --docker
+./rclaw launch former office --docker
 
 # 시뮬레이션 모드 + Nav2
-./rclaw launch butler office --sim --nav2
+./rclaw launch former office --sim --nav2
 
 # 시뮬레이션 모드 + SLAM(자동으로 Nav2도 함께 활성화됨) + 월드/모델/맵 지정
-./rclaw launch butler office --sim --slam --world my_world --model waffle --map my_map.yaml
+./rclaw launch former office --sim --slam --world my_world --model waffle --map my_map.yaml
 ```
 
 주요 플래그:
@@ -204,13 +204,13 @@ AI config의 `agent_id`는 `agent_id:=...` launch 인자로 전달되고, `grpc_
 
 ```bash
 # 기본 사용법
-./rclaw test -r butler -e office
+./rclaw test -r former -e office
 
 # 외부 사용자 정의 테스트 시나리오 JSON 파일을 사용해 구동할 때
-./rclaw test -r butler -e office --scenario-file ./my_custom_scenario.json
+./rclaw test -r former -e office --scenario-file ./my_custom_scenario.json
 
 # 주요 옵션 플래그
-# -r, --robot: 대상 로봇 이름 (예: butler)
+# -r, --robot: 대상 로봇 이름 (예: former)
 # -e, --env: 대상 구동 환경 (예: office)
 # -n, --run-navigation: 네비게이션 주행 및 속도 제약 테스트 수행 여부
 # -m, --run-manipulation: 매니퓰레이션 관절 제어 테스트 수행 여부

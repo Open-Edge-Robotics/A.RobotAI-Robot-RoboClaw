@@ -13,8 +13,7 @@
     "file": "작업 공간의 파일 목록·읽기·쓰기·수정·삭제, 이미지 파일 분석, 스크립트 실행",
     "autonomous": "스스로 판단하는 자율 행동, 조건 반응형 이동·작업과 그 중단",
     "motion": "CLOi 로봇에 등록된 제스처·모션 목록 조회와 실행·정지",
-    "safety": "비상 정지와 비상 정지 해제",
-    "butler": "Butler 로봇 전용 스크립트 목록 조회와 실행"
+    "safety": "비상 정지와 비상 정지 해제"
   },
   "skills": [
     {
@@ -776,17 +775,6 @@
       "source": "src/robo_claw_agent/robo_claw_agent/skills/system_skill/rag.py"
     },
     {
-      "name": "list_butler_scripts",
-      "category": "butler",
-      "module": "butler_skill",
-      "risk_level": "action",
-      "internal": false,
-      "required": [],
-      "properties": [],
-      "description": "실행 가능한 Butler 로봇 전용 스크립트 목록을 조회합니다.",
-      "source": "src/robo_claw_agent/robo_claw_agent/skills/butler_skill.py"
-    },
-    {
       "name": "list_cloid_motions",
       "category": "motion",
       "module": "cloid_motion_skill",
@@ -1323,21 +1311,6 @@
       ],
       "description": "현재 바라보는 방향을 기준으로 지정한 상대 각도 `angle_deg`(도)만큼 제자리 회전합니다. '90도 돌아', '왼쪽으로 45도 회전'처럼 상대 회전량이 명확할 때만 사용하세요. 북쪽/남쪽/동쪽/서쪽, yaw 180도, 특정 좌표/장소를 바라보라는 절대 방향 정렬 요청에는 `face_direction`을 사용하세요.",
       "source": "src/robo_claw_agent/robo_claw_agent/skills/navigation_skill/rotate.py"
-    },
-    {
-      "name": "run_butler_script",
-      "category": "butler",
-      "module": "butler_skill",
-      "risk_level": "dangerous",
-      "internal": false,
-      "required": [
-        "script_name"
-      ],
-      "properties": [
-        "script_name"
-      ],
-      "description": "지정된 Butler 로봇 쉘 스크립트를 실행합니다. script_name 파라미터가 필요하며, 보안을 위해 지정된 폴더 내부의 파일만 실행 가능합니다.",
-      "source": "src/robo_claw_agent/robo_claw_agent/skills/butler_skill.py"
     },
     {
       "name": "run_script",
