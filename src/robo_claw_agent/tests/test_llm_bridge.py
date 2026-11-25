@@ -253,6 +253,79 @@ def test_ollama_think_true_skips_json_format(monkeypatch):
     assert calls[0]["options"] == {"temperature": 0}
 
 
+# ── Ollama 클라우드 옵션 정규화 ──────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("model", ["gemma4:31b-cloud", "glm-5.3:cloud"])
+def test_ollama_cloud_model_drops_non_positive_num_predict(model):
+    """ollama.com 은 num_predict<=0 을 400 오류로 거부하므로 옵션에서 제거한다."""
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    bridge = create_llm_bridge(
+        "ollama",
+        model=model,
+        options_json='{"num_ctx": 65536, "num_predict": -1, "temperature": 0.7}',
+    )
+
+    assert "num_predict" not in bridge._options
+    assert bridge._options == {"num_ctx": 65536, "temperature": 0.7}
+
+
+def test_ollama_cloud_model_keeps_positive_num_predict():
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    bridge = create_llm_bridge(
+        "ollama", model="gemma4:31b-cloud", options_json='{"num_predict": 512}'
+    )
+
+    assert bridge._options["num_predict"] == 512
+
+
+def test_ollama_local_model_keeps_unlimited_num_predict():
+    """로컬 추론에서 -1 은 무제한이라는 의미가 있으므로 그대로 전달한다."""
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    bridge = create_llm_bridge("ollama", model="gemma4:e4b", options_json='{"num_predict": -1}')
+
+    assert bridge._options["num_predict"] == -1
+
+
+def test_ollama_cloud_endpoint_drops_non_positive_num_predict():
+    """모델 태그가 cloud 가 아니어도 base_url 이 ollama.com 이면 같은 계약이다."""
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    bridge = create_llm_bridge(
+        "ollama",
+        model="gpt-oss:120b",
+        endpoint="https://ollama.com",
+        options_json='{"num_predict": -1, "temperature": 0.2}',
+    )
+
+    assert bridge._options == {"temperature": 0.2}
+
+
+def test_ollama_cloud_model_forwards_sanitized_options_to_client(monkeypatch):
+    from robo_claw_agent.llm_bridge import create_llm_bridge
+
+    calls = []
+
+    class FakeClient:
+        def chat(self, **kwargs):
+            calls.append(kwargs)
+            return {"message": {"content": "ok"}}
+
+    bridge = create_llm_bridge(
+        "ollama", model="gemma4:31b-cloud", options_json='{"num_predict": -1, "seed": 42}'
+    )
+    monkeypatch.setattr(bridge, "_get_client", lambda: FakeClient())
+
+    bridge.chat([{"role": "user", "content": "hi"}])
+    bridge.chat_with_tools([{"role": "user", "content": "hi"}])
+
+    assert calls[0]["options"] == {"seed": 42}
+    assert calls[1]["options"] == {"seed": 42}
+
+
 # ── Anthropic: kwargs 처리 + content 블록 방어 (§D) ────────────────────────
 
 

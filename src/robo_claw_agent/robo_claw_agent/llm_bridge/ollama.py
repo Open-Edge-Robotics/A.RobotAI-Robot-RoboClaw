@@ -67,6 +67,48 @@ def _strip_think(content: str) -> str:
     return _UNCLOSED_THINK_PATTERN.sub("", cleaned).strip()
 
 
+# ollama.com 클라우드 추론으로 요청이 나가는 호스트/모델 패턴.
+_CLOUD_HOST_HINTS = ("ollama.com",)
+
+
+def _is_cloud_target(model: str, base_url: str) -> bool:
+    """요청이 ollama.com 클라우드 추론으로 전달되는 대상인지 판별한다.
+
+    로컬 데몬을 통해 ``*-cloud``/``:cloud`` 태그 모델을 호출하면 요청이
+    ollama.com 프록시로 넘어가고, ``base_url`` 이 직접 ollama.com 인 경우도
+    있다. 두 경우 모두 로컬 추론과 서버 계약이 다르다.
+    """
+    name = (model or "").strip()
+    tag = name.rsplit(":", 1)[-1] if ":" in name else ""
+    if tag == "cloud" or tag.endswith("-cloud"):
+        return True
+    return any(hint in (base_url or "") for hint in _CLOUD_HOST_HINTS)
+
+
+def _sanitize_options(options: dict, model: str, base_url: str) -> dict:
+    """클라우드 대상이 거부하는 옵션 값을 제거한다.
+
+    ollama.com 은 ``num_predict`` 를 ``max_tokens`` 로 변환하는데 0 이하 값을
+    ``max_tokens must be positive, got: -1`` (HTTP 400) 로 거부한다. 로컬 추론
+    에서 -1 은 "무제한"이라는 의미가 있으므로 그대로 두고, 클라우드일 때만 키를
+    빼서 서버 기본값을 쓴다.
+    """
+    if not _is_cloud_target(model, base_url):
+        return options
+    num_predict = options.get("num_predict")
+    if isinstance(num_predict, bool) or not isinstance(num_predict, (int, float)):
+        return options
+    if num_predict > 0:
+        return options
+    logger.info(
+        "OllamaBridge: cloud 모델(%s)은 num_predict=%s 를 허용하지 않아 "
+        "해당 옵션을 제거하고 서버 기본값을 사용합니다.",
+        model,
+        num_predict,
+    )
+    return {key: value for key, value in options.items() if key != "num_predict"}
+
+
 class OllamaBridge(BaseLLMBridge):
     """Ollama 로컬 LLM 브릿지"""
 
@@ -112,6 +154,7 @@ class OllamaBridge(BaseLLMBridge):
         # 비대칭 임베딩용 쿼리 지시문(선택). options_json 에 "embed_query_instruction"
         # 을 넣어 도메인에 맞게 덮어쓸 수 있다. None 이면 기본 지시문 사용.
         self._embed_query_instruction = self._options.pop("embed_query_instruction", None)
+        self._options = _sanitize_options(self._options, model, base_url)
         self._client = None
         self._think_supported: bool | None = None
         logger.info(

@@ -5,6 +5,13 @@ ROS 2 기반 로봇 에이전트 런타임 **RoboClaw**의 변경 이력. 최신
 AGENTS.md §12.1(세션 산출물·점검 보고서 커밋 금지)에 따라 저장소에 두지 않으므로,
 아래 항목의 검증 서술은 실행 일자와 결과 수치만 남긴다.
 
+## 2026-11-20 — Ollama 클라우드 모델에서 `num_predict: -1` 이 400 오류로 거부되던 문제 수정
+
+- **Fixed**: `RC_OLLAMA_OPTIONS_JSON` 의 `num_predict: -1`(로컬 추론에서 "무제한")을 `gemma4:31b-cloud` 같은 클라우드 모델에 그대로 보내면 요청이 ollama.com 프록시로 전달되며 `max_tokens` 로 변환되고, `max_tokens must be positive, got: -1`(HTTP 400)로 거부되어 `Failed to obtain LLM plan` 으로 에이전트가 응답하지 못했습니다. 같은 옵션에서 `num_predict` 만 빼면 정상 응답하는 것을 `POST /api/chat` 으로 확인했습니다.
+- **Changed**: `OllamaBridge` 가 옵션을 정규화합니다. 대상이 클라우드(`*:cloud`·`*-cloud` 태그 또는 `base_url` 이 `ollama.com`)일 때만 0 이하 `num_predict` 를 제거하고 서버 기본값을 쓰며, 로컬 모델의 `-1`(무제한)은 그대로 전달합니다. 클라우드 판정·정규화는 `ollama.py` 의 `_is_cloud_target`/`_sanitize_options` 로 분리했습니다.
+- **Docs**: `.env.example` 의 `num_predict` 설명에 클라우드 모델 제약(400 오류, 자동 제거, 상한이 필요하면 양수 사용)을 추가했습니다.
+- **검증**: 신규 `test_llm_bridge.py` 5건(클라우드 태그별 제거, 양수 유지, 로컬 `-1` 유지, `ollama.com` base_url, 클라이언트 전달 옵션)과 파일 전체 32건 통과. `src/robo_claw_agent/tests/` 2261건 통과(2 skip·136 deselected), `ruff check`·`ruff format --check` 통과. 로컬 데몬을 통한 `gemma4:31b-cloud` 실호출(`chat`, `chat_with_tools`)이 HTTP 200 으로 응답함을 확인했습니다. `task unit-test` 는 이 호스트에서 `.venv` 에 `lark` 가 없어 bringup 테스트 collection 단계에서 실패하며(변경과 무관한 환경 문제), 실기 로봇 검증은 **미실시**입니다.
+
 ## 2026-11-20 — Butler 로봇 프로필과 전용 스크립트 스킬 제거
 
 - **Removed**: Butler 로봇을 더 이상 운용하지 않으므로 로봇 프로필(`butler_config.yaml`, `ROBOT_LIMITS.butler.json`, `SKILLS.butler.md`)을 삭제했습니다. `robot_config` 선택지에서도 빠지므로 launch 와 `rclaw` 는 `stretch3`·`former`·`former_arm`·`cloid`·`sim` 만 받습니다.
